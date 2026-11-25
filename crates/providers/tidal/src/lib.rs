@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
-use resonate_fetch::escaped;
+use resonate_fetch::{escaped, followed};
 use resonate_providers::{
     AlbumSongs, Artist, ArtistAlbums, Choosing, Delivery, Error, Found, Id, Identity, MixSongs,
     Named, Obtained, PlaysInPlace, Provider, ProviderOp, RefreshToken, Result, Streamed,
@@ -295,11 +295,13 @@ impl Tidal {
         let op = ProviderOp::SignIn;
         let url = format!("{}sessions", self.endpoints.api);
         match self.asker.sent(op, || {
-            self.asker
-                .agent
-                .get(&url)
-                .header(AUTHORIZATION, bearer)
-                .call()
+            followed(&url, |url| {
+                self.asker
+                    .agent
+                    .get(url)
+                    .header(AUTHORIZATION, bearer)
+                    .call()
+            })
         })? {
             Sent::Answered(response) => {
                 self.asker.parsed(op, &self.asker.read_whole(op, response)?)
@@ -361,30 +363,30 @@ impl Tidal {
             let url = url(&session.country);
 
             let sent = self.asker.sent(op, || match verb {
-                Verb::Get => {
+                Verb::Get => followed(&url, |url| {
                     let request = self
                         .asker
                         .agent
-                        .get(&url)
+                        .get(url)
                         .header(AUTHORIZATION, session.bearer.as_str());
                     match accept {
                         Some(accept) => request.header(ACCEPT, accept).call(),
                         None => request.call(),
                     }
-                }
-                Verb::Add(form) => self
+                }),
+                Verb::Add(form) => Ok(self
                     .asker
                     .agent
                     .post(&url)
                     .header(AUTHORIZATION, session.bearer.as_str())
                     .header(CONTENT_TYPE, FORM)
-                    .send(form.as_str()),
-                Verb::Remove => self
+                    .send(form.as_str())?),
+                Verb::Remove => Ok(self
                     .asker
                     .agent
                     .delete(&url)
                     .header(AUTHORIZATION, session.bearer.as_str())
-                    .call(),
+                    .call()?),
             })?;
             match sent {
                 Sent::Answered(response) => {

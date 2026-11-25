@@ -7274,6 +7274,7 @@ dependencies = [
  "resonate-providers",
  "rustls",
  "rustls-native-certs",
+ "thiserror 2.0.21",
  "tracing",
  "ureq",
  "webpki-root-certs",

@@ -1,9 +1,9 @@
 use std::io::{self, ErrorKind};
 
 use resonate_core::SourceId;
-use resonate_providers::{Error, ProviderOp};
+use resonate_providers::{Error, ProviderOp, Unfollowed};
 
-use crate::trust;
+use crate::{followed::Unanswered, trust};
 
 enum Failure {
     Unreached(io::Error),
@@ -11,9 +11,15 @@ enum Failure {
     Unaddressable,
     Refused(u16),
     Unreadable,
+    Redirected(Unfollowed),
 }
 
-fn classed(error: ureq::Error) -> Failure {
+fn classed(error: Unanswered) -> Failure {
+    let error = match error {
+        Unanswered::Failed(error) => error,
+        Unanswered::Redirected(redirect) => return Failure::Redirected(redirect),
+    };
+
     if trust::certificate_refused(&error) {
         return Failure::Untrusted;
     }
@@ -37,8 +43,8 @@ fn classed(error: ureq::Error) -> Failure {
     }
 }
 
-pub fn unreached(provider: SourceId, op: ProviderOp, error: ureq::Error) -> Error {
-    match classed(error) {
+pub fn unreached(provider: SourceId, op: ProviderOp, error: impl Into<Unanswered>) -> Error {
+    match classed(error.into()) {
         Failure::Unreached(source) => Error::Io {
             provider,
             op,
@@ -52,16 +58,22 @@ pub fn unreached(provider: SourceId, op: ProviderOp, error: ureq::Error) -> Erro
             status,
         },
         Failure::Unreadable => Error::Unreadable { provider, op },
+        Failure::Redirected(redirect) => Error::Redirected {
+            provider,
+            op,
+            redirect,
+        },
     }
 }
 
-pub fn as_io(error: ureq::Error) -> io::Error {
-    match classed(error) {
+pub fn as_io(error: impl Into<Unanswered>) -> io::Error {
+    match classed(error.into()) {
         Failure::Unreached(source) => source,
         Failure::Untrusted => io::Error::from(ErrorKind::PermissionDenied),
         Failure::Unaddressable => io::Error::from(ErrorKind::InvalidInput),
         Failure::Refused(_) => io::Error::from(ErrorKind::ConnectionAborted),
         Failure::Unreadable => io::Error::from(ErrorKind::InvalidData),
+        Failure::Redirected(redirect) => io::Error::new(ErrorKind::PermissionDenied, redirect),
     }
 }
 
@@ -126,6 +138,32 @@ mod tests {
         assert_eq!(
             as_io(ureq::Error::BodyExceedsLimit(4)).kind(),
             ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn a_redirect_refused_is_the_provider_away_and_denied_to_a_reader() {
+        let redirected = unreached(
+            provider(),
+            ProviderOp::Download,
+            Unfollowed::ElsewhereThanAsked,
+        );
+        let read = as_io(Unfollowed::Downgraded);
+
+        assert!(matches!(
+            redirected,
+            Error::Redirected {
+                op: ProviderOp::Download,
+                redirect: Unfollowed::ElsewhereThanAsked,
+                ..
+            }
+        ));
+        assert!(redirected.is_the_provider_away());
+        assert_eq!(read.kind(), ErrorKind::PermissionDenied);
+        assert_eq!(
+            read.get_ref()
+                .and_then(|inner| inner.downcast_ref::<Unfollowed>()),
+            Some(&Unfollowed::Downgraded)
         );
     }
 

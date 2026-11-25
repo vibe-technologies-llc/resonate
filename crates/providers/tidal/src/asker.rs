@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use resonate_core::SourceId;
 use resonate_fetch::{
-    Patience, Trusted, asking_agent, configured, downloading_agent, is_a_document, retry_after_of,
-    unreached,
+    Patience, Trusted, Unanswered, asking_agent, configured, downloading_agent, followed,
+    is_a_document, retry_after_of, unreached,
 };
 use resonate_providers::{Error, Id, Pacing, ProviderOp, Result};
 use serde::Deserialize;
@@ -47,7 +47,7 @@ fn listeners_server_agent() -> Agent {
 
 pub(crate) fn media_agent() -> Agent {
     downloading_agent(
-        configured(MEDIA_ANSWERED_WITHIN, Trusted::BuiltInRoots).max_redirects(0),
+        configured(MEDIA_ANSWERED_WITHIN, Trusted::BuiltInRoots),
         Patience::default().broken_off_after,
     )
 }
@@ -68,7 +68,9 @@ impl Asker {
         }
     }
 
-    pub(crate) fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
+    pub(crate) fn unreachable(&self, op: ProviderOp, error: impl Into<Unanswered>) -> Error {
+        let error = error.into();
+
         tracing::debug!(%error, ?op, provider = %self.source, "a provider's server could not be reached");
         unreached(self.source.clone(), op, error)
     }
@@ -80,10 +82,10 @@ impl Asker {
         }
     }
 
-    pub(crate) fn sent(
+    pub(crate) fn sent<E: Into<Unanswered>>(
         &self,
         op: ProviderOp,
-        send: impl Fn() -> std::result::Result<http::Response<Body>, ureq::Error>,
+        send: impl Fn() -> std::result::Result<http::Response<Body>, E>,
     ) -> Result<Sent> {
         let mut retried = 0;
         loop {
@@ -135,7 +137,7 @@ impl Asker {
     pub(crate) fn picture(&self, images: &str, cover: &Id, side: u32) -> Result<Vec<u8>> {
         let op = ProviderOp::Cover;
         let url = picture_at(images, cover, side).ok_or_else(|| self.unreadable(op))?;
-        match self.sent(op, || self.agent.get(&url).call())? {
+        match self.sent(op, || followed(&url, |url| self.agent.get(url).call()))? {
             Sent::Answered(response) if is_a_document(response.body().mime_type()) => {
                 Err(self.unreadable(op))
             }

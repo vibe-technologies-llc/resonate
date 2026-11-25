@@ -1,5 +1,6 @@
 mod agents;
 mod failed;
+mod followed;
 mod ranged;
 mod seeking;
 mod stall;
@@ -15,6 +16,7 @@ pub use crate::{
         downloading_agent,
     },
     failed::{as_io, unreached},
+    followed::{REDIRECTS_FOLLOWED_AT_MOST, Unanswered, followed},
     ranged::{
         ASKED_LATER, Known, RESUMES_AT_MOST, Ranged, Unfetched, asking_to_resume, waited_before,
     },

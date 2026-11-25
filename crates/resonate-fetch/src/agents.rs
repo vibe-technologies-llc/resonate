@@ -56,6 +56,7 @@ pub fn configured(answered_within: Duration, trusted: Trusted) -> ConfigBuilder<
         .timeout_resolve(Some(RESOLVED_WITHIN))
         .timeout_connect(Some(CONNECTED_WITHIN))
         .timeout_recv_response(Some(answered_within))
+        .max_redirects(0)
         .http_status_as_error(false);
     match trusted {
         Trusted::BuiltInRoots => builder,

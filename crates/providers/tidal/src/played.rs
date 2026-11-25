@@ -1,5 +1,5 @@
 use resonate_core::{Isrc, MediaLocation, Service, SourceId};
-use resonate_fetch::{Patience, Seeking, unreached};
+use resonate_fetch::{Patience, Seeking, followed, unreached};
 use resonate_providers::{
     Delivery, Error, Extension, Identity, Obtained, Opened, Opening, ProviderOp, Result, Streamed,
 };
@@ -203,9 +203,7 @@ fn streamed(provider: &SourceId, agent: &Agent, media: Media) -> Result<Streamed
     let op = ProviderOp::Stream;
 
     if let (Container::Flac, [url]) = (media.container, media.urls.as_slice()) {
-        let response = agent
-            .get(url)
-            .call()
+        let response = followed(url, |url| agent.get(url).call())
             .map_err(|error| unreached(provider.clone(), op, error))?;
         let status = response.status().as_u16();
 

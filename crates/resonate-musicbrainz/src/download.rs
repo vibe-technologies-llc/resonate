@@ -25,6 +25,7 @@ const VERIFIED: &str = "verified";
 const ANSWERED_WITHIN: Duration = Duration::from_secs(30);
 const BROKEN_OFF_AFTER: Duration = Duration::from_secs(60);
 const RESUMED_AFTER: Duration = Duration::from_secs(2);
+const REDIRECTS_UREQ_FOLLOWS: u32 = 10;
 const LONGEST_LISTING: u64 = 64 * 1024;
 const COPIED_AT_ONCE: usize = 1024 * 1024;
 const RANGE_PAST_THE_END: u16 = 416;
@@ -46,6 +47,7 @@ pub fn agent() -> Agent {
 
 fn agent_carrying(carried: Carried) -> Agent {
     let config = configured(ANSWERED_WITHIN, Trusted::BuiltInRoots)
+        .max_redirects(REDIRECTS_UREQ_FOLLOWS)
         .https_only(carried == Carried::Encrypted);
     downloading_agent(config, BROKEN_OFF_AFTER)
 }

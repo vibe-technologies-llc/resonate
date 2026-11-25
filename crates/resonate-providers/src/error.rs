@@ -16,6 +16,18 @@ pub enum ProviderOp {
     Favourite,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+pub enum Unfollowed {
+    #[error("the redirect leads to another host, or to another port without moving to https")]
+    ElsewhereThanAsked,
+    #[error("the redirect leads from https to plain http")]
+    Downgraded,
+    #[error("the redirect names no place that reads as an address")]
+    Unlocated,
+    #[error("the redirects went on past the most followed")]
+    Endless,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{op:?} failed in the {provider} provider")]
@@ -54,6 +66,15 @@ pub enum Error {
 
     #[error("{op:?} was answered by the {provider} provider's server with media off its own hosts")]
     OffItsHosts { provider: SourceId, op: ProviderOp },
+
+    #[error(
+        "{op:?} was redirected by the {provider} provider's server where it is not followed: {redirect}"
+    )]
+    Redirected {
+        provider: SourceId,
+        op: ProviderOp,
+        redirect: Unfollowed,
+    },
 
     #[error("{op:?} was still queued at the {provider} provider's server when it was given up")]
     StillQueued { provider: SourceId, op: ProviderOp },
@@ -153,6 +174,7 @@ impl Error {
             | Self::TurnedAway { .. }
             | Self::Unwelcome { .. }
             | Self::OffItsHosts { .. }
+            | Self::Redirected { .. }
             | Self::StillQueued { .. }
             | Self::Untrusted { .. }
             | Self::Unaddressable { .. }
@@ -171,6 +193,7 @@ impl Error {
         match self {
             Self::Io { .. }
             | Self::Unwelcome { .. }
+            | Self::Redirected { .. }
             | Self::StillQueued { .. }
             | Self::Untrusted { .. }
             | Self::Unaddressable { .. }
@@ -248,9 +271,20 @@ mod tests {
             op: ProviderOp::Search,
         };
         let a_page = Error::NotTheService {
-            provider,
+            provider: provider.clone(),
             op: ProviderOp::Search,
         };
+        let redirected = [
+            Unfollowed::ElsewhereThanAsked,
+            Unfollowed::Downgraded,
+            Unfollowed::Unlocated,
+            Unfollowed::Endless,
+        ]
+        .map(|redirect| Error::Redirected {
+            provider: provider.clone(),
+            op: ProviderOp::Download,
+            redirect,
+        });
 
         assert!(unreachable.is_the_provider_away());
         assert!(down.is_the_provider_away());
@@ -262,6 +296,12 @@ mod tests {
         assert!(refused_whoever_asks.iter().all(Error::is_the_provider_away));
         assert!(unaddressable.is_the_provider_away());
         assert!(a_page.is_the_provider_away());
+        assert!(redirected.iter().all(Error::is_the_provider_away));
+        assert!(
+            redirected
+                .iter()
+                .all(|redirected| redirected.why_away() == WhyAway::NotAnswering)
+        );
         assert!(is_a_page(b"\n  <!DOCTYPE html><html>"));
         assert!(!is_a_page(br#"{"subsonic-response":{}}"#));
     }

@@ -11,7 +11,7 @@ use resonate_core::Isrc;
 use resonate_monochrome::{Monochrome, Patience};
 use resonate_providers::{
     Delivery, Error, Id, Identity, Named, Obtained, Opened, Opening, PlaysInPlace, Provider,
-    ProviderOp,
+    ProviderOp, Unfollowed,
 };
 
 const ECHOES_ISRC: &str = "GBN9Y1100065";
@@ -73,6 +73,15 @@ impl Canned {
         Self {
             status,
             headers: vec![("Retry-After", "0".to_owned())],
+            body: Vec::new(),
+            sent: Sent::Whole,
+        }
+    }
+
+    fn redirecting_to(location: &str) -> Self {
+        Self {
+            status: 302,
+            headers: vec![("Location", location.to_owned())],
             body: Vec::new(),
             sent: Sent::Whole,
         }
@@ -665,6 +674,62 @@ fn an_unreachable_server_is_the_provider_away() {
         })
     ));
     assert!(refused.is_err_and(|error| error.is_the_provider_away()));
+}
+
+fn redirected_elsewhere_while(error: &Error) -> Option<ProviderOp> {
+    match error {
+        Error::Redirected {
+            op,
+            redirect: Unfollowed::ElsewhereThanAsked,
+            ..
+        } => Some(*op),
+        _ => None,
+    }
+}
+
+#[test]
+fn a_search_or_a_download_redirected_to_another_port_is_refused_and_that_port_is_never_asked() {
+    let elsewhere = Fake::serving(|asked, _| match asked {
+        Asked::Search(_) => echoes_found(),
+        _ => Canned::audio(),
+    });
+    let away = elsewhere.url.clone();
+    let searching = Fake::serving(move |_, _| {
+        Canned::redirecting_to(&format!("{away}/search/tracks?q=Echoes"))
+    });
+    let away = elsewhere.url.clone();
+    let downloading = Fake::serving(move |asked, _| match asked {
+        Asked::Search(_) => echoes_found(),
+        _ => Canned::redirecting_to(&format!("{away}/track/{ECHOES}")),
+    });
+
+    let search = searching
+        .monochrome()
+        .find(&echoes())
+        .expect_err("the search's redirect is refused");
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        downloading.monochrome().find(&echoes()).expect("an answer")
+    else {
+        panic!("nothing was offered");
+    };
+    let download = opening
+        .open()
+        .err()
+        .expect("the download's redirect is refused");
+
+    assert_eq!(
+        redirected_elsewhere_while(&search),
+        Some(ProviderOp::Search),
+        "{search:?}"
+    );
+    assert_eq!(
+        redirected_elsewhere_while(&download),
+        Some(ProviderOp::Download),
+        "{download:?}"
+    );
+    assert!(search.is_the_provider_away());
+    assert_eq!(searching.heard().len(), 1);
+    assert!(elsewhere.heard().is_empty());
 }
 
 #[test]

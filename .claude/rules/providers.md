@@ -74,7 +74,8 @@ errors: `Io`, `Unwelcome`, `StillQueued`, `Untrusted`, `ToolFailed` (a program t
 exited badly, `code` its exit code), `ToolNotRun` (the program could not be started, raised where it
 is spawned and the only error `Error::why_away` reads as `WhyAway::ToolMissing`: an `Io` of kind
 `NotFound` from a folder or a server says nothing of a missing tool), `NotTheService` (a page where the API's
-document was asked: `resonate_providers::is_a_page`), `Refused` 401, 403, 429 (exhausted retry) and
+document was asked: `resonate_providers::is_a_page`), `Redirected` (a redirect `followed` refused,
+below), `Refused` 401, 403, 429 (exhausted retry) and
 500+; `TurnedAway`, 404 and `Busy` (a server still busy with another download after its `Retry-After`
 waits) are the want's, the want left unstamped. **A file still arriving is neither miss nor provider
 away**: `StillArriving` counts `refused`, the want stays unstamped and due.
@@ -383,11 +384,45 @@ plumbing, so a `ureq` bump is made once:
   (`a_stream_a_downloading_agent_opens_is_asked_uncoded_from_its_first_request_and_seeks_within_its_length`,
   `a_song_from_a_server_offering_gzip_is_asked_uncoded_from_the_first_request_and_seeks_within_its_length`
   in `resonate-jellyfin` and `resonate-tidal`).
+- **No agent follows a redirect itself; a GET follows one through `followed`, within the origin it
+  asked.** `configured` sets `max_redirects(0)`, so `asking_agent`, `downloading_agent` and every
+  agent a provider builds hand a `3xx` back. `followed(url, asked)` takes the request as a closure
+  of the address, so each hop is asked again with every header and per-request setting the first
+  carried (`Range`, `If-Range`, `Authorization`, `Accept-Encoding`, the deadline), and follows a
+  301, 302, 303, 307 or 308 only to the same host: never from https to plain http, the port changing
+  only with a move from http up to https, at most `REDIRECTS_FOLLOWED_AT_MOST` (5) hops, a relative
+  `Location` resolved against the address asked. Anything else is refused before a byte is sent
+  elsewhere, as an `Unfollowed`: `ElsewhereThanAsked` (another host or port, or a scheme other than
+  http's two), `Downgraded`, `Unlocated` (no `Location`, or one that does not read as an address)
+  or `Endless`; `followed` answers it as `Unanswered::Redirected` beside `Unanswered::Failed` (a
+  `ureq::Error`), and `unreached` makes it `Error::Redirected { redirect, .. }`, the provider away,
+  since a server sending its answers to another host does so for every want
+  (`a_redirect_to_another_port_is_refused_and_never_asked`,
+  `a_redirect_is_refused_off_its_host_or_port_and_down_to_plain_http`,
+  `a_redirect_is_followed_on_its_host_and_port_and_up_to_https_on_its_host`,
+  `redirects_past_the_most_followed_are_refused`). Why: a server that answers `302` to loopback, a
+  LAN address or plain http would otherwise have its choice read as audio, a cover or JSON, again on
+  every seek. `Ranged` asks each resume through `followed` (so a seek is followed afresh from the
+  original address), and a refused one is `Unfetched::Redirected`, not retried and read as
+  `ErrorKind::PermissionDenied` carrying the `Unfollowed`
+  (`a_resume_redirected_within_its_origin_is_asked_there_with_its_range_and_validator`,
+  `a_resume_redirected_to_another_origin_is_refused_once_and_never_asked_there`). Every GET of
+  Subsonic, Jellyfin and Emby, Monochrome, TIDAL, hifi-api (hosted, keyed or not) and YouTube
+  Music's client version goes through it, TIDAL's media and relay agents included; a POST or DELETE
+  follows none, its `3xx` a refusal. Each provider holds it with a fake server answering `302` to a
+  second loopback port that is never asked (`a_stream_redirected_to_another_port_is_refused_and_that_port_is_never_asked`,
+  `a_stream_or_a_cover_redirected_to_another_port_is_refused_and_that_port_is_never_asked`,
+  `a_search_or_a_download_redirected_to_another_port_is_refused_and_that_port_is_never_asked`,
+  `a_hifi_api_answer_redirected_to_another_port_is_refused_and_that_port_is_never_asked`) and a
+  same-server redirect still followed (`a_stream_redirected_within_the_server_is_followed_and_a_seek_asks_there_from_its_place`,
+  `a_hosted_hifi_answer_redirected_within_its_server_is_followed_with_its_token`). The MusicBrainz
+  export's agent (`musicbrainz.md`) alone puts ureq's own following back.
 - **`unreached` classes a `ureq::Error` once**: a refused certificate is `Untrusted`; I/O, timeout,
   unknown host, connect/proxy/TLS failure is `Io` (away); `BadUri`/`Http` is `Unaddressable` (away);
   a body over its limit, protocol error or redirect failure is `Unreadable`, the want's
-  (`an_answer_too_large_or_malformed_is_unreadable_and_no_refused_connection`). `as_io` is the same
-  reading for a `Read` path.
+  (`an_answer_too_large_or_malformed_is_unreadable_and_no_refused_connection`); a refused redirect
+  is `Redirected` (`a_redirect_refused_is_the_provider_away_and_denied_to_a_reader`). `as_io` is the
+  same reading for a `Read` path.
 - **`retry_after` reads seconds or any of HTTP's three date forms** against the clock; a past date
   is no wait. The date's parts are checked (a day within its month, a leap day only in a leap year, a
   four-digit year but in the two-digit form), and a two-digit year is the latest one not more than
@@ -747,7 +782,7 @@ whose `Seek` is `Unsupported`; both are held under a `parking_lot::Mutex` so a s
   holds it.** `streamed` asks for the playback manifest exactly as `find` does (`Tidal::media`,
   `HifiApi::media`: the same `FULL`, lossless, unencrypted, on-its-hosts checks), then
   `Player::streamed`: a BTS manifest naming one FLAC URL is a `Seeking` over it (Range seeks, the
-  media agent, no redirect); a DASH manifest is `Fetched` segments through `Remuxed` read onward.
+  media agent, a redirect followed only within its origin); a DASH manifest is `Fetched` segments through `Remuxed` read onward.
   **A seek over segments is not offered, by design**: the remuxed FLAC's byte offsets are the sum of
   the `mdat` payloads before them, which only fetching every earlier segment tells, so a byte seek
   cannot be turned into a segment and an offset; the codec spools such a stream on disc and seeks
@@ -880,7 +915,8 @@ fetched whole and lands as a track row.
 - **Media from TIDAL's audio hosts alone.** `MediaHosts::holds` takes a URL only over `https` with
   host `audio.tidal.com` or under it, refusing user-info `@`, a bracketed literal, a host merely
   ending in the name; one URL off them fails the manifest as `Error::OffItsHosts` before a byte is
-  fetched. The media agent follows no redirect.
+  fetched. The media agent follows a redirect only within the origin asked (`followed`), so a
+  same-host hop stays on the audio hosts.
 - **A segment is a `Ranged`**, bounded per read, not per body
   (`a_segment_the_cdn_asks_to_be_asked_for_later_is_asked_for_again`). `find` reads the playback
   answer and manifest and offers the media; the first segment is fetched when the offer is opened,

@@ -1,5 +1,5 @@
 use resonate_core::SourceId;
-use resonate_fetch::{Patience, Seeking, escaped, is_a_document, unreached};
+use resonate_fetch::{Patience, Seeking, escaped, followed, is_a_document, unreached};
 use resonate_providers::{
     Album, AlbumSongs, Artist, ArtistAlbums, Error, Found, Id, Named, PlaysInPlace, ProviderOp,
     Result, Song, Streamed, not_offered,
@@ -44,11 +44,13 @@ impl AsksV1 for Hosted<'_> {
         );
         let asker = &self.hifi.asker;
         match asker.sent(op, || {
-            asker
-                .agent
-                .get(&url)
-                .header(AUTHORIZATION, bearer.as_str())
-                .call()
+            followed(&url, |url| {
+                asker
+                    .agent
+                    .get(url)
+                    .header(AUTHORIZATION, bearer.as_str())
+                    .call()
+            })
         })? {
             crate::asker::Sent::Answered(response) => asker.read_whole(op, response).map(Some),
             crate::asker::Sent::Refused {
@@ -199,12 +201,14 @@ impl HifiApi {
         let url = format!("{}/file/?id={}", self.server, track.0);
         let bearer = keyed.bearer();
 
-        let response = keyed
-            .relay
-            .get(&url)
-            .header(AUTHORIZATION, bearer.as_str())
-            .call()
-            .map_err(|error| unreached(self.asker.source.clone(), op, error))?;
+        let response = followed(&url, |url| {
+            keyed
+                .relay
+                .get(url)
+                .header(AUTHORIZATION, bearer.as_str())
+                .call()
+        })
+        .map_err(|error| unreached(self.asker.source.clone(), op, error))?;
         let status = response.status().as_u16();
 
         if status != WHOLE {

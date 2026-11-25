@@ -3,8 +3,8 @@ use std::{sync::Arc, time::Duration};
 use resonate_core::{MediaLocation, SourceId};
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
-    ASKED_LATER, Ranged, Seeking, Trusted, asking_agent, asking_to_resume, configured,
-    downloading_agent, escaped, is_a_document, retry_after_of, unreached,
+    ASKED_LATER, Ranged, Seeking, Trusted, Unanswered, asking_agent, asking_to_resume, configured,
+    downloading_agent, escaped, followed, is_a_document, retry_after_of, unreached,
 };
 use resonate_providers::{
     AlbumSongs, Artist, ArtistAlbums, Choosing, Delivery, Error, Extension, Found, Held, Id,
@@ -187,8 +187,7 @@ impl Monochrome {
         loop {
             self.pacing.paced();
 
-            let response = asking_to_resume(agent.get(url), held)
-                .call()
+            let response = followed(url, |url| asking_to_resume(agent.get(url), held).call())
                 .map_err(|error| self.unreachable(op, error))?;
 
             if response.status().is_success() {
@@ -220,7 +219,9 @@ impl Monochrome {
         }
     }
 
-    fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
+    fn unreachable(&self, op: ProviderOp, error: impl Into<Unanswered>) -> Error {
+        let error = error.into();
+
         tracing::debug!(%error, ?op, "the Monochrome server could not be reached");
         unreached(self.source.clone(), op, error)
     }

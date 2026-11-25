@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_fetch::{
     Patience, RESUMES_AT_MOST, Ranged, Trusted, asking_to_resume, configured, downloading_agent,
-    escaped, retry_after_of, unreached,
+    escaped, followed, retry_after_of, unreached,
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Held, Identity, Listed as Weighed, Obtained, Opening,
@@ -307,10 +307,12 @@ fn relayed_download(
     let mut asked_again = 0;
 
     let response = loop {
-        let response = asking_to_resume(agent.get(url), held.as_ref())
-            .header(AUTHORIZATION, bearer)
-            .call()
-            .map_err(|error| unreached(provider.clone(), op, error))?;
+        let response = followed(url, |url| {
+            asking_to_resume(agent.get(url), held.as_ref())
+                .header(AUTHORIZATION, bearer)
+                .call()
+        })
+        .map_err(|error| unreached(provider.clone(), op, error))?;
 
         if response.status().as_u16() != SERVICE_UNAVAILABLE {
             break response;
@@ -378,7 +380,7 @@ fn relayed_download(
 
 fn relay_agent() -> Agent {
     downloading_agent(
-        configured(RELAYED_ANSWERED_WITHIN, Trusted::SystemStoreToo).max_redirects(0),
+        configured(RELAYED_ANSWERED_WITHIN, Trusted::SystemStoreToo),
         Patience::default().broken_off_after,
     )
 }
@@ -515,9 +517,9 @@ impl HifiApi {
             return Ok(bearer);
         }
 
-        let sent = self
-            .asker
-            .sent(op, || self.asker.agent.get(endpoint).call())?;
+        let sent = self.asker.sent(op, || {
+            followed(endpoint, |url| self.asker.agent.get(url).call())
+        })?;
         let response = match sent {
             Sent::Answered(response) => response,
             Sent::Refused { status, .. } => return Err(self.refusal(op, status)),
@@ -591,11 +593,13 @@ impl HifiApi {
         );
 
         let sent = self.asker.sent(op, || {
-            self.asker
-                .agent
-                .get(&url)
-                .header(AUTHORIZATION, bearer.as_str())
-                .call()
+            followed(&url, |url| {
+                self.asker
+                    .agent
+                    .get(url)
+                    .header(AUTHORIZATION, bearer.as_str())
+                    .call()
+            })
         })?;
         let bytes = match sent {
             Sent::Answered(response) => self.asker.read_whole(op, response)?,
@@ -626,11 +630,13 @@ impl HifiApi {
         );
 
         let sent = self.asker.sent(op, || {
-            self.asker
-                .agent
-                .get(&url)
-                .header(AUTHORIZATION, bearer.as_str())
-                .call()
+            followed(&url, |url| {
+                self.asker
+                    .agent
+                    .get(url)
+                    .header(AUTHORIZATION, bearer.as_str())
+                    .call()
+            })
         })?;
         let bytes = match sent {
             Sent::Answered(response) => self.asker.read_whole(op, response)?,
@@ -654,7 +660,10 @@ impl HifiApi {
             });
         }
 
-        let response = match self.asker.sent(op, || self.media.get(&uri).call())? {
+        let response = match self
+            .asker
+            .sent(op, || followed(&uri, |uri| self.media.get(uri).call()))?
+        {
             Sent::Answered(response) => response,
             Sent::Refused {
                 status: FORBIDDEN | NOT_FOUND,
@@ -679,13 +688,15 @@ impl HifiApi {
 
     pub(crate) fn asked(&self, op: ProviderOp, url: &str) -> Result<Answered> {
         let sent = self.asker.sent(op, || {
-            let request = self.asker.agent.get(url);
-            match &self.secret {
-                Some(secret) => request
-                    .header(AUTHORIZATION, secret.bearer().as_str())
-                    .call(),
-                None => request.call(),
-            }
+            followed(url, |url| {
+                let request = self.asker.agent.get(url);
+                match &self.secret {
+                    Some(secret) => request
+                        .header(AUTHORIZATION, secret.bearer().as_str())
+                        .call(),
+                    None => request.call(),
+                }
+            })
         })?;
         match sent {
             Sent::Answered(response) if response.status().as_u16() == ACCEPTED => {

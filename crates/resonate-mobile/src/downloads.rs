@@ -405,9 +405,9 @@ pub(crate) fn failure_of(provider: MusicProvider, error: &resonate_providers::Er
         },
         Refusal::TurnedAway { .. } => Error::NotFound,
         Refusal::Untrusted { .. } => Error::ProviderUntrusted { provider },
-        Refusal::Unaddressable { .. } | Refusal::NotTheService { .. } => {
-            Error::ProviderMisaddressed { provider }
-        }
+        Refusal::Unaddressable { .. }
+        | Refusal::NotTheService { .. }
+        | Refusal::Redirected { .. } => Error::ProviderMisaddressed { provider },
         Refusal::StillQueued { .. }
         | Refusal::StillArriving { .. }
         | Refusal::Busy { .. }

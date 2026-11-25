@@ -9,15 +9,15 @@ use parking_lot::Mutex;
 use resonate_core::{MediaLocation, SourceId};
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
-    Seeking, Trusted, asking_agent, configured, downloading_agent, escaped, is_a_document,
-    retry_after_of, unreached,
+    Seeking, Trusted, Unanswered, asking_agent, configured, downloading_agent, escaped, followed,
+    is_a_document, retry_after_of, unreached,
 };
 pub use resonate_providers::{
     Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, PlaysInPlace, Song, Streamed,
 };
 use resonate_providers::{Error, Pacing, ProviderOp, Result, is_a_page, not_offered};
 use serde::de::DeserializeOwned;
-use ureq::{Agent, Body, http};
+use ureq::{Agent, Body, RequestBuilder, http};
 use uuid::Uuid;
 
 pub use crate::quick_connect::{
@@ -133,9 +133,19 @@ fn downloading(patience: Patience) -> Agent {
     )
 }
 
-fn told(error: &ureq::Error) -> Option<String> {
+fn bounded<B>(request: RequestBuilder<B>, deadline: Option<Instant>) -> RequestBuilder<B> {
+    match deadline {
+        Some(deadline) => request
+            .config()
+            .timeout_global(Some(deadline.saturating_duration_since(Instant::now())))
+            .build(),
+        None => request,
+    }
+}
+
+fn told(error: &Unanswered) -> Option<String> {
     match error {
-        ureq::Error::BadUri(_) | ureq::Error::Http(_) => None,
+        Unanswered::Failed(ureq::Error::BadUri(_) | ureq::Error::Http(_)) => None,
         error => Some(error.to_string()),
     }
 }
@@ -222,7 +232,9 @@ impl Jellyfin {
         }
     }
 
-    fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
+    fn unreachable(&self, op: ProviderOp, error: impl Into<Unanswered>) -> Error {
+        let error = error.into();
+
         match told(&error) {
             Some(told) => {
                 tracing::debug!(
@@ -264,50 +276,21 @@ impl Jellyfin {
         agent: &Agent,
         call: &Call<'_>,
         url: &str,
-        timeout: Option<Duration>,
-    ) -> std::result::Result<http::Response<Body>, ureq::Error> {
+        deadline: Option<Instant>,
+    ) -> std::result::Result<http::Response<Body>, Unanswered> {
         match call {
-            Call::Get | Call::Delete => {
-                let request = if matches!(call, Call::Get) {
-                    agent.get(url)
-                } else {
-                    agent.delete(url)
-                };
-                match timeout {
-                    Some(timeout) => request
-                        .config()
-                        .timeout_global(Some(timeout))
-                        .build()
-                        .call(),
-                    None => request.call(),
-                }
-            }
-            Call::Post => {
-                let request = agent.post(url);
-                match timeout {
-                    Some(timeout) => request
-                        .config()
-                        .timeout_global(Some(timeout))
-                        .build()
-                        .send_empty(),
-                    None => request.send_empty(),
-                }
-            }
+            Call::Get => followed(url, |url| bounded(agent.get(url), deadline).call()),
             Call::Introducing => {
                 let authorization = self.authorization();
-                let request = agent
-                    .get(url)
-                    .header("Authorization", &authorization)
-                    .header("X-Emby-Authorization", &authorization);
-                match timeout {
-                    Some(timeout) => request
-                        .config()
-                        .timeout_global(Some(timeout))
-                        .build()
-                        .call(),
-                    None => request.call(),
-                }
+                followed(url, |url| {
+                    bounded(agent.get(url), deadline)
+                        .header("Authorization", &authorization)
+                        .header("X-Emby-Authorization", &authorization)
+                        .call()
+                })
             }
+            Call::Delete => Ok(bounded(agent.delete(url), deadline).call()?),
+            Call::Post => Ok(bounded(agent.post(url), deadline).send_empty()?),
             Call::SigningIn(body) => {
                 let authorization = self.authorization();
                 let request = agent
@@ -315,14 +298,7 @@ impl Jellyfin {
                     .header("Authorization", &authorization)
                     .header("X-Emby-Authorization", &authorization)
                     .header("Content-Type", "application/json");
-                match timeout {
-                    Some(timeout) => request
-                        .config()
-                        .timeout_global(Some(timeout))
-                        .build()
-                        .send(*body),
-                    None => request.send(*body),
-                }
+                Ok(bounded(request, deadline).send(*body)?)
             }
         }
     }
@@ -339,11 +315,12 @@ impl Jellyfin {
         loop {
             self.pacing.paced();
 
-            let timeout = deadline
-                .map(|deadline| self.left_before(deadline, op))
-                .transpose()?;
+            if let Some(deadline) = deadline {
+                self.left_before(deadline, op)?;
+            }
+
             let response = self
-                .sent(agent, call, url, timeout)
+                .sent(agent, call, url, deadline)
                 .map_err(|error| self.unreachable(op, error))?;
 
             if response.status().is_success() {
@@ -918,9 +895,13 @@ mod tests {
             .call()
             .expect_err("an address with no scheme is refused");
 
-        assert!(told(&refused).is_none(), "{refused}");
         assert!(
-            told(&ureq::Error::HostNotFound).is_some_and(|told| !told.contains("api_key")),
+            told(&Unanswered::Failed(refused)).is_none(),
+            "a refusal naming the address is never told"
+        );
+        assert!(
+            told(&Unanswered::Failed(ureq::Error::HostNotFound))
+                .is_some_and(|told| !told.contains("api_key")),
             "an error naming no address is still told"
         );
     }

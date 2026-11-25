@@ -12,6 +12,7 @@ resonate-core.workspace = true
 resonate-providers.workspace = true
 rustls.workspace = true
 rustls-native-certs.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 ureq.workspace = true
 webpki-root-certs.workspace = true

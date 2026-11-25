@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use resonate_jellyfin::{
     Flavour, Id, Jellyfin, KeptSession, Named, Patience, PlaysInPlace as _, QuickConnect, Server,
 };
-use resonate_providers::{Error, ProviderOp};
+use resonate_providers::{Error, ProviderOp, Unfollowed};
 
 const AUDIO: &[u8] = b"fLaC and the rest of the file";
 const TOKEN: &str = "token-1";
@@ -60,6 +60,14 @@ impl Canned {
                 ),
             ],
             body: AUDIO[from..].to_vec(),
+        }
+    }
+
+    fn redirecting_to(location: &str) -> Self {
+        Self {
+            status: 302,
+            headers: vec![("Location", location.to_owned())],
+            body: Vec::new(),
         }
     }
 
@@ -771,6 +779,83 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
     assert_eq!(asked[0].parameter("static"), Some("true"));
     assert_eq!(asked[0].parameter("api_key"), Some(TOKEN));
     assert_eq!(asked[1].range, Some(5));
+}
+
+fn is_redirected_elsewhere(error: &Error, asked: ProviderOp) -> bool {
+    matches!(
+        error,
+        Error::Redirected {
+            op,
+            redirect: Unfollowed::ElsewhereThanAsked,
+            ..
+        } if *op == asked
+    )
+}
+
+#[test]
+fn a_stream_or_a_cover_redirected_to_another_port_is_refused_and_that_port_is_never_asked() {
+    let elsewhere = Fake::serving(library);
+    let away = elsewhere.url.clone();
+    let fake = Fake::serving(move |asked, nth| {
+        if asked.path.starts_with("/Audio/") || asked.path.starts_with("/Items/al-1/Images") {
+            Canned::redirecting_to(&format!("{away}{}", asked.path))
+        } else {
+            library(asked, nth)
+        }
+    });
+    let jellyfin = fake.jellyfin();
+
+    let stream = jellyfin
+        .streamed(&id("so-1"))
+        .err()
+        .expect("the stream's redirect is refused");
+    let cover = jellyfin
+        .cover(&id("al-1"), 300)
+        .expect_err("the cover's redirect is refused");
+
+    assert!(
+        is_redirected_elsewhere(&stream, ProviderOp::Stream),
+        "{stream:?}"
+    );
+    assert!(
+        is_redirected_elsewhere(&cover, ProviderOp::Cover),
+        "{cover:?}"
+    );
+    assert!(stream.is_the_provider_away());
+    assert_eq!(fake.heard_at("/Audio/so-1/stream").len(), 1);
+    assert!(elsewhere.heard().is_empty());
+}
+
+#[test]
+fn a_stream_redirected_within_the_server_is_followed_with_its_range() {
+    let fake = Fake::serving(|asked, nth| {
+        let moved = asked.parameter("moved").is_some();
+        match asked.path.as_str() {
+            "/Audio/so-1/stream" if !moved => {
+                Canned::redirecting_to(&format!("/Audio/so-1/stream?moved=1&api_key={TOKEN}"))
+            }
+            _ => library(asked, nth),
+        }
+    });
+
+    let mut streamed = fake.impatient().streamed(&id("so-1")).expect("a stream");
+    let mut whole = Vec::new();
+
+    streamed.read_to_end(&mut whole).expect("the whole file");
+    streamed.seek(SeekFrom::Start(5)).expect("a seek");
+
+    let mut rest = Vec::new();
+
+    streamed.read_to_end(&mut rest).expect("the rest");
+
+    let asked = fake.heard_at("/Audio/so-1/stream");
+    let moved: Vec<Option<&str>> = asked.iter().map(|asked| asked.parameter("moved")).collect();
+
+    assert_eq!(whole, AUDIO);
+    assert_eq!(rest, &AUDIO[5..]);
+    assert_eq!(moved, [None, Some("1"), None, Some("1")]);
+    assert_eq!(asked[2].range, Some(5));
+    assert_eq!(asked[3].range, Some(5));
 }
 
 fn gzipped(body: &[u8]) -> Vec<u8> {

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use resonate_fetch::unreached;
+use resonate_fetch::{Unanswered, followed, unreached};
 use resonate_providers::{
     Choosing, Error, Identity, Listed, ProviderOp, Rating, Result, is_a_page,
 };
@@ -170,7 +170,7 @@ impl Row {
 impl YtMusic {
     fn answered(
         &self,
-        response: std::result::Result<http::Response<Body>, ureq::Error>,
+        response: std::result::Result<http::Response<Body>, impl Into<Unanswered>>,
     ) -> Result<Vec<u8>> {
         let op = ProviderOp::Search;
         let response = response.map_err(|error| self.unreachable(op, error))?;
@@ -191,7 +191,9 @@ impl YtMusic {
             .map_err(|error| self.unreachable(op, error))
     }
 
-    pub(crate) fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
+    pub(crate) fn unreachable(&self, op: ProviderOp, error: impl Into<Unanswered>) -> Error {
+        let error = error.into();
+
         tracing::debug!(%error, ?op, "YouTube Music could not be reached");
         unreached(self.source.clone(), op, error)
     }
@@ -218,12 +220,10 @@ impl YtMusic {
         }
         self.pacing.paced();
 
-        let data = self.answered(
-            agent
-                .get(format!("{}{CLIENT_DATA_AT}", self.music))
-                .header("Origin", THE_ORIGIN)
-                .call(),
-        )?;
+        let data = self.answered(followed(
+            &format!("{}{CLIENT_DATA_AT}", self.music),
+            |url| agent.get(url).header("Origin", THE_ORIGIN).call(),
+        ))?;
         let data = String::from_utf8_lossy(&data);
         let version = client_version_in(&data)
             .ok_or_else(|| self.not_the_service())?

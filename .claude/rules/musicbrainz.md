@@ -296,7 +296,9 @@ the export it came from is the source.
 **The download (`download.rs`, feature `download`).** `download::agent` is `https_only`, since
 `SHA256SUMS` comes over the same agent as the archives and a redirect to plain HTTP would let the
 network replace both, and a packet's query carries the token; only the tests' loopback servers are
-asked over plain HTTP (`Carried::Plain`, `the_export_is_never_asked_for_over_plain_http`).
+asked over plain HTTP (`Carried::Plain`, `the_export_is_never_asked_for_over_plain_http`). It puts back
+ureq's own following of up to `REDIRECTS_UREQ_FOLLOWS` (10) redirects over `resonate_fetch::configured`'s
+none (`providers.md`), to any host but never down to plain HTTP.
 
 1. `latest` reads `LATEST` under `DUMP_SERVER` (a name of digits and dashes alone).
 2. `fetched` reads `SHA256SUMS`, then downloads both archives into `downloads/<dump>/`.

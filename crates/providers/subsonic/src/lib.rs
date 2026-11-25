@@ -9,8 +9,8 @@ use md5::{Digest, Md5};
 use resonate_core::{Mbid, MediaLocation, SourceId};
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
-    Ranged, Seeking, Trusted, asking_agent, asking_to_resume, configured, downloading_agent,
-    escaped, is_a_document, retry_after_of, unreached,
+    Ranged, Seeking, Trusted, Unanswered, asking_agent, asking_to_resume, configured,
+    downloading_agent, escaped, followed, is_a_document, retry_after_of, unreached,
 };
 pub use resonate_providers::{
     Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, PlaysInPlace, Rating, Song, Streamed,
@@ -205,9 +205,9 @@ fn weighed(
     None
 }
 
-fn told(error: &ureq::Error) -> Option<String> {
+fn told(error: &Unanswered) -> Option<String> {
     match error {
-        ureq::Error::BadUri(_) | ureq::Error::Http(_) => None,
+        Unanswered::Failed(ureq::Error::BadUri(_) | ureq::Error::Http(_)) => None,
         error => Some(error.to_string()),
     }
 }
@@ -264,18 +264,22 @@ impl Subsonic {
         loop {
             self.pacing.paced();
 
-            let mut request = asking_to_resume(agent.get(url), held);
-
             if let Some(deadline) = deadline {
-                request = request
-                    .config()
-                    .timeout_global(Some(self.left_before(deadline, op)?))
-                    .build();
+                self.left_before(deadline, op)?;
             }
 
-            let response = request
-                .call()
-                .map_err(|error| self.unreachable(op, error))?;
+            let response = followed(url, |url| {
+                let request = asking_to_resume(agent.get(url), held);
+                match deadline {
+                    Some(deadline) => request
+                        .config()
+                        .timeout_global(Some(deadline.saturating_duration_since(Instant::now())))
+                        .build()
+                        .call(),
+                    None => request.call(),
+                }
+            })
+            .map_err(|error| self.unreachable(op, error))?;
 
             if response.status().is_success() {
                 return Ok(response);
@@ -334,7 +338,9 @@ impl Subsonic {
         url
     }
 
-    fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
+    fn unreachable(&self, op: ProviderOp, error: impl Into<Unanswered>) -> Error {
+        let error = error.into();
+
         match told(&error) {
             Some(told) => {
                 tracing::debug!(
@@ -799,9 +805,13 @@ mod tests {
             .call()
             .expect_err("an address with no scheme is refused");
 
-        assert!(super::told(&refused).is_none(), "{refused}");
         assert!(
-            super::told(&ureq::Error::HostNotFound).is_some_and(|told| !told.contains("t=")),
+            super::told(&Unanswered::Failed(refused)).is_none(),
+            "a refusal naming the address is never told"
+        );
+        assert!(
+            super::told(&Unanswered::Failed(ureq::Error::HostNotFound))
+                .is_some_and(|told| !told.contains("t=")),
             "an error naming no address is still told"
         );
     }

@@ -9,7 +9,7 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::{Isrc, Mbid};
 use resonate_providers::{
-    Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp,
+    Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp, Unfollowed,
 };
 use resonate_subsonic::{Id, Named, Patience, PlaysInPlace as _, Server, Subsonic};
 
@@ -73,6 +73,15 @@ impl Canned {
         Self {
             status: 503,
             headers: vec![("Retry-After", "0".to_owned())],
+            body: Vec::new(),
+            sent: Sent::Whole,
+        }
+    }
+
+    fn redirecting_to(location: &str) -> Self {
+        Self {
+            status: 302,
+            headers: vec![("Location", location.to_owned())],
             body: Vec::new(),
             sent: Sent::Whole,
         }
@@ -707,6 +716,102 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
     };
 
     assert_eq!(asked, [stream(None), stream(Some(1))]);
+}
+
+#[test]
+fn a_stream_redirected_within_the_server_is_followed_and_a_seek_asks_there_from_its_place() {
+    let fake = Fake::serving(|asked, _| match (asked.method.as_str(), asked.from) {
+        ("stream", _) => Canned::redirecting_to("relocated?id=so-6"),
+        (_, Some(from)) => Canned::audio_from(from),
+        (_, None) => Canned::audio(),
+    });
+
+    let mut streamed = fake.subsonic().streamed(&id("so-6")).expect("a stream");
+    let mut head = [0_u8; 4];
+
+    streamed.read_exact(&mut head).expect("the head reads");
+
+    let landed = streamed.seek(SeekFrom::Start(1)).expect("a seek back");
+    let mut rest = Vec::new();
+
+    streamed.read_to_end(&mut rest).expect("the rest reads");
+
+    let asked: Vec<_> = fake
+        .heard
+        .lock()
+        .iter()
+        .map(|asked| (asked.method.clone(), asked.from))
+        .collect();
+
+    assert_eq!(&head, b"fLaC");
+    assert_eq!(landed, 1);
+    assert_eq!(rest, AUDIO[1..]);
+    assert_eq!(
+        asked,
+        [
+            ("stream".to_owned(), None),
+            ("relocated".to_owned(), None),
+            ("stream".to_owned(), Some(1)),
+            ("relocated".to_owned(), Some(1)),
+        ]
+    );
+}
+
+#[test]
+fn a_stream_redirected_to_another_port_is_refused_and_that_port_is_never_asked() {
+    let elsewhere = Fake::serving(|_, _| Canned::audio());
+    let location = format!("{}/rest/stream?id=so-6", elsewhere.url);
+    let fake = Fake::serving(move |_, _| Canned::redirecting_to(&location));
+
+    let refused = fake
+        .subsonic()
+        .streamed(&id("so-6"))
+        .err()
+        .expect("the redirect is refused");
+
+    assert!(
+        matches!(
+            refused,
+            Error::Redirected {
+                op: ProviderOp::Stream,
+                redirect: Unfollowed::ElsewhereThanAsked,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+    assert!(refused.is_the_provider_away());
+    assert_eq!(fake.heard().len(), 1);
+    assert!(elsewhere.heard().is_empty());
+}
+
+#[test]
+fn a_download_redirected_to_another_port_is_refused_when_opened_and_that_port_is_never_asked() {
+    let elsewhere = Fake::serving(|_, _| Canned::audio());
+    let location = format!("{}/rest/download?id=floyd", elsewhere.url);
+    let fake = Fake::serving(move |asked, _| match asked.method.as_str() {
+        "search3" => found(&[song("floyd", ECHOES, "")]),
+        _ => Canned::redirecting_to(&location),
+    });
+
+    let Obtained::Found(Delivery::Stream { opening, .. }) =
+        fake.subsonic().find(&echoes()).expect("an answer")
+    else {
+        panic!("nothing was offered");
+    };
+    let refused = opening.open().err().expect("the redirect is refused");
+
+    assert!(
+        matches!(
+            refused,
+            Error::Redirected {
+                redirect: Unfollowed::ElsewhereThanAsked,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+    assert!(elsewhere.heard().is_empty());
 }
 
 #[test]

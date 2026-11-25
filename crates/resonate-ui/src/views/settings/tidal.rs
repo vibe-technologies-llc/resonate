@@ -67,6 +67,7 @@ fn turned_away(error: &Error) -> &'static str {
         | Error::Unreadable { .. }
         | Error::TurnedAway { .. }
         | Error::OffItsHosts { .. }
+        | Error::Redirected { .. }
         | Error::StillQueued { .. }
         | Error::NotTheService { .. }
         | Error::NotOffered { .. }

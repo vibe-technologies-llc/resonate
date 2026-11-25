@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_providers::{EntityTag, Held, Modified, Resumed, Validators};
+use resonate_providers::{EntityTag, Held, Modified, Resumed, Unfollowed, Validators};
 use ureq::{
     Agent, Body, BodyReader, RequestBuilder,
     http::{
@@ -17,7 +17,11 @@ use ureq::{
     typestate::WithoutBody,
 };
 
-use crate::{failed::as_io, waited::retry_after_of};
+use crate::{
+    failed::as_io,
+    followed::{Unanswered, followed},
+    waited::retry_after_of,
+};
 
 pub const ASKED_LATER: [u16; 4] = [429, 502, 503, 504];
 pub const RESUMES_AT_MOST: u32 = 5;
@@ -39,6 +43,7 @@ pub enum Unfetched {
     Refused(u16),
     Changed,
     Misranged,
+    Redirected(Unfollowed),
     AskedLater {
         status: u16,
         asked_for: Option<Duration>,
@@ -52,6 +57,7 @@ impl Unfetched {
             Self::Refused(FORBIDDEN) => io::Error::from(ErrorKind::PermissionDenied),
             Self::Refused(NOT_FOUND) => io::Error::from(ErrorKind::NotFound),
             Self::Changed | Self::Misranged => io::Error::from(ErrorKind::InvalidData),
+            Self::Redirected(redirect) => io::Error::new(ErrorKind::PermissionDenied, redirect),
             Self::Refused(_) | Self::AskedLater { .. } => {
                 io::Error::from(ErrorKind::ConnectionAborted)
             }
@@ -60,8 +66,17 @@ impl Unfetched {
 
     pub fn status(&self) -> Option<u16> {
         match self {
-            Self::Io(_) | Self::Changed | Self::Misranged => None,
+            Self::Io(_) | Self::Changed | Self::Misranged | Self::Redirected(_) => None,
             Self::Refused(status) | Self::AskedLater { status, .. } => Some(*status),
+        }
+    }
+}
+
+impl From<Unanswered> for Unfetched {
+    fn from(unanswered: Unanswered) -> Self {
+        match unanswered {
+            Unanswered::Failed(error) => Self::Io(as_io(error)),
+            Unanswered::Redirected(redirect) => Self::Redirected(redirect),
         }
     }
 }
@@ -194,21 +209,20 @@ fn asked(
     bearer: Option<&str>,
     expecting: Expecting<'_>,
 ) -> Result<Answered, Unfetched> {
-    let mut request = agent.get(url).header(ACCEPT_ENCODING, UNCODED);
+    let response = followed(url, |url| {
+        let mut request = agent.get(url).header(ACCEPT_ENCODING, UNCODED);
 
-    if let Some(bearer) = bearer {
-        request = request.header(AUTHORIZATION, bearer);
-    }
-    if from > 0 {
-        request = request.header(RANGE, format!("bytes={from}-"));
-        if let Some(tag) = expecting.validators.strong_tag() {
-            request = request.header(IF_RANGE, tag.as_str());
+        if let Some(bearer) = bearer {
+            request = request.header(AUTHORIZATION, bearer);
         }
-    }
-
-    let response = request
-        .call()
-        .map_err(|error| Unfetched::Io(as_io(error)))?;
+        if from > 0 {
+            request = request.header(RANGE, format!("bytes={from}-"));
+            if let Some(tag) = expecting.validators.strong_tag() {
+                request = request.header(IF_RANGE, tag.as_str());
+            }
+        }
+        request.call()
+    })?;
     let status = response.status().as_u16();
     let length = response.body().content_length();
     let validators = validators_of(&response);
@@ -469,7 +483,10 @@ impl Ranged {
                     return Ok(());
                 }
                 Err(
-                    stopped @ (Unfetched::Refused(_) | Unfetched::Changed | Unfetched::Misranged),
+                    stopped @ (Unfetched::Refused(_)
+                    | Unfetched::Changed
+                    | Unfetched::Misranged
+                    | Unfetched::Redirected(_)),
                 ) => {
                     return Err(stopped.into_io());
                 }
@@ -607,6 +624,54 @@ mod tests {
             "{asked}"
         );
         assert!(asked.contains("if-range: \"v1\""), "{asked}");
+    }
+
+    #[test]
+    fn a_resume_redirected_within_its_origin_is_asked_there_with_its_range_and_validator() {
+        let (url, heads) = serving(vec![
+            Box::new(|_| cut_first_answer(&["ETag: \"v1\""])),
+            Box::new(|_| answering("307 Temporary Redirect", &["Location: /moved"], b"", 0)),
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &["ETag: \"v1\""])),
+        ]);
+        let mut ranged = opened(&url);
+        let mut read = Vec::new();
+
+        ranged.read_to_end(&mut read).expect("the whole is read");
+
+        assert_eq!(read, WHOLE_BODY);
+
+        let asked = lower(&heads.lock()[2]);
+
+        assert!(asked.starts_with("get /moved "), "{asked}");
+        assert!(
+            asked.contains(&format!("range: bytes={CUT_AT}-")),
+            "{asked}"
+        );
+        assert!(asked.contains("if-range: \"v1\""), "{asked}");
+    }
+
+    #[test]
+    fn a_resume_redirected_to_another_origin_is_refused_once_and_never_asked_there() {
+        let (elsewhere, reached) = serving(vec![Box::new(|_| {
+            partial_from(CUT_AT, WHOLE_BODY.len(), &[])
+        })]);
+        let location = format!("Location: {elsewhere}");
+        let (url, heads) = serving(vec![
+            Box::new(|_| cut_first_answer(&[])),
+            Box::new(move |_| answering("302 Found", &[location.as_str()], b"", 0)),
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &[])),
+        ]);
+        let mut ranged = opened(&url);
+        let mut read = Vec::new();
+
+        let refused = ranged
+            .read_to_end(&mut read)
+            .expect_err("the redirect is refused");
+
+        assert_eq!(read, &WHOLE_BODY[..CUT_AT]);
+        assert_eq!(refused.kind(), ErrorKind::PermissionDenied);
+        assert_eq!(heads.lock().len(), 2);
+        assert!(reached.lock().is_empty(), "{elsewhere} was asked");
     }
 
     #[test]

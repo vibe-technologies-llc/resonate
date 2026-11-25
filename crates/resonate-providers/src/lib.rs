@@ -17,7 +17,8 @@ pub use crate::{
         Reopened, Resumed, Validators,
     },
     error::{
-        Error, ProviderOp, Result, THE_SIGN_IN_LAPSED, THE_SUBSCRIPTION_LAPSED, WhyAway, is_a_page,
+        Error, ProviderOp, Result, THE_SIGN_IN_LAPSED, THE_SUBSCRIPTION_LAPSED, Unfollowed,
+        WhyAway, is_a_page,
     },
     identity::Identity,
     in_place::{
