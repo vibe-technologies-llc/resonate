@@ -1609,6 +1609,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   never let go while the data thread fills from it
   (`a_client_shut_down_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out`,
   `a_graph_lost_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out`).
+  A node, a device and a metadata bound from the registry are each a `Listened` whose `Drop` takes
+  the listener before the proxy, never a tuple, since a proxy destroyed first frees the hook list
+  the listener's removal writes into (`a_proxy_leaving_the_graph_lets_its_listener_go_before_itself`).
 - **The client outlives its daemon.** A connection's everything (core, registry, listeners, bound
   proxies) is one `Graph`, made by `Reaching`; the loop keeps main loop and context for the process's
   life. A core `error` event with broken pipe, reset, abort or missing connection = daemon gone: it

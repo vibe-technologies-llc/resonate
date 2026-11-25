@@ -53,9 +53,9 @@ use crate::{
 };
 
 type Pending = Rc<RefCell<Vec<(i32, Sender<()>)>>>;
-type Nodes = Rc<RefCell<BTreeMap<u32, (Node, NodeListener)>>>;
-type Devices = Rc<RefCell<BTreeMap<u32, (Device, DeviceListener)>>>;
-type Metadatas = Rc<RefCell<BTreeMap<u32, (Metadata, MetadataListener, HeldIn)>>>;
+type Nodes = Rc<RefCell<BTreeMap<u32, Listened<Node, NodeListener>>>>;
+type Devices = Rc<RefCell<BTreeMap<u32, Listened<Device, DeviceListener>>>>;
+type Metadatas = Rc<RefCell<BTreeMap<u32, (Listened<Metadata, MetadataListener>, HeldIn)>>>;
 type HeardStream = Opened<Box<dyn AudioSink>>;
 type Playing = Rc<RefCell<BTreeMap<StreamKey, ActiveStream>>>;
 type Hearings = Rc<RefCell<BTreeMap<StreamKey, HeardStream>>>;
@@ -226,6 +226,26 @@ impl<D> Drop for Opened<D> {
         if let Err(error) = self.stream.disconnect() {
             tracing::debug!(%error, "the graph would not disconnect a stream let go of");
         }
+        drop(self.listener.take());
+    }
+}
+
+struct Listened<P, L> {
+    proxy: P,
+    listener: Option<L>,
+}
+
+impl<P, L> Listened<P, L> {
+    fn new(proxy: P, listener: L) -> Self {
+        Self {
+            proxy,
+            listener: Some(listener),
+        }
+    }
+}
+
+impl<P, L> Drop for Listened<P, L> {
+    fn drop(&mut self) {
         drop(self.listener.take());
     }
 }
@@ -1067,7 +1087,7 @@ fn run(
                     return;
                 };
                 match devices.get(&device) {
-                    Some((proxy, _)) => turn_the_route(proxy, &turned),
+                    Some(device) => turn_the_route(&device.proxy, &turned),
                     None => tracing::warn!(%sink, device, "the device under this sink has left the graph"),
                 }
             }
@@ -1449,8 +1469,8 @@ fn watch_the_registry(
                                         if !moved {
                                             continue;
                                         }
-                                        if let Some((node, _)) = nodes.borrow().get(&id) {
-                                            node.enum_params(0, Some(param), 0, u32::MAX);
+                                        if let Some(node) = nodes.borrow().get(&id) {
+                                            node.proxy.enum_params(0, Some(param), 0, u32::MAX);
                                         }
                                     }
                                     if offered_moved || running_moved {
@@ -1526,7 +1546,9 @@ fn watch_the_registry(
 
                     node.enum_params(0, Some(ParamType::EnumFormat), 0, u32::MAX);
                     node.enum_params(0, Some(ParamType::Format), 0, u32::MAX);
-                    nodes.borrow_mut().insert(global.id, (node, listener));
+                    nodes
+                        .borrow_mut()
+                        .insert(global.id, Listened::new(node, listener));
 
                     let _ = announce.try_send(SinkChange::Added(SinkId::new(global.id)));
                 }
@@ -1548,8 +1570,13 @@ fn watch_the_registry(
                                 if !info.change_mask().contains(DeviceChangeMask::PARAMS) {
                                     return;
                                 }
-                                if let Some((device, _)) = devices.borrow().get(&id) {
-                                    device.enum_params(0, Some(ParamType::Route), 0, u32::MAX);
+                                if let Some(device) = devices.borrow().get(&id) {
+                                    device.proxy.enum_params(
+                                        0,
+                                        Some(ParamType::Route),
+                                        0,
+                                        u32::MAX,
+                                    );
                                 }
                             }
                         })
@@ -1613,7 +1640,9 @@ fn watch_the_registry(
                     device.enum_params(0, Some(ParamType::Route), 0, u32::MAX);
                     device.enum_params(0, Some(ParamType::EnumRoute), 0, u32::MAX);
                     device.enum_params(0, Some(ParamType::Profile), 0, u32::MAX);
-                    devices.borrow_mut().insert(global.id, (device, listener));
+                    devices
+                        .borrow_mut()
+                        .insert(global.id, Listened::new(device, listener));
                 }
                 ObjectType::Metadata => {
                     let held = match node_property(global, METADATA_NAME).as_deref() {
@@ -1643,7 +1672,7 @@ fn watch_the_registry(
 
                     metadatas
                         .borrow_mut()
-                        .insert(global.id, (metadata, listener, held));
+                        .insert(global.id, (Listened::new(metadata, listener), held));
                 }
                 _ => {}
             }
@@ -1657,7 +1686,7 @@ fn watch_the_registry(
             move |id| {
                 let gone = metadatas.borrow_mut().remove(&id);
 
-                if let Some((_, _, held)) = gone
+                if let Some((_, held)) = gone
                     && shared.lock().heard(held, CORE_ID, None, None) == DefaultSink::Moved
                 {
                     let _ = announce.try_send(SinkChange::DefaultChanged);
@@ -2040,6 +2069,37 @@ mod tests {
         format::{Negotiated, WireWord},
         process::Taken,
     };
+
+    struct Marked {
+        name: &'static str,
+        order: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl Drop for Marked {
+        fn drop(&mut self) {
+            self.order.borrow_mut().push(self.name);
+        }
+    }
+
+    #[test]
+    fn a_proxy_leaving_the_graph_lets_its_listener_go_before_itself() {
+        let order = Rc::new(RefCell::new(Vec::new()));
+        let marked = |name| Marked {
+            name,
+            order: Rc::clone(&order),
+        };
+        let mut held: BTreeMap<u32, Listened<Marked, Marked>> = BTreeMap::new();
+
+        held.insert(1, Listened::new(marked("proxy"), marked("listener")));
+        held.remove(&1);
+
+        assert_eq!(*order.borrow(), ["listener", "proxy"]);
+
+        held.insert(2, Listened::new(marked("proxy"), marked("listener")));
+        held.clear();
+
+        assert_eq!(*order.borrow(), ["listener", "proxy", "listener", "proxy"]);
+    }
 
     fn asked(channels: ChannelLayout, format: SampleFormat) -> StreamSpec {
         StreamSpec::new(SampleRate::HZ_48000, channels, format)
