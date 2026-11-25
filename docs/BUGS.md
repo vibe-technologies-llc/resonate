@@ -51,6 +51,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   clamps each value to 24 dB alone, so stacked bells still sum past it. Weigh the whole peak there
   too and refuse through the mobile catalog. Done when a phone import of stacked +24 dB bells is
   refused, in a test.
+- [S · 0.18.1] Tell a measurement lost in noise as the room's noise in the window. **Low, builder.**
+  `Sweep::heard_as` now refuses a recording whose impulse does not stand 20 dB over its floor
+  (`Error::SweepLostInNoise`), and the terminal and the phones say so, but the window's
+  `missed_the_room` tells it as "Couldn't play the sweep and hear it"
+  (`crates/resonate-ui/src/measure.rs`, `Unmeasured::is_silence` matches silence alone). Say that the
+  microphone heard the room but no sweep over it, through the window's catalog. Done when a window
+  test of that refusal shows its own words.
 - [S · 0.18.1] Keep a sink's bound profile, even when it cannot be read, from falling to the
   fallback curve. **Medium, builder.** `equaliser::resolved` leaves out a sink whose bound profile
   is missing or unreadable (`crates/resonate/src/equaliser.rs:938-968`), and
@@ -65,19 +72,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`crates/resonate/src/equaliser.rs:57`, `:88-98`, `:347-414`), so one output's correction lands on
   another. Bind to the sink the sweep played, or refuse a `--for` naming another. Done when a test
   measuring through one sink and naming another is refused.
-- [M · 0.18.1] Refuse a measurement that heard no sweep. **Medium, architect.** `Sweep::heard_as`
-  takes the largest tap of the whole circular deconvolution and refuses only below `SILENT_BELOW`
-  (`crates/resonate-dsp/src/sweep.rs:174-187`), so a recording of noise alone yields a response that
-  `fit_recorded_sweep` fits and applies (`crates/resonate-mobile/src/measurement.rs:153-177`).
-  Compare the peak with a robust noise floor and refuse with a typed reason. Done when a test
-  recording of white noise is refused and a recorded sweep under noise is still heard.
-- [S · 0.18.1] Report the frames `Restore` holds. **Low, builder.** `Restore` claims `size - hop`
-  frames of latency (`crates/resonate-dsp/src/restore.rs:1428`) but holds up to a hop more and
-  implements neither `frames_held` nor `frames_short_of_its_latency`, which only `TruePeak` does
-  (`peak.rs:667`, `:671`), so `Chain::frames_it_holds` (`chain.rs:160-167`) is off by up to 5.3 ms
-  at the gapless boundary, the published position and `HeardAt`, and claims 768 held after a reset.
-  Implement both. Done when a chain test with restoration reports the frames held after a push and
-  after a reset.
 - [S · 0.18.1] Correct the equaliser's rule about bands past Nyquist. **Low, builder.** `angle_at`'s
   clamp to π never fires, since `design` passes a band over below `applies_at`
   (`crates/resonate-core/src/eq.rs:61-63`, `:543-558`), and `.claude/rules/eq.md:74-75` says every
@@ -102,35 +96,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   left (`service.rs`), so media keys and `Metadata` stay gone for the session. Claim the name again
   and rebuild the object server, the name watch and the shared connection fields. Done when a bus
   test that closes the player's connection finds it answering `Metadata` again.
-
-## Device sync
-- [S · 0.18.1] Report a shared playlist as shared only once the server has it. **Medium, builder.**
-  `settled` waits twenty seconds on any list owing and returns nothing
-  (`crates/resonate/src/together.rs:580-595`), and `--share`, `--join` and `--leave` then print the
-  link or success and exit 0 whatever the standing, the server down or the request turned away
-  included (`:674-709`). Answer the standing and fail when it is not settled. Done when a test
-  against a stopped server exits non-zero with no link printed.
-- [S · 0.18.1] Judge a launch's invitations once the home server is known. **Low, builder.**
-  Invitations from the launch's arguments are judged at `crates/resonate/src/window.rs:94`, before
-  `together::start` sets `HOME_SERVER` at `:167` (`together.rs:51`, `:203-204`, `:574-578`). Judge
-  them after. Done when a launch with a link naming the default server offers it as such.
-- [S · 0.18.1] Serialise beginning and joining a party. **Low, builder.** `party_room` begins and
-  joins unserialised and drops the old room under the `ROOM` lock
-  (`crates/resonate/src/party_room.rs:152-228`), contrary to `party.md`. Take one lock across the
-  whole change. Done when concurrent begin and join leave one room in a test.
-- [S · 0.18.1] Start a party only once its settings are known. **Low, builder.** `party start` sends
-  `Load` with autoplay before `settings_for` can fail with `PartyNeedsAServer`
-  (`crates/resonate/src/party.rs:390-409`). Read the settings first. Done when a party start with no
-  server plays nothing.
-- [S · 0.18.1] Keep a guest's request when it could not be queued. **Low, builder.** `added_here`
-  removes a row by a stale index even when `song_of` is `None`
-  (`crates/resonate/src/party.rs:145-157`), and `play_a_request_next` takes the request though the
-  insert failed (`party_room.rs:309-324`). Remove by identity and only after the insert. Done when a
-  failed insert leaves the request waiting, in a test.
-- [S · 0.18.1] Tell why Together could not start. **Low, builder.** Any `try_lock` error is a silent
-  `None` (`crates/resonate/src/together.rs:183-185`), so the window gets neither Together nor
-  parties (`window.rs:195-198`). Tell a held lock from another failure and log the latter. Done when
-  a test with an unreadable state folder logs the reason.
 
 ## Catalog
 - [M · 0.18.1] Stop calling a band-limited lossless file Fake on a lone wall. **Medium, architect.**
