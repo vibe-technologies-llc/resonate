@@ -68,6 +68,7 @@ const PAST_THE_FADE_IN: Duration = Duration::from_millis(50);
 #[derive(Clone, Copy, Default)]
 struct Profile {
     refuses_loads: bool,
+    answers_at_most: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -190,6 +191,7 @@ impl Heard {
 struct Fake {
     at: SocketAddr,
     heard: Arc<Mutex<Heard>>,
+    config: Arc<ServerConfig>,
 }
 
 impl Fake {
@@ -198,6 +200,14 @@ impl Fake {
     }
 
     fn with(profile: Profile) -> Self {
+        Self::presenting(profile, tls_config())
+    }
+
+    fn beside(other: &Self) -> Self {
+        Self::presenting(Profile::default(), Arc::clone(&other.config))
+    }
+
+    fn presenting(profile: Profile, config: Arc<ServerConfig>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
         let at = listener.local_addr().expect("the receiver's address");
         let heard = Arc::new(Mutex::new(Heard {
@@ -205,20 +215,24 @@ impl Fake {
             level: 0.4,
             ..Heard::default()
         }));
-        let config = tls_config();
 
         let asked = Arc::clone(&heard);
+        let served = Arc::clone(&config);
 
         thread::spawn(move || {
-            for stream in listener.incoming().flatten() {
+            for (accepted, stream) in listener.incoming().flatten().enumerate() {
+                if profile.answers_at_most.is_some_and(|most| accepted >= most) {
+                    continue;
+                }
+
                 let asked = Arc::clone(&asked);
-                let config = Arc::clone(&config);
+                let config = Arc::clone(&served);
 
                 thread::spawn(move || answer(stream, config, &asked));
             }
         });
 
-        Self { at, heard }
+        Self { at, heard, config }
     }
 
     fn decoding_at_most(self, hz: u32, channels: u16) -> Self {
@@ -1026,9 +1040,131 @@ fn a_stream_to_a_receiver_launches_it_loads_flac_by_address_and_is_paused_draine
 }
 
 #[test]
+fn a_title_of_a_mebibyte_is_loaded_cut_on_a_letter() {
+    let fake = Fake::start();
+    let casting =
+        Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
+    let sink = the_receiver(&casting);
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::<Casting>::clone(&casting));
+    let title = "\"\u{e9}".repeat((1 << 20) / 3 + 1);
+
+    let stream = backend
+        .opener()
+        .open(
+            &StreamRequest {
+                media_name: title.clone(),
+                ..request(&sink, stereo_sixteen())
+            },
+            Box::new(Poured {
+                pcm: music(RATE as usize / 10),
+                at: 0,
+            }),
+        )
+        .expect("the receiver takes the stream");
+
+    stream.set_active(true).expect("plays");
+    fake.until("the stream to be loaded", |heard| heard.count("LOAD") == 1);
+
+    let heard = fake.heard.lock();
+    let loaded = heard.said("LOAD").expect("a load")["media"]["metadata"]["title"]
+        .as_str()
+        .expect("a title");
+
+    assert!(title.len() >= 1 << 20);
+    assert_eq!(loaded, "\"\u{e9}".repeat(256));
+}
+
+#[test]
+fn a_record_naming_a_held_receiver_at_an_address_answering_as_another_leaves_the_sink_where_it_was()
+{
+    let held = Fake::start();
+    let forged = Fake::start();
+
+    let casting = Casting::resting(Searching {
+        finding: Finding::Listed(vec![held.found(), forged.found()]),
+        ..nothing_listed()
+    })
+    .expect("rests");
+    let changes = Neighbours::subscribe(&casting);
+
+    casting.look(FirstSearch::Awaited).expect("looks");
+
+    let receivers = casting.receivers();
+
+    assert_eq!(receivers.len(), 1);
+    assert_eq!(receivers[0].1.at(), held.at);
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Added(receivers[0].0)));
+    assert_eq!(
+        changes.try_recv(),
+        Err(crossbeam_channel::TryRecvError::Empty)
+    );
+    assert_eq!(
+        forged.heard.lock().connections,
+        1,
+        "the record's address was tried"
+    );
+    assert_eq!(
+        held.heard.lock().connections,
+        2,
+        "the held address was asked whether it still answers"
+    );
+}
+
+#[test]
+fn a_held_receiver_moves_to_a_new_address_answering_as_it_and_is_told_reformatted() {
+    let held = Fake::start();
+    let moved = Fake::beside(&held);
+
+    let casting = Casting::resting(Searching {
+        finding: Finding::Listed(vec![held.found(), moved.found()]),
+        ..nothing_listed()
+    })
+    .expect("rests");
+    let changes = Neighbours::subscribe(&casting);
+
+    casting.look(FirstSearch::Awaited).expect("looks");
+
+    let receivers = casting.receivers();
+    let sink = receivers[0].0;
+
+    assert_eq!(receivers.len(), 1);
+    assert_eq!(receivers[0].1.at(), moved.at);
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink)));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(sink)));
+    assert_eq!(held.heard.lock().connections, 1);
+}
+
+#[test]
+fn a_held_receiver_that_no_longer_answers_moves_to_the_address_its_record_names_now() {
+    let held = Fake::with(Profile {
+        answers_at_most: Some(1),
+        ..Profile::default()
+    });
+    let renumbered = Fake::start();
+
+    let casting = Casting::resting(Searching {
+        finding: Finding::Listed(vec![held.found(), renumbered.found()]),
+        ..nothing_listed()
+    })
+    .expect("rests");
+    let changes = Neighbours::subscribe(&casting);
+
+    casting.look(FirstSearch::Awaited).expect("looks");
+
+    let receivers = casting.receivers();
+    let sink = receivers[0].0;
+
+    assert_eq!(receivers.len(), 1);
+    assert_eq!(receivers[0].1.at(), renumbered.at);
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink)));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(sink)));
+}
+
+#[test]
 fn a_load_the_receiver_refuses_is_told_as_refused() {
     let fake = Fake::with(Profile {
         refuses_loads: true,
+        ..Profile::default()
     });
     let casting =
         Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
@@ -1288,7 +1424,7 @@ fn a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn() {
 
     let casting = Casting::start(
         Searching {
-            finding: Finding::Bonjour,
+            finding: Finding::BonjourOnLoopback,
             within: Duration::from_secs(3),
             serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
         },
@@ -1820,6 +1956,7 @@ fn a_receiver_that_fails_what_it_cannot_decode_is_learnt_to_play_none_of_it() {
 fn a_receiver_that_refuses_the_load_is_learnt_to_play_none_of_it() {
     let fake = Fake::with(Profile {
         refuses_loads: true,
+        ..Profile::default()
     });
     let casting = Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches");
     let sink = the_receiver(&casting);

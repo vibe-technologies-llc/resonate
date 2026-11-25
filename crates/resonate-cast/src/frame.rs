@@ -53,7 +53,7 @@ pub(crate) struct Message {
 }
 
 impl Message {
-    pub(crate) fn framed(&self) -> Vec<u8> {
+    pub(crate) fn framed(&self) -> Result<Vec<u8>> {
         let mut body = Vec::new();
 
         varint_field(&mut body, PROTOCOL_VERSION, CASTV2_1_0);
@@ -71,13 +71,19 @@ impl Message {
             }
         }
 
+        let too_long = Error::TooLongToSend { bytes: body.len() };
+
+        if body.len() > MESSAGE_BYTES_AT_MOST {
+            return Err(too_long);
+        }
+
         let mut framed = u32::try_from(body.len())
-            .unwrap_or(u32::MAX)
+            .map_err(|_| too_long)?
             .to_be_bytes()
             .to_vec();
 
         framed.extend_from_slice(&body);
-        framed
+        Ok(framed)
     }
 
     pub(crate) fn read(body: &[u8]) -> Result<Self> {
@@ -211,7 +217,7 @@ mod tests {
         let binary = message(Payload::Binary(vec![0, 1, 2, 255]));
 
         for sent in [text, binary] {
-            let framed = sent.framed();
+            let framed = sent.framed().expect("frames");
             let length = whole(&framed).expect("a length").expect("a whole message");
 
             assert_eq!(length, framed.len() - LENGTH_BYTES);
@@ -228,7 +234,8 @@ mod tests {
             namespace: "n".to_owned(),
             payload: Payload::Text("p".to_owned()),
         }
-        .framed();
+        .framed()
+        .expect("frames");
 
         assert_eq!(
             framed,
@@ -241,7 +248,10 @@ mod tests {
 
     #[test]
     fn fields_it_does_not_know_are_stepped_over_and_a_cut_message_is_refused() {
-        let mut body = message(Payload::Text("{}".to_owned())).framed()[LENGTH_BYTES..].to_vec();
+        let mut body = message(Payload::Text("{}".to_owned()))
+            .framed()
+            .expect("frames")[LENGTH_BYTES..]
+            .to_vec();
 
         body.extend_from_slice(&[0x4D, 1, 2, 3, 4, 0x51, 1, 2, 3, 4, 5, 6, 7, 8]);
 
@@ -253,6 +263,32 @@ mod tests {
         assert!(matches!(
             whole(&u32::MAX.to_be_bytes()),
             Err(Error::TooLong { .. })
+        ));
+    }
+
+    #[test]
+    fn a_message_longer_than_a_receiver_takes_is_refused_rather_than_sent() {
+        let overhead = message(Payload::Text(String::new()))
+            .framed()
+            .expect("frames")
+            .len()
+            - LENGTH_BYTES;
+        let filling = MESSAGE_BYTES_AT_MOST - overhead - 2;
+
+        let longest = message(Payload::Text("a".repeat(filling)));
+        let longer = message(Payload::Text("a".repeat(filling + 1)));
+
+        assert_eq!(
+            whole(&longest.framed().expect("the longest frames")).expect("a length"),
+            Some(MESSAGE_BYTES_AT_MOST)
+        );
+        assert!(matches!(
+            longer.framed(),
+            Err(Error::TooLongToSend { bytes }) if bytes == MESSAGE_BYTES_AT_MOST + 1
+        ));
+        assert!(matches!(
+            message(Payload::Binary(vec![0; 1 << 20])).framed(),
+            Err(Error::TooLongToSend { .. })
         ));
     }
 }

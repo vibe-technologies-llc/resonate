@@ -63,14 +63,33 @@ codec are dev-dependencies, for the end-to-end tests.
 - **mDNS browse of `_googlecast._tcp.local.`** (`CAST_SERVICE`) through `mdns-sd`, its own daemon
   thread and a `resonate-cast-browse` thread taking its events. A resolved record is a receiver
   where its TXT `id` is 1 to 64 letters, digits or dashes and its `ca` capabilities, where stated,
-  hold audio out (bit `0x04`); it is named by `fn`, else `md`, else the id, and admitted only while fewer than `RECEIVERS_AT_MOST` (64) are held (a receiver already held is still refreshed; `Known::named` is held to the same count), so a host announcing records without end cannot grow the list or have each one connected to, and reached at its IPv4
-  address where it has one and the record's port (a group answers on a port of its own). A record
-  removed (`ServiceRemoved`, or its TTL run out) removes the sink. A record seen again at the same
-  address is not reached again.
+  hold audio out (bit `0x04`); it is named by `fn`, else `md`, else the id. **A record is unproved
+  until its receiver answers**: an address is tried only while the receivers held and the
+  addresses tried and not yet proved (`unproved`) are together fewer than `RECEIVERS_AT_MOST` (64),
+  and an address tried is not tried again for `UNPROVED_FOR` (5 min) unless it answered, so a host
+  announcing records without end, each unroutable and costing the serial browse its deadline,
+  is tried 64 times at most, not once a record (`Known::named` is held to the same count; a
+  record at the address and id of a receiver held only refreshes it and is not tried). Its
+  addresses are read with their scope (`socket_of`: an IPv6 link-local address keeps its
+  interface, so a receiver answering only there is reached through it) and refused at loopback,
+  the unspecified or a multicast address, port 0, or link-local with no scope (`Admitting`); of
+  what is left the IPv4 address is preferred (`preferred`) and the record's port kept (a group
+  answers on a port of its own). A record removed (`ServiceRemoved`, or its TTL run out) removes
+  the sink. A record seen again at the same address is not reached again.
 - **A record is reached before it is listed** (`Device::reached`): a TLS connection and a receiver
-  `GET_STATUS`, which reads the volume and proves it speaks Cast; one that fails is left out.
+  `GET_STATUS`, which reads the volume and proves it speaks Cast; one that fails is left out. The
+  certificate the receiver presented is kept on the `Device` (`Presented`) as what it answers as.
+- **A held receiver keeps its address until the new one answers as it.** A record naming the id
+  of a receiver held at another address is tried like any (and counted), and the sink moves there
+  only where the new address presents the same certificate (`Device::answers_as`) or the held
+  address no longer answers Cast at all (a receiver renumbered while its certificate rotated);
+  otherwise the record is passed over and the sink stays where it was, so a forged record cannot
+  carry a stream off a receiver that is still there. A receiver given by address never moves
+  (`Elsewhere::moves_to`). A move is told `SinkChange::Reformatted` under the same `SinkId`.
 - **`Finding::Listed` reaches a fixed list instead of browsing**, which is how the tests name a
-  receiver on the loopback without multicast. `Searching::within` (2 s) is how long
+  receiver on the loopback without multicast. `Finding::BonjourOnLoopback` browses as
+  `Finding::Bonjour` does but admits a loopback record, which is how the mDNS test reaches its fake;
+  nothing a record says selects it, and the binary and the phones browse with `Bonjour`. `Searching::within` (2 s) is how long
   `FirstSearch::Awaited` collects records before `Casting::start` answers.
 - **A receiver may be given by its address or its name** (`Casting::locate(impl Into<Given>)`,
   `unlocate`, `located`; the binary's `cast-at`). `Given` is `Address(SocketAddr)` or `Named { host:
@@ -142,11 +161,17 @@ codec are dev-dependencies, for the end-to-end tests.
   checked (`TheReceiversOwn`), only the handshake's signature against the certificate offered.
   The TLS hides the stream's address and the commands from a passive listener; it proves nothing
   about who answers, since Cast's own device authentication (`deviceauth`, a challenge signed by
-  Google's chain) is optional for a sender and not spoken.
+  Google's chain) is optional for a sender and not spoken. The certificate is kept only to tell
+  the same receiver at a new address (*A held receiver keeps its address*).
+- **The handshake has one deadline**: `HANDSHAKEN_WITHIN` (5 s) bounds the TCP connect (itself at
+  most `CONNECTED_WITHIN`, 3 s) and the whole TLS handshake, each read and write given only the time
+  left (`Deadlined`), so a peer trickling a byte every few seconds cannot hold the browse thread,
+  the volume thread or an open past it.
 - **A `CastMessage` is protobuf, written and read by hand** (`frame.rs`): a four-byte big-endian
   length, then `protocol_version` `CASTV2_1_0`, `source_id`, `destination_id`, `namespace`,
   `payload_type` and `payload_utf8` (or `payload_binary`); unknown fields are stepped over, a
-  message over `MESSAGE_BYTES_AT_MOST` (64 KiB) ends the link. No protobuf crate: seven fields do
+  message over `MESSAGE_BYTES_AT_MOST` (64 KiB) ends the link, and one this side would send over
+  it is refused before it is written (`Error::TooLongToSend`), since a receiver drops such a frame. No protobuf crate: seven fields do
   not earn a code generator.
 - **The payloads are JSON, written and read by hand** (`json.rs`, depth at most 32), because the
   binary without `online` must not link `serde_json` (`refuse_headless`), and receivers are wanted
@@ -172,7 +197,8 @@ codec are dev-dependencies, for the end-to-end tests.
   Media Receiver (`CC1AD845`) where it already runs, else `LAUNCH` starts it; the stream connects
   to its `transportId` and sends a media `LOAD` with the address as `contentId`, `audio/flac`,
   `streamType` `LIVE`, `MusicTrackMediaMetadata` (type 3) titled with the request's media name, and
-  `autoplay`. The load waits for its play, so the feed is already pulled when the receiver fetches.
+  `autoplay`. The title is cut on a letter to `TITLE_BYTES_AT_MOST` (1 KiB) as written, escapes
+  counted (`Json::text_within`), so a tag of megabytes still loads. The load waits for its play, so the feed is already pulled when the receiver fetches.
   Loading at open instead would have the receiver fetch a feed nobody pulls and wait on it.
   Later `SetActive(true)` is `PLAY`, `SetActive(false)` `PAUSE` (heard at once; the receiver
   resumes its own buffer and the ring continues it), both naming the `mediaSessionId` the load
@@ -254,6 +280,7 @@ stereo FLAC sink up to 96 kHz with its volume (`a_receiver_listed_is_reached_and
 the asks in order, the `LOAD`'s fields, the fetched FLAC decoding to the samples poured, a drain
 told, a pause, the volume and the mute turned, the receiver's ping answered and a stop on close
 (`a_stream_to_a_receiver_launches_it_loads_flac_by_address_and_is_paused_drained_and_stopped_its_pings_answered`), a
+title of a mebibyte loaded cut (`a_title_of_a_mebibyte_is_loaded_cut_on_a_letter`), a
 refused load told as refused, a rate the receiver cannot take refused before it is reached, a song
 played through a real `Player` arriving bit for bit, a pause and a volume change reaching it within
 400 ms and the song resuming bit for bit, and a seek loading a fresh address within 400 ms that
@@ -269,12 +296,23 @@ stream holds untried while teaching offers and takes back at once
 listed under its address's name, added and forgotten with its name, and a name nothing resolves lists
 nothing and is kept; a receiver given by address and then heard by the browse is renamed under its
 own sink id with the address's name as an alias, told `Reformatted`, and stays listed under its id when
-the address is forgotten. A record advertised through a
+the address is forgotten. A record naming a held receiver's id at an address answering as another
+leaves the sink where it was
+(`a_record_naming_a_held_receiver_at_an_address_answering_as_another_leaves_the_sink_where_it_was`),
+one answering with the receiver's own certificate moves it, told `Reformatted`
+(`a_held_receiver_moves_to_a_new_address_answering_as_it_and_is_told_reformatted`), as does one
+whose held address no longer answers
+(`a_held_receiver_that_no_longer_answers_moves_to_the_address_its_record_names_now`). A record advertised through a
 second `mdns-sd` daemon is browsed, reached and listed, and removed once withdrawn
 (`a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn`, skipped where that daemon
 cannot resolve its own record, which is a host with no multicast). The unit tests hold the protobuf
-bytes, the JSON reader's escapes, surrogates and depth limit, the mDNS record's reading and the
-media status entries. The phones' side is proved on the host in
+bytes, an outgoing message too long refused, the JSON reader's escapes, surrogates and depth limit,
+a text cut within its written bound, the mDNS record's reading (loopback, port 0 and an unscoped
+link-local address refused, a scoped one kept), an attempt counted within the cap
+(`an_attempt_counts_within_the_cap_until_it_is_proved_and_is_not_made_again_meanwhile`), the rule
+a held receiver moves by, a handshake trickled or silent given up within its deadline
+(`a_peer_trickling_its_handshake_a_byte_at_a_time_is_given_up_within_the_deadline`,
+`a_peer_that_says_nothing_is_given_up_within_the_deadline`) and the media status entries. The phones' side is proved on the host in
 `crates/resonate-mobile/src/rendering.rs` (`a_receiver_given_by_address_is_held_with_no_search_and_forgotten`,
 `a_receiver_address_that_is_neither_an_address_nor_a_name_is_refused_and_a_name_is_held`,
 `one_switch_looks_for_renderers_and_receivers_and_turning_it_off_keeps_the_addresses`), the stream

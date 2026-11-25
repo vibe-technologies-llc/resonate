@@ -7,7 +7,7 @@ use resonate_upnp::{Carriage, Wrapping};
 use crate::{
     Asked, Error, Result,
     json::Json,
-    link::{ANSWERED_WITHIN, Link, Namespace, RECEIVER},
+    link::{ANSWERED_WITHIN, Link, Namespace, Presented, RECEIVER},
 };
 
 pub const CAST_PORT: u16 = 8009;
@@ -69,6 +69,7 @@ pub struct Device {
     found: Found,
     volume: Option<Volume>,
     plays: Option<Plays>,
+    presented: Option<Presented>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,6 +90,7 @@ impl Device {
             found,
             volume: status.volume,
             plays: None,
+            presented: link.presented().cloned(),
         })
     }
 
@@ -98,7 +100,24 @@ impl Device {
             found,
             volume: None,
             plays: None,
+            presented: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn presenting(self, certificate: &[u8]) -> Self {
+        Self {
+            presented: Some(Presented::new(certificate)),
+            ..self
+        }
+    }
+
+    pub(crate) fn answers_as(&self, held: &Self) -> bool {
+        self.presented.is_some() && self.presented == held.presented
+    }
+
+    pub(crate) const fn found(&self) -> &Found {
+        &self.found
     }
 
     pub const fn id(&self) -> &CastId {

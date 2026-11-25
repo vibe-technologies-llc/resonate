@@ -19,7 +19,7 @@ use resonate_upnp::{FirstSearch, Neighbours, Server};
 
 use crate::{
     CastId, Device, Error, Found, Given, LinkOp, Result,
-    bonjour::{self, CAST_SERVICE},
+    bonjour::{self, Admitting, CAST_SERVICE},
     device, learning,
     link::Link,
     stream::{self, Lanes},
@@ -28,6 +28,8 @@ use crate::{
 
 const RECEIVERS_AT_MOST: usize = 64;
 
+const UNPROVED_FOR: Duration = Duration::from_secs(300);
+
 const BROWSE_WAKES_EVERY: Duration = Duration::from_millis(250);
 
 const ADDRESSES_TRIED_AGAIN_EVERY: Duration = Duration::from_secs(60);
@@ -35,7 +37,18 @@ const ADDRESSES_TRIED_AGAIN_EVERY: Duration = Duration::from_secs(60);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Finding {
     Bonjour,
+    BonjourOnLoopback,
     Listed(Vec<Found>),
+}
+
+impl Finding {
+    const fn admitting(&self) -> Option<Admitting> {
+        match self {
+            Self::Bonjour => Some(Admitting::Routable),
+            Self::BonjourOnLoopback => Some(Admitting::LoopbackToo),
+            Self::Listed(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +96,7 @@ struct Known {
     held: BTreeMap<SinkId, Arc<Device>>,
     named: BTreeMap<String, CastId>,
     addressed: BTreeSet<SinkId>,
+    unproved: BTreeMap<SocketAddr, Instant>,
 }
 
 #[derive(Default)]
@@ -92,8 +106,23 @@ struct Located {
 }
 
 impl Known {
-    fn has_room_for(&self, id: &CastId) -> bool {
-        self.held.len() < RECEIVERS_AT_MOST || self.held.values().any(|held| held.id() == id)
+    fn tries(&mut self, at: SocketAddr, now: Instant) -> bool {
+        self.unproved
+            .retain(|_, since| now.saturating_duration_since(*since) < UNPROVED_FOR);
+        if self.unproved.contains_key(&at)
+            || self.held.len() + self.unproved.len() >= RECEIVERS_AT_MOST
+        {
+            return false;
+        }
+        self.unproved.insert(at, now);
+        true
+    }
+
+    fn held_as(&self, id: &CastId) -> Option<(SinkId, Arc<Device>)> {
+        self.held
+            .iter()
+            .find(|(_, held)| held.id() == id)
+            .map(|(sink, held)| (*sink, Arc::clone(held)))
     }
 
     fn remember(&mut self, fullname: String, id: CastId) {
@@ -213,6 +242,7 @@ impl Casting {
 
             known.named.clear();
             known.addressed.clear();
+            known.unproved.clear();
             mem::take(&mut known.held)
                 .into_keys()
                 .map(SinkChange::Removed)
@@ -332,8 +362,9 @@ impl Casting {
         }
 
         let (stop, stopped) = unbounded();
-        let (daemon, browsing) = match (&self.shared.searching.finding, browse) {
-            (Finding::Bonjour, true) => {
+        let browses = self.shared.searching.finding.admitting().is_some();
+        let (daemon, browsing) = match (browses, browse) {
+            (true, true) => {
                 let browsed = |source| Error::Browse {
                     source: Box::new(source),
                 };
@@ -473,7 +504,7 @@ impl Shared {
                     self.reach(found, Some(heard_as));
                 }
             }
-            (Finding::Bonjour, Some(browsing)) => {
+            (Finding::Bonjour | Finding::BonjourOnLoopback, Some(browsing)) => {
                 let since = Instant::now();
                 while let Some(left) = self.searching.within.checked_sub(since.elapsed()) {
                     match browsing.recv_timeout(left) {
@@ -482,7 +513,7 @@ impl Shared {
                     }
                 }
             }
-            (Finding::Bonjour, None) => {}
+            (Finding::Bonjour | Finding::BonjourOnLoopback, None) => {}
         }
     }
 
@@ -523,7 +554,7 @@ impl Shared {
     }
 
     fn reach_given(&self, given: &Given) -> Result<()> {
-        let at = given.resolve(matches!(self.searching.finding, Finding::Bonjour))?;
+        let at = given.resolve(self.searching.finding.admitting().is_some())?;
         let moved_from = {
             let mut located = self.located.lock();
 
@@ -570,6 +601,7 @@ impl Shared {
         let mut known = self.known.lock();
 
         known.named.clear();
+        known.unproved.clear();
 
         let gone: Vec<SinkId> = known
             .held
@@ -608,7 +640,9 @@ impl Shared {
     fn take(&self, event: ServiceEvent) {
         match event {
             ServiceEvent::ServiceResolved(resolved) => {
-                if let Some(found) = bonjour::found_in(&resolved) {
+                if let Some(admitting) = self.searching.finding.admitting()
+                    && let Some(found) = bonjour::found_in(&resolved, admitting)
+                {
                     self.reach(found, Some(resolved.get_fullname().to_owned()));
                 }
             }
@@ -618,28 +652,36 @@ impl Shared {
     }
 
     fn reach(&self, found: Found, fullname: Option<String>) {
-        if !self.known.lock().has_room_for(&found.id) {
-            tracing::debug!(receiver = %found.id, at = %found.at, "a Cast receiver answering the browse was passed over: enough are held");
-            return;
-        }
+        let (held_here, held_elsewhere) = {
+            let known = self.known.lock();
 
-        let held_here = self
-            .known
-            .lock()
-            .held
-            .iter()
-            .find(|(_, device)| device.at() == found.at)
-            .map(|(sink, device)| (*sink, device.id().clone()));
+            let held_here = known
+                .held
+                .iter()
+                .find(|(_, device)| device.at() == found.at)
+                .map(|(sink, device)| (*sink, device.id().clone(), known.addressed.contains(sink)));
+            let held_elsewhere = known.held_as(&found.id).map(|(sink, held)| Elsewhere {
+                addressed: known.addressed.contains(&sink),
+                held,
+            });
+            (held_here, held_elsewhere)
+        };
 
-        if let Some((sink, id)) = held_here {
-            if id == found.id {
+        match held_here {
+            Some((_, id, _)) if id == found.id => {
                 self.remember(fullname, &found.id);
                 return;
             }
-            if self.known.lock().addressed.contains(&sink) {
+            Some((sink, _, true)) => {
                 self.relabel(sink, found, fullname);
                 return;
             }
+            Some(_) | None => {}
+        }
+
+        if !self.known.lock().tries(found.at, Instant::now()) {
+            tracing::debug!(receiver = %found.id, at = %found.at, "a Cast receiver answering the browse was passed over: enough are held or tried");
+            return;
         }
 
         let device = match Device::reached(found.clone()) {
@@ -650,6 +692,15 @@ impl Shared {
             }
         };
 
+        if let Some(elsewhere) = held_elsewhere
+            && !elsewhere.moves_to(&device, || {
+                Device::reached(elsewhere.held.found().clone()).is_ok()
+            })
+        {
+            tracing::debug!(receiver = %found.id, at = %found.at, held_at = %elsewhere.held.at(), "a record names a Cast receiver held elsewhere, and its address does not answer as that receiver");
+            return;
+        }
+        self.known.lock().unproved.remove(&found.at);
         self.admit(device, fullname, false);
     }
 
@@ -691,12 +742,11 @@ impl Shared {
             }
 
             let same = known
-                .held
-                .iter()
-                .find(|(_, held)| held.id() == device.id())
-                .map(|(id, _)| *id);
+                .held_as(device.id())
+                .map(|(id, held)| (id, held.at() != device.at()));
             let (id, change) = match same {
-                Some(id) => (id, None),
+                Some((id, true)) => (id, Some(SinkChange::Reformatted(id))),
+                Some((id, false)) => (id, None),
                 None => {
                     let id = SinkId::new(RECEIVER_IDS_FROM.saturating_add(known.next));
 
@@ -774,6 +824,17 @@ impl Shared {
                 .iter()
                 .all(|change| listener.send(change.clone()).is_ok())
         });
+    }
+}
+
+struct Elsewhere {
+    held: Arc<Device>,
+    addressed: bool,
+}
+
+impl Elsewhere {
+    fn moves_to(&self, reached: &Device, still_answers: impl FnOnce() -> bool) -> bool {
+        !self.addressed && (reached.answers_as(&self.held) || !still_answers())
     }
 }
 
@@ -1021,5 +1082,97 @@ mod tests {
 
         assert!(casting.sinks().is_empty());
         assert_eq!(changes.try_recv(), Ok(SinkChange::Removed(named.id)));
+    }
+
+    fn hanging_up() -> SocketAddr {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a port");
+        let at = listener.local_addr().expect("the port's address");
+
+        thread::spawn(move || listener.incoming().for_each(drop));
+        at
+    }
+
+    fn record_at(at: SocketAddr, number: usize) -> Found {
+        Found {
+            id: CastId::new(format!("{number:032x}")),
+            name: format!("Speaker {number}"),
+            at,
+        }
+    }
+
+    #[test]
+    fn an_attempt_counts_within_the_cap_until_it_is_proved_and_is_not_made_again_meanwhile() {
+        let casting = Casting::resting(browsing()).expect("rests");
+
+        for number in 0..RECEIVERS_AT_MOST - 1 {
+            let at = SocketAddr::from(([192, 168, 2, 1], 9000 + number as u16));
+
+            casting
+                .shared
+                .admit(Device::held_unreached(record_at(at, number)), None, false);
+        }
+
+        let (first, second) = (hanging_up(), hanging_up());
+
+        casting.shared.reach(record_at(first, 100), None);
+        casting.shared.reach(record_at(second, 101), None);
+
+        let tried: Vec<SocketAddr> = casting
+            .shared
+            .known
+            .lock()
+            .unproved
+            .keys()
+            .copied()
+            .collect();
+
+        assert_eq!(tried, [first]);
+        assert_eq!(casting.sinks().len(), RECEIVERS_AT_MOST - 1);
+
+        let long_ago = Instant::now()
+            .checked_sub(UNPROVED_FOR)
+            .expect("a moment long enough ago");
+
+        casting.shared.known.lock().unproved.insert(first, long_ago);
+        casting.shared.reach(record_at(second, 101), None);
+
+        let tried: Vec<SocketAddr> = casting
+            .shared
+            .known
+            .lock()
+            .unproved
+            .keys()
+            .copied()
+            .collect();
+
+        assert_eq!(tried, [second]);
+    }
+
+    #[test]
+    fn a_receiver_held_elsewhere_moves_only_to_an_address_answering_as_it_or_once_its_own_is_silent()
+     {
+        let held = Arc::new(Device::held_unreached(heard()).presenting(b"the receiver's own"));
+        let moved = Found {
+            at: SocketAddr::from(([192, 168, 1, 21], 8009)),
+            ..heard()
+        };
+        let itself = Device::held_unreached(moved.clone()).presenting(b"the receiver's own");
+        let another = Device::held_unreached(moved.clone()).presenting(b"another's");
+        let anonymous = Device::held_unreached(moved);
+
+        let browsed = Elsewhere {
+            held: Arc::clone(&held),
+            addressed: false,
+        };
+        let given = Elsewhere {
+            held,
+            addressed: true,
+        };
+
+        assert!(browsed.moves_to(&itself, || true));
+        assert!(!browsed.moves_to(&another, || true));
+        assert!(!browsed.moves_to(&anonymous, || true));
+        assert!(browsed.moves_to(&another, || false));
+        assert!(!given.moves_to(&itself, || false));
     }
 }

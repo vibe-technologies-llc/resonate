@@ -26,6 +26,20 @@ impl Json {
         Self::Text(text.into())
     }
 
+    pub(crate) fn text_within(text: &str, written_at_most: usize) -> Self {
+        let mut written = 0;
+
+        let cut = text
+            .char_indices()
+            .find(|(_, letter)| {
+                written += escaped_bytes(*letter);
+                written > written_at_most
+            })
+            .map_or(text, |(at, _)| text.get(..at).unwrap_or_default());
+
+        Self::text(cut)
+    }
+
     pub(crate) fn with(mut self, key: &str, value: Self) -> Self {
         if let Self::Object(members) = &mut self {
             members.push((key.to_owned(), value));
@@ -137,6 +151,14 @@ impl From<u32> for Json {
 impl From<bool> for Json {
     fn from(value: bool) -> Self {
         Self::Bool(value)
+    }
+}
+
+const fn escaped_bytes(letter: char) -> usize {
+    match letter {
+        '"' | '\\' | '\n' | '\r' | '\t' => 2,
+        letter if (letter as u32) < 0x20 => 6,
+        letter => letter.len_utf8(),
     }
 }
 
@@ -376,5 +398,35 @@ mod tests {
         assert_eq!(Json::read("{\"a\":1} trailing"), None);
         assert_eq!(Json::read("\"\\ud800\""), None);
         assert_eq!(Json::read(&deep), None);
+    }
+
+    #[test]
+    fn a_text_written_within_a_bound_is_cut_on_a_letter_counting_its_escapes() {
+        let bound = 64;
+        let texts = [
+            "a".repeat(1 << 20),
+            "\u{e9}".repeat(1 << 19),
+            "\u{1f3b5}".repeat(1 << 18),
+            "\"\n".repeat(1 << 19),
+            "\u{1}".repeat(1 << 18),
+            "a\u{1f3b5}".repeat(1 << 18),
+        ];
+
+        for text in texts {
+            let Json::Text(cut) = Json::text_within(&text, bound) else {
+                panic!("a text");
+            };
+            let next = text[cut.len()..].chars().next().expect("cut short");
+
+            let written = Json::text(cut.as_str()).written();
+            let longer = format!("{cut}{next}");
+
+            assert!(text.starts_with(cut.as_str()));
+            assert!(written.len() - 2 <= bound, "{written}");
+            assert!(Json::text(longer).written().len() - 2 > bound);
+            assert_eq!(Json::read(&written), Some(Json::text(cut.as_str())));
+        }
+
+        assert_eq!(Json::text_within("short", bound), Json::text("short"));
     }
 }

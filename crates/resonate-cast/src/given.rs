@@ -4,9 +4,9 @@ use std::{
     time::Duration,
 };
 
-use mdns_sd::{HostnameResolutionEvent, ScopedIp, ServiceDaemon};
+use mdns_sd::{HostnameResolutionEvent, ServiceDaemon};
 
-use crate::{CAST_PORT, Error, Result};
+use crate::{CAST_PORT, Error, Result, bonjour};
 
 const HOST_BYTES_AT_MOST: usize = 253;
 
@@ -69,9 +69,9 @@ impl Host {
 
         if through_mdns
             && self.is_local()
-            && let Some(ip) = self.through_the_browse()
+            && let Some(at) = self.through_the_browse(port)
         {
-            return Ok(SocketAddr::new(ip, port));
+            return Ok(at);
         }
         Err(Error::Resolve {
             host: self.clone(),
@@ -79,9 +79,9 @@ impl Host {
         })
     }
 
-    fn through_the_browse(&self) -> Option<IpAddr> {
+    fn through_the_browse(&self, port: u16) -> Option<SocketAddr> {
         let daemon = ServiceDaemon::new().ok()?;
-        let found = self.heard_from(&daemon);
+        let found = self.heard_from(&daemon, port);
 
         if let Err(error) = daemon.shutdown() {
             tracing::debug!(%error, "resolving a .local name did not stop cleanly");
@@ -89,7 +89,7 @@ impl Host {
         found
     }
 
-    fn heard_from(&self, daemon: &ServiceDaemon) -> Option<IpAddr> {
+    fn heard_from(&self, daemon: &ServiceDaemon, port: u16) -> Option<SocketAddr> {
         let timeout_ms = u64::try_from(BROWSE_RESOLVES_WITHIN.as_millis()).ok()?;
         let events = daemon
             .resolve_hostname(&self.mdns_name(), Some(timeout_ms))
@@ -97,15 +97,9 @@ impl Host {
         loop {
             match events.recv_timeout(BROWSE_RESOLVES_WITHIN + BROWSE_ANSWER_SLACK) {
                 Ok(HostnameResolutionEvent::AddressesFound(_, addresses)) => {
-                    let mut addresses: Vec<IpAddr> =
-                        addresses.iter().map(ScopedIp::to_ip_addr).collect();
-
-                    addresses.sort();
-                    return addresses
-                        .iter()
-                        .find(|ip| ip.is_ipv4())
-                        .or_else(|| addresses.first())
-                        .copied();
+                    return bonjour::preferred(
+                        addresses.iter().map(|ip| bonjour::socket_of(ip, port)),
+                    );
                 }
                 Ok(HostnameResolutionEvent::SearchTimeout(_)) | Err(_) => return None,
                 Ok(_) => {}

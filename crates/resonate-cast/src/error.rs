@@ -99,6 +99,8 @@ pub enum Error {
     Refused { asked: Asked, refusal: Refusal },
     #[error("the Cast receiver sent a message of {bytes} bytes, longer than any it may send")]
     TooLong { bytes: usize },
+    #[error("a message of {bytes} bytes is longer than a Cast receiver takes")]
+    TooLongToSend { bytes: usize },
     #[error("the Cast receiver sent a message that is not a CastMessage")]
     NotACastMessage,
     #[error("the network could not be browsed for Cast receivers")]
@@ -137,6 +139,7 @@ impl Error {
             Self::Link { .. }
             | Self::Tls { .. }
             | Self::TooLong { .. }
+            | Self::TooLongToSend { .. }
             | Self::NotACastMessage
             | Self::Browse { .. }
             | Self::Serve { .. }

@@ -37,6 +37,8 @@ const LOADED_WITHIN: Duration = Duration::from_secs(20);
 
 const MUSIC_TRACK: u32 = 3;
 
+pub(crate) const TITLE_BYTES_AT_MOST: usize = 1024;
+
 const NO_FAULT_CODE: i32 = -1;
 
 enum Steer {
@@ -532,7 +534,7 @@ pub(crate) fn loaded(link: &Link, transport: &str, offered: &Offered) -> Result<
             ("type", Json::text("CONNECT")),
             ("origin", Json::Object(Vec::new())),
         ]),
-    );
+    )?;
 
     let loaded = link.ask(
         Namespace::Media,
@@ -549,7 +551,10 @@ pub(crate) fn loaded(link: &Link, transport: &str, offered: &Offered) -> Result<
                         "metadata",
                         Json::object([
                             ("metadataType", MUSIC_TRACK.into()),
-                            ("title", Json::text(offered.title.as_str())),
+                            (
+                                "title",
+                                Json::text_within(&offered.title, TITLE_BYTES_AT_MOST),
+                            ),
                         ]),
                     ),
                 ]),

@@ -12,9 +12,9 @@ pub fn read_what_a_receiver_says(bytes: &[u8]) {
         let _ = Message::read(body);
     }
 
-    if let Ok(message) = Message::read(bytes) {
-        let framed = message.framed();
-
+    if let Ok(message) = Message::read(bytes)
+        && let Ok(framed) = message.framed()
+    {
         assert_eq!(
             frame::whole(&framed).ok().flatten(),
             Some(framed.len() - LENGTH_BYTES)
