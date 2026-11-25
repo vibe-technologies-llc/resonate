@@ -22,14 +22,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   QoS, bound the write and flush as the reader is bounded, bound the channel and cancel the read on
   drop. Done when tests on Windows show a pipe that never reads ends the session within
   `ANSWERS_WITHIN` and leaves no thread behind.
-- [S · 0.18.1] Offer a shared-playlist link from the bus before joining it. **Low, builder.**
-  `OpenUri` and `AddTracks` ask `Host::invited` first
-  (`crates/resonate-mpris/src/interfaces.rs:270-274`, `:469-473`), and the binary joins a shared
-  playlist naming the default server at once (`crates/resonate/src/mpris.rs:256-258`,
-  `together.rs:547-571`), so any bus peer, a sandboxed app allowed to talk to MPRIS included, joins
-  the listener to a stranger's list; a party link is offered first. Route a bus-origin
-  shared-playlist link through the same offer. Done when a bus test's `OpenUri` of a shared-playlist
-  link raises an offer and joins nothing.
 - [S · 0.18.1] Keep Jellyfin's token out of the query where a header serves. **Low, builder.**
   `Session::url` puts `api_key` on every request (`crates/providers/jellyfin/src/lib.rs:111-118`),
   though only `streamed` reopens by URL, so proxy and request logs gather a full-access token;
