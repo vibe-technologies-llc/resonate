@@ -158,12 +158,18 @@ impl Chain {
     }
 
     pub fn frames_it_holds(&self) -> usize {
-        let short = self
+        let ends_at = f64::from(self.specs.last().unwrap_or(&self.input).rate.hz());
+        let off_its_latency: f64 = self
             .stages
             .iter()
-            .map(|stage| stage.frames_short_of_its_latency())
+            .zip(&self.specs)
+            .map(|(stage, spec)| {
+                let past = stage.frames_past_its_latency() as f64;
+                let short = stage.frames_short_of_its_latency() as f64;
+                (past - short) * ends_at / f64::from(spec.rate.hz())
+            })
             .sum();
-        (self.latency.round().max(0.0) as usize).saturating_sub(short)
+        (self.latency + off_its_latency).round().max(0.0) as usize
     }
 
     pub fn set_gain_after_what_it_holds(&mut self, volume: Volume, replay_gain: AppliedGain) {
@@ -988,13 +994,6 @@ mod tests {
 
     #[test]
     fn a_delay_ahead_of_the_resampler_is_counted_at_the_rate_the_chain_ends_on() {
-        let restorer = || {
-            Box::new(Restore::new(RestoreConfig {
-                restoration: Restoration::Repair,
-                tuning: Tuning::Mp3,
-                wall: None,
-            })) as Box<dyn Processor>
-        };
         let alone = |stage: Box<dyn Processor>| {
             Chain::builder(spec(SampleRate::HZ_44100))
                 .max_frames_in(BLOCK)
@@ -1023,6 +1022,111 @@ mod tests {
             (both - wanted).abs() < 1e-9,
             "the chain said {both} frames where {wanted} are held"
         );
+    }
+
+    fn restorer() -> Box<dyn Processor> {
+        Box::new(Restore::new(RestoreConfig {
+            restoration: Restoration::Repair,
+            tuning: Tuning::Mp3,
+            wall: None,
+        }))
+    }
+
+    #[test]
+    fn a_chain_restoring_holds_every_frame_taken_and_not_yet_handed_on_and_none_after_a_reset() {
+        const PUSHED: [usize; 7] = [100, 512, 512, 37, 300, 511, 256];
+
+        let mut chain = Chain::builder(spec(SampleRate::HZ_44100))
+            .max_frames_in(BLOCK)
+            .push(restorer())
+            .build()
+            .expect("a restorer builds");
+
+        let latency = chain.latency_frames() as usize;
+        let mut output = vec![0.0; chain.max_output_frames() * 2];
+        let mut taken = 0;
+        let mut handed_on = 0;
+        let mut past_its_latency = false;
+
+        assert_eq!(latency, 768);
+        assert_eq!(chain.frames_it_holds(), 0);
+
+        for frames in PUSHED {
+            let count = chain.process(&vec![0.25; frames * 2], &mut output);
+
+            taken += count.frames_in;
+            handed_on += count.frames_out;
+            past_its_latency |= chain.frames_it_holds() > latency;
+
+            assert_eq!(chain.frames_it_holds(), taken - handed_on);
+            assert!(chain.frames_it_holds() < latency + 256);
+        }
+
+        assert!(past_its_latency, "no push left part of a hop waiting");
+
+        let mut flushed = vec![0.0; chain.max_flush_frames() * 2];
+        let held = chain.frames_it_holds();
+
+        assert_eq!(
+            chain.flush(&mut flushed).expect("the restorer flushes"),
+            held
+        );
+        assert_eq!(chain.frames_it_holds(), 0);
+
+        chain.process(&[0.25; 200], &mut output);
+        chain.reset();
+
+        assert_eq!(
+            chain.frames_it_holds(),
+            0,
+            "a reset restorer was counted as holding its latency"
+        );
+
+        chain.process(&[0.25; 200], &mut output);
+
+        assert_eq!(chain.frames_it_holds(), 100);
+    }
+
+    #[test]
+    fn what_a_restorer_ahead_of_the_resampler_holds_is_counted_at_the_rate_the_chain_ends_on() {
+        let mut alone = Chain::builder(spec(SampleRate::HZ_44100))
+            .max_frames_in(BLOCK)
+            .push(restorer())
+            .build()
+            .expect("a restorer builds");
+        let mut both = Chain::builder(spec(SampleRate::HZ_44100))
+            .max_frames_in(BLOCK)
+            .push(restorer())
+            .push(resampler(SampleRate::HZ_44100, SampleRate::HZ_48000))
+            .build()
+            .expect("a restorer and a resampler build");
+
+        let resampling = Chain::builder(spec(SampleRate::HZ_44100))
+            .max_frames_in(BLOCK)
+            .push(resampler(SampleRate::HZ_44100, SampleRate::HZ_48000))
+            .build()
+            .expect("a resampler builds")
+            .latency_frames();
+        let at_the_end = |held: usize| (held as f64 * 48_000.0 / 44_100.0 + resampling).round();
+        let mut output = vec![0.0; both.max_output_frames() * 2];
+
+        assert_eq!(both.frames_it_holds() as f64, resampling.round());
+
+        for frames in [300, 512, 512, 129] {
+            let block = vec![0.25; frames * 2];
+
+            alone.process(&block, &mut output);
+            both.process(&block, &mut output);
+
+            assert_eq!(
+                both.frames_it_holds() as f64,
+                at_the_end(alone.frames_it_holds())
+            );
+        }
+
+        both.reset();
+
+        assert_eq!(both.frames_it_holds() as f64, resampling.round());
     }
 
     #[test]

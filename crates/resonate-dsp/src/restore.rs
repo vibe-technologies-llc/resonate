@@ -475,6 +475,10 @@ impl Restore {
         self.emitted += 1;
     }
 
+    const fn least_held(&self) -> usize {
+        self.size - self.hop
+    }
+
     fn whole_windows_heard(&self) -> u64 {
         self.hops.saturating_sub(self.hops_before_a_window_is_whole)
     }
@@ -1409,7 +1413,7 @@ impl Processor for Restore {
         self.forget_the_source_heard();
         self.taken = 0;
         self.emitted = 0;
-        self.preroll = (self.size - self.hop) as u64;
+        self.preroll = self.least_held() as u64;
     }
 
     fn forget_the_source_heard(&mut self) {
@@ -1426,7 +1430,19 @@ impl Processor for Restore {
     }
 
     fn latency_frames(&self) -> f64 {
-        (self.size - self.hop) as f64
+        self.least_held() as f64
+    }
+
+    fn frames_held(&self) -> usize {
+        self.taken.saturating_sub(self.emitted) as usize
+    }
+
+    fn frames_short_of_its_latency(&self) -> usize {
+        self.least_held().saturating_sub(self.frames_held())
+    }
+
+    fn frames_past_its_latency(&self) -> usize {
+        self.frames_held().saturating_sub(self.least_held())
     }
 
     fn is_transparent(&self) -> bool {

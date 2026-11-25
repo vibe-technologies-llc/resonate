@@ -401,12 +401,19 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   *What a resampler holds*, below) is the leaving row's, so the gain is set after it (`Chain::set_gain_after_what_it_holds`: what the
   chain holds, the boundary's own offset, less what stages behind the gain hold), and a carried
   front's new back is built at the leaving row's gain and set the same way (`swap_chain_turning`).
-  **What a chain holds is its rounded latency less what a stage has yet to fill**
-  (`Chain::frames_it_holds`, `Processor::frames_short_of_its_latency`): a true-peak guard built
+  **What a chain holds is its latency less what a stage has yet to fill and plus what a stage
+  holds past it, rounded** (`Chain::frames_it_holds`, `Processor::frames_short_of_its_latency`,
+  `Processor::frames_past_its_latency`, each counted at the rate the chain ends on, so a stage
+  ahead of the resampler is scaled as its latency is): a true-peak guard built
   behind a carried front swallows its first `delay` frames rather than holding the leaving row's,
   so the boundary and the step land where the front's held frames end, not a guard delay later
   (`a_carried_resampler_steps_the_entering_gain_where_the_leaving_row_ends_though_its_guard_is_new`,
   `a_fresh_guard_behind_a_carried_front_holds_none_of_its_delay_so_the_gain_steps_where_the_front_ends`).
+  `Restore` hands on a hop at a time, so it holds every frame taken and not yet handed on
+  (`frames_held`, the frames taken less those emitted): none after a reset, then from its latency
+  (`size - hop`) up to a hop more within each hop, which the boundary, the published position and
+  `HeardAt` take off (`a_chain_restoring_holds_every_frame_taken_and_not_yet_handed_on_and_none_after_a_reset`,
+  `what_a_restorer_ahead_of_the_resampler_holds_is_counted_at_the_rate_the_chain_ends_on`).
   `GainStage` keeps up to `STEPS_WAITING_AT_MOST` steps, each on its own frame, so short rows
   behind one another each step where they begin; `gain_amplitude` answers the last step's
   amplitude and `frames_before_the_gain_settles` how far off it lands, which
