@@ -794,7 +794,14 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   answers `OpenUnanswered` (`Disconnected` once the client knows the daemon gone), which
   `parked_for_a_device` reads as the graph lost; read as `LoopStopped` it failed every queued row
   five seconds apiece. The ask and the loop settle one `Awaiting` by compare-and-swap, so a stream
-  built after its asker gave up is closed on the loop rather than left playing as an orphan.
+  built after its asker gave up is closed on the loop rather than left playing as an orphan. A
+  capture is asked the same way (`PipeWire::capture_within`, `capture` waiting
+  `STREAM_OPENED_WITHIN`): one given up on is never built, or dropped once built
+  (`a_capture_answered_after_its_asker_gave_up_is_dropped_and_never_stands_in_the_graph`). A start
+  whose loop has not said it is ready within its wait (`PipeWire::start_within`, `start` waiting
+  `LOOP_STARTED_WITHIN`) sends that loop `Shutdown` and a loop whose readiness nobody hears never
+  runs, so its thread and connection end rather than living on
+  (`a_start_given_up_on_leaves_no_thread_and_no_client_behind`).
 - **The engine decides which device the stream is on and follows the default itself.** Playback
   streams carry `node.dont-move`, so WirePlumber never relinks them (its `follow-default-target`
   moved the stream while `OutputStatus::sink` named the old device). Every sink-list refresh ends in
@@ -1589,10 +1596,19 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `SinkInfo::current_rate` = the sink node's `Format` param rate (present only while running; same
   `SERIAL` watch), else `clock.force-rate`, else `clock.rate`.
 - **A global leaving the registry takes its proxy with it, whatever it was told first** (a card
-  unplugged before its routes were enumerated keeps no proxy/listener until reconnect). **A stream's
-  listener goes before its stream:** `pw_stream_destroy` frees the hook list the listener's
-  `spa_hook_remove` writes into, so an open stream is an `Opened` whose `Drop` takes the listener
-  first, never a tuple.
+  unplugged before its routes were enumerated keeps no proxy/listener until reconnect). **A stream is
+  disconnected, then its listener goes, then the stream:** `pw_stream_destroy` frees the hook list
+  the listener's `spa_hook_remove` writes into, and a libpipewire before 0.3.72 removes the hook
+  without waiting for the data thread, so a `process` running then reads the callback's freed data;
+  a stream's `disconnect` waits for the data thread in every version. So an open stream is an
+  `Opened` whose `Drop` disconnects it and then takes the listener, never a tuple, and `Close`,
+  `StopCapture`, `Shutdown`, the loop's tail, `lose_the_graph` and an open or capture given up on
+  only drop it. The listener hears the stream turn `Unconnected` before it goes, which is how the
+  order is held (`a_graph_gone_silent_disconnects_its_stream_before_letting_the_listener_go`,
+  `a_stream_closed_while_linked_hears_itself_disconnected_and_leaves_the_graph`), and a source is
+  never let go while the data thread fills from it
+  (`a_client_shut_down_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out`,
+  `a_graph_lost_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out`).
 - **The client outlives its daemon.** A connection's everything (core, registry, listeners, bound
   proxies) is one `Graph`, made by `Reaching`; the loop keeps main loop and context for the process's
   life. A core `error` event with broken pipe, reset, abort or missing connection = daemon gone: it
@@ -1819,6 +1835,11 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   stream by its node's id (`the_playback_node`, read off `pw-cli ls Node`): the application name
   is the client's as well as the node's, and `pw-cli` resolves a name to the client, which refuses
   `set-param` yet exits zero.
+- **A hosted daemon is stopped before a client lets go of a stream that answered a cycle late**:
+  libpipewire 1.6's daemon crashes in its mixer when a linked node whose `process` was held past
+  the quantum leaves, so `tests/teardown.rs` sends the daemon `SIGSTOP` before the shutdown it
+  tests, and a capture given up on is asked with no wait at all (`Duration::ZERO`, tried again
+  while the loop answers first) rather than behind a held loop.
 - **A test graph pulls at most eight times real time** (`Graph::pause_after_pulling`, in `play_until`):
   a ring dry mid-track pads the quantum with silence into what the graph played, so a graph drinking
   a 200 ms ring faster than the engine's 4 ms tick refills it turned a late tick on a loaded machine

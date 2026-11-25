@@ -223,6 +223,9 @@ impl<D> Opened<D> {
 
 impl<D> Drop for Opened<D> {
     fn drop(&mut self) {
+        if let Err(error) = self.stream.disconnect() {
+            tracing::debug!(%error, "the graph would not disconnect a stream let go of");
+        }
         drop(self.listener.take());
     }
 }
@@ -230,6 +233,7 @@ impl<D> Drop for Opened<D> {
 const CORE_ID: u32 = 0;
 const RECONNECT_EVERY: Duration = Duration::from_secs(1);
 const STREAM_OPENED_WITHIN: Duration = Duration::from_secs(5);
+const LOOP_STARTED_WITHIN: Duration = Duration::from_secs(5);
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(2);
 const DAEMON_ANSWERS_WITHIN: Duration = Duration::from_secs(8);
 const METADATA_NAME: &str = "metadata.name";
@@ -253,6 +257,7 @@ struct CaptureOpen {
     sink: Box<dyn AudioSink>,
     events: Sender<StreamEvent>,
     reply: Sender<Result<()>>,
+    awaiting: Awaiting,
 }
 
 struct OpenRequest {
@@ -720,6 +725,10 @@ impl Survey {
 
 impl PipeWire {
     pub fn start(app_name: &str) -> Result<Self> {
+        Self::start_within(app_name, LOOP_STARTED_WITHIN)
+    }
+
+    pub fn start_within(app_name: &str, within: Duration) -> Result<Self> {
         let (commands, requests) = pipewire::channel::channel();
         let (ready, started) = bounded(1);
         let (announce, changes) = bounded(64);
@@ -741,7 +750,7 @@ impl PipeWire {
                 .map_err(|_| Error::LoopStopped)?
         };
 
-        match started.recv_timeout(Duration::from_secs(5)) {
+        match started.recv_timeout(within) {
             Ok(Ok(())) => Ok(Self {
                 survey: Survey {
                     commands,
@@ -752,8 +761,21 @@ impl PipeWire {
                 thread: Some(thread),
                 changes,
             }),
-            Ok(Err(error)) => Err(error),
-            Err(_) => Err(Error::LoopStopped),
+            Ok(Err(error)) => {
+                let _ = thread.join();
+
+                Err(error)
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                let _ = thread.join();
+
+                Err(Error::LoopStopped)
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                let _ = commands.send(Request::Shutdown);
+
+                Err(Error::LoopStopped)
+            }
         }
     }
 
@@ -784,8 +806,18 @@ impl PipeWire {
         request: &CaptureRequest,
         sink: Box<dyn AudioSink>,
     ) -> Result<CaptureStream> {
+        self.capture_within(request, sink, STREAM_OPENED_WITHIN)
+    }
+
+    pub fn capture_within(
+        &self,
+        request: &CaptureRequest,
+        sink: Box<dyn AudioSink>,
+        within: Duration,
+    ) -> Result<CaptureStream> {
         let (events, incoming) = bounded(64);
         let (reply, outcome) = bounded(1);
+        let awaiting = Awaiting::default();
         let stream = self.survey.keys.next();
 
         self.survey
@@ -796,11 +828,18 @@ impl PipeWire {
                 sink,
                 events,
                 reply,
+                awaiting: awaiting.clone(),
             })))
             .map_err(|_| Error::LoopStopped)?;
-        outcome
-            .recv_timeout(Duration::from_secs(5))
-            .map_err(|_| Error::LoopStopped)??;
+
+        match outcome.recv_timeout(within) {
+            Ok(opened) => opened?,
+            Err(RecvTimeoutError::Disconnected) => return Err(Error::LoopStopped),
+            Err(RecvTimeoutError::Timeout) if awaiting.given_up() => {
+                return Err(self.survey.unanswered_open());
+            }
+            Err(RecvTimeoutError::Timeout) => outcome.recv().map_err(|_| Error::LoopStopped)??,
+        }
 
         let control = self.survey.commands.clone();
         Ok(CaptureStream::new(
@@ -1004,29 +1043,13 @@ fn run(
 
                     return;
                 };
-                let CaptureOpen {
-                    stream,
-                    request,
-                    sink,
-                    events,
-                    reply,
-                } = *open;
-                match build_capture_stream(&core, &request, sink, &events) {
-                    Ok(capture) => {
-                        heard.borrow_mut().insert(stream, capture);
 
-                        let _ = reply.send(Ok(()));
-                    }
-                    Err(error) => {
-                        let _ = reply.send(Err(error));
-                    }
-                }
+                open_capture(&core, *open, &heard);
             }
             Request::StopCapture(stream) => {
                 let stopped = heard.borrow_mut().remove(&stream);
-                if let Some(Opened { stream, .. }) = stopped.as_ref() {
-                    let _ = stream.disconnect();
-                }
+
+                drop(stopped);
             }
             Request::SetActive { stream, active: wanted } => {
                 if let Some(playing) = active.borrow().get(&stream) {
@@ -1058,9 +1081,8 @@ fn run(
             }
             Request::Close(stream) => {
                 let closed = active.borrow_mut().remove(&stream);
-                if let Some(playing) = closed.as_ref() {
-                    let _ = playing.stream().disconnect();
-                }
+
+                drop(closed);
             }
             Request::Heartbeat => {
                 for playing in active.borrow_mut().values_mut() {
@@ -1144,9 +1166,9 @@ fn run(
         tracing::warn!(%error, "no timer could be set to hear whether the PipeWire daemon still answers");
     }
 
-    let _ = ready.send(Ok(()));
-
-    mainloop.run();
+    if ready.send(Ok(())).is_ok() {
+        mainloop.run();
+    }
 
     drop(receiver);
     active.borrow_mut().clear();
@@ -1734,7 +1756,38 @@ fn open_stream(core: &pipewire::core::CoreRc, open: OpenRequest, active: &Playin
         Ok(abandoned) => {
             tracing::debug!("a stream opened after its asker gave up waiting is closed");
 
-            let _ = abandoned.stream().disconnect();
+            drop(abandoned);
+        }
+        Err(error) => {
+            let _ = reply.send(Err(error));
+        }
+    }
+}
+
+fn open_capture(core: &pipewire::core::CoreRc, open: CaptureOpen, heard: &Hearings) {
+    let CaptureOpen {
+        stream: key,
+        request,
+        sink,
+        events,
+        reply,
+        awaiting,
+    } = open;
+
+    if awaiting.is_given_up() {
+        return;
+    }
+
+    match build_capture_stream(core, &request, sink, &events) {
+        Ok(capture) if awaiting.kept() => {
+            heard.borrow_mut().insert(key, capture);
+
+            let _ = reply.send(Ok(()));
+        }
+        Ok(abandoned) => {
+            tracing::debug!("a capture opened after its asker gave up waiting is closed");
+
+            drop(abandoned);
         }
         Err(error) => {
             let _ = reply.send(Err(error));
