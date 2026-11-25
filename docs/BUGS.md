@@ -44,36 +44,18 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `:187-198`), so a link named `<mbid>.flac` delivers a file from elsewhere, retargetable between
   looks. Use `symlink_metadata` and pass links over. Done when a test's linked `<mbid>.flac` is not
   delivered.
-- [S · 0.18.1] Close the YouTube Music sign-in window's gates. **Low, builder.** `is_youtube_music`
-  cuts the host at the first `:` without refusing `@` (`crates/resonate-signin/src/place.rs:12-19`),
-  so `https://music.youtube.com:x@evil.net/` passes, which `providers.md` says cannot; and the web
-  view sets no navigation, new-window or download handler (`window.rs:46-52`), so any link leads the
-  window, which shows no address, anywhere with the listener's Google session. Refuse an authority
-  holding `@` and allow navigation to `https` Google and YouTube hosts alone. Done when the colon
-  form is refused in `only_a_page_of_youtube_music_itself_is_youtube_music` and a navigation test
-  refuses another host.
 - [S · 0.18.1] Open TIDAL's sign-in page only over https. **Low, builder.** `with_scheme` keeps
   whatever scheme `verification_uri_complete` names (`crates/providers/tidal/src/sign_in.rs:73-80`,
   `:255-260`), and the window and the terminal open it. Accept `https` on TIDAL's hosts alone and
   refuse the sign-in otherwise. Done when the fake's device code, today always `link.tidal.com`
   (`crates/providers/tidal/tests/server.rs:1100-1139`), names `file:///etc/passwd` or `http://` and
   is refused as unreadable.
-- [S · 0.18.1] Keep URIs and their queries out of the log. **Low, builder.** `from_ureq` logs the
-  error with its URI (`crates/resonate-online/src/error.rs:126`), and ureq logs whole URIs with
-  their query at trace when `RESONATE_LOG=trace` (`crates/resonate/src/main.rs:221-226`), so the
-  replication token, Subsonic's `t` and `s` and Jellyfin's `api_key` reach a shared log. Strip the
-  query from logged URLs and add a `ureq=warn` directive. Done when a test of `from_ureq` prints no
-  query, and the default filter holds ureq at warn.
-- [S · 0.18.1] Serve only a regular file from the media server. **Low, builder.** `bytes_of` opens
-  whatever the catalog names (`crates/resonate/src/offering.rs:707-720`), following a link and
-  blocking on a FIFO put in a track's place. Open without following links and require a regular
-  file. Done when a test's FIFO in a track's place answers 404 at once.
-- [S · 0.18.1] Read the kept release file as untrusted. **Low, builder.**
-  `crates/resonate-online/src/releases/kept.rs:48` adds a `checked` stamp to `UNIX_EPOCH` unchecked,
-  so a stamp past `i64::MAX` aborts every start until the file is deleted, and `:51`'s `page` is
-  opened without the validation the network answer has. Check the stamp and validate the page as an
-  https release page. Done when a kept file with a huge stamp or a `file://` page is passed over, in
-  a test.
+- [S · 0.18.1] Serve a cue sheet's cut only from a regular file. **Low, builder.** The media server's
+  `bytes_of` now opens only a regular file without following a link
+  (`crates/resonate/src/offering.rs`, `regular_file`), but a cut of a cue sheet opens its file through
+  `Shelves::cut_opened` and the codec's `Sources` (`LocalFiles`), which follow a link and block on a
+  FIFO put in the file's place. Check the kind there too. Done when a FIFO behind a cut answers 404
+  at once, in a test.
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
   takes the forged member keys from the snapshot: the first key heard for a `MemberId` stands, so
   devices that already held the list keep the true keys, but a newcomer's first is the forger's, and
