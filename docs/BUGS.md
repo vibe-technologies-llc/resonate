@@ -33,27 +33,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   clamps each value to 24 dB alone, so stacked bells still sum past it. Weigh the whole peak there
   too and refuse through the mobile catalog. Done when a phone import of stacked +24 dB bells is
   refused, in a test.
-- [S · 0.18.1] Tell a measurement lost in noise as the room's noise in the window. **Low, builder.**
-  `Sweep::heard_as` now refuses a recording whose impulse does not stand 20 dB over its floor
-  (`Error::SweepLostInNoise`), and the terminal and the phones say so, but the window's
-  `missed_the_room` tells it as "Couldn't play the sweep and hear it"
-  (`crates/resonate-ui/src/measure.rs`, `Unmeasured::is_silence` matches silence alone). Say that the
-  microphone heard the room but no sweep over it, through the window's catalog. Done when a window
-  test of that refusal shows its own words.
-- [S · 0.18.1] Keep a sink's bound profile, even when it cannot be read, from falling to the
-  fallback curve. **Medium, builder.** `equaliser::resolved` leaves out a sink whose bound profile
-  is missing or unreadable (`crates/resonate/src/equaliser.rs:938-968`), and
-  `Equalisation::for_sink` then applies the fallback curve to it
-  (`crates/resonate-engine/src/pipeline.rs:27-34`), while `Binding::Own` with no file plays flat;
-  the window's gathering has the same shape
-  (`crates/resonate-ui/src/views/settings/equaliser.rs:378-394`). Carry an unreadable binding as
-  flat and say so. Done when a test binding a sink to a missing profile plays it flat beside a
-  fallback curve.
-- [S · 0.18.1] Bind `eq --measure`'s curve to the output it measured. **Medium, builder.** The sweep
-  plays through `--sink` or the configured sink, but the fitted curve is bound to `--for`
-  (`crates/resonate/src/equaliser.rs:57`, `:88-98`, `:347-414`), so one output's correction lands on
-  another. Bind to the sink the sweep played, or refuse a `--for` naming another. Done when a test
-  measuring through one sink and naming another is refused.
 - [S · 0.18.1] Correct the equaliser's rule about bands past Nyquist. **Low, builder.** `angle_at`'s
   clamp to π never fires, since `design` passes a band over below `applies_at`
   (`crates/resonate-core/src/eq.rs:61-63`, `:543-558`), and `.claude/rules/eq.md:74-75` says every
@@ -66,12 +45,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`:1234-1286`), so a deep null in a measured target silently loses its band while its neighbours
   are fitted around it. Clamp in the bank and the update. Done when fitting alternating ±40 dB
   targets keeps every band at its bound.
-- [S · 0.18.1] Say why `eq` replaced a kept profile, after it did. **Low, builder.** `eq --import`,
-  `--fetch` and `--fit-measurement` replace a kept profile of the same name before reporting it
-  (`crates/resonate/src/equaliser.rs:222-226`, `:265-266`, `:331-334`, `:888-894`), and
-  `--keep-measurement` writes in place (`:384-395`). Refuse a taken name unless asked to replace it,
-  and stage the measurement. Done when importing over a kept name is refused without `--replace` and
-  a failed measurement write leaves the old file.
 
 ## Catalog
 - [M · 0.18.1] Stop calling a band-limited lossless file Fake on a lone wall. **Medium, architect.**
