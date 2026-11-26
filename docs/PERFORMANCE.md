@@ -8,10 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
-- [S · 0.18.1] Stop a study's walk once its crew has panicked. **Low, builder.** A crew's panic now
-  ends the pass with `CrewPanicked`, but the walk decodes to the end of the file first, since `feed`
-  cannot tell it to stop (`crates/resonate-analysis/src/crew.rs`). Let `feed` answer a stop. Done
-  when a test's panicking stage ends the walk within a slab.
 - [S · 0.18.1] Hold a phone's history import from a pipe to a page too. **Low, builder.** A
   descriptor that seeks is now read a page of listens at a time (`bring_in_stream`), but one that
   cannot, as a cloud provider's picker may hand Android, is still read whole into memory and passed
