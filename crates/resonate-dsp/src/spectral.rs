@@ -3,6 +3,8 @@ use std::{f64::consts::TAU, mem, ops::Range, sync::Arc};
 use parking_lot::Mutex;
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
+use crate::kept::Kept;
+
 const LONGEST_TRANSFORM: usize = 1 << 18;
 const TURNED_POINTS_OVER_THE_BAND: usize = 16;
 const EVEN_POINTS_OVER_THE_BAND: usize = 8;
@@ -353,19 +355,17 @@ pub(crate) struct Plan {
 }
 
 impl Plan {
-    pub(crate) fn kept_for<Key: PartialEq + Copy>(
-        cache: &Mutex<Option<(Key, Arc<Self>)>>,
+    pub(crate) fn kept_for<Key: PartialEq>(
+        cache: &Mutex<Kept<(Key, Blocks), Self>>,
         wanted: Key,
         conversion: Conversion,
         blocks: Blocks,
         design: Design<impl Fn(f64) -> f64>,
     ) -> Arc<Self> {
-        if let Some((_, kept)) = cache
-            .lock()
-            .as_ref()
-            .filter(|(held, kept)| *held == wanted && kept.blocks == blocks)
-        {
-            return Arc::clone(kept);
+        let wanted = (wanted, blocks);
+
+        if let Some(kept) = cache.lock().recall(&wanted) {
+            return kept;
         }
 
         let mut planner = FftPlanner::<f64>::new();
@@ -377,8 +377,9 @@ impl Plan {
             response: Response::of(design, blocks, conversion, &mut planner),
         });
 
-        *cache.lock() = (built.response.bytes() <= KEPT_PLAN_BYTES_AT_MOST)
-            .then(|| (wanted, Arc::clone(&built)));
+        if built.response.bytes() <= KEPT_PLAN_BYTES_AT_MOST {
+            cache.lock().keep(wanted, &built);
+        }
         built
     }
 }
@@ -773,7 +774,7 @@ mod tests {
     fn a_stereo_pair_in_one_transform_comes_out_as_two_filtered_channels() {
         let wanted = conversion(44_100, 48_000);
         let blocks = Blocks::fitting(wanted).expect("common rates are smooth");
-        let cache = Mutex::new(None);
+        let cache = Mutex::new(Kept::new());
         let cutoff_hz = 19_000.0_f64;
         let reach_seconds = 64.0 / 44_100.0;
 

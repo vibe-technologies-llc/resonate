@@ -1271,7 +1271,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
 - **Kernel polyphase, read position exactly rational:** `whole` sample index + `phase` numerator over
   phase count, integer-stepped (count = `SampleRate::ratio_to(output).numer`, 160 for 44.1 to 48 kHz;
   an f64 accumulator smeared those 160 into over a thousand). `Tabulated` builds all phases once in
-  `Resampler::new`, each divided by its own sum (every phase passes DC at unity);
+  `Resampler::new`, each divided by its own sum (every phase passes DC at unity), and a table and a
+  spectral plan are each kept for the last `KEPT_DESIGNS_AT_MOST` (4) designs, least recently used out, so zones at different rate pairs design once, not on every track change (`alternating_two_rate_pairs_tabulates_each_once`, `alternating_two_rate_pairs_plans_each_once`);
   `TABULATED_WEIGHT_BYTES_AT_MOST` is sized so every pair of common rates within 32:1 tabulates at
   every level, a rate no device offers uses `Kernel` (four-point Lagrange stencil). **Whether a table
   fits is weighed on the row the widest vector pads to** (`WIDEST_LANES_PER_VECTOR`, AVX-512's eight),

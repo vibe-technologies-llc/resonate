@@ -6,6 +6,7 @@ mod eq;
 mod error;
 mod fused;
 mod gain;
+mod kept;
 mod overs;
 mod peak;
 mod phase;

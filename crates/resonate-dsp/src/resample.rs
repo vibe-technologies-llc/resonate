@@ -6,6 +6,7 @@ use wide::f64x8;
 
 use crate::{
     Error, FilterPhase, ProcessCount, Processor, RatioLimits, Result,
+    kept::Kept,
     phase::{Prototype, designed},
     spectral::{Blocks, Conversion, Design, Plan, Spectral},
 };
@@ -494,20 +495,26 @@ struct TableFor {
     output_rate: SampleRate,
 }
 
-static LAST_TABULATED: Mutex<Option<(TableFor, Arc<Tabulated>)>> = Mutex::new(None);
-static LAST_PLANNED: Mutex<Option<(TableFor, Arc<Plan>)>> = Mutex::new(None);
+static TABULATED: Mutex<Kept<TableFor, Tabulated>> = Mutex::new(Kept::new());
+static PLANNED: Mutex<Kept<(TableFor, Blocks), Plan>> = Mutex::new(Kept::new());
 
 impl Tabulated {
-    fn kept_for(wanted: TableFor, build: impl FnOnce() -> Self) -> Arc<Self> {
-        let mut last = LAST_TABULATED.lock();
+    fn kept_for(
+        cache: &Mutex<Kept<TableFor, Self>>,
+        wanted: TableFor,
+        build: impl FnOnce() -> Self,
+    ) -> Arc<Self> {
+        let mut kept = cache.lock();
 
-        if let Some((_, kept)) = last.as_ref().filter(|(held, _)| *held == wanted) {
-            return Arc::clone(kept);
+        if let Some(held) = kept.recall(&wanted) {
+            return held;
         }
 
         let built = Arc::new(build());
 
-        *last = (built.bytes() <= KEPT_TABLE_BYTES_AT_MOST).then(|| (wanted, Arc::clone(&built)));
+        if built.bytes() <= KEPT_TABLE_BYTES_AT_MOST {
+            kept.keep(wanted, &built);
+        }
         built
     }
 
@@ -734,7 +741,7 @@ fn planned(
         Shape::Shaped(_) => Design::Turned(at_seconds),
     };
     Plan::kept_for(
-        &LAST_PLANNED,
+        &PLANNED,
         TableFor {
             params,
             phase: config.phase,
@@ -1040,6 +1047,7 @@ impl Polyphase {
         let tabulated = Tabulated::fits(phases, reach);
         let taps = if tabulated {
             Taps::Tabulated(Tabulated::kept_for(
+                &TABULATED,
                 TableFor {
                     params: interpolator,
                     phase: interpolated_phase,
@@ -3115,5 +3123,72 @@ mod tests {
                 min: MIN_PHASES,
             }) if requested == MIN_PHASES - 1
         ));
+    }
+
+    fn table_for(from: SampleRate, to: SampleRate) -> TableFor {
+        TableFor {
+            params: Quality::LowLatency.params(),
+            phase: FilterPhase::Linear,
+            input_rate: from,
+            output_rate: to,
+        }
+    }
+
+    #[test]
+    fn alternating_two_rate_pairs_tabulates_each_once() {
+        let cache = Mutex::new(Kept::new());
+        let params = Quality::LowLatency.params();
+        let shape = Shape::of(params, FilterPhase::Linear);
+        let reach = Reach::of(&shape, 1.0);
+        let mut tabulations = 0;
+        let pairs = [
+            table_for(SampleRate::HZ_44100, SampleRate::HZ_48000),
+            table_for(SampleRate::HZ_48000, SampleRate::HZ_44100),
+        ];
+
+        let mut kept = Vec::new();
+
+        for wanted in pairs.iter().cycle().take(6) {
+            kept.push(Tabulated::kept_for(&cache, *wanted, || {
+                tabulations += 1;
+                Tabulated::new(&shape, 1.0, reach, 160)
+            }));
+        }
+
+        assert_eq!(tabulations, 2);
+        assert!(Arc::ptr_eq(&kept[0], &kept[2]));
+        assert!(Arc::ptr_eq(&kept[1], &kept[5]));
+        assert!(!Arc::ptr_eq(&kept[0], &kept[1]));
+    }
+
+    #[test]
+    fn alternating_two_rate_pairs_plans_each_once() {
+        let cache = Mutex::new(Kept::new());
+        let params = Quality::Balanced.params();
+        let shape = Shape::of(params, FilterPhase::Linear);
+        let pairs = [
+            (SampleRate::HZ_44100, SampleRate::HZ_48000),
+            (SampleRate::HZ_48000, SampleRate::HZ_44100),
+        ];
+
+        let mut kept = Vec::new();
+
+        for (from, to) in pairs.iter().cycle().take(6) {
+            let config = config(*from, *to, Quality::Balanced);
+            let conversion = conversion_for(config, params, &shape, from.hz());
+            let blocks = Blocks::fitting(conversion).expect("common rates are smooth");
+
+            kept.push(Plan::kept_for(
+                &cache,
+                table_for(*from, *to),
+                conversion,
+                blocks,
+                Design::Even(|after: f64| f64::from(after == 0.0)),
+            ));
+        }
+
+        assert!(Arc::ptr_eq(&kept[0], &kept[2]));
+        assert!(Arc::ptr_eq(&kept[1], &kept[5]));
+        assert!(!Arc::ptr_eq(&kept[0], &kept[1]));
     }
 }
