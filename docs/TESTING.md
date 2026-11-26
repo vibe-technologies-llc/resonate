@@ -4,14 +4,6 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [M · 0.18.1] Drive the resampler over every rate pair with audio. **Medium, builder.** The lab's
-  pairs stop at 44.1, 48, 96 and 192 kHz (`dsp-lab/src/suites/resample/mod.rs:31-39`), the bench at
-  a few (`crates/resonate-dsp/benches/stages.rs:40-47`), and the one grid test only builds a
-  resampler and passes over any `Err` (`crates/resonate-dsp/src/resample.rs:2226-2248`), so the
-  staged compaction's underflow at 1/29 to 1/32 is reached by nothing. Add a property test over rate
-  pair, quality, phase, block size and reset that asserts finite output and the expected frames, and
-  fail the grid on an unexpected `Err`. Done when the property test finds the compaction underflow
-  before its fix.
 - [M · 0.18.1] Build and run the equaliser a fuzzed profile describes. **Medium, builder.** The
   `equaliser` target stops at a text round trip (`fuzz/fuzz_targets/equaliser.rs:7-11`),
   `measurement` never fits (`measurement.rs:12-22`), and `Store::read_in` and `targets::parse` have
