@@ -16,11 +16,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [S · 0.18.1] Report organise's refusals after `--undo --apply`. **Medium, builder.**
-  `organising.rs:43` returns "nothing to put back" when the plan's moves are empty after applying,
-  though refusals or a cancel emptied them (`crates/resonate-library/src/organise.rs:820`, `:2350`,
-  `:2375`), so the refusals go unprinted and a cancel exits 0. Print what was refused and exit
-  non-zero on a cancel. Done when a test with a refused move prints it and exits non-zero.
 - [S · 0.18.1] Stage `history --export` before it replaces the target. **Medium, builder.**
   `File::create` truncates the target before the listens are read
   (`crates/resonate/src/history.rs:34-59`), so a failure leaves a partial file in place of whatever
@@ -30,26 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-core/src/recorded.rs:30-38`, `:56-69` word-normalise the title but keep the
   artist's and album's punctuation and spacing, so one recording keys apart under `Guns N' Roses`
   and `Guns N Roses`. Fold all three alike. Done when both spellings key the same.
-- [S · 0.18.1] Make a bare `resonate served` ask which service. **Low, builder.** Online, a bare
-  `served` always picks dlna (`crates/resonate/src/providers.rs:125-133`, `served.rs:496-498`), so
-  `NoServedService` never fires. Pick only a configured service. Done when a test with none
-  configured gets `NoServedService`.
-- [S · 0.18.1] Refuse `playlist --export` over a file that is not a playlist. **Low, builder.**
-  `PlaylistFormat::of` defaults to M3U (`crates/resonate/src/model.rs:474-476`,
-  `playlist.rs:161-173`), so `--export notes.txt` writes M3U over it. Refuse an unknown extension.
-  Done when exporting to `.txt` is refused and the file is untouched.
-- [S · 0.18.1] Refuse a folder or unreadable sheet in `playlist --add`. **Low, builder.** A folder
-  or a non-audio file is stored as an unplayable row, and an unreadable cue sheet makes an empty
-  playlist with exit 0 (`crates/resonate/src/playlist.rs:313-348`). Refuse each with its reason.
-  Done when each case exits non-zero and stores nothing.
-- [S · 0.18.1] Exit non-zero when `dedupe --apply` could not trash. **Low, builder.** A trash
-  refusal still exits 0 (`crates/resonate/src/tagging.rs:183-198`). Count refusals into the exit.
-  Done when a refused trash exits non-zero in a test.
-- [S · 0.18.1] Name an album exactly in `favourites --add`. **Low, builder.** `favourites --add
-  NAME` goes through the search grammar with no album disambiguator
-  (`crates/resonate/src/favourites.rs:74-124`), so the wrong one of two same-named albums is marked.
-  Take an artist with the album, or refuse an ambiguous name. Done when two same-named albums refuse
-  a bare name.
 - [S · 0.18.1] Keep a run with another config from clearing the window's scrobble mark. **Low,
   builder.** `open_library_with` stops telling any service whose token this run's config lacks
   (`crates/resonate/src/main.rs:676`, `:690-711`), so a run with `--config` naming another file
