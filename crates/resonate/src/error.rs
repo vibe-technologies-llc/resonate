@@ -194,6 +194,18 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("{refused} files could not be moved to the trash and stand where they were")]
+    TrashRefused { refused: u64 },
+
+    #[error("{path} is a folder, and a playlist holds songs; name the songs in it", path = path.display())]
+    PlaylistRowIsAFolder { path: PathBuf },
+
+    #[error("{path} is not an audio file, so a playlist would hold a row that cannot play", path = path.display())]
+    PlaylistRowIsNotAudio { path: PathBuf },
+
+    #[error("the cue sheet {path} names no audio that can be played", path = path.display())]
+    SheetNamesNoAudio { path: PathBuf },
+
     #[error("nothing to play; name a file, a file:// URI or a cue sheet")]
     NoFileNamed,
 

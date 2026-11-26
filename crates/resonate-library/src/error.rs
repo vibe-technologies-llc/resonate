@@ -331,6 +331,9 @@ pub enum Error {
     #[error("{path} names no file a playlist could be written to", path = path.display())]
     NotAPlaylistFile { path: PathBuf },
 
+    #[error("{path} does not end in .m3u, .m3u8, .pls or .xspf, so no playlist is written over it", path = path.display())]
+    NoPlaylistFormatNamed { path: PathBuf },
+
     #[error("{location} is not a local file, and only the local source has a catalog here")]
     NotALocalFile { location: Box<MediaLocation> },
 

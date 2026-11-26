@@ -3024,7 +3024,10 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   a link naming nothing yet is followed hop by hop, at most `LINKS_FOLLOWED_AT_MOST`, to the name
   it points at, so a dangling link stays a link too:
   `a_playlist_exported_over_a_link_naming_no_sheet_yet_writes_where_it_points_and_keeps_the_link`);
-  rows are still written relative to the path as given. The stage is a hidden sibling of the landing
+  rows are still written relative to the path as given. **An export names its format by the path's
+  extension** (`PlaylistFormat::named_by`); one that names none is `Error::NoPlaylistFormatNamed`, so a
+  `notes.txt` is never written over as M3U
+  (`an_export_over_a_file_that_names_no_playlist_format_is_refused_and_leaves_it_alone`). The stage is a hidden sibling of the landing
   (`.<name>.<pid>-<n>` and `organise::STAGED`), noted in `staged_writes` before a byte is written
   and held under `Held::made` until renamed, so a kill's stage is swept by the next
   `sweep_what_a_dead_writer_staged`; it carries the replaced file's mode, owner and extended

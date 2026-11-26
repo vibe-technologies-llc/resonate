@@ -230,7 +230,9 @@ pub(crate) fn write(
     entries: &[PlaylistEntry],
 ) -> Result<PlaylistFormat> {
     let beside = path.parent().unwrap_or_else(|| Path::new("."));
-    let format = PlaylistFormat::of(path);
+    let format = PlaylistFormat::named_by(path).ok_or_else(|| Error::NoPlaylistFormatNamed {
+        path: path.to_path_buf(),
+    })?;
 
     let text = text_of(format, name, &rows_of(entries), beside)?;
 

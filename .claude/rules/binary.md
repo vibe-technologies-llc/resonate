@@ -261,12 +261,23 @@ that name. Every file argument goes through it.
   `--unfavour ID` (the same group) mark or unmark the song the service knows by that id in the
   service's own favourites (`PlaysInPlace::favour`) and print the song's URI; a service with none
   is `NotOffered`. `resonate subsonic` is the same with
-  `--service subsonic`. With `online` off it is `OnlineOff`; no service set `NoServedService`; a
+  `--service subsonic`. A bare `served` picks the first account that is set, never the media
+  servers on the network (`resonate_dlna::SCHEME`), which are named to be browsed. With `online` off
+  it is `OnlineOff`; no account set `NoServedService`; a
   name not set `ServiceNotServed`; `subsonic` without the account `NoSubsonicServer`; a build
   without `online` `NoServed`
   (`the_terminal_browses_the_service_named_and_a_tidal_accounts_first_page_is_its_favourites`).
 - **`arguments::local_path`**: commands reading a local file alone (`info`, `explain`, `share <file>`,
   `playlist --add`).
+- **`playlist --add` refuses what could not play, before it stores anything**: a folder
+  (`PlaylistRowIsAFolder`), a file whose extension a scan would not admit (`PlaylistRowIsNotAudio`),
+  a cue sheet that cannot be read (`Error::Codec`, from `arguments::read_sheet_cuts`) or names no audio
+  that probes (`SheetNamesNoAudio`). `playlist --export FILE` refuses an extension no format names
+  (`Error::NoPlaylistFormatNamed` in the library's `sheet::write`), leaving the file as it was.
+- **`dedupe --apply` exits 1 when the trash refused a copy** (`Error::TrashRefused`, the count of
+  `Deleted::kept`), after saying so; `organise --undo --apply` prints every move it refused and exits 1
+  for each (`failed_to_apply`), and a cancelled walk back is `Cancelled`, never "no applied run is kept"
+  (`nothing_was_kept_to_put_back`).
 - **A cut row is named by frames too.** `to_uri_within` appends `#frames=START-END` (or `START-`),
   `from_uri_within` reads it; `#` in a path is always escaped. It is `xesam:url` for a cue row. A
   `#frames=` that is no span (`MediaLocation::claims_a_span`): `Error::UnreadableSpan` for

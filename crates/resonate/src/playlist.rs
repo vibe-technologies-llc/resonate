@@ -6,13 +6,13 @@ use std::{
 };
 
 use resonate_codec::Sources;
-use resonate_core::{MediaLocation, elapsed};
+use resonate_core::{MediaLocation, elapsed, names_audio};
 use resonate_library::{
     Cut, Direction, Kept, Library, Playlist, PlaylistName, RowOrder, SavedQuery, Search, Upkeep,
 };
 
 use crate::{
-    arguments::{local_path, names_a_sheet, sheet_cuts},
+    arguments::{local_path, names_a_sheet, read_sheet_cuts},
     cli::{Cli, PlaylistArgs, PlaylistOrderArg},
     config::Config,
     error::{Error, Result},
@@ -315,22 +315,31 @@ pub(crate) fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result
     let mut wanted = Vec::with_capacity(paths.len());
 
     for path in paths.iter().map(|path| local_path(path)) {
-        let location =
-            MediaLocation::local(
-                path.canonicalize()
-                    .map_err(|source| Error::UnresolvedFile {
-                        path: path.clone(),
-                        source,
-                    })?,
-            );
-        match location.as_path().filter(|_| names_a_sheet(&location)) {
-            Some(sheet) => wanted.extend(sheet_cuts(&sources, sheet).into_iter().map(
-                |(location, span)| Cut {
-                    location,
-                    span: Some(span),
-                },
-            )),
-            None => wanted.push(Cut::whole(location)),
+        let file = path
+            .canonicalize()
+            .map_err(|source| Error::UnresolvedFile {
+                path: path.clone(),
+                source,
+            })?;
+        let location = MediaLocation::local(&file);
+
+        if file.is_dir() {
+            return Err(Error::PlaylistRowIsAFolder { path: file });
+        }
+        if names_a_sheet(&location) {
+            let cuts = read_sheet_cuts(&sources, &file)?;
+
+            if cuts.is_empty() {
+                return Err(Error::SheetNamesNoAudio { path: file });
+            }
+            wanted.extend(cuts.into_iter().map(|(location, span)| Cut {
+                location,
+                span: Some(span),
+            }));
+        } else if names_audio(&file) {
+            wanted.push(Cut::whole(location));
+        } else {
+            return Err(Error::PlaylistRowIsNotAudio { path: file });
         }
     }
 
@@ -490,7 +499,7 @@ mod tests {
         analyse,
         arguments::from_here,
         cli::{RepeatArg, Sub, TransportArgs},
-        fixtures::parsed,
+        fixtures::{parsed, scratch},
     };
 
     #[test]
@@ -611,6 +620,58 @@ mod tests {
 
         drop(library);
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
+    }
+
+    #[test]
+    fn a_folder_a_file_that_is_not_audio_and_a_sheet_naming_nothing_playable_are_refused_and_store_nothing()
+     {
+        let folder = scratch("playlist-add-refused");
+        let songs = folder.join("songs");
+
+        fs::create_dir_all(&songs).expect("a folder");
+        fs::write(folder.join("whole.wav"), analyse::tests::silent_wave()).expect("a wave file");
+        fs::write(folder.join("notes.txt"), "my notes").expect("a text file");
+        fs::write(
+            folder.join("gone.cue"),
+            "FILE \"missing.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n",
+        )
+        .expect("a sheet naming a file that is not there");
+        fs::write(folder.join("broken.cue"), [0xff, 0xfe, 0x00]).expect("an unreadable sheet");
+
+        let library = Library::open(&folder.join("library.db")).expect("a catalog");
+
+        let into_a_folder = extend(&library, "Mixtape", &[songs]);
+        let text = extend(&library, "Mixtape", &[folder.join("notes.txt")]);
+        let nothing_to_cut = extend(&library, "Mixtape", &[folder.join("gone.cue")]);
+        let unreadable = extend(&library, "Mixtape", &[folder.join("broken.cue")]);
+        let beside_a_good_one = extend(
+            &library,
+            "Mixtape",
+            &[folder.join("whole.wav"), folder.join("notes.txt")],
+        );
+        let stored = library.playlist_named("Mixtape").expect("a read");
+
+        drop(library);
+        fs::remove_dir_all(&folder).expect("the scratch folder goes");
+
+        assert!(matches!(
+            into_a_folder,
+            Err(Error::PlaylistRowIsAFolder { .. })
+        ));
+        assert!(matches!(text, Err(Error::PlaylistRowIsNotAudio { .. })));
+        assert!(matches!(
+            nothing_to_cut,
+            Err(Error::SheetNamesNoAudio { .. })
+        ));
+        assert!(matches!(
+            unreadable,
+            Err(Error::Codec(_) | Error::SheetNamesNoAudio { .. })
+        ));
+        assert!(matches!(
+            beside_a_good_one,
+            Err(Error::PlaylistRowIsNotAudio { .. })
+        ));
+        assert!(stored.is_none(), "a refused add stored a playlist");
     }
 
     #[test]

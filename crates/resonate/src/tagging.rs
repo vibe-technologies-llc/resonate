@@ -10,7 +10,7 @@ use resonate_lyrics::{Beside, KeptSheet, Standing, plan_beside, write_beside};
 
 use crate::{
     arguments::{from_here, local_path},
-    error::Result,
+    error::{Error, Result},
     info::bytes_text,
     organising::{filed_from, under_its_root},
     passes::{finished, none_failed, until_told},
@@ -195,7 +195,15 @@ pub(crate) fn dedupe(library: &Library, apply: bool) -> Result<()> {
     for left in &deleted.sidecars_kept {
         said!("{}", words::main::left_beside(left.display().to_string()));
     }
-    Ok(())
+    none_refused_the_trash(deleted.kept)
+}
+
+const fn none_refused_the_trash(refused: u64) -> Result<()> {
+    if refused > 0 {
+        Err(Error::TrashRefused { refused })
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) fn pictured(picture: &CoverArt) -> String {
@@ -356,13 +364,21 @@ mod tests {
     use clap::Parser as _;
     use resonate_codec::{Picturing, TagSource as _};
     use resonate_core::MediaLocation;
-    use resonate_library::LyricText;
+    use resonate_library::{LyricText, Removal, Trashes};
 
     use super::*;
     use crate::{
         cli::{Cli, Sub},
-        fixtures::{parsed, scanned, scratch, silent_wave},
+        fixtures::{ALBUM, ARTIST, TITLE, parsed, scanned, scratch, silent_wave, tagged_wave},
     };
+
+    struct Refusing;
+
+    impl Trashes for Refusing {
+        fn trash(&self, _file: &Path) -> Removal {
+            Removal::Kept
+        }
+    }
 
     const KEPT: &str = "[00:01.00]all that you touch\n[00:05.00]all that you see\n";
 
@@ -426,6 +442,33 @@ mod tests {
         assert_eq!(after, "[00:02.00]their own");
         assert!(matches!(replaced, Sheeted::Beside(Beside::Written(_))));
         assert_eq!(fs::read_to_string(&sheet).expect("the sheet"), KEPT);
+    }
+
+    #[test]
+    fn a_dedupe_the_trash_refused_answers_an_error_and_leaves_every_copy() {
+        let root = scratch("dedupe-refused")
+            .canonicalize()
+            .expect("a canonical folder");
+        let song = tagged_wave(&[(TITLE, "Intro"), (ARTIST, "Ada"), (ALBUM, "First")]);
+
+        fs::write(root.join("a.wav"), &song).expect("a song");
+        fs::write(root.join("b.wav"), &song).expect("a copy");
+
+        let library = scanned(&root);
+
+        library.trash_through(Some(Arc::new(Refusing)));
+
+        let found = library.identical_copies().expect("the copies").identical;
+        let previewed = dedupe(&library, false);
+        let applied = dedupe(&library, true);
+        let standing = root.join("a.wav").exists() && root.join("b.wav").exists();
+
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        assert_eq!(found.len(), 1);
+        assert!(previewed.is_ok());
+        assert!(matches!(applied, Err(Error::TrashRefused { refused: 1 })));
+        assert!(standing);
     }
 
     #[test]

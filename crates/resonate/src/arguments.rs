@@ -247,13 +247,17 @@ pub(crate) fn sheet_items(
 }
 
 pub(crate) fn sheet_cuts(sources: &Sources, path: &Path) -> Vec<(MediaLocation, FrameSpan)> {
-    let sheet = match read_cue_media(sources, &MediaLocation::local(path)) {
-        Ok(sheet) => sheet,
-        Err(error) => {
-            tracing::warn!(%error, path = %path.display(), "a cue sheet could not be read");
-            return Vec::new();
-        }
-    };
+    read_sheet_cuts(sources, path).unwrap_or_else(|error| {
+        tracing::warn!(%error, path = %path.display(), "a cue sheet could not be read");
+        Vec::new()
+    })
+}
+
+pub(crate) fn read_sheet_cuts(
+    sources: &Sources,
+    path: &Path,
+) -> std::result::Result<Vec<(MediaLocation, FrameSpan)>, resonate_codec::Error> {
+    let sheet = read_cue_media(sources, &MediaLocation::local(path))?;
 
     let mut cuts = Vec::new();
 
@@ -279,7 +283,7 @@ pub(crate) fn sheet_cuts(sources: &Sources, path: &Path) -> Vec<(MediaLocation, 
             cuts.push((location.clone(), span));
         }
     }
-    cuts
+    Ok(cuts)
 }
 
 #[cfg(test)]

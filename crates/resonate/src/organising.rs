@@ -40,7 +40,7 @@ pub(crate) fn organise(
         walk_back: how.walk_back,
     })?)?;
 
-    if how.walk_back && summary.plan.moves.is_empty() {
+    if how.walk_back && nothing_was_kept_to_put_back(&summary) {
         said!("{}", words::main::nothing_to_put_back());
         return Ok(());
     }
@@ -49,10 +49,19 @@ pub(crate) fn organise(
         tell_the_players_where_files_went(&summary);
     }
     finished(PassKind::Organise, summary.cancelled)?;
-    none_failed(
-        PassKind::Organise,
-        if how.apply { summary.stats.failed } else { 0 },
-    )
+    none_failed(PassKind::Organise, failed_to_apply(&summary, how))
+}
+
+fn nothing_was_kept_to_put_back(summary: &OrganiseSummary) -> bool {
+    summary.plan.moves.is_empty() && summary.plan.refused.is_empty() && !summary.cancelled
+}
+
+fn failed_to_apply(summary: &OrganiseSummary, how: Organising) -> u64 {
+    match (how.apply, how.walk_back) {
+        (false, _) => 0,
+        (true, false) => summary.stats.failed,
+        (true, true) => summary.plan.refused.len() as u64,
+    }
 }
 
 fn tell_the_players_where_files_went(summary: &OrganiseSummary) {
@@ -184,4 +193,134 @@ pub(crate) fn under_its_root(path: &Path, roots: &[PathBuf]) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, slice};
+
+    use super::*;
+    use crate::{
+        error::Error,
+        fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, tagged_wave},
+    };
+
+    const LAYOUT: &str = "{album}/{title}";
+
+    fn organised_once(name: &str) -> (PathBuf, Library, PathBuf) {
+        let root = scratch(name).canonicalize().expect("a canonical folder");
+
+        fs::write(
+            root.join("a.wav"),
+            tagged_wave(&[(TITLE, "Intro"), (ARTIST, "Ada"), (ALBUM, "First")]),
+        )
+        .expect("a song");
+
+        let library = scanned(&root);
+        let config = Config::default();
+
+        organise(
+            &library,
+            &config,
+            Some(LAYOUT),
+            slice::from_ref(&root),
+            Organising {
+                apply: true,
+                walk_back: false,
+            },
+        )
+        .expect("an applied run");
+
+        let moved = root.join("First/Intro.wav");
+
+        assert!(moved.exists(), "the run did not file the song");
+        (root, library, moved)
+    }
+
+    fn walked_back(library: &Library, root: &Path, apply: bool) -> OrganiseSummary {
+        until_told(
+            library
+                .organise(OrganiseOptions {
+                    layout: Layout::read(LAYOUT).expect("a layout"),
+                    roots: vec![root.to_path_buf()],
+                    only: Vec::new(),
+                    apply,
+                    walk_back: true,
+                })
+                .expect("a walk back"),
+        )
+        .expect("a summary")
+    }
+
+    #[test]
+    fn a_move_the_walk_back_refuses_is_printed_and_the_command_exits_non_zero() {
+        let (root, library, moved) = organised_once("organise-undo-refused");
+
+        fs::remove_file(&moved).expect("the filed song removed");
+
+        let summary = walked_back(&library, &root, true);
+        let printed = organised(&summary, slice::from_ref(&root), true);
+
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        assert!(summary.plan.moves.is_empty());
+        assert_eq!(summary.plan.refused.len(), 1);
+        assert!(!nothing_was_kept_to_put_back(&summary));
+        assert!(printed.contains("Intro.wav"), "{printed}");
+        assert_eq!(
+            failed_to_apply(
+                &summary,
+                Organising {
+                    apply: true,
+                    walk_back: true
+                }
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn an_undo_with_a_move_refused_answers_an_error() {
+        let (root, library, moved) = organised_once("organise-undo-exit");
+
+        fs::remove_file(&moved).expect("the filed song removed");
+
+        let walked = organise(
+            &library,
+            &Config::default(),
+            Some(LAYOUT),
+            slice::from_ref(&root),
+            Organising {
+                apply: true,
+                walk_back: true,
+            },
+        );
+
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        assert!(matches!(
+            walked,
+            Err(Error::FilesFailed {
+                pass: PassKind::Organise,
+                failed: 1
+            })
+        ));
+    }
+
+    #[test]
+    fn a_cancelled_walk_back_with_nothing_put_back_is_not_nothing_to_put_back() {
+        let mut summary = OrganiseSummary::default();
+
+        assert!(nothing_was_kept_to_put_back(&summary));
+
+        summary.cancelled = true;
+
+        assert!(!nothing_was_kept_to_put_back(&summary));
+        assert!(matches!(
+            finished(PassKind::Organise, summary.cancelled),
+            Err(Error::Cancelled {
+                pass: PassKind::Organise
+            })
+        ));
+    }
 }

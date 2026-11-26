@@ -422,4 +422,47 @@ mod tests {
         assert!(matches!(without_a_kind, Err(Error::MarkNeedsOneKind)));
         assert!(matches!(a_stranger, Err(Error::NoSuchArtist(_))));
     }
+
+    fn library_of_two_albums_sharing_a_title() -> (PathBuf, Library) {
+        let root = scratch("favourites-albums");
+
+        for (folder, artist) in [("ada", "Ada"), ("ben", "Ben")] {
+            fs::create_dir_all(root.join(folder)).expect("a folder");
+            fs::write(
+                root.join(folder).join("a.wav"),
+                tagged_wave(&[(TITLE, "Intro"), (ARTIST, artist), (ALBUM, "Live: Hits")]),
+            )
+            .expect("a song");
+        }
+
+        let library = scanned(&root);
+        (root, library)
+    }
+
+    #[test]
+    fn two_albums_sharing_a_name_refuse_a_bare_name_until_an_artist_narrows_it() {
+        let (root, library) = library_of_two_albums_sharing_a_title();
+
+        let bare = run(&library, &asked(&["--albums", "--add", "Live: Hits"]));
+        let marked_none = library
+            .favourite_albums(&AlbumQuery::default())
+            .expect("the albums");
+
+        run(
+            &library,
+            &asked(&["--albums", "--add", "Live: Hits", "--by", "Ben"]),
+        )
+        .expect("a mark");
+
+        let marked = library
+            .favourite_albums(&AlbumQuery::default())
+            .expect("the albums");
+
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        assert!(matches!(bare, Err(Error::SeveralNamed { held: 2, .. })));
+        assert!(marked_none.is_empty(), "a refused name marked an album");
+        assert_eq!(marked.len(), 1);
+        assert_eq!(marked[0].artist.as_deref(), Some("Ben"));
+    }
 }

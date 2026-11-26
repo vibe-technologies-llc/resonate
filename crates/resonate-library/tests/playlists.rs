@@ -531,6 +531,31 @@ fn a_timed_row_takes_its_rate_from_the_catalog_rather_than_probing_the_file() ->
 }
 
 #[test]
+fn an_export_over_a_file_that_names_no_playlist_format_is_refused_and_leaves_it_alone() -> Result<()>
+{
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    let id = library.start_playlist("Evening", &[whole("/music/a.wav")])?;
+    let notes = tree.write("notes.txt", b"my notes");
+    let bare = tree.path().join("evening");
+
+    let over_notes = library.export_playlist(id, &notes);
+    let over_a_bare_name = library.export_playlist(id, &bare);
+
+    assert!(matches!(
+        over_notes,
+        Err(Error::NoPlaylistFormatNamed { ref path }) if *path == notes
+    ));
+    assert!(matches!(
+        over_a_bare_name,
+        Err(Error::NoPlaylistFormatNamed { .. })
+    ));
+    assert_eq!(fs::read(&notes).expect("the notes read"), b"my notes");
+    assert!(!bare.exists());
+    Ok(())
+}
+
+#[test]
 fn an_export_that_fails_leaves_nothing_staged_beside_its_target() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;

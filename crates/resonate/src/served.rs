@@ -495,7 +495,10 @@ const SUBSONIC: &str = "subsonic";
 #[cfg(feature = "online")]
 fn chosen(services: InPlace, asked: Option<&str>) -> Result<Arc<dyn PlaysInPlace>> {
     let Some(asked) = asked else {
-        return services.into_iter().next().ok_or(Error::NoServedService);
+        return services
+            .into_iter()
+            .find(|service| service.scheme().as_str() != resonate_dlna::SCHEME)
+            .ok_or(Error::NoServedService);
     };
     let named = asked.trim();
     services
@@ -998,6 +1001,8 @@ mod tests {
         let tidal = chosen(services.clone(), Some(" TIDAL ")).expect("the service named");
         let unset = chosen(services, Some("monochrome"));
         let none = chosen(Vec::new(), None);
+        let only_on_the_network =
+            chosen(vec![Arc::new(resonate_dlna::Dlna::on_the_network())], None);
         let rendered: Vec<String> = tables(tidal.as_ref(), &browsing())
             .expect("the first page")
             .iter()
@@ -1010,6 +1015,7 @@ mod tests {
             matches!(unset, Err(Error::ServiceNotServed { service }) if service == "monochrome")
         );
         assert!(matches!(none, Err(Error::NoServedService)));
+        assert!(matches!(only_on_the_network, Err(Error::NoServedService)));
         assert_eq!(rendered.len(), 2);
         assert!(rendered[0].contains("Meddle") && rendered[0].contains("tidal:album/7"));
         assert!(rendered[1].contains("Echoes") && rendered[1].contains("tidal:track/12"));

@@ -471,10 +471,6 @@ impl PlaylistFormat {
         ("xspf", Self::Xspf),
     ];
 
-    pub fn of(path: &Path) -> Self {
-        Self::named_by(path).unwrap_or_default()
-    }
-
     pub fn named_by(path: &Path) -> Option<Self> {
         let extension = path.extension().and_then(OsStr::to_str)?;
         Self::EXTENSIONS
