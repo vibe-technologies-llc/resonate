@@ -386,12 +386,6 @@ pub fn local_file(line: &str, hosts: &ShareHosts) -> Option<PathBuf> {
     path_of_the_uri(&encoded, hosts)
 }
 
-#[cfg(unix)]
-fn path_of_the_uri(encoded: &str, _hosts: &ShareHosts) -> Option<PathBuf> {
-    unescaped(encoded)
-}
-
-#[cfg(windows)]
 fn path_of_the_uri(encoded: &str, hosts: &ShareHosts) -> Option<PathBuf> {
     MediaLocation::from_uri_among(&format!("{FILE_SCHEME_NAME}://{encoded}"), hosts)?
         .as_path()
@@ -816,6 +810,18 @@ mod tests {
             Some(PathBuf::from("/music/file:track.flac"))
         );
         assert_eq!(read_at("file://elsewhere/tmp/a.wav"), None);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_dot_segment_in_a_file_uri_reads_as_missing_instead_of_being_resolved() {
+        assert_eq!(read_at("file:///music/../etc/a.flac"), None);
+        assert_eq!(read_at("file:/music/./a.flac"), None);
+        assert_eq!(read_at("file://localhost/music/%2E%2E/a.flac"), None);
+        assert_eq!(
+            read_at("file:///music/a..b/.c/a.flac"),
+            Some(PathBuf::from("/music/a..b/.c/a.flac"))
+        );
     }
 
     #[test]
