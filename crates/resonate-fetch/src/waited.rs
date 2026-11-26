@@ -152,7 +152,7 @@ fn second_named(date: &str, now: SystemTime) -> Option<i64> {
         return None;
     }
 
-    let day = CivilDate { year, month, day }.day_since_the_epoch();
+    let day = CivilDate { year, month, day }.day_since_the_epoch()?;
     Some(day.saturating_mul(SECONDS_PER_DAY) + clock)
 }
 
@@ -215,7 +215,8 @@ mod tests {
     }
 
     fn second_of(date: CivilDate, clock: i64) -> u64 {
-        u64::try_from(date.day_since_the_epoch() * SECONDS_PER_DAY + clock).expect("after 1970")
+        u64::try_from(date.day_since_the_epoch().expect("a day") * SECONDS_PER_DAY + clock)
+            .expect("after 1970")
     }
 
     fn the_sixth_of_november(year: i64) -> CivilDate {

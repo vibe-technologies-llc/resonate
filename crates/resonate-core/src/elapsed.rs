@@ -8,41 +8,55 @@ const SECONDS_A_DAY: u64 = 24 * SECONDS_AN_HOUR;
 const SECONDS_A_WEEK: u64 = 7 * SECONDS_A_DAY;
 const SECONDS_A_MONTH: u64 = 30 * SECONDS_A_DAY;
 const SECONDS_A_YEAR: u64 = 365 * SECONDS_A_DAY;
+const SECONDS_IN_TWELVE_MONTHS: u64 = 12 * SECONDS_A_MONTH;
 
 struct Reach {
     seconds: u64,
+    per: u64,
     ago: fn(u64) -> String,
     briefly: fn(u64) -> String,
 }
 
+impl Reach {
+    fn count(&self, ago: u64) -> u64 {
+        (ago / self.per).max(1)
+    }
+}
+
 const REACHES: [Reach; 6] = [
     Reach {
-        seconds: SECONDS_A_YEAR,
+        seconds: SECONDS_IN_TWELVE_MONTHS,
+        per: SECONDS_A_YEAR,
         ago: words::elapsed::years_ago,
         briefly: words::elapsed::years_briefly,
     },
     Reach {
         seconds: SECONDS_A_MONTH,
+        per: SECONDS_A_MONTH,
         ago: words::elapsed::months_ago,
         briefly: words::elapsed::months_briefly,
     },
     Reach {
         seconds: SECONDS_A_WEEK,
+        per: SECONDS_A_WEEK,
         ago: words::elapsed::weeks_ago,
         briefly: words::elapsed::weeks_briefly,
     },
     Reach {
         seconds: SECONDS_A_DAY,
+        per: SECONDS_A_DAY,
         ago: words::elapsed::days_ago,
         briefly: words::elapsed::days_briefly,
     },
     Reach {
         seconds: SECONDS_AN_HOUR,
+        per: SECONDS_AN_HOUR,
         ago: words::elapsed::hours_ago,
         briefly: words::elapsed::hours_briefly,
     },
     Reach {
         seconds: SECONDS_A_MINUTE,
+        per: SECONDS_A_MINUTE,
         ago: words::elapsed::minutes_ago,
         briefly: words::elapsed::minutes_briefly,
     },
@@ -75,7 +89,7 @@ pub fn since(when: SystemTime, now: SystemTime) -> String {
         .find(|reach| ago >= reach.seconds)
         .map_or_else(
             || words::elapsed::just_now().to_owned(),
-            |reach| (reach.ago)(ago / reach.seconds),
+            |reach| (reach.ago)(reach.count(ago)),
         )
 }
 
@@ -87,7 +101,7 @@ pub fn age(when: SystemTime, now: SystemTime) -> String {
         .find(|reach| ago >= reach.seconds)
         .map_or_else(
             || words::elapsed::now().to_owned(),
-            |reach| (reach.briefly)(ago / reach.seconds),
+            |reach| (reach.briefly)(reach.count(ago)),
         )
 }
 
@@ -118,6 +132,17 @@ mod tests {
         assert_eq!(ago(SECONDS_A_MONTH * 5), "5 months ago");
         assert_eq!(ago(SECONDS_A_YEAR * 3), "3 years ago");
         assert_eq!(ago(400 * SECONDS_A_DAY), "1 year ago");
+    }
+
+    #[test]
+    fn twelve_months_are_a_year_and_a_year_is_never_counted_as_none() {
+        assert_eq!(ago(359 * SECONDS_A_DAY), "11 months ago");
+        assert_eq!(ago(360 * SECONDS_A_DAY), "1 year ago");
+        assert_eq!(ago(362 * SECONDS_A_DAY), "1 year ago");
+        assert_eq!(ago(364 * SECONDS_A_DAY), "1 year ago");
+        assert_eq!(ago(730 * SECONDS_A_DAY), "2 years ago");
+        assert_eq!(briefly(362 * SECONDS_A_DAY), "1y");
+        assert_eq!(briefly(359 * SECONDS_A_DAY), "11mo");
     }
 
     #[test]

@@ -102,6 +102,14 @@ impl FrameSpan {
         }
     }
 
+    pub const fn is_empty(self) -> bool {
+        matches!(self.frames, Some(Frames(0)))
+    }
+
+    pub const fn nonempty(self) -> Option<Self> {
+        if self.is_empty() { None } else { Some(self) }
+    }
+
     pub const fn within(self, whole: Frames) -> Self {
         let start = if self.start.0 > whole.0 {
             whole
@@ -221,6 +229,23 @@ mod tests {
 
         assert_eq!(over.within(Frames(500)).frames(), Some(Frames(400)));
         assert_eq!(over.within(Frames(500)).end(), Some(Frames(500)));
+    }
+
+    #[test]
+    fn a_span_holding_no_frame_is_empty_and_is_not_a_cut() {
+        let empty = FrameSpan::between(Frames(300), Frames(300));
+        let past = FrameSpan::starting(Frames(800)).within(Frames(500));
+
+        assert!(empty.is_empty());
+        assert_eq!(empty.nonempty(), None);
+        assert_eq!(past.nonempty(), None);
+        assert_eq!(
+            FrameSpan::starting(Frames(800))
+                .nonempty()
+                .map(FrameSpan::start),
+            Some(Frames(800))
+        );
+        assert!(!FrameSpan::between(Frames(300), Frames(301)).is_empty());
     }
 
     #[test]

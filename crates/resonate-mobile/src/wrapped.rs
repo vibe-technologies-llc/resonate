@@ -5,7 +5,7 @@ use resonate_core::{
     Calendar, CivilDate, seconds_since_the_epoch,
     wrapped::{
         FirstSong, FormatHeard, FormatShares, QuarterHeard, RANKED_AT_MOST, Ranked, Rhythm, Slide,
-        YearReview, genres_tallied, year_worth_showing,
+        YearReview, genres_tallied, year_worth_showing, years_held_between,
     },
 };
 use resonate_library::HistoryKept;
@@ -297,8 +297,8 @@ fn years_heard(connection: &Connection, calendar: &Calendar) -> Result<Vec<i64>>
     {
         let first = calendar.date_at(moment(first)).year;
         let last = calendar.date_at(moment(last)).year;
-        for year in first..=last {
-            let (from, to) = bounds_of(calendar, year);
+        for year in years_held_between(first, last) {
+            let (from, to) = bounds_of(calendar, year)?;
 
             let held = connection
                 .query_row(ANY_LISTEN_BETWEEN, params![from, to], |row| {
@@ -333,7 +333,7 @@ fn year_review(
     calendar: &Calendar,
     history: HistoryKept,
 ) -> Result<YearReview> {
-    let (from, to) = bounds_of(calendar, year);
+    let (from, to) = bounds_of(calendar, year)?;
 
     let (plays, listened, songs, artists, albums) = connection
         .query_row(WHAT_WAS_HEARD_IN_THE_YEAR, params![from, to], |row| {
@@ -372,10 +372,10 @@ fn year_review(
     })
 }
 
-fn bounds_of(calendar: &Calendar, year: i64) -> (i64, i64) {
-    let (from, to) = calendar.year_bounds(year);
+fn bounds_of(calendar: &Calendar, year: i64) -> Result<(i64, i64)> {
+    let (from, to) = calendar.year_bounds(year)?;
 
-    (seconds_since_the_epoch(from), seconds_since_the_epoch(to))
+    Ok((seconds_since_the_epoch(from), seconds_since_the_epoch(to)))
 }
 
 fn songs_new(
@@ -788,6 +788,28 @@ mod tests {
             .lock()
             .query_row("SELECT count(*) FROM wrapped_years", [], |row| row.get(0))
             .expect("a count")
+    }
+
+    #[test]
+    fn a_year_no_timestamp_holds_is_refused() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+
+        for year in [i64::MAX, i64::MIN, 10_000] {
+            let refused = catalog.wrapped_on(
+                Some(year),
+                &Calendar::utc(),
+                HistoryKept::Forever,
+                WHILE_2025_RUNS,
+            );
+
+            assert!(
+                matches!(
+                    refused,
+                    Err(Error::Domain(resonate_core::Error::YearNotHeld(refused))) if refused == year
+                ),
+                "{year}"
+            );
+        }
     }
 
     #[test]

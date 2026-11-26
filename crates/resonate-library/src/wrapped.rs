@@ -5,7 +5,7 @@ use resonate_core::{
     Calendar,
     wrapped::{
         FirstSong, FormatHeard, FormatShares, QuarterHeard, RANKED_AT_MOST, Ranked, Rhythm,
-        YearReview, genres_tallied,
+        YearReview, genres_tallied, years_held_between,
     },
 };
 use rusqlite::{Connection, OptionalExtension, params};
@@ -164,8 +164,8 @@ fn years_listened(inner: &Inner, calendar: &Calendar) -> Result<Vec<i64>> {
         let last = calendar.date_at(store::from_nanos(last)).year;
         let mut years = Vec::new();
 
-        for year in first..=last {
-            let (from, to) = bounds_of(calendar, year);
+        for year in years_held_between(first, last) {
+            let (from, to) = bounds_of(calendar, year)?;
 
             let held = connection
                 .query_row(ANY_LISTEN_BETWEEN, params![from, to], |row| {
@@ -265,7 +265,7 @@ fn year_review_afresh(
     calendar: &Calendar,
     history: HistoryKept,
 ) -> Result<YearReview> {
-    let (from, to) = bounds_of(calendar, year);
+    let (from, to) = bounds_of(calendar, year)?;
 
     inner.read(|connection| {
         let (plays, listened, songs, artists, albums) = connection
@@ -306,10 +306,10 @@ fn year_review_afresh(
     })
 }
 
-fn bounds_of(calendar: &Calendar, year: i64) -> (i64, i64) {
-    let (from, to) = calendar.year_bounds(year);
+fn bounds_of(calendar: &Calendar, year: i64) -> Result<(i64, i64)> {
+    let (from, to) = calendar.year_bounds(year)?;
 
-    (store::to_nanos(from), store::to_nanos(to))
+    Ok((store::to_nanos(from), store::to_nanos(to)))
 }
 
 fn songs_new(
@@ -576,6 +576,29 @@ mod tests {
 
     fn years_kept_in(library: &Library) -> Vec<i64> {
         library.inner().read(years_kept).expect("the years kept")
+    }
+
+    #[test]
+    fn a_year_no_timestamp_holds_is_refused() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
+        for year in [i64::MAX, i64::MIN, 10_000] {
+            let refused = year_review(
+                library.inner(),
+                year,
+                &Calendar::utc(),
+                HistoryKept::Forever,
+                while_2025_runs(),
+            );
+
+            assert!(
+                matches!(
+                    refused,
+                    Err(Error::Domain(resonate_core::Error::YearNotHeld(refused))) if refused == year
+                ),
+                "{year}"
+            );
+        }
     }
 
     #[test]

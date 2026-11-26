@@ -122,7 +122,9 @@ pub fn rating_in_the_title(title: &str) -> Rating {
 
 const DATED_QUALIFIERS: &[&str] = &["remaster", "remastered"];
 
-const FEATURING: &[&str] = &["feat", "ft", "featuring", "with"];
+const FEATURING: &[&str] = &["feat", "ft", "featuring"];
+
+const JOINING: &str = "with";
 
 const BRACKETS: &[(char, char)] = &[('(', ')'), ('[', ']')];
 
@@ -153,10 +155,18 @@ pub fn is_a_version_qualifier(text: &str) -> bool {
     VERSION_QUALIFIERS.contains(&squeezed.as_str()) || a_dated_qualifier(&squeezed)
 }
 
-fn names_a_guest(text: &str) -> bool {
+fn first_word_of(text: &str) -> Option<String> {
     text.split(|glyph: char| !glyph.is_alphanumeric())
         .find(|word| !word.is_empty())
-        .is_some_and(|first| FEATURING.contains(&first.to_lowercase().as_str()))
+        .map(str::to_lowercase)
+}
+
+fn credits_a_featured_guest(text: &str) -> bool {
+    first_word_of(text).is_some_and(|first| FEATURING.contains(&first.as_str()))
+}
+
+fn names_a_guest(text: &str) -> bool {
+    credits_a_featured_guest(text) || first_word_of(text).is_some_and(|first| first == JOINING)
 }
 
 fn without_a_bracket_that<'a>(
@@ -213,7 +223,7 @@ pub fn bare(title: &str) -> &str {
     let mut kept = title.trim();
     loop {
         let shorter = without_brackets_that(kept, |inside| {
-            is_a_version_qualifier(inside) || names_a_guest(inside)
+            is_a_version_qualifier(inside) || credits_a_featured_guest(inside)
         });
         let shorter = without_a_qualifying_suffix(shorter).unwrap_or(shorter);
 
@@ -291,6 +301,22 @@ mod tests {
     }
 
     #[test]
+    fn a_with_credit_is_a_guest_for_the_title_asked_about_but_not_for_the_grouping_key() {
+        assert_eq!(
+            without_guests("C’est La Vie (with bbno$ & Rich Brian)"),
+            "C’est La Vie"
+        );
+        assert_eq!(without_guests("Stay [With Me]"), "Stay");
+        assert_eq!(bare("Stay (With Me)"), "Stay (With Me)");
+        assert_eq!(bare("Stay [with Me]"), "Stay [with Me]");
+        assert_eq!(
+            bare("C’est La Vie (with bbno$ & Rich Brian)"),
+            "C’est La Vie (with bbno$ & Rich Brian)"
+        );
+        assert_eq!(bare("Stay (Featuring Me)"), "Stay");
+    }
+
+    #[test]
     fn a_bare_title_drops_versions_guests_and_a_dashed_version_but_not_a_live_take() {
         assert_eq!(
             bare("Bohemian Rhapsody - Remastered 2011"),
@@ -299,7 +325,7 @@ mod tests {
         assert_eq!(bare("Stand By Me - Remastered"), "Stand By Me");
         assert_eq!(bare("Blinding Lights - Radio Edit"), "Blinding Lights");
         assert_eq!(
-            bare("C’est La Vie (with bbno$ & Rich Brian)"),
+            bare("C’est La Vie (feat. bbno$ & Rich Brian)"),
             "C’est La Vie"
         );
         assert_eq!(

@@ -77,6 +77,9 @@ pub enum Error {
 
     #[error("not a Chromaprint written in URL-safe base64")]
     NotAChromaprint,
+
+    #[error("the year {0} is outside {first}..={last}", first = crate::wrapped::FIRST_YEAR_HELD, last = crate::wrapped::LAST_YEAR_HELD)]
+    YearNotHeld(i64),
 }
 
 pub type Result<T> = result::Result<T, Error>;

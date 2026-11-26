@@ -176,10 +176,11 @@ impl CueFile {
             Some(next) => FrameSpan::between(start, next.heard_from().at(rate)),
             None => FrameSpan::starting(start),
         };
-        Some(match whole {
+        match whole {
             Some(whole) => span.within(whole),
             None => span,
-        })
+        }
+        .nonempty()
     }
 
     pub fn cut_at(&self, start: Frames, rate: SampleRate) -> Option<&CueTrack> {
@@ -1323,6 +1324,18 @@ FILE "Meddle.flac" WAVE
         let bounded = file.span_of(2, rate, Some(Frames(60_000_000)));
 
         assert_eq!(bounded.and_then(FrameSpan::end), Some(Frames(60_000_000)));
+    }
+
+    #[test]
+    fn a_track_that_starts_where_the_file_ends_has_no_span() {
+        let file = meddle();
+        let rate = SampleRate::HZ_44100;
+
+        let second = file.span_of(1, rate, None).expect("a second span");
+
+        assert_eq!(file.span_of(1, rate, second.end()), Some(second));
+        assert_eq!(file.span_of(2, rate, Some(second.start())), None);
+        assert_eq!(file.span_of(2, rate, Some(Frames::ZERO)), None);
     }
 
     #[test]

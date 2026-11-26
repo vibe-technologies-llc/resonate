@@ -110,4 +110,21 @@ mod tests {
         assert!(told.contains("Nothing was played in 2026"));
         assert!(!told.contains("LISTENED"));
     }
+
+    #[test]
+    fn a_year_no_calendar_holds_is_refused_not_reviewed() {
+        let library = Library::open_in_memory().expect("a catalog");
+
+        for year in [i64::MAX, i64::MIN, 10_000] {
+            assert!(
+                matches!(
+                    print(&library, Some(year), false, HistoryKept::Forever),
+                    Err(Error::Library(resonate_library::Error::Domain(
+                        resonate_core::Error::YearNotHeld(refused)
+                    ))) if refused == year
+                ),
+                "{year}"
+            );
+        }
+    }
 }

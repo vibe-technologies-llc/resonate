@@ -1,11 +1,12 @@
 use std::{
     collections::BTreeMap,
+    ops::RangeInclusive,
     time::{Duration, SystemTime},
 };
 
 use resonate_words::Brevity;
 
-use crate::{Calendar, CivilDate, folded_letters, words};
+use crate::{Calendar, CivilDate, Error, Result, folded_letters, words};
 
 mod frozen;
 
@@ -32,6 +33,10 @@ const SECONDS_IN_AN_HOUR: u64 = 3_600;
 const WHOLE_SHARE: u64 = 1_000;
 
 const DECEMBER: i64 = 12;
+
+pub const FIRST_YEAR_HELD: i64 = -9_998;
+
+pub const LAST_YEAR_HELD: i64 = 9_998;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ranked {
@@ -271,7 +276,11 @@ pub fn genres_tallied(
 }
 
 pub fn year_worth_showing(years_heard: &[i64], today: CivilDate) -> Option<i64> {
-    let latest = years_heard.iter().copied().max()?;
+    let latest = years_heard
+        .iter()
+        .copied()
+        .filter(|year| *year <= today.year)
+        .max()?;
     let earlier = years_heard
         .iter()
         .copied()
@@ -685,8 +694,16 @@ fn spelled_date(date: CivilDate) -> String {
     date.day_and_month(Brevity::Full)
 }
 
+pub fn years_held_between(first: i64, last: i64) -> RangeInclusive<i64> {
+    first.max(FIRST_YEAR_HELD)..=last.min(LAST_YEAR_HELD)
+}
+
 impl Calendar {
-    pub fn year_bounds(&self, year: i64) -> (SystemTime, SystemTime) {
+    pub fn year_bounds(&self, year: i64) -> Result<(SystemTime, SystemTime)> {
+        if !(FIRST_YEAR_HELD..=LAST_YEAR_HELD).contains(&year) {
+            return Err(Error::YearNotHeld(year));
+        }
+
         let day = |year: i64| {
             CivilDate {
                 year,
@@ -694,12 +711,13 @@ impl Calendar {
                 day: 1,
             }
             .day_since_the_epoch()
+            .ok_or(Error::YearNotHeld(year))
         };
 
-        (
-            self.midnight_of(day(year)),
-            self.midnight_of(day(year.saturating_add(1))),
-        )
+        Ok((
+            self.midnight_of(day(year)?),
+            self.midnight_of(day(year + 1)?),
+        ))
     }
 }
 
@@ -734,7 +752,7 @@ mod tests {
     #[test]
     fn a_year_begins_at_the_listeners_own_midnight_and_ends_at_the_next() {
         let east = Calendar::fixed(TWO_HOURS_EAST).expect("a fixed offset is a zone");
-        let (from, to) = east.year_bounds(2024);
+        let (from, to) = east.year_bounds(2024).expect("a year held");
 
         assert_eq!(east.date_at(from), date(2024, 1, 1));
         assert_eq!(
@@ -896,6 +914,34 @@ mod tests {
         assert_eq!(year_worth_showing(&[2026], in_june), Some(2026));
         assert_eq!(year_worth_showing(&[2024], in_june), Some(2024));
         assert_eq!(year_worth_showing(&[], in_june), None);
+    }
+
+    #[test]
+    fn a_year_ahead_of_today_is_never_the_year_shown() {
+        let in_june = date(2026, 6, 1);
+        let in_december = date(2026, 12, 1);
+
+        assert_eq!(year_worth_showing(&[2030, 2025], in_june), Some(2025));
+        assert_eq!(year_worth_showing(&[2030, 2025], in_december), Some(2025));
+        assert_eq!(year_worth_showing(&[2030, 2026], in_june), Some(2026));
+        assert_eq!(year_worth_showing(&[2030, 2027], in_june), None);
+    }
+
+    #[test]
+    fn a_year_no_timestamp_holds_has_no_bounds() {
+        let utc = Calendar::utc();
+
+        for year in [i64::MAX, i64::MIN, LAST_YEAR_HELD + 1, FIRST_YEAR_HELD - 1] {
+            assert_eq!(utc.year_bounds(year), Err(Error::YearNotHeld(year)));
+        }
+        for year in [FIRST_YEAR_HELD, LAST_YEAR_HELD, 0, 2024] {
+            let (from, to) = utc.year_bounds(year).expect("a year held");
+
+            assert!(from < to, "{year}");
+        }
+
+        assert_eq!(years_held_between(i64::MIN, i64::MAX), -9_998..=9_998);
+        assert_eq!(years_held_between(2020, 2024), 2020..=2024);
     }
 
     #[test]

@@ -44,19 +44,15 @@ pub struct ZoneName(Box<str>);
 
 impl ZoneName {
     pub fn given(name: &str) -> Option<Self> {
-        let trimmed = name.trim();
-
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        let kept: String = trimmed
+        let kept: String = name
+            .trim()
             .chars()
             .filter(|letter| !letter.is_control())
             .take(LONGEST_ZONE_NAME)
             .collect();
+        let kept = kept.trim();
 
-        Some(Self(kept.trim_end().into()))
+        (!kept.is_empty()).then(|| Self(kept.into()))
     }
 
     pub fn first_given_to(zone: ZoneId) -> Self {
@@ -169,6 +165,18 @@ mod tests {
         assert_eq!(
             ZoneName::given(&long).map(|name| name.as_str().chars().count()),
             Some(LONGEST_ZONE_NAME)
+        );
+    }
+
+    #[test]
+    fn a_name_of_nothing_but_control_characters_is_none() {
+        for name in ["\u{7}", " \u{7}\u{1b} ", "\u{7} \u{7}", "\t\n"] {
+            assert_eq!(ZoneName::given(name), None, "{name:?}");
+        }
+
+        assert_eq!(
+            ZoneName::given("\u{7} Den").map(|name| name.as_str().to_owned()),
+            Some("Den".to_owned())
         );
     }
 }

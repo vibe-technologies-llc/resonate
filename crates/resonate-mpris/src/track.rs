@@ -370,7 +370,7 @@ fn exists(year: u32, month: u32, day: u32) -> bool {
         month: i64::from(month),
         day: i64::from(day),
     };
-    CivilDate::of_day(date.day_since_the_epoch()) == date
+    date.day_since_the_epoch().map(CivilDate::of_day) == Some(date)
 }
 
 pub(crate) fn iso_8601(date: &str) -> Option<String> {
