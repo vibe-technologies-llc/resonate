@@ -18,12 +18,12 @@ every stage and chain.
 
    It exits 1 naming each reading worse than the baseline by more than its metric's tolerance
    (`worse: SUITE SUBJECT at RATES: METRIC was … and is …`), and each kept reading no longer
-   measured. Name suites to run fewer (`measure eq chain --against baseline.tsv`); `dsp-lab list`
+   measured, or nothing held at all. Name suites to run fewer (`measure eq chain --against baseline.tsv`); `dsp-lab list`
    names them, with their subjects and rates.
 
 2. **A worse reading is a finding.** Read the suite's table in `/tmp/dsp.md` beside the change: a
-   chain's THD or SMPTE IMD moving under 10 dB is the engine's clock-seeded dither, anything else
-   moved because the code did.
+   dithered chain's (an integer sink with a conversion) THD or SMPTE IMD moving under 10 dB is the
+   engine's clock-seeded dither, anything else moved because the code did.
 
 3. **Re-record only what a change means to move.** When the figures are the intended result:
 

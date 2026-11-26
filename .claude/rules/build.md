@@ -27,7 +27,15 @@ dev-dependency, `sync.md`); off desktop Linux (a `--target` that is not one, or 
 is left out, as CI's Windows and macOS jobs leave it. `test` is `cargo nextest run --workspace`,
 wrapped in `dbus-run-session` on Linux where it is on the path; `check` is `fmt --check`, `lint`
 and `test`; `android` and `ios` call the phones' own steps. CI's four clippy jobs run `cargo xtask
-lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`).
+lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`). **The DSP lab is
+in the gate on Linux**: `lint` ends with `clippy --manifest-path dsp-lab/Cargo.toml --all-targets
+--no-default-features` and `test` with `nextest run --manifest-path dsp-lab/Cargo.toml
+--no-default-features --no-tests pass` (the references are off, so no libsoxr is wanted and a filter
+passed on that matches nothing there is no failure), so a change breaking the lab's build fails
+`check` and CI's clippy jobs. The lab is no workspace member, so `--changed` names it
+`resonate-dsp-lab` (`DSP_LAB`): a file under `dsp-lab/` selects it, and so does a change to
+`resonate-dsp` or `resonate-engine` or anything depending on them. Off Linux (a `--target` that is not desktop
+Linux, a Windows or Mac host) it is left out.
 
 - **`--changed`** (`changed.rs`) takes the files differing from the merge base with `origin/master`
   (`--since <rev>`), the working tree and untracked files included, gives each to the member whose
@@ -55,7 +63,9 @@ lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`)
   default features the headless job does not build (the third, `resonate-signin`, whose `window`
   feature is a default, is linted by the full clippy and tested by no job); no job runs `cargo build` before `cargo nextest run`,
   which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
-  bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
+  bench under its ceilings (`benches/ceilings.tsv`: with `RESONATE_BENCH_CEILINGS` set the bench fails
+a measured name with no ceiling and, run whole rather than filtered by words, a listed ceiling it
+never measured), the layering refusals, the fuzz build, the sync server's package
   (`server-package`), on Windows (`windows-latest`) the `windows` job (clippy with `--all-targets` of the workspace but the phones'
   boundary, its binding tool and PipeWire, then the same headless and per-feature clippy lines as
   Linux) beside `windows-tests` (the tests of every crate but the window, then the
@@ -285,7 +295,9 @@ Linux sound server or GUI libraries are needed.
   features, both on by default: `soxr` links the system libsoxr through `pkg-config` (the one C
   library wanted anywhere, since that library is what is measured; nothing in the workspace may
   depend on it) and `rubato` is pure Rust. `--no-default-features` builds and tests with neither.
-  `cargo xtask fmt` formats it beside `fuzz/` (`DETACHED` in `plan.rs`).
+  `cargo xtask fmt` formats it beside `fuzz/` (`DETACHED` in `plan.rs`), and its `Cargo.lock` is
+  raised with the workspace's: every crate both name sits at the version the root lock holds
+  (`rubato`, which the lab measures at 5.1.0 against the workspace's 0.16.2, is the one that differs).
 - **The seams.** A `Subject` names a setting and opens a `Running` (f64 interleaved in, pushed then
   finished, with the latency it claims), so every implementation pays the same buffers. `Stage`
   makes one of any `Processor` and its `Driven` drives it block by block. `Resonate` covers the
@@ -336,10 +348,18 @@ Linux sound server or GUI libraries are needed.
 - **Readings become a baseline.** `measure --tsv FILE` writes every reading as `suite`, rates,
   subject, metric key and value apart by tabs, and `--record FILE` writes the same as a baseline.
   `--against FILE` names each reading worse than the baseline by more than its tolerance, and each
-  kept reading no longer measured, then fails. `dsp-lab/baseline.tsv` is the committed baseline,
+  kept reading no longer measured (a case that was not run or a metric a case no longer gives),
+  then fails; it fails as well when nothing at all was held, and a worker's panic is an error
+  (`WorkerPanicked`), never an empty result. A run of fewer suites or with `--only` holds only the
+  baseline rows those could have measured (`in_scope`), so a subject deleted from a suite that ran
+  fails whatever was named. `dsp-lab/baseline.tsv` is the committed baseline,
   recorded on this machine with the default features. Everything is seeded but the engine's
-  dither, which is seeded from the clock, so a chain's THD and SMPTE IMD (a few bins at the dither
-  floor, which moved 6.8 and 4 dB over six runs) are held within `AMONG_DITHER` (10 dB). Re-record
+  dither, which is seeded from the clock, so the THD and SMPTE IMD of a chain whose plan dithers (`dither_to` is set: `THD_LOUD_DITHERED`,
+  `IMD_DITHERED`, a few bins at the dither floor, which moved 6.8 and 4 dB over six runs) are held
+  within `AMONG_DITHER` (10 dB) and every other reading, a bit-perfect or float chain's included,
+  within its own tolerance (`THD_LOUD`, `IMD`, `DECIBELS`, 0.5 dB). A `Tolerance` allows its absolute
+  figure or a relative share of the baseline, the share capped at `relative_at_most` (`LEVEL`: 2 %
+  and at most 1 dB; `SHARE`, a ripple or deviation: 10 %). Re-record
   only where a change is meant to move a figure, and say which in the commit.
 - **The resample suite is the old comparison, unchanged in arithmetic**: nineteen settings
   (Resonate's four levels, High and Very high each intermediate and minimum, SoXR's eight recipes,

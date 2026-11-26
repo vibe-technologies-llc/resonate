@@ -41,13 +41,13 @@
 0.156	dither lipshitz to 16 bits
 0.228	dither threshold to 16 bits
 0.912	dither threshold to 16 bits at 192k
-0.050	gain at half volume
+0.025	gain at half volume
 0.076	remix 5.1 to stereo
 1.596	chain 5.1 44.1k to stereo 48k, eq, gain, dither
 3.608	chain stereo 44.1k to 48k, gain, guard, dither
-0.050	narrow f64 to s16
-0.050	narrow f64 to s24
-0.050	narrow f64 to s32
+0.025	narrow f64 to s16
+0.025	narrow f64 to s24
+0.025	narrow f64 to s32
 2.190	convolve a second's response at 48k
 10.900	convolve a second's response at 192k
 0.045	crossfeed at 48k

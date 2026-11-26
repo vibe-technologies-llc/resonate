@@ -89,15 +89,26 @@ impl Bench {
                 Some((ceiling.trim().parse().ok()?, name.trim()))
             })
             .collect();
+        let measured = self.measured.borrow();
         let mut held = true;
 
-        for (name, share) in self.measured.borrow().iter() {
+        for (name, share) in measured.iter() {
             let Some((ceiling, _)) = ceilings.iter().find(|(_, held)| held == name) else {
+                println!("{name} costs {share:.3} % of a core and has no ceiling");
+                held = false;
                 continue;
             };
             if share > ceiling {
                 println!("{name} costs {share:.3} % of a core, over its ceiling of {ceiling:.3} %");
                 held = false;
+            }
+        }
+        if self.wanted.is_empty() {
+            for (_, name) in &ceilings {
+                if !measured.iter().any(|(measured, _)| measured == name) {
+                    println!("{name} has a ceiling and was never measured");
+                    held = false;
+                }
             }
         }
         held

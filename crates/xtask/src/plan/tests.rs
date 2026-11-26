@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::{Host, Program, Selection, Step, Summary, format, lint, test};
+use super::{DSP_LAB, Host, Program, Selection, Step, Summary, format, lint, test};
 
 fn these(packages: &[&str]) -> Selection {
     Selection::These(
@@ -30,7 +30,7 @@ fn the_whole_workspace_is_linted_by_every_line_ci_runs() {
 
     let lines: Vec<String> = steps.iter().map(line).collect();
 
-    assert_eq!(steps.len(), 9);
+    assert_eq!(steps.len(), 10);
     assert_eq!(
         lines[0],
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --workspace --all-targets -- -D warnings"
@@ -52,6 +52,10 @@ fn the_whole_workspace_is_linted_by_every_line_ci_runs() {
     assert_eq!(
         lines[8],
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --package resonate-sync --all-targets --no-default-features -- -D warnings"
+    );
+    assert_eq!(
+        lines[9],
+        "cargo clippy --locked --target x86_64-unknown-linux-gnu --manifest-path dsp-lab/Cargo.toml --all-targets --no-default-features -- -D warnings"
     );
 }
 
@@ -75,6 +79,7 @@ fn off_linux_the_phones_boundary_its_binding_tool_and_pipewire_are_left_out() {
         "--workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets"
     ));
     assert!(changed.is_empty());
+    assert!(steps.iter().all(|step| !line(step).contains("dsp-lab")));
 }
 
 #[test]
@@ -111,6 +116,35 @@ fn the_sync_crate_is_linted_again_as_the_server_links_it_without_its_device_feat
 }
 
 #[test]
+fn the_dsp_lab_is_linted_and_tested_without_its_references_whenever_it_or_what_it_measures_changed()
+{
+    let lab = lint(&these(&[DSP_LAB]), None, true);
+    let measured = lint(&these(&["resonate-engine"]), None, false);
+    let unrelated = lint(&these(&["resonate-sync"]), None, false);
+    let tested = test(&these(&[DSP_LAB]), true, &[], LINUX);
+    let alone = test(&these(&["resonate-sync"]), false, &[], LINUX);
+
+    assert_eq!(lab.len(), 1);
+    assert_eq!(
+        line(&lab[0]),
+        "cargo clippy --locked --manifest-path dsp-lab/Cargo.toml --all-targets --no-default-features -- -D warnings"
+    );
+    assert!(line(&measured[measured.len() - 1]).contains("--manifest-path dsp-lab/Cargo.toml"));
+    assert!(unrelated.iter().all(|step| !line(step).contains("dsp-lab")));
+    assert_eq!(tested.len(), 2);
+    assert_eq!(
+        line(&tested[0]),
+        "cargo nextest run --locked --package resonate-words-build"
+    );
+    assert_eq!(
+        line(&tested[1]),
+        "cargo nextest run --locked --manifest-path dsp-lab/Cargo.toml --no-default-features --no-tests pass"
+    );
+    assert_eq!(tested[1].summary, Summary::Nextest);
+    assert_eq!(alone.len(), 1);
+}
+
+#[test]
 fn a_changed_test_run_always_holds_the_comment_and_rules_checks() {
     let steps = test(&these(&["resonate-sync"]), false, &[], LINUX);
 
@@ -144,6 +178,11 @@ fn the_tests_run_under_a_session_bus_where_there_is_one_and_take_what_is_passed_
     assert_eq!(
         line(&off_linux[0]),
         "cargo nextest run --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire"
+    );
+    assert_eq!(off_linux.len(), 1);
+    assert_eq!(
+        line(&under_bus[1]),
+        "cargo nextest run --locked --manifest-path dsp-lab/Cargo.toml --no-default-features --no-tests pass sync::"
     );
 }
 

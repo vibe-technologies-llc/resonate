@@ -11,7 +11,13 @@ pub const OFF_LINUX: [&str; 3] = ["resonate-mobile", "resonate-bindgen", "resona
 pub const BINARY_FEATURES_TOGETHER: &str = "online,mcp,discord,sync";
 pub const BINARY_FEATURES_ALONE: [&str; 5] = ["ui", "online", "mcp", "discord", "sync"];
 
-const DETACHED: [&str; 2] = ["fuzz", "dsp-lab"];
+pub const DSP_LAB: &str = "resonate-dsp-lab";
+pub const DSP_LAB_FOLDER: &str = "dsp-lab";
+const DSP_LAB_MANIFEST: &str = "dsp-lab/Cargo.toml";
+const DSP_LAB_NEEDS: [&str; 2] = ["resonate-dsp", "resonate-engine"];
+const NO_REFERENCES: &str = "--no-default-features";
+
+const DETACHED: [&str; 2] = ["fuzz", DSP_LAB_FOLDER];
 const SESSION_BUS: &str = "dbus-run-session";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,10 +116,17 @@ pub fn format(check: bool) -> Vec<Step> {
 }
 
 struct Linted {
-    every: Vec<String>,
+    every: Option<Vec<String>>,
     headless: Option<Vec<String>>,
     binary: bool,
     sync: bool,
+    lab: bool,
+}
+
+fn lab_wanted<'a>(packages: impl IntoIterator<Item = &'a str>) -> bool {
+    packages
+        .into_iter()
+        .any(|package| package == DSP_LAB || DSP_LAB_NEEDS.contains(&package))
 }
 
 fn linted(selection: &Selection, linux: bool) -> Option<Linted> {
@@ -124,16 +137,19 @@ fn linted(selection: &Selection, linux: bool) -> Option<Linted> {
             let headless = workspace_except([WINDOW].into_iter().chain(excluded.iter().copied()));
 
             Some(Linted {
-                every,
+                every: Some(every),
                 headless: Some(headless),
                 binary: true,
                 sync: true,
+                lab: linux,
             })
         }
         Selection::These(packages) => {
+            let lab = linux && lab_wanted(packages.iter().map(String::as_str));
             let kept: BTreeSet<&str> = packages
                 .iter()
                 .map(String::as_str)
+                .filter(|package| *package != DSP_LAB)
                 .filter(|package| linux || !OFF_LINUX.contains(package))
                 .collect();
             let headless: Vec<&str> = kept
@@ -142,11 +158,12 @@ fn linted(selection: &Selection, linux: bool) -> Option<Linted> {
                 .filter(|package| *package != WINDOW)
                 .collect();
 
-            (!kept.is_empty()).then(|| Linted {
-                every: each_package(kept.iter().copied()),
+            (!kept.is_empty() || lab).then(|| Linted {
+                every: (!kept.is_empty()).then(|| each_package(kept.iter().copied())),
                 headless: (!headless.is_empty()).then(|| each_package(headless)),
                 binary: kept.contains(BINARY),
                 sync: kept.contains(SYNC),
+                lab,
             })
         }
     }
@@ -199,7 +216,11 @@ pub fn lint(selection: &Selection, target: Option<&str>, locked: bool) -> Vec<St
         Step::new(name, Program::Cargo, args)
     };
 
-    let mut steps = vec![clippy("default features", &linted.every, &[])];
+    let mut steps = Vec::new();
+
+    if let Some(every) = &linted.every {
+        steps.push(clippy("default features", every, &[]));
+    }
 
     if let Some(headless) = &linted.headless {
         steps.push(clippy("headless", headless, &["--no-default-features"]));
@@ -224,10 +245,28 @@ pub fn lint(selection: &Selection, target: Option<&str>, locked: bool) -> Vec<St
             &["--no-default-features"],
         ));
     }
+    if linted.lab {
+        steps.push(clippy(
+            "dsp-lab without its references",
+            &lab_manifest(),
+            &[NO_REFERENCES],
+        ));
+    }
     steps
 }
 
+fn lab_manifest() -> Vec<String> {
+    ["--manifest-path", DSP_LAB_MANIFEST]
+        .map(str::to_owned)
+        .to_vec()
+}
+
 pub fn test(selection: &Selection, locked: bool, passed_on: &[String], host: Host) -> Vec<Step> {
+    let lab = host.linux
+        && match selection {
+            Selection::Workspace => true,
+            Selection::These(packages) => lab_wanted(packages.iter().map(String::as_str)),
+        };
     let packages = match selection {
         Selection::Workspace if host.linux => workspace_except([]),
         Selection::Workspace => workspace_except(OFF_LINUX),
@@ -236,6 +275,7 @@ pub fn test(selection: &Selection, locked: bool, passed_on: &[String], host: Hos
                 .iter()
                 .map(String::as_str)
                 .chain([RULES_AND_COMMENTS])
+                .filter(|package| *package != DSP_LAB)
                 .filter(|package| host.linux || !OFF_LINUX.contains(package))
                 .collect::<BTreeSet<_>>(),
         ),
@@ -261,10 +301,27 @@ pub fn test(selection: &Selection, locked: bool, passed_on: &[String], host: Hos
         Step::new("nextest", Program::Cargo, nextest)
     };
 
-    vec![Step {
+    let mut steps = vec![Step {
         summary: Summary::Nextest,
         ..step
-    }]
+    }];
+
+    if lab {
+        let mut nextest = vec!["nextest".to_owned(), "run".to_owned()];
+
+        if locked {
+            nextest.push("--locked".to_owned());
+        }
+        nextest.extend(lab_manifest());
+        nextest.extend([NO_REFERENCES, "--no-tests", "pass"].map(str::to_owned));
+        nextest.extend(passed_on.iter().cloned());
+
+        steps.push(Step {
+            summary: Summary::Nextest,
+            ..Step::new("nextest dsp-lab", Program::Cargo, nextest)
+        });
+    }
+    steps
 }
 
 pub fn android(sdk: &str) -> Vec<Step> {

@@ -10,8 +10,8 @@ cargo xtask <task> [flags]
 
 tasks:
   fmt [--check]             rust-formatter over the workspace, fuzz/ and dsp-lab/
-  lint                      every clippy line CI runs, -D warnings
-  test [-- <nextest args>]  cargo nextest run over the workspace, under dbus-run-session where there is one
+  lint                      every clippy line CI runs, -D warnings, and the DSP lab's on Linux
+  test [-- <nextest args>]  cargo nextest run over the workspace and the DSP lab, under dbus-run-session where there is one
   check                     fmt --check, lint and test: the gate before a push
   android                   the debug APK, its lint and unit tests, then the native check (ANDROID_HOME)
   ios [--build]             the iOS host tests and the Swift logic; with --build the native library and a clean build

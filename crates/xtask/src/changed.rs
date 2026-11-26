@@ -10,6 +10,7 @@ use std::{
 
 use crate::{
     error::{Error, Query},
+    plan::{DSP_LAB, DSP_LAB_FOLDER},
     run,
 };
 
@@ -115,7 +116,7 @@ pub fn owners(files: &BTreeSet<String>, members: &[Member]) -> Touch {
     Touch::These(
         files
             .iter()
-            .filter_map(|file| owner(file, members))
+            .filter_map(|file| owner(file, members).or_else(|| lab_owner(file)))
             .map(str::to_owned)
             .collect(),
     )
@@ -123,6 +124,12 @@ pub fn owners(files: &BTreeSet<String>, members: &[Member]) -> Touch {
 
 fn is_workspace_wide(file: &str) -> bool {
     WORKSPACE_WIDE_FILES.contains(&file) || file.starts_with(WORKSPACE_WIDE_FOLDER)
+}
+
+fn lab_owner(file: &str) -> Option<&'static str> {
+    file.strip_prefix(DSP_LAB_FOLDER)
+        .is_some_and(|rest| rest.starts_with('/'))
+        .then_some(DSP_LAB)
 }
 
 fn owner<'a>(file: &str, members: &'a [Member]) -> Option<&'a str> {
@@ -137,6 +144,29 @@ fn owner<'a>(file: &str, members: &'a [Member]) -> Option<&'a str> {
 }
 
 pub fn dependents(root: &Path, touched: &BTreeSet<String>) -> Result<BTreeSet<String>, Error> {
+    let lab = touched.contains(DSP_LAB);
+    let touched: BTreeSet<String> = touched
+        .iter()
+        .filter(|package| *package != DSP_LAB)
+        .cloned()
+        .collect();
+
+    let mut found = if touched.is_empty() {
+        BTreeSet::new()
+    } else {
+        workspace_dependents(root, &touched)?
+    };
+
+    if lab {
+        found.insert(DSP_LAB.to_owned());
+    }
+    Ok(found)
+}
+
+fn workspace_dependents(
+    root: &Path,
+    touched: &BTreeSet<String>,
+) -> Result<BTreeSet<String>, Error> {
     let mut command = Command::new("cargo");
 
     command.current_dir(root).args([

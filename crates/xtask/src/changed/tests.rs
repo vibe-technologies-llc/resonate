@@ -64,6 +64,18 @@ fn a_workspace_wide_file_touches_every_package() {
 }
 
 #[test]
+fn a_file_of_the_detached_lab_belongs_to_the_lab_and_a_neighbour_of_its_name_to_none() {
+    let lab = owners(
+        &files(&["dsp-lab/src/main.rs", "dsp-lab/Cargo.lock"]),
+        &members(),
+    );
+    let neighbour = owners(&files(&["dsp-lab-notes/readme"]), &members());
+
+    assert_eq!(lab, Touch::These(files(&["resonate-dsp-lab"])));
+    assert_eq!(neighbour, Touch::These(BTreeSet::new()));
+}
+
+#[test]
 fn the_inverted_tree_is_read_for_the_workspace_s_own_packages_alone() {
     let root = Path::new("/work/resonate");
     let listed = "resonate-lyrics v0.13.0 (/work/resonate/crates/resonate-lyrics)\n\
