@@ -72,12 +72,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `--keep-measurement` writes in place (`:384-395`). Refuse a taken name unless asked to replace it,
   and stage the measurement. Done when importing over a kept name is refused without `--replace` and
   a failed measurement write leaves the old file.
-- [M · 0.18.1] Reconnect the MPRIS connection the session bus closed. **Low, architect.** The desk
-  thread now notices a closed connection and opens notifications and the idle inhibit again
-  (`crates/resonate-mpris/src/desk_bus.rs`), but the player's own connection is only logged once and
-  left (`service.rs`), so media keys and `Metadata` stay gone for the session. Claim the name again
-  and rebuild the object server, the name watch and the shared connection fields. Done when a bus
-  test that closes the player's connection finds it answering `Metadata` again.
 
 ## Catalog
 - [M · 0.18.1] Stop calling a band-limited lossless file Fake on a lone wall. **Medium, architect.**
