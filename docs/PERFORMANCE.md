@@ -22,17 +22,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`:804`). Cap the media server's concurrent reads below the pool, bound the checkout and ask for
   two letters at least. Done when a test of 16 concurrent root searches leaves a window read
   answered within its deadline.
-- [M · 0.18.1] Probe a WASAPI endpoint's exclusive formats only when it changes. **Medium,
-  builder.** Every nudge and every two-second poll runs `enumerate()`, which probes 128 exclusive
-  formats on every render endpoint (`crates/resonate-audio/src/watching.rs:13-18`, `:36-66`,
-  `crates/resonate-wasapi/src/device.rs:75-116`, `:169-190`, `formats.rs:88-113`), and the endpoint
-  volume watch nudges on each change, so dragging a volume slider surveys back to back;
-  `Wasapi::start` also surveys before `Player::new` answers and the engine surveys again straight
-  after (`backend.rs:36-58`, `crates/resonate-engine/src/player.rs:82-94`, `:119-127`), though
-  `audio.md` says `Player::new` answers before the first survey. Probe on an endpoint first seen or
-  added, reuse `taken_while_free`'s cache otherwise, refresh only volume, mute, mix format and
-  default on a nudge, and leave the first survey to the engine. Done when the serving fakes count no
-  probe on a volume nudge and one survey before the first answer.
 - [S · 0.18.1] Unpack an amended MusicBrainz document at its own size. **Low, builder.** An amended
   read unpacks into a 16 MiB `MOST_UNPACKED_BLOCK` buffer
   (`crates/resonate-musicbrainz/src/mirror/mod.rs:695`, `:767-770`), up to 64 times a search. Store

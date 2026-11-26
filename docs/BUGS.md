@@ -43,23 +43,5 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   recogniser; settling it needs a Mac with such an output
 
 ## Windows
-- [S · 0.18.1] Bound a WASAPI survey by the time the engine gives it. **Low, builder.**
-  `Survey::enumerate_sinks` ignores its timeout (`crates/resonate-wasapi/src/backend.rs:166-173`),
-  and the engine surveys in line at start, with no stream open and in `select_sink`
-  (`crates/resonate-engine/src/engine.rs:741`, `engine/sinks.rs:47`, `:251`), so an endpoint whose
-  `Activate` or `IsFormatSupported` stalls freezes the engine thread, and `shutdown` joins the
-  watcher unbounded (`backend.rs:204-211`); PipeWire honours the timeout. Survey on a worker and
-  answer the last list past the timeout. Done when a fake survey that never returns leaves
-  `enumerate_sinks` answering within its timeout.
-- [S · 0.18.1] Type a WASAPI open's failures and publish latency after the write. **Low, builder.**
-  `device_for` and `get_iaudioclient` failures become `Backend { op: Open }`
-  (`crates/resonate-wasapi/src/device.rs:222-234`), which the engine bills to the row, so a DAC
-  unplugged between survey and open fails the row instead of waiting; `initialize_error` maps only
-  `UnsupportedFormat`, which `Initialize` never raises (`stream.rs:80-122`, `:174-179`), and there
-  is no retry on `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED`; and the latency noted each cycle leaves out
-  the frames that cycle writes (`render.rs:57-77`, `:89-108`), about one period low. Map a vanished
-  or held endpoint to `SinkGone` or `StreamRefused`, retry at the aligned size, and note latency
-  after the write. Done when the serving fakes show an unplug at open waiting for the device and the
-  latency matching the queue.
 
 ## Command line
