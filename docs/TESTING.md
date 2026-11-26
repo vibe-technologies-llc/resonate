@@ -138,14 +138,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   MCP's drain test holds a lookup instead (`crates/resonate-mcp/tests/server.rs`) and a scan
   stopped mid-walk by a session ending is not proved. Add a hook the scan calls per file. Done when
   a test holds a scan on its third file and the session's drain cancels it there.
-- [M · 0.18.1] Run the binary's subcommands as processes in a test. **Medium, builder.**
-  `crates/resonate/tests` spawns the binary only for `play` and `mcp` (`terminal.rs:109`,
-  `signals.rs:37`), and `organising.rs`, `kinship.rs`, `share.rs`, `sync.rs`, `vault.rs`,
-  `studies.rs`, `playlists.rs`, `served.rs`, `suggest.rs` and `updates.rs` have no test module, so
-  no exit status, output or file written by a subcommand is asserted, which let every filed
-  command-line bug through. Add `tests/cli.rs` running each mutating subcommand's failing and
-  succeeding case under the `Home` that `signals.rs` builds. Done when `dedupe --apply` with a
-  refused trash fails it before the fix.
 - [M · 0.18.1] Make a skipped test fail where its requirement is meant to be present. **Medium,
   builder.** The session-bus, pseudo-terminal, portal, live service, PipeWire stream, capture, Cast
   multicast and reference-tool suites all print a skip and pass
@@ -189,6 +181,13 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
   (`crates/resonate-words-build/src/comments.rs:26-38`). Add them and update `rust-style.md`'s list.
   Done when `# x` in `android/gradle.properties` fails the test.
+- [S · 0.18.1] Catch a catalog call that passes its values in the sentence's order. **Low,
+  builder.** `resonate-words-build` writes each message's function with its parameters in
+  alphabetical order, so a call passing them in the order the sentence says them still compiles
+  when the types agree: `history --import-file` said *brought in FILE from 1* until
+  `cli::` caught it. Name the arguments at the call (a struct of the message's variables, or a
+  builder), or refuse a call whose arguments are named otherwise than its parameters. Done when
+  swapping two arguments of the same type fails to compile or fails a test.
 - [S · 0.18.1] Refuse a lone lowercase word in the catalog walks. **Low, builder.** `prose_in` reads a
   literal as words only when it is capitalised or holds a space (`resonate-words-build`), so a
   shown `none` or `faststart` passed the binary's catalog test until moved by hand. Weigh a lone
