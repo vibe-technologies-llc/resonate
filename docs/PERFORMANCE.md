@@ -8,20 +8,13 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
-- [M · 0.18.1] Count a playlist's songs without loading them for the media server. **Medium,
-  builder.** `playlists()` calls `listed()` for each playlist's child count, loading every entry
-  with its whole track row (`crates/resonate/src/offering.rs:204-231`); the cache of 32 lists is
-  cleared wholesale (`:321-359`), so a 500-row page never hits it, and `played_from_matching` is not
-  cached at all (`:256-286`). Count in SQL, keep counts per catalog revision and page a search in
-  SQL. Done when a test of 500 playlists of 1 000 rows browses its root without reading an entry.
-- [M · 0.18.1] Keep the media server from taking every catalog reader. **Medium, architect.** The
-  shelves share the library's eight-reader pool with the window
-  (`crates/resonate-library/src/db/mod.rs:79`, `:471-497`), whose checkout waits with no timeout,
-  while neighbours may hold 16 answers and a root search makes up to four ranked FTS reads
-  (`crates/resonate/src/offering.rs:554-604`, `:183-202`), and a one-letter prefix is accepted
-  (`:804`). Cap the media server's concurrent reads below the pool, bound the checkout and ask for
-  two letters at least. Done when a test of 16 concurrent root searches leaves a window read
-  answered within its deadline.
+- [M · 0.18.1] Give the phones' media server the desktop's paging, counts and reader share.
+  **Medium, builder.** The desktop's offering now pages servable rows in SQL, counts playlists
+  without loading them, takes catalog reads through a capped `ReaderShare` and asks for two letters
+  in a search (`crates/resonate/src/offering.rs`, `crates/resonate-library/src/db/turns.rs`), but
+  the phones' `Shelves` (`crates/resonate-mobile/src/offering.rs`) has none of it. Bring the same
+  guarantees there. Done when the desktop's paging, 500-playlist and concurrent-search tests have
+  phone twins that pass.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
