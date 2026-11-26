@@ -71,7 +71,8 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
         library: library_path(&cli, &config)?,
         equaliser: config::equaliser_dir()?,
     };
-    let settings = crate::settings::File::at(places.config.clone(), config.clone());
+    let settings =
+        crate::settings::File::at(places.config.clone(), config.clone()).signing_out_in(&library);
     let served = Served::for_the_window(&config, settings_path(&cli).ok());
     let sources = playing_from(Some(&library), &served);
     let rendering = Rendering::for_the_window(&config, wanted_sink(&cli, &config).as_ref());

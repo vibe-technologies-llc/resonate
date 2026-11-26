@@ -2,11 +2,27 @@ use std::path::Path;
 
 #[cfg(feature = "online")]
 use resonate_core::Switch;
+use resonate_library::{Library, ListeningService};
 
-use crate::{Result, config::Config};
+use crate::{
+    Result,
+    config::{self, Config},
+    error::ConfigKey,
+    words,
+};
+
+pub fn sign_out(library: &Library, settings: &Path) -> Result<()> {
+    config::clear(settings, ConfigKey::LastfmSession)?;
+
+    if let Err(error) = library.stop_telling(ListeningService::LastFm) {
+        tracing::warn!(%error, "Last.fm's mark in the history could not be let go of");
+    }
+    said!("{}", words::lastfm::forgotten());
+    Ok(())
+}
 
 #[cfg(feature = "online")]
-pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
+pub fn sign_in(config: &Config, settings: &Path) -> Result<()> {
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -14,13 +30,8 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
 
     use resonate_online::Application;
 
-    use crate::{Error, config, error::ConfigKey, online, signals, words};
+    use crate::{Error, online, signals};
 
-    if forget {
-        config::clear(settings, ConfigKey::LastfmSession)?;
-        said!("{}", words::lastfm::forgotten());
-        return Ok(());
-    }
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
@@ -85,6 +96,48 @@ fn opened_in_a_browser(address: &str) {
 }
 
 #[cfg(not(feature = "online"))]
-pub fn sign_in(_: &Config, _: &Path, _: bool) -> Result<()> {
+pub fn sign_in(_: &Config, _: &Path) -> Result<()> {
     Err(crate::Error::NoSignIn)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::fixtures::scratch;
+
+    #[test]
+    fn signing_out_of_lastfm_lets_go_of_its_mark_and_leaves_listenbrainzs() {
+        let folder = scratch("lastfm-signed-out");
+        let settings = folder.join("config.toml");
+
+        fs::write(&settings, "lastfm-session = \"a session\"\n").expect("the settings");
+
+        let library = Library::open_in_memory().expect("a catalog");
+
+        for service in [ListeningService::ListenBrainz, ListeningService::LastFm] {
+            library.tell_earlier_listens(service).expect("a mark");
+        }
+
+        sign_out(&library, &settings).expect("signed out");
+
+        assert!(
+            !fs::read_to_string(&settings)
+                .expect("the settings")
+                .contains("lastfm-session")
+        );
+        assert!(
+            !library
+                .earlier_listens_owed(ListeningService::LastFm)
+                .expect("read")
+        );
+        assert!(
+            library
+                .earlier_listens_owed(ListeningService::ListenBrainz)
+                .expect("read")
+        );
+
+        fs::remove_dir_all(folder).expect("cleaned");
+    }
 }

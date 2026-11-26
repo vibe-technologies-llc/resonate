@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use clap::ValueEnum;
 #[cfg(feature = "online")]
@@ -9,7 +9,7 @@ use resonate_engine::{
     ReplayGainMode, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
-use resonate_library::HistoryKept;
+use resonate_library::{HistoryKept, Library, ListeningService};
 use resonate_ui::{Setting, SettingChange, Settings};
 use toml_edit::{Array, Value};
 
@@ -29,6 +29,7 @@ pub struct File {
     path: PathBuf,
     #[cfg(feature = "online")]
     held: Mutex<Config>,
+    catalog: Option<Arc<Library>>,
 }
 
 impl File {
@@ -37,12 +38,23 @@ impl File {
         Self {
             path,
             held: Mutex::new(held),
+            catalog: None,
         }
     }
 
     #[cfg(not(feature = "online"))]
     pub fn at(path: PathBuf, _: Config) -> Self {
-        Self { path }
+        Self {
+            path,
+            catalog: None,
+        }
+    }
+
+    pub fn signing_out_in(self, catalog: &Arc<Library>) -> Self {
+        Self {
+            catalog: Some(Arc::clone(catalog)),
+            ..self
+        }
     }
 
     #[cfg(feature = "online")]
@@ -56,6 +68,37 @@ impl File {
             }
         }
         held.clone()
+    }
+
+    fn signed_out(&self, changes: &[SettingChange]) {
+        let Some(catalog) = &self.catalog else {
+            return;
+        };
+
+        for service in changes.iter().filter_map(signs_out_of) {
+            match catalog.stop_telling(service) {
+                Ok(true) => tracing::info!(
+                    service = service.name(),
+                    "a service signed out of holds the history back no longer"
+                ),
+                Ok(false) => {}
+                Err(error) => tracing::warn!(%error, "a service's mark could not be let go of"),
+            }
+        }
+    }
+}
+
+fn signs_out_of(change: &SettingChange) -> Option<ListeningService> {
+    match change {
+        SettingChange::Store(Setting::ListenbrainzToken(token)) if token.trim().is_empty() => {
+            Some(ListeningService::ListenBrainz)
+        }
+        SettingChange::Store(Setting::LastfmSession(session)) if session.trim().is_empty() => {
+            Some(ListeningService::LastFm)
+        }
+        SettingChange::Forget(ConfigKey::ListenbrainzToken) => Some(ListeningService::ListenBrainz),
+        SettingChange::Forget(ConfigKey::LastfmSession) => Some(ListeningService::LastFm),
+        _ => None,
     }
 }
 
@@ -145,6 +188,7 @@ impl Settings for File {
             return Err(resonate_ui::Error::SettingNotStored { key: first.key() });
         }
 
+        self.signed_out(changes);
         for change in changes {
             match change {
                 #[cfg(feature = "online")]
@@ -493,6 +537,48 @@ mod tests {
             again.is_on(Switch::MusicbrainzMirror),
             "a file that would not read started or stopped the copy as if under defaults"
         );
+    }
+
+    #[test]
+    fn a_token_cleared_in_the_pane_lets_go_of_its_service_mark_and_a_new_one_keeps_it() {
+        let folder =
+            env::temp_dir().join(format!("resonate-settings-signed-out-{}", process::id()));
+        let path = folder.join("config.toml");
+        let library = Arc::new(Library::open_in_memory().expect("a catalog"));
+        let services = [ListeningService::ListenBrainz, ListeningService::LastFm];
+
+        for service in services {
+            library.tell_earlier_listens(service).expect("a mark");
+        }
+
+        let file = File::at(path.clone(), Config::default()).signing_out_in(&library);
+
+        file.apply(&[SettingChange::Store(Setting::ListenbrainzToken(
+            "another token".to_owned(),
+        ))])
+        .expect("a writable config");
+
+        let kept_for_a_new_token = services.map(|service| {
+            library
+                .earlier_listens_owed(service)
+                .expect("the marks read")
+        });
+
+        file.apply(&[
+            SettingChange::Store(Setting::ListenbrainzToken(" ".to_owned())),
+            SettingChange::Forget(ConfigKey::LastfmSession),
+        ])
+        .expect("a writable config");
+
+        let kept_once_signed_out = services.map(|service| {
+            library
+                .earlier_listens_owed(service)
+                .expect("the marks read")
+        });
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(kept_for_a_new_token, [true, true]);
+        assert_eq!(kept_once_signed_out, [false, false]);
     }
 
     #[test]

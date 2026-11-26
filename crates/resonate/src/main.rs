@@ -133,8 +133,8 @@ use resonate_cli as cli;
 use resonate_codec::Sources;
 use resonate_engine::NodeName;
 use resonate_library::{
-    Aged, DeliveryFolder, EnrichOptions, HistoryKept, Library, ListeningService, StudyFilter,
-    Upkeep, Vault, VaultFiles,
+    Aged, DeliveryFolder, EnrichOptions, HistoryKept, Library, StudyFilter, Upkeep, Vault,
+    VaultFiles,
 };
 use resonate_mpris::Reloadable;
 use tracing_subscriber::{
@@ -472,7 +472,11 @@ fn run() -> Result<()> {
         Some(Sub::Lastfm { forget }) => {
             let settings = settings_path(&cli)?;
             reloading::delivering(&settings, Some(Reloadable::Submission), || {
-                lastfm::sign_in(&config, &settings, *forget)
+                if *forget {
+                    lastfm::sign_out(&open_library(&cli, &config)?, &settings)
+                } else {
+                    lastfm::sign_in(&config, &settings)
+                }
             })
         }
         Some(Sub::Forget { roots }) => forget(&open_library(&cli, &config)?, roots),
@@ -689,7 +693,6 @@ fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> 
     };
 
     library.filter_music(config.music_filters());
-    stop_telling_what_has_no_account(&library, config);
     age_the_history(&library, config.history_kept());
     library.deliver_into(delivery_folder(config));
     library.stall_downloads_by(metered::for_downloads(config));
@@ -702,29 +705,6 @@ fn delivery_folder(config: &Config) -> Option<DeliveryFolder> {
         path: config.music_folder.clone()?,
         layout: config.organise_as(),
     })
-}
-
-fn stop_telling_what_has_no_account(library: &Library, config: &Config) {
-    let unaccounted = [
-        (
-            ListeningService::ListenBrainz,
-            config.listenbrainz_token.is_none(),
-        ),
-        (ListeningService::LastFm, config.lastfm_session.is_none()),
-    ];
-    for (service, unaccounted) in unaccounted {
-        if !unaccounted {
-            continue;
-        }
-        match library.stop_telling(service) {
-            Ok(true) => tracing::info!(
-                service = service.name(),
-                "a service no longer signed in to holds the history back no longer"
-            ),
-            Ok(false) => {}
-            Err(error) => tracing::warn!(%error, "a service's mark could not be let go of"),
-        }
-    }
 }
 
 fn age_the_history(library: &Library, kept: HistoryKept) {
@@ -751,9 +731,40 @@ fn catalog(cli: &Cli, config: &Config) -> Option<Arc<Library>> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use clap::Parser as _;
+    use resonate_library::ListeningService;
 
     use super::*;
+    use crate::fixtures::{parsed, scratch};
+
+    #[test]
+    fn a_run_whose_settings_hold_no_account_leaves_the_marks_another_run_submits_by() {
+        let folder = scratch("marks-kept");
+        let catalog = folder.join("library.db");
+        let services = [ListeningService::ListenBrainz, ListeningService::LastFm];
+
+        let window = Library::open(&catalog).expect("a catalog");
+
+        for service in services {
+            window.tell_earlier_listens(service).expect("a mark");
+        }
+
+        let cli = parsed(&["resonate", "--library", catalog.to_str().expect("a path")]);
+
+        let unsigned = open_library_with(&cli, &Config::default(), None).expect("opened");
+
+        for service in services {
+            assert!(
+                unsigned.earlier_listens_owed(service).expect("read"),
+                "{service:?}'s mark was let go of by a run that never signed out"
+            );
+        }
+
+        drop((window, unsigned));
+        fs::remove_dir_all(folder).expect("cleaned");
+    }
 
     #[test]
     fn the_http_client_stays_at_warn_unless_the_listener_names_it() {
