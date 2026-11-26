@@ -26,37 +26,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`crates/resonate/src/history.rs:34-59`), so a failure leaves a partial file in place of whatever
   was there. Write to a held stage and rename. Done when a failing export leaves the old file byte
   for byte.
-- [S · 0.18.1] Refuse a `wrapped` year no calendar holds. **Low, builder.** `wrapped --year` takes
-  any `i64` (`crates/resonate-cli/src/grammar.rs:1765`), as does the phones' `wrapped(year)`, and
-  `Calendar::year_bounds` (`crates/resonate-core/src/wrapped.rs:690-703`) feeds it to
-  `day_since_the_epoch`, whose arithmetic is unchecked (`date.rs:50-62`): a checked build panics and
-  a release reviews garbage. Make the arithmetic checked and bound the year to what `Timestamp`
-  holds. Done when `--year 9223372036854775807` is refused.
-- [S · 0.18.1] Choose Wrapped's default year among years not ahead of today. **Low, builder.**
-  `year_worth_showing` opens on the latest year heard
-  (`crates/resonate-core/src/wrapped.rs:273-285`), so one listen stamped ahead by a wrong clock or a
-  bad import shows that year for good. Leave out years past today. Done when `[2030, 2025]` in 2026
-  opens on 2025.
-- [S · 0.18.1] Take "with" as a guest credit only before a name. **Low, builder.** `FEATURING` holds
-  `with` (`crates/resonate-core/src/titles.rs:131`, `:153-158`), so `bare("Stay (With Me)")` is
-  `Stay` and other songs of the artist group as its versions. Accept `with` only where
-  `without_guests` needs it, not in the grouping key. Done when `bare("Stay (With Me)")` keeps its
-  bracket.
 - [S · 0.18.1] Fold a recording key's artist and album as its title is folded. **Low, builder.**
   `crates/resonate-core/src/recorded.rs:30-38`, `:56-69` word-normalise the title but keep the
   artist's and album's punctuation and spacing, so one recording keys apart under `Guns N' Roses`
   and `Guns N Roses`. Fold all three alike. Done when both spellings key the same.
-- [S · 0.18.1] Write a cut that holds frames, and name a zone only with letters left. **Low,
-  builder.** `to_uri_within` writes `#frames=S-S` for an empty span
-  (`crates/resonate-core/src/time.rs:78-120`), which `from_uri_within` refuses (`media.rs:188-217`),
-  as a cue sheet with equal `INDEX 01` stamps produces; and `ZoneName::given` tests emptiness before
-  filtering control characters (`zone.rs:46-60`), so `"\u{7}"` names a zone with nothing. Refuse an
-  empty span where it is made and test emptiness after filtering. Done when both round trips are
-  tested.
-- [S · 0.18.1] Say "a year ago" past 360 days. **Low, builder.**
-  `crates/resonate-core/src/elapsed.rs:5-92` counts months of 30 days and years of 365, so 361 to
-  364 days read "12 months ago". Promote twelve months to a year. Done when 362 days reads a year
-  ago.
 - [S · 0.18.1] Make a bare `resonate served` ask which service. **Low, builder.** Online, a bare
   `served` always picks dlna (`crates/resonate/src/providers.rs:125-133`, `served.rs:496-498`), so
   `NoServedService` never fires. Pick only a configured service. Done when a test with none
