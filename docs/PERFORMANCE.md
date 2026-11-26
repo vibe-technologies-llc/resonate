@@ -22,13 +22,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`:804`). Cap the media server's concurrent reads below the pool, bound the checkout and ask for
   two letters at least. Done when a test of 16 concurrent root searches leaves a window read
   answered within its deadline.
-- [M · 0.18.1] Bound the LRC reader's work by its input. **Medium, builder.** `absorb` calls
-  `heads_a_timed_line` for each leading text bracket (`crates/resonate-lyrics/src/lrc.rs:335-348`,
-  `:549-559`), quadratic in a line, so one 512 KiB line of `[]` ahead of a stamp costs about 3·10¹⁰
-  reads; and `hold` counts text bytes and lines but not words (`:317-327`, `:376-398`), so a 21 KB
-  line of 1 000 stamps and 1 000 word stamps makes a million owned words, about 100 MB, though
-  `MOST_WORDS` holds in the Lyricsfile and TTML readers. Scan each line once and count words against
-  `MOST_WORDS`. Done when tests of both lines read within a bounded time and allocation.
 - [M · 0.18.1] Probe a WASAPI endpoint's exclusive formats only when it changes. **Medium,
   builder.** Every nudge and every two-second poll runs `enumerate()`, which probes 128 exclusive
   formats on every render endpoint (`crates/resonate-audio/src/watching.rs:13-18`, `:36-66`,
