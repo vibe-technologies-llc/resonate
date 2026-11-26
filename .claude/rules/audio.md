@@ -1376,7 +1376,19 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   it, and the polyphase engine interpolates on with `interpolator_for(params)`: cutoff at `R1`'s
   Nyquist, passing half of it and stopping from one and a half, `INTERPOLATOR_UNDER_THE_STOPBAND_DB`
   (60) under the level's `rejects_db` and always linear phase. The stage is primed with what the
-  interpolator's `behind` reads and the output keeps its alignment and length.
+  interpolator's `behind` reads and the output keeps its alignment and length. **The interpolator's
+  step may pass its whole reach**: Balanced's is 14 taps a side, so from about 29:1 down one output's
+  read lands past what the history holds, and `compact` drops no more than is filled.
+- **Every rate pair is driven with audio.** The grid
+  (`every_rate_pair_is_tabulated_or_converted_in_blocks_at_every_quality`) refuses any `Err` but
+  `RatioOutOfRange` past 32:1, and
+  `every_rate_pair_turns_audio_into_finite_frames_a_track_long_whatever_the_blocks_and_a_reset` is a
+  property test over the pair (device rates, any rate, and steep pairs a hair either side of 32:1),
+  level, phase, channels, a turn of block sizes from 1 to 4 096, the track's length and a reset after
+  part of a track or its flush: every sample finite, exactly `outputs_of`'s frames, the same within
+  1e-9 as one block and bit for bit after the reset. It runs `PAIRS_TRIED` (256) cases from
+  `PAIRS_SEED`, so a run is repeatable and finds the compaction above with it undone;
+  `PROPTEST_CASES` and `PROPTEST_RNG_SEED` widen it into a longer or another sweep.
 - **The oracle shares no code with the block path.** `analytic_tap` writes the kernel with its own Legendre
   recurrence and Bessel series, `dc_of_a_block_kernel` gives it the block's one DC gain, and
   `every_frame_is_the_exact_windowed_sinc_normalised_at_its_instant` holds every frame of a direct

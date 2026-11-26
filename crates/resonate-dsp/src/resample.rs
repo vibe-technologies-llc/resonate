@@ -1707,6 +1707,8 @@ impl Processor for Resampler {
 mod tests {
     use std::{collections::BTreeMap, f64::consts::TAU};
 
+    use proptest::prelude::*;
+
     use super::*;
 
     const BLOCK: usize = 1_024;
@@ -2270,9 +2272,21 @@ mod tests {
             for from in EVERY_RATE {
                 for to in EVERY_RATE {
                     let config = config(from, to, quality);
-                    let Ok(resampler) = Resampler::new(config) else {
-                        continue;
+                    let resampler = match Resampler::new(config) {
+                        Ok(resampler) => resampler,
+                        Err(Error::RatioOutOfRange { .. })
+                            if !within_the_steepest_ratio(from.hz(), to.hz()) =>
+                        {
+                            continue;
+                        }
+                        Err(refused) => panic!("{quality:?} at {from} -> {to} refused: {refused}"),
                     };
+
+                    assert!(
+                        within_the_steepest_ratio(from.hz(), to.hz()),
+                        "{quality:?} at {from} -> {to} took a ratio past {STEEPEST_RATIO}:1"
+                    );
+
                     let in_blocks = matches!(resampler.route, Route::Whole(_));
 
                     assert_eq!(
@@ -2292,6 +2306,325 @@ mod tests {
                 interpolated.is_empty(),
                 "{quality:?} left {interpolated:?} to the interpolated kernel"
             );
+        }
+    }
+
+    const STEEPEST_RATIO: u32 = 32;
+    const STEEP_FROM_MULTIPLE: u32 = 24;
+    const NEAR_THE_LIMIT_HZ: i32 = 2_000;
+    const DEVICE_RATES_HZ: [u32; 17] = [
+        8_000, 11_025, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 64_000, 88_200, 96_000,
+        176_400, 192_000, 352_800, 384_000, 705_600, 768_000,
+    ];
+    const BLOCK_AT_MOST: usize = 4_096;
+    const BLOCKS_IN_TURN_AT_MOST: usize = 5;
+    const TRACK_FRAMES_AT_MOST: usize = 12_000;
+    const A_SHORT_TRACK_FRAMES: usize = 64;
+    const CHANNELS_AT_MOST: u16 = 3;
+    const FLUSHES_AT_MOST: usize = 64;
+    const LOUDEST_RESAMPLED: f64 = 4.0;
+    const BLOCKS_AGREE_WITHIN: f64 = 1e-9;
+    const PAIRS_TRIED: u32 = 256;
+    const PAIRS_SEED: u64 = 3;
+
+    fn within_the_steepest_ratio(from_hz: u32, to_hz: u32) -> bool {
+        u64::from(from_hz.max(to_hz)) <= u64::from(STEEPEST_RATIO) * u64::from(from_hz.min(to_hz))
+    }
+
+    fn frames_a_track_keeps(frames_in: usize, from: SampleRate, to: SampleRate) -> usize {
+        frames_in.checked_sub(1).map_or(0, |last| {
+            (last as u64 * u64::from(to.hz()) / u64::from(from.hz())) as usize + 1
+        })
+    }
+
+    fn a_device_rate() -> impl Strategy<Value = u32> {
+        proptest::sample::select(DEVICE_RATES_HZ.to_vec())
+    }
+
+    fn a_rate() -> impl Strategy<Value = u32> {
+        prop_oneof![
+            3 => a_device_rate(),
+            1 => SampleRate::MIN_HZ..=SampleRate::MAX_HZ,
+        ]
+    }
+
+    fn a_low_rate() -> impl Strategy<Value = u32> {
+        let at_most = SampleRate::MAX_HZ / STEEPEST_RATIO;
+        prop_oneof![
+            proptest::sample::select(
+                DEVICE_RATES_HZ
+                    .into_iter()
+                    .filter(|hz| *hz <= at_most)
+                    .collect::<Vec<_>>()
+            ),
+            SampleRate::MIN_HZ..=at_most,
+        ]
+    }
+
+    fn a_steep_pair() -> impl Strategy<Value = (u32, u32)> {
+        let a_hair_from_the_limit = (a_low_rate(), -NEAR_THE_LIMIT_HZ..=1)
+            .prop_map(|(low, off)| (low, (low * STEEPEST_RATIO).saturating_add_signed(off)));
+        let anywhere_steep = (
+            a_low_rate(),
+            STEEP_FROM_MULTIPLE..=STEEPEST_RATIO,
+            prop_oneof![1 => Just(0.0), 3 => 0.0..1.0],
+        )
+            .prop_map(|(low, multiple, past)| {
+                (low, (f64::from(low) * (f64::from(multiple) + past)) as u32)
+            });
+        (
+            prop_oneof![2 => a_hair_from_the_limit, 1 => anywhere_steep],
+            any::<bool>(),
+        )
+            .prop_map(|((low, high), rising)| {
+                let high = high.clamp(SampleRate::MIN_HZ, SampleRate::MAX_HZ);
+                if rising { (low, high) } else { (high, low) }
+            })
+    }
+
+    fn a_rate_pair() -> impl Strategy<Value = (SampleRate, SampleRate)> {
+        prop_oneof![1 => (a_rate(), a_rate()), 3 => a_steep_pair()].prop_map(|(from, to)| {
+            (
+                SampleRate::new(from).expect("a rate in range"),
+                SampleRate::new(to).expect("a rate in range"),
+            )
+        })
+    }
+
+    fn a_quality() -> impl Strategy<Value = Quality> {
+        proptest::sample::select(QUALITIES.to_vec())
+    }
+
+    fn a_phase() -> impl Strategy<Value = FilterPhase> {
+        prop_oneof![
+            2 => Just(FilterPhase::default()),
+            1 => proptest::sample::select(SHAPED.to_vec()),
+        ]
+    }
+
+    fn a_layout() -> impl Strategy<Value = ChannelLayout> {
+        (1..=CHANNELS_AT_MOST).prop_map(|count| match count {
+            1 => ChannelLayout::Mono,
+            2 => ChannelLayout::Stereo,
+            _ => ChannelLayout::Discrete(
+                resonate_core::ChannelCount::new(count).expect("a channel count in range"),
+            ),
+        })
+    }
+
+    fn a_track_length() -> impl Strategy<Value = usize> {
+        prop_oneof![1 => 0..=A_SHORT_TRACK_FRAMES, 2 => 0..=TRACK_FRAMES_AT_MOST]
+    }
+
+    fn blocks_in_turn() -> impl Strategy<Value = Vec<usize>> {
+        proptest::collection::vec(
+            prop_oneof![1_usize..=8, 9_usize..=512, 513..=BLOCK_AT_MOST],
+            1..=BLOCKS_IN_TURN_AT_MOST,
+        )
+    }
+
+    fn pieces_of<'input>(
+        input: &'input [f64],
+        channels: usize,
+        blocks: &[usize],
+    ) -> impl Iterator<Item = &'input [f64]> {
+        let mut rest = input;
+        blocks.iter().cycle().map_while(move |block| {
+            if rest.is_empty() {
+                return None;
+            }
+
+            let (piece, after) = rest.split_at((block * channels).min(rest.len()));
+
+            rest = after;
+            Some(piece)
+        })
+    }
+
+    fn fed<'input>(
+        resampler: &mut Resampler,
+        pieces: impl Iterator<Item = &'input [f64]>,
+        channels: usize,
+        output: &mut Vec<f64>,
+    ) {
+        let mut scratch = Vec::new();
+
+        for piece in pieces {
+            let frames = piece.len() / channels;
+            let room = resampler.max_output_frames(frames) * channels;
+
+            scratch.resize(room.max(scratch.len()), 0.0);
+
+            let count = resampler.process(piece, &mut scratch[..room]);
+
+            assert_eq!(
+                count.frames_in, frames,
+                "a block within the bound was not taken whole"
+            );
+
+            output.extend_from_slice(&scratch[..count.frames_out * channels]);
+        }
+    }
+
+    fn drained_into(resampler: &mut Resampler, channels: usize, output: &mut Vec<f64>) {
+        let mut tail = vec![0.0; resampler.max_flush_frames() * channels];
+
+        for _ in 0..FLUSHES_AT_MOST {
+            let flushed = resampler.flush(&mut tail);
+
+            if flushed == 0 {
+                return;
+            }
+            output.extend_from_slice(&tail[..flushed * channels]);
+        }
+        panic!("still flushing after {FLUSHES_AT_MOST} flushes");
+    }
+
+    fn played_whole(
+        resampler: &mut Resampler,
+        input: &[f64],
+        channels: usize,
+        blocks: &[usize],
+    ) -> Vec<f64> {
+        let mut output = Vec::new();
+
+        fed(
+            resampler,
+            pieces_of(input, channels, blocks),
+            channels,
+            &mut output,
+        );
+        drained_into(resampler, channels, &mut output);
+        output
+    }
+
+    fn furthest_apart(one: &[f64], other: &[f64]) -> f64 {
+        one.iter()
+            .zip(other)
+            .map(|(one, other)| (one - other).abs())
+            .fold(0.0, f64::max)
+    }
+
+    fn first_difference(one: &[f64], other: &[f64]) -> Option<usize> {
+        one.iter()
+            .zip(other)
+            .position(|(one, other)| one.to_bits() != other.to_bits())
+            .or_else(|| (one.len() != other.len()).then(|| one.len().min(other.len())))
+    }
+
+    fn built(config: ResamplerConfig) -> std::result::Result<Resampler, TestCaseError> {
+        Resampler::new(config).map_err(|refused| {
+            TestCaseError::fail(format!(
+                "{} -> {} refused: {refused}",
+                config.input_rate, config.output_rate
+            ))
+        })
+    }
+
+    fn tried() -> ProptestConfig {
+        let config = ProptestConfig::default();
+        let asked = |variable: &str| std::env::var_os(variable).is_some();
+
+        ProptestConfig {
+            cases: if asked("PROPTEST_CASES") {
+                config.cases
+            } else {
+                PAIRS_TRIED
+            },
+            rng_seed: if asked("PROPTEST_RNG_SEED") {
+                config.rng_seed
+            } else {
+                proptest::test_runner::RngSeed::Fixed(PAIRS_SEED)
+            },
+            ..config
+        }
+    }
+
+    proptest! {
+        #![proptest_config(tried())]
+
+        #[test]
+        fn every_rate_pair_turns_audio_into_finite_frames_a_track_long_whatever_the_blocks_and_a_reset(
+            (from, to) in a_rate_pair(),
+            quality in a_quality(),
+            phase in a_phase(),
+            layout in a_layout(),
+            blocks in blocks_in_turn(),
+            frames in a_track_length(),
+            reset in proptest::option::of((0..=TRACK_FRAMES_AT_MOST, any::<bool>())),
+        ) {
+            let config = ResamplerConfig {
+                input_rate: from,
+                output_rate: to,
+                channels: layout,
+                quality,
+                phase,
+                max_frames_in: blocks.iter().copied().max().unwrap_or(1),
+            };
+
+            if !within_the_steepest_ratio(from.hz(), to.hz()) {
+                prop_assert!(
+                    matches!(Resampler::new(config), Err(Error::RatioOutOfRange { .. })),
+                    "{from} -> {to} is past {STEEPEST_RATIO}:1 and was not refused as such"
+                );
+                return Ok(());
+            }
+
+            let channels = layout.count().get() as usize;
+            let input = oracle_signal(from, channels, frames);
+
+            let mut resampler = built(config)?;
+
+            let output = played_whole(&mut resampler, &input, channels, &blocks);
+            let expected = frames_a_track_keeps(frames, from, to);
+            let loudest = output.iter().copied().map(f64::abs).fold(0.0, f64::max);
+
+            prop_assert_eq!(output.len() % channels, 0);
+            prop_assert_eq!(
+                output.len() / channels,
+                expected,
+                "{} -> {} {:?} {:?} in blocks of {:?} made the wrong length of {} frames",
+                from, to, quality, phase, blocks, frames
+            );
+            prop_assert!(
+                output.iter().all(|sample| sample.is_finite()) && loudest <= LOUDEST_RESAMPLED,
+                "{from} -> {to} {quality:?} {phase:?} reached {loudest}"
+            );
+
+            let mut in_one_block = built(ResamplerConfig {
+                max_frames_in: frames.max(1),
+                ..config
+            })?;
+
+            let whole = played_whole(&mut in_one_block, &input, channels, &[frames.max(1)]);
+            let apart = furthest_apart(&output, &whole);
+
+            prop_assert_eq!(output.len(), whole.len());
+            prop_assert!(
+                apart < BLOCKS_AGREE_WITHIN,
+                "{from} -> {to} {quality:?} {phase:?} in blocks of {blocks:?} strays {apart:e} from one block"
+            );
+
+            if let Some((played_before, flushed_before)) = reset {
+                let mut again = built(config)?;
+                let mut thrown_away = Vec::new();
+
+                let before = input.get(..played_before.min(frames) * channels).unwrap_or_default();
+
+                fed(&mut again, pieces_of(before, channels, &blocks), channels, &mut thrown_away);
+                if flushed_before {
+                    drained_into(&mut again, channels, &mut thrown_away);
+                }
+                again.reset();
+
+                let replayed = played_whole(&mut again, &input, channels, &blocks);
+                let differs_at = first_difference(&output, &replayed);
+
+                prop_assert!(
+                    differs_at.is_none(),
+                    "{from} -> {to} {quality:?} {phase:?} differs at sample {differs_at:?} after a reset"
+                );
+            }
         }
     }
 

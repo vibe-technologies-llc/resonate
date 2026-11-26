@@ -22,6 +22,7 @@ path = "tests/suite.rs"
 
 [dev-dependencies]
 allocation-counter.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

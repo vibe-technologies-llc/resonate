@@ -283,7 +283,7 @@ here, add it there.
   none (`a_picture_in_a_format_the_vocabulary_does_not_name_is_not_a_cover`,
   `a_picture_in_a_format_the_vocabulary_does_not_name_is_never_drawn_as_one_it_does`). The phones'
   library does not link gpui and builds the five alone.
-- **`proptest`**: dev-dependency of `resonate-core`, `-library`, `-sync`, `-ui` alone; `std` only (defaults
+- **`proptest`**: dev-dependency of `resonate-core`, `-dsp`, `-library`, `-sync`, `-ui` alone; `std` only (defaults
   fork a child process per case).
 - **`notify`**: library's; defaults dropped, Linux inotify needs no feature. On macOS the crate
   compiles its FSEvents watcher whatever the features say and takes that watcher's objc2 crates only
