@@ -267,7 +267,11 @@ changes*).
   second build is `AlreadyBuilding`.
 - **Before.** Leftover staging and a `.building` file, from a run that died, are removed first.
 - **After.** The new store is `musicbrainz.sqlite.building` until `settled` puts it in place. The
-  staging and placement files are removed whatever happened.
+  staging and placement files are removed whatever happened, and a build refused part-way (an archive cut, a schema it does not read, a row past the longest, a short row) leaves the copy held byte for byte, answering as before, with nothing staged beside it
+  (`an_archive_cut_mid_stream_is_refused_and_the_copy_held_goes_on_answering`,
+  `a_schema_the_reader_does_not_read_is_refused_over_a_copy_held_which_goes_on_answering`,
+  `a_row_past_the_longest_is_refused_over_a_copy_held_which_goes_on_answering`,
+  `a_row_short_of_its_columns_is_refused_over_a_copy_held_which_goes_on_answering`).
 - **Put in place in an order no failure tears.** The build writes with no journal and no sync, so
   `settled` first syncs the new copy and tables (`sync_file`) and the folder, then renames the copy,
   then the tables (or removes the old ones where none were kept), and removes the old amendments

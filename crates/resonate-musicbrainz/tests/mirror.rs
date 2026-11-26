@@ -8,13 +8,14 @@ use std::{
 
 use resonate_core::{Isrc, Mbid};
 use resonate_library::{
-    ArtistPressings, Barcode, GroupAsked, RecordingAsked, Reference, ReleaseAsked, SongsAsked,
-    Wording,
+    ArtistMatch, ArtistPressings, Barcode, GroupAsked, RecordingAsked, Reference, ReleaseAsked,
+    SongsAsked, Wording,
 };
 use resonate_musicbrainz::{
-    AMENDED_FILE, Answer, Archives, Asked, Building, Consultation, CopyPart, Error, Keeping, Kept,
-    Layer, Layered, Mirror, Mirrored, Offered, Packet, TABLES_FILE, built_from, held_for_building,
-    mirror_in, packet_read, received_amendments, received_copy, removed_copy, replicated, settled,
+    AMENDED_FILE, Answer, ArchiveOp, Archives, Asked, Building, Consultation, CopyPart, Error,
+    Keeping, Kept, Layer, Layered, Mirror, Mirrored, Offered, Packet, TABLES_FILE, built_from,
+    held_for_building, mirror_in, packet_read, received_amendments, received_copy, removed_copy,
+    replicated, settled,
 };
 
 const RADIOHEAD: &str = "a74b1b7f-71a5-4011-9441-d0b5e4122711";
@@ -757,6 +758,187 @@ fn a_table_held_as_a_link_is_refused_and_so_is_one_held_twice() {
         matches!(twice, Error::EntryTwice { entry: "artist" }),
         "{twice:?}"
     );
+}
+
+const A_ROW_IS_READ_UP_TO: usize = 8 * 1024 * 1024;
+
+struct Standing {
+    folder: PathBuf,
+    names: Vec<String>,
+    copy: Vec<u8>,
+    tables: Vec<u8>,
+    artists: Vec<ArtistMatch>,
+}
+
+fn standing(scratch: &Scratch) -> Standing {
+    let mirror = built_keeping(scratch, Keeping::TheMirrorAndItsTables);
+    let artists = mirror.find_artist("radio head").expect("a search");
+    let folder = scratch.0.join("musicbrainz");
+
+    assert_eq!(artists[0].mbid, mbid(RADIOHEAD));
+
+    drop(mirror);
+
+    Standing {
+        names: nothing_left_in(&folder),
+        copy: fs::read(mirror_in(&folder)).expect("the copy"),
+        tables: fs::read(folder.join(TABLES_FILE)).expect("the tables"),
+        artists,
+        folder,
+    }
+}
+
+impl Standing {
+    fn stays(&self) {
+        let mut names = nothing_left_in(&self.folder);
+        let mut before = self.names.clone();
+
+        names.sort();
+        before.sort();
+
+        let mirror = Mirror::open(&mirror_in(&self.folder)).expect("the old copy still opens");
+
+        assert_eq!(names, before);
+        assert_eq!(
+            fs::read(mirror_in(&self.folder)).expect("the copy"),
+            self.copy
+        );
+        assert_eq!(
+            fs::read(self.folder.join(TABLES_FILE)).expect("the tables"),
+            self.tables
+        );
+        assert_eq!(
+            mirror.find_artist("radio head").expect("a search"),
+            self.artists
+        );
+    }
+}
+
+fn hostile_archives(scratch: &Scratch) -> Archives {
+    let folder = scratch.0.join("hostile");
+
+    fs::create_dir_all(&folder).expect("a folder for the hostile export");
+    archives_in(&folder)
+}
+
+#[test]
+fn an_archive_cut_mid_stream_is_refused_and_the_copy_held_goes_on_answering() {
+    let scratch = Scratch::new("cut-archive");
+    let standing = standing(&scratch);
+    let archives = hostile_archives(&scratch);
+
+    archive(&archives.core, &core_tables(&[]));
+    archive(&archives.derived, &derived_tables());
+
+    let whole = fs::read(&archives.core).expect("the archive");
+
+    fs::write(&archives.core, &whole[..whole.len() / 2]).expect("a cut archive");
+
+    let refused = refused_from(&scratch, &archives);
+
+    assert!(
+        matches!(
+            refused,
+            Error::Archive {
+                op: ArchiveOp::Entry,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+
+    standing.stays();
+}
+
+#[test]
+fn a_schema_the_reader_does_not_read_is_refused_over_a_copy_held_which_goes_on_answering() {
+    for schema in [SCHEMA - 1, SCHEMA + 1] {
+        let scratch = Scratch::new(&format!("schema-{schema}-over-a-copy"));
+        let standing = standing(&scratch);
+        let archives = hostile_archives(&scratch);
+        let stamped = Stamped { schema, ..STAMPED };
+
+        archive_then(&archives.core, stamped, &core_tables(&[]), |_| {});
+        archive(&archives.derived, &derived_tables());
+
+        let refused = refused_from(&scratch, &archives);
+
+        assert!(
+            matches!(
+                refused,
+                Error::DumpSchema { found, reads: SCHEMA, .. } if found == u64::from(schema)
+            ),
+            "{refused:?}"
+        );
+
+        standing.stays();
+    }
+}
+
+#[test]
+fn a_row_past_the_longest_is_refused_over_a_copy_held_which_goes_on_answering() {
+    let scratch = Scratch::new("row-too-long");
+    let standing = standing(&scratch);
+    let archives = hostile_archives(&scratch);
+    let name = "x".repeat(A_ROW_IS_READ_UP_TO);
+    let long = line(
+        19,
+        &[
+            (0, "9"),
+            (1, FAR_ARTIST),
+            (2, &name),
+            (3, "Far"),
+            (13, ""),
+            (16, "f"),
+        ],
+    );
+
+    archive(&archives.core, &core_tables(&[("artist", vec![long])]));
+    archive(&archives.derived, &derived_tables());
+
+    let refused = refused_from(&scratch, &archives);
+
+    assert!(
+        matches!(
+            refused,
+            Error::RowTooLong {
+                table: "artist",
+                longest: A_ROW_IS_READ_UP_TO
+            }
+        ),
+        "{refused:?}"
+    );
+
+    standing.stays();
+}
+
+#[test]
+fn a_row_short_of_its_columns_is_refused_over_a_copy_held_which_goes_on_answering() {
+    let scratch = Scratch::new("row-short");
+    let standing = standing(&scratch);
+    let archives = hostile_archives(&scratch);
+
+    archive(
+        &archives.core,
+        &core_tables(&[("artist", vec!["9\tgid".to_owned()])]),
+    );
+    archive(&archives.derived, &derived_tables());
+
+    let refused = refused_from(&scratch, &archives);
+
+    assert!(
+        matches!(
+            refused,
+            Error::Columns {
+                table: "artist",
+                found: 2,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+
+    standing.stays();
 }
 
 #[test]
