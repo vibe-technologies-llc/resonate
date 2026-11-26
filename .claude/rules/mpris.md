@@ -130,8 +130,8 @@ demand and never announced. Ids:
   `ZoneName::given` already leaves out controls and caps a name, and a sink's description is a C
   string.
 - **Covers.** `mpris:artUrl` wants a URI: `art::Pictures` lays the playing cover under
-  `resonate-art-<pid>-<n>/` in `$XDG_RUNTIME_DIR` (temp dir if unset/relative), named by a digest of
-  its bytes. Folder 0700 via a `create` refusing an existing one (a predictable name in a shared
+  `resonate-art-<pid>-<n>/` in `$XDG_RUNTIME_DIR` (temp dir if unset/relative), named by the SHA-256 of
+  its bytes (a laid file is taken as laid only where its content is the cover's, never on length alone; a cover above `COVER_BYTES_AT_MOST`, 8 MiB, is no cover to the bus). Folder 0700 via a `create` refusing an existing one (a predictable name in a shared
   folder can't be taken first); covers 0600 under a staging name, then renamed (URL never names an
   unfinished cover). A poll reuses a laid cover only where the row *and* the catalog's `Arc` of the
   picture match. Writes happen outside the lock every `Metadata` read takes (`Pictures::drawn`),

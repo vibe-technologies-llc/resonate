@@ -7405,6 +7405,7 @@ dependencies = [
  "resonate-words",
  "resonate-words-build",
  "rustix",
+ "sha2 0.11.2",
  "thiserror 2.0.21",
  "tracing",
  "wasapi",

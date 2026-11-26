@@ -1,8 +1,8 @@
 use std::{
     collections::VecDeque,
     env,
+    fmt::Write as _,
     fs::{self, OpenOptions},
-    hash::{DefaultHasher, Hash as _, Hasher as _},
     io::{self, Write as _},
     path::{Path, PathBuf},
     process,
@@ -18,8 +18,11 @@ use parking_lot::Mutex;
 use resonate_core::writer::{self, Writer};
 use resonate_core::{MediaLocation, TrackId};
 use resonate_engine::{CoverArt, QueueRows};
+use sha2::{Digest as _, Sha256};
 
 const FOLDER: &str = "resonate-art";
+
+const COVER_BYTES_AT_MOST: usize = 8 * 1024 * 1024;
 
 const COVERS_KEPT: usize = 8;
 
@@ -147,6 +150,14 @@ impl Pictures {
     }
 
     fn laid_down(&self, playing: Option<Playing>, art: &CoverArt, kept: Kept) -> Option<String> {
+        if art.bytes.len() > COVER_BYTES_AT_MOST {
+            tracing::debug!(
+                bytes = art.bytes.len(),
+                "a cover too large to lay down for the bus to name"
+            );
+            return None;
+        }
+
         let path = {
             let mut laid = self.drawn.lock();
 
@@ -180,11 +191,7 @@ impl Pictures {
                 return Some(held.uri.clone());
             }
 
-            let path = self.folder.0.join(format!(
-                "{:016x}.{}",
-                digest_of(&art.bytes),
-                art.format.extension()
-            ));
+            let path = self.folder.0.join(name_of(art));
 
             if let (Kept::Queued, Some(queued)) = (kept, playing.as_ref())
                 && !laid.room_for_queued(&path, queued.track)
@@ -253,11 +260,16 @@ impl Pictures {
     }
 }
 
-fn digest_of(bytes: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
+fn name_of(art: &CoverArt) -> String {
+    let digest = Sha256::digest(&art.bytes);
+    let mut name = String::with_capacity(digest.len() * 2 + 4);
 
-    bytes.hash(&mut hasher);
-    hasher.finish()
+    for byte in digest {
+        let _ = write!(name, "{byte:02x}");
+    }
+    name.push('.');
+    name.push_str(art.format.extension());
+    name
 }
 
 struct Folder(PathBuf);
@@ -369,6 +381,7 @@ fn lay_down(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 fn already_laid(path: &Path, bytes: &[u8]) -> bool {
     fs::symlink_metadata(path).is_ok_and(|held| held.is_file() && held.len() == bytes.len() as u64)
+        && fs::read(path).is_ok_and(|held| held == bytes)
 }
 
 fn staging_for(path: &Path) -> PathBuf {
@@ -617,11 +630,7 @@ mod tests {
     }
 
     fn laid_for(pictures: &Pictures, art: &CoverArt) -> PathBuf {
-        pictures.folder.0.join(format!(
-            "{:016x}.{}",
-            digest_of(&art.bytes),
-            art.format.extension()
-        ))
+        pictures.folder.0.join(name_of(art))
     }
 
     #[test]
@@ -668,6 +677,65 @@ mod tests {
         let uri = pictures.uri(track(2), &art).expect("the cover laid down");
 
         assert_eq!(fs::read(laid(&uri)).expect("the cover"), art.bytes);
+
+        pictures.forget();
+    }
+
+    #[test]
+    fn a_cover_is_named_by_the_hash_of_its_content() {
+        let art = art();
+        let name = name_of(&art);
+        let (stem, extension) = name.split_once('.').expect("a stem and an extension");
+
+        assert_eq!(extension, "png");
+        assert_eq!(stem.len(), 64);
+        assert!(stem.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_ne!(name_of(&art), name_of(&cover(1)));
+        assert_eq!(name_of(&art), name_of(&self::art()));
+    }
+
+    #[test]
+    fn a_cover_of_the_same_length_but_other_content_is_not_taken_as_laid() {
+        let pictures = Pictures::default();
+
+        pictures.uri(track(1), &cover(1)).expect("the folder made");
+
+        let art = cover(2);
+        let path = laid_for(&pictures, &art);
+        let impostor = vec![b'x'; art.bytes.len()];
+
+        fs::write(&path, &impostor).expect("a file of the same length standing in its place");
+
+        let uri = pictures.uri(track(2), &art).expect("the cover laid down");
+
+        assert_eq!(fs::read(laid(&uri)).expect("the cover"), art.bytes);
+
+        pictures.forget();
+    }
+
+    #[test]
+    fn a_cover_of_a_hundred_megabytes_is_not_laid_down() {
+        let pictures = Pictures::default();
+
+        pictures.uri(track(1), &cover(1)).expect("the folder made");
+
+        let huge = Arc::new(CoverArt {
+            format: ImageFormat::Png,
+            bytes: vec![0; 100 * 1024 * 1024],
+        });
+
+        assert_eq!(pictures.uri(track(2), &huge), None);
+        assert_eq!(pictures.queued_uri(track(3), &huge), None);
+        assert_eq!(pictures.uri_of(&huge), None);
+        assert!(!laid_for(&pictures, &huge).exists());
+        assert!(!staging_for(&laid_for(&pictures, &huge)).exists());
+
+        let just_fits = Arc::new(CoverArt {
+            format: ImageFormat::Png,
+            bytes: vec![0; COVER_BYTES_AT_MOST],
+        });
+
+        assert!(pictures.uri(track(4), &just_fits).is_some());
 
         pictures.forget();
     }
