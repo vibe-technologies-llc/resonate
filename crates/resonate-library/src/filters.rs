@@ -74,22 +74,7 @@ impl MusicFilters {
         let mut conditions = Vec::new();
 
         if self.extensions != MusicExtensions::default() {
-            let extensions: Vec<String> = self
-                .extensions
-                .selected()
-                .map(|extension| {
-                    format!(
-                        "lower(substr({track}.path, -{})) = '.{extension}'",
-                        extension.len() + 1
-                    )
-                })
-                .collect();
-
-            conditions.push(if extensions.is_empty() {
-                "0".to_owned()
-            } else {
-                format!("({})", extensions.join(" OR "))
-            });
+            conditions.push(extended_by_one_of(track, self.extensions.selected()));
         }
         if self.minimum_length.seconds() > 0 {
             conditions.push(format!(
@@ -98,6 +83,26 @@ impl MusicFilters {
             ));
         }
         (!conditions.is_empty()).then(|| conditions.join(" AND "))
+    }
+}
+
+pub(crate) fn extended_by_one_of<'a>(
+    track: &str,
+    extensions: impl Iterator<Item = &'a str>,
+) -> String {
+    let extensions: Vec<String> = extensions
+        .map(|extension| {
+            format!(
+                "lower(substr({track}.path, -{})) = '.{extension}'",
+                extension.len() + 1
+            )
+        })
+        .collect();
+
+    if extensions.is_empty() {
+        "0".to_owned()
+    } else {
+        format!("({})", extensions.join(" OR "))
     }
 }
 

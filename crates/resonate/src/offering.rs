@@ -3,18 +3,21 @@ use std::{
     fs::{self, File, OpenOptions},
     io,
     path::Path,
+    str,
     sync::Arc,
 };
 #[cfg(feature = "ui")]
 use std::{path::PathBuf, thread};
 
 use parking_lot::Mutex;
-use resonate_codec::{DecodeStatus, Decoder, Error as CodecError, Sources};
+use resonate_codec::{
+    DecodeStatus, Decoder, Error as CodecError, FormatHint, Media, MediaProvider, Reading, Sources,
+};
 #[cfg(feature = "ui")]
 use resonate_core::Switch;
 use resonate_core::{
-    AlbumId, ArtistId, AudioBuffer, FrameSpan, Frames, MediaLocation, PlaylistId, StreamSpec,
-    TrackId, is_lettered,
+    AlbumId, ArtistId, AudioBuffer, FrameSpan, Frames, MediaLocation, PlaylistId, SourceId,
+    StreamSpec, TrackId, is_lettered,
 };
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Asked, Clause, Column, Condition,
@@ -389,6 +392,7 @@ impl Shelves {
 
 fn songs_in_order() -> TrackQuery {
     TrackQuery {
+        servable: true,
         sort: SONGS_IN,
         reading: SONGS_IN.reads(),
         ..TrackQuery::default()
@@ -451,6 +455,7 @@ impl Pcm for Decoding {
 fn on_the_album(album: AlbumId) -> TrackQuery {
     TrackQuery {
         album: Some(album),
+        servable: true,
         sort: ON_AN_ALBUM_IN,
         reading: ON_AN_ALBUM_IN.reads(),
         ..TrackQuery::default()
@@ -460,6 +465,7 @@ fn on_the_album(album: AlbumId) -> TrackQuery {
 fn played_by(artist: ArtistId) -> TrackQuery {
     TrackQuery {
         artist: Some(artist),
+        servable: true,
         sort: ON_AN_ALBUM_IN,
         reading: ON_AN_ALBUM_IN.reads(),
         ..TrackQuery::default()
@@ -467,12 +473,15 @@ fn played_by(artist: ArtistId) -> TrackQuery {
 }
 
 fn is_served(track: &Track) -> bool {
-    !track.hidden
+    !track.hidden && served_as(track).is_some()
 }
 
 fn kind_of(path: &Path) -> Option<AudioKind> {
-    path.extension()
-        .and_then(|extension| extension.to_str())
+    let name = path.file_name()?.as_encoded_bytes();
+    let after_the_dot = name.iter().rposition(|byte| *byte == b'.')? + 1;
+
+    str::from_utf8(name.get(after_the_dot..)?)
+        .ok()
         .and_then(AudioKind::of_extension)
 }
 
@@ -489,10 +498,10 @@ fn waved(track: &Track) -> Option<(StreamSpec, Frames)> {
     Some((track.spec, track.duration?))
 }
 
-fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
+fn served_as(track: &Track) -> Option<(AudioKind, Content, u64)> {
     let file = local_file(track)?;
-    let spec = track.spec;
-    let (kind, content, size) = match track.span {
+
+    Some(match track.span {
         None => (kind_of(file)?, Content::Untouched, track.file_size),
         Some(_) => {
             let (spec, frames) = waved(track)?;
@@ -502,7 +511,13 @@ fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
                 wave_bytes(spec, frames),
             )
         }
-    };
+    })
+}
+
+fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
+    let spec = track.spec;
+    let (kind, content, size) = served_as(track)?;
+
     Some(Song {
         id: track.id,
         title: track.title.clone(),
@@ -552,14 +567,53 @@ fn regular_file(path: &Path) -> io::Result<Option<File>> {
     Ok(file.metadata()?.is_file().then_some(file))
 }
 
+struct RegularFiles {
+    source: SourceId,
+}
+
+impl RegularFiles {
+    fn local() -> Self {
+        Self {
+            source: SourceId::local(),
+        }
+    }
+}
+
+impl MediaProvider for RegularFiles {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, location: &MediaLocation) -> Result<Media, CodecError> {
+        let Some(path) = location.as_path() else {
+            return Err(CodecError::LocatorNotUsable {
+                location: location.clone(),
+            });
+        };
+        match regular_file(path) {
+            Ok(Some(file)) => Ok(Media {
+                stream: Box::new(Reading::new(file)),
+                hint: location
+                    .extension()
+                    .map(|extension| FormatHint::Extension(Box::from(extension))),
+            }),
+            Ok(None) => Err(CodecError::NotARegularFile {
+                location: location.clone(),
+            }),
+            Err(source) => Err(CodecError::Io {
+                location: location.clone(),
+                source,
+            }),
+        }
+    }
+}
+
 impl Shelves {
     fn cut_opened(&self, track: &Track, span: FrameSpan) -> Option<Opened> {
         let (announced, frames) = waved(track)?;
-        match Decoding::open(
-            Arc::new(self.library.sources()),
-            track.location.clone(),
-            span,
-        ) {
+        let regular_files_alone = self.library.sources().and(Arc::new(RegularFiles::local()));
+
+        match Decoding::open(Arc::new(regular_files_alone), track.location.clone(), span) {
             Ok(cut) if waves_alike(cut.spec, announced) => Some(Opened {
                 bytes: Box::new(AsWave::over(cut, announced, frames)),
                 kind: AudioKind::Wave,
@@ -1212,7 +1266,7 @@ mod tests {
         time::Duration,
     };
 
-    use resonate_library::Cut;
+    use resonate_library::{Cut, MusicExtensions, MusicFilters};
     use resonate_upnp::{MediaServer, Offering};
 
     use super::*;
@@ -1422,20 +1476,55 @@ mod tests {
         )
     }
 
-    fn described(port: u16, song: TrackId) -> String {
+    fn posted(port: u16, action: &str, arguments: &str) -> String {
         let body = format!(
-            "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:Browse xmlns:u=\"{DIRECTORY}\"><ObjectID>song-{song}</ObjectID><BrowseFlag>BrowseMetadata</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>0</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"
+            "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action} xmlns:u=\"{DIRECTORY}\">{arguments}</u:{action}></s:Body></s:Envelope>"
         );
         let (head, answer) = asked(
             port,
             &format!(
-                "POST /control/ContentDirectory HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: text/xml; charset=\"utf-8\"\r\nSOAPAction: \"{DIRECTORY}#Browse\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "POST /control/ContentDirectory HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: text/xml; charset=\"utf-8\"\r\nSOAPAction: \"{DIRECTORY}#{action}\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             ),
         );
 
         assert!(head.starts_with("HTTP/1.1 200"), "{head}");
         String::from_utf8(answer).expect("text")
+    }
+
+    fn described(port: u16, song: TrackId) -> String {
+        posted(
+            port,
+            "Browse",
+            &format!(
+                "<ObjectID>song-{song}</ObjectID><BrowseFlag>BrowseMetadata</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>0</RequestedCount><SortCriteria></SortCriteria>"
+            ),
+        )
+    }
+
+    fn system_update_id(port: u16) -> u32 {
+        let answer = posted(port, "GetSystemUpdateID", "");
+        let (_, after) = answer.split_once("<Id>").expect("an id");
+        let (id, _) = after.split_once("</Id>").expect("an id closed");
+
+        id.parse().expect("a number")
+    }
+
+    fn served_on_loopback(library: &Arc<Library>) -> MediaServer<Shelves> {
+        let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
+
+        MediaServer::start(
+            Arc::new(Shelves::over(Arc::clone(library))),
+            Udn::minted(),
+            Offering {
+                heard_on: SocketAddr::new(LOOPBACK, 0),
+                told: told.local_addr().expect("an address"),
+                every: Duration::from_secs(60),
+                serving_on: LOOPBACK,
+                name: None,
+            },
+        )
+        .expect("the server")
     }
 
     fn decoded(library: &Library, cut: &Track) -> Vec<u8> {
@@ -1663,6 +1752,269 @@ mod tests {
                 )
             ))
         );
+    }
+
+    #[cfg(unix)]
+    fn fifo_at(path: &Path) {
+        use rustix::fs::{CWD, FileType, Mode, mknodat};
+
+        fs::remove_file(path).expect("the file goes");
+        mknodat(CWD, path, FileType::Fifo, Mode::RUSR | Mode::WUSR, 0).expect("a fifo");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_or_a_link_in_place_of_a_cuts_file_answers_404_at_once_and_a_fifo_sheet_is_passed_over()
+     {
+        let root = scratch("offered-cut-regular");
+        let sheet_file = sounding_wave(20);
+
+        fs::write(root.join("whole.wav"), &sheet_file).expect("a sheet's file");
+        fs::write(root.join("whole.cue"), CUT).expect("a sheet");
+        fs::write(root.join("elsewhere.wav"), &sheet_file).expect("a file to link to");
+
+        let library = Arc::new(scanned(&root));
+        let cut = library
+            .tracks(&TrackQuery::default())
+            .expect("the rows")
+            .into_iter()
+            .find(|track| track.span.is_some())
+            .expect("a cut");
+        let server = served_on_loopback(&library);
+        let port = server.port();
+        let path = format!("/resonate/song-{}.wav", cut.id);
+
+        fifo_at(&root.join("whole.cue"));
+
+        let (beside_a_fifo_sheet, _) = got(port, &path, None);
+
+        fs::remove_file(root.join("whole.cue")).expect("the fifo goes");
+        fs::write(root.join("whole.cue"), CUT).expect("the sheet again");
+        fifo_at(&root.join("whole.wav"));
+
+        let (from_a_fifo, _) = got(port, &path, None);
+
+        fs::remove_file(root.join("whole.wav")).expect("the fifo goes");
+        std::os::unix::fs::symlink(root.join("elsewhere.wav"), root.join("whole.wav"))
+            .expect("a link");
+
+        let (through_a_link, _) = got(port, &path, None);
+
+        drop(server);
+
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(
+            beside_a_fifo_sheet.starts_with("HTTP/1.1 200"),
+            "{beside_a_fifo_sheet}"
+        );
+        assert!(from_a_fifo.starts_with("HTTP/1.1 404"), "{from_a_fifo}");
+        assert!(
+            through_a_link.starts_with("HTTP/1.1 404"),
+            "{through_a_link}"
+        );
+    }
+
+    fn titles_of(shelved: Shelved) -> (Vec<String>, u32) {
+        let titles = shelved
+            .held
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Entry::Song(song) => Some(song.title),
+                Entry::Shelf(_) => None,
+            })
+            .collect();
+        (titles, shelved.total)
+    }
+
+    fn paged_by(most: u32, page: impl Fn(Page) -> Shelved) -> (Vec<String>, Vec<u32>) {
+        let mut titles = Vec::new();
+        let mut totals = Vec::new();
+        let mut from = 0;
+
+        loop {
+            let (held, total) = titles_of(page(Page { from, most }));
+            let returned = u32::try_from(held.len()).expect("a page's length");
+
+            totals.push(total);
+            titles.extend(held);
+            from += returned;
+            if returned < most || from >= total {
+                return (titles, totals);
+            }
+        }
+    }
+
+    #[test]
+    fn a_catalog_holding_rows_it_cannot_serve_pages_what_it_serves_and_counts_the_same() {
+        let root = scratch("offered-unservable");
+        let music = root.join("music");
+        let catalog = root.join("catalog.db");
+
+        fs::create_dir_all(&music).expect("a music folder");
+        for (file, title) in [
+            ("a.wav", "Alpha"),
+            ("b.wav", "Bravo"),
+            ("c.wav", "Charlie"),
+            ("d.wav", "Delta"),
+            ("e.wav", "Echo"),
+        ] {
+            fs::write(
+                music.join(file),
+                tagged_wave(&[(TITLE, title), (ARTIST, "Band"), (ALBUM, "Record")]),
+            )
+            .expect("a song");
+        }
+        fs::write(music.join("whole.wav"), silent_wave(20)).expect("a sheet's file");
+        fs::write(music.join("whole.cue"), CUT).expect("a sheet");
+
+        let library = Arc::new(Library::open(&catalog).expect("a catalog"));
+
+        library.add_root(&music).expect("a root");
+        library
+            .scan(crate::fixtures::scan_of(&music))
+            .and_then(resonate_library::PassHandle::join)
+            .expect("a scan");
+
+        let written = rusqlite::Connection::open(&catalog).expect("the catalog opened beside");
+
+        written
+            .execute_batch(
+                "UPDATE tracks SET path = path || '.part' WHERE title = 'Bravo';
+                 UPDATE tracks SET duration = NULL WHERE title = 'Cut two';",
+            )
+            .expect("rows the server cannot serve");
+        drop(written);
+
+        let rows = library.tracks(&TrackQuery::default()).expect("the rows");
+        let row = |title: &str| {
+            rows.iter()
+                .find(|track| track.title == title)
+                .expect("a row")
+        };
+
+        library
+            .hide_track(row("Delta").id, true)
+            .expect("a row hidden");
+
+        let mix = library.create_playlist("Everything").expect("a playlist");
+
+        library
+            .add_to_playlist(mix, &rows.iter().map(Cut::of).collect::<Vec<_>>())
+            .expect("listed");
+
+        let album = library
+            .albums(&AlbumQuery::default())
+            .expect("the albums")
+            .into_iter()
+            .find(|album| album.title == "Record")
+            .expect("the record")
+            .id;
+        let shelves = &Shelves::over(Arc::clone(&library));
+        let shelved = |shelf: Shelf| {
+            move |page: Page| {
+                shelves
+                    .shelved(shelf, page)
+                    .expect("a page")
+                    .expect("the shelf")
+            }
+        };
+        let searched = |page: Page| match shelves
+            .searched(Kind::Song, Within::Catalog, &Query::Everything, page)
+            .expect("a search")
+        {
+            Searched::Found(shelved) => shelved,
+            Searched::Unanswered => panic!("an answered search"),
+        };
+        let children = |shelf: Shelf| {
+            shelves
+                .shelf(shelf)
+                .expect("read")
+                .expect("the shelf")
+                .children
+        };
+        let served = ["Alpha", "Charlie", "Cut one", "Echo"];
+
+        let songs: Vec<_> = (1..=4)
+            .map(|most| paged_by(most, shelved(Shelf::Songs)))
+            .collect();
+        let found: Vec<_> = (1..=4).map(|most| paged_by(most, searched)).collect();
+        let on_the_album: Vec<_> = (1..=4)
+            .map(|most| paged_by(most, shelved(Shelf::Album(album))))
+            .collect();
+        let listed: Vec<_> = (1..=4)
+            .map(|most| paged_by(most, shelved(Shelf::Playlist(mix))))
+            .collect();
+        let counted = (
+            children(Shelf::Album(album)),
+            children(Shelf::Playlist(mix)),
+        );
+
+        let _ = fs::remove_dir_all(&root);
+
+        for (titles, totals) in songs.into_iter().chain(found) {
+            assert_eq!(titles, served);
+            assert!(totals.iter().all(|total| *total == 4), "{totals:?}");
+        }
+        for (mut titles, totals) in on_the_album {
+            titles.sort_unstable();
+
+            assert_eq!(titles, ["Alpha", "Charlie", "Echo"]);
+            assert!(totals.iter().all(|total| *total == 3), "{totals:?}");
+        }
+        for (mut titles, totals) in listed {
+            titles.sort_unstable();
+
+            assert_eq!(titles, served);
+            assert!(totals.iter().all(|total| *total == 4), "{totals:?}");
+        }
+
+        assert_eq!(counted, (3, 4));
+    }
+
+    #[test]
+    fn every_extension_the_library_counts_names_a_kind_the_server_serves() {
+        let unserved: Vec<&str> = resonate_core::AUDIO_EXTENSIONS
+            .iter()
+            .copied()
+            .filter(|extension| AudioKind::of_extension(extension).is_none())
+            .collect();
+
+        assert!(unserved.is_empty(), "{unserved:?}");
+        assert_eq!(kind_of(Path::new("/music/.FLAC")), Some(AudioKind::Flac));
+        assert_eq!(kind_of(Path::new("/music/a.wav.part")), None);
+        assert_eq!(kind_of(Path::new("/music/flac")), None);
+    }
+
+    #[test]
+    fn the_system_update_id_moves_once_the_music_filters_change() {
+        let root = scratch("offered-filtered");
+
+        fs::write(root.join("a.wav"), tagged_wave(&[(TITLE, "Alpha")])).expect("a song");
+        fs::write(root.join("b.wav"), tagged_wave(&[(TITLE, "Bravo")])).expect("a song");
+
+        let library = Arc::new(scanned(&root));
+        let server = served_on_loopback(&library);
+        let port = server.port();
+
+        let before = system_update_id(port);
+        let shelves = Shelves::over(Arc::clone(&library));
+        let (_, counted_before) = shelved_songs(&shelves, 10);
+
+        library.filter_music(MusicFilters {
+            extensions: MusicExtensions::parse(&["flac"]).expect("FLAC alone"),
+            ..MusicFilters::default()
+        });
+
+        let after = system_update_id(port);
+        let (_, counted_after) = shelved_songs(&shelves, 10);
+
+        drop(server);
+
+        let _ = fs::remove_dir_all(&root);
+
+        assert_ne!(after, before);
+        assert_eq!((counted_before, counted_after), (2, 0));
     }
 
     const SHEET_BY_A_BAND: &str = "PERFORMER \"Sheet Band\"\nTITLE \"Sheet Album\"\nFILE \"whole.wav\" \

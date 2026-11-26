@@ -430,7 +430,12 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   over `Library`, and serves a song's file only if it is a regular file (`regular_file`: opened
   with no link followed and no waiting, the kind read from the open handle), so a FIFO or a link in
   a track's place is answered as no such song at once
-  (`only_a_regular_file_is_served_a_fifo_or_a_link_in_a_tracks_place_is_not`). The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
+  (`only_a_regular_file_is_served_a_fifo_or_a_link_in_a_tracks_place_is_not`). A cut is decoded
+  through `Library::sources` with `RegularFiles` standing for the local files, which opens by
+  `regular_file` and refuses anything else as `NotARegularFile`, so its file and the sheet read
+  beside it are held to the same: a FIFO or link in the file's place is 404 at once, and a FIFO
+  sheet is passed over
+  (`a_fifo_or_a_link_in_place_of_a_cuts_file_answers_404_at_once_and_a_fifo_sheet_is_passed_over`). The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
   then the albums by or holding them, then the songs), Albums, Songs and Playlists; a top shelf's
   title is the crate's catalog word (`offered.ftl`) and its count the catalog's `total`.
 - **An object id is the server's own spelling, read back strictly** (`Object::read`): `0`,
@@ -542,7 +547,8 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   meanwhile wait for the next one rather than being cleared with those told
   (`a_subscriber_being_told_is_not_told_again_and_keeps_what_changed_meanwhile`).
   `SystemUpdateID` moves because the binary's `revision` is `Library::catalog_revision`, which
-  every catalog write moves.
+  every catalog write moves, and a change of the music filters (`filter_music`) with them
+  (`the_system_update_id_moves_once_the_music_filters_change`).
 - **`ContainerUpdateIDs` is evented for the containers a control point holds** (`watched.rs`),
   with no change to the seam: the revision names no container, so the crate tells a change by what
   a container lists. A container a `BrowseDirectChildren` answered (the root, a shelf, an artist,
@@ -637,7 +643,15 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   read the same way; a playlist's served rows are read whole once a revision (`LISTS_KEPT_AT_MOST`,
   32) and paged in memory. A whole file is served only where its row is a local file whose
   extension names an `AudioKind`, and a file gone is 404; a cut only where its row is a local file
-  with a known length (*A cut served as WAVE*). A search is the library's own (`searched_as`): a query becomes a typed `Search` in
+  with a known length (*A cut served as WAVE*). **What is counted is what is served**: every query
+  a shelf or search reads (`songs_in_order`, `on_the_album`, `played_by`) asks
+  `TrackQuery::servable`, so the library pages and counts those rows alone, and a playlist's kept
+  list keeps only what `is_served` (shown, and `served_as` describes) admits; `kind_of` reads the
+  extension after the file name's last dot as the library's suffix test does, and every
+  `AUDIO_EXTENSIONS` entry names an `AudioKind`, so a row the library admits is never dropped
+  after it is counted, and `TotalMatches`, `childCount` and the rows a page returns agree
+  (`a_catalog_holding_rows_it_cannot_serve_pages_what_it_serves_and_counts_the_same`,
+  `every_extension_the_library_counts_names_a_kind_the_server_serves`). A search is the library's own (`searched_as`): a query becomes a typed `Search` in
   conjunctive form (at most `CLAUSES_AT_MOST`, 32, clauses of `ALTERNATIVES_AT_MOST`, 16, else
   unanswered) written as its text, so it is folded as the search box folds it and an artist is one
   artist however spelled: `=` is a whole name (`artist:="…"`, the artist by id), `contains` each
@@ -669,7 +683,7 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   is carried on as silence and one that runs past is cut, so the length named always holds
   (`a_range_into_the_middle_of_a_frame_seeks_to_that_frame_and_reads_on_in_order`,
   `a_decode_ending_early_is_carried_on_as_silence_to_the_length_named`). The binary's
-  `Decoding` is `Decoder::open_span` over `Library::sources` with its own output format, reopened
+  `Decoding` is `Decoder::open_span` over `Library::sources` (with `RegularFiles`) with its own output format, reopened
   for a source that cannot seek. **The size announced is the body's**: `waved` (the row's spec and
   duration) is the one source of both, `song_of` describing a cut as `AudioKind::Wave` (`audio/wav`,
   the path `song-N.wav`, `Content::Converted`) with `size` from `wave_bytes` over it and the body

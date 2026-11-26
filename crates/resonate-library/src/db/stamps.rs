@@ -15,6 +15,7 @@ impl Library {
         inner
             .playlists_revision()
             .wrapping_add(inner.arrivals())
+            .wrapping_add(inner.refiltered())
             .wrapping_add(inner.written.load(Ordering::Acquire))
             .wrapping_add(inner.named.load(Ordering::Acquire))
             .wrapping_add(inner.written_elsewhere_or_last_seen().cast_unsigned())

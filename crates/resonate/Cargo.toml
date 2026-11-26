@@ -91,6 +91,7 @@ trash.workspace = true
 base64.workspace = true
 png.workspace = true
 resonate-words-build.workspace = true
+rusqlite.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 rustix = { workspace = true, features = ["pty"] }

@@ -30,6 +30,7 @@ mod wants;
 
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
+    mem,
     ops::Deref,
     path::{Path, PathBuf},
     sync::{
@@ -127,6 +128,7 @@ pub(crate) struct Inner {
     trash_home: Mutex<Option<PathBuf>>,
     trashes: Mutex<Option<Arc<dyn Trashes>>>,
     music_filters: Mutex<MusicFilters>,
+    refiltered: AtomicU64,
     listens_settle_after: Mutex<Duration>,
     foresight: Foresight,
 }
@@ -416,6 +418,10 @@ impl Inner {
 
     pub(crate) fn playlists_revision(&self) -> u64 {
         self.playlists.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn refiltered(&self) -> u64 {
+        self.refiltered.load(Ordering::Acquire)
     }
 
     pub(crate) fn playlists_changed(&self) {
@@ -1038,7 +1044,11 @@ impl Library {
     }
 
     pub fn filter_music(&self, filters: MusicFilters) {
-        *self.inner.music_filters.lock() = filters;
+        let before = mem::replace(&mut *self.inner.music_filters.lock(), filters);
+
+        if before != filters {
+            self.inner.refiltered.fetch_add(1, Ordering::AcqRel);
+        }
         *self.inner.suggested.lock() = None;
         *self.inner.filed.lock() = None;
         *self.inner.measured.lock() = None;
@@ -1243,6 +1253,7 @@ impl Library {
                 trash_home: Mutex::new(None),
                 trashes: Mutex::new(None),
                 music_filters: Mutex::new(MusicFilters::default()),
+                refiltered: AtomicU64::new(0),
                 listens_settle_after: Mutex::new(synced::LISTEN_SETTLES_AFTER),
                 foresight: Foresight::default(),
             }),

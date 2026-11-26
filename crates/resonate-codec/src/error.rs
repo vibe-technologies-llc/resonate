@@ -234,6 +234,9 @@ pub enum Error {
     #[error("{location} is addressed in a way its source cannot open")]
     LocatorNotUsable { location: MediaLocation },
 
+    #[error("{location} is no regular file, so its source does not open it")]
+    NotARegularFile { location: MediaLocation },
+
     #[error(
         "{location} is a sheet in {encoding}, which cannot spell what was to be written into it"
     )]
@@ -340,6 +343,7 @@ impl Error {
             | Self::NoSuchSource { location }
             | Self::OpenTookTooLong { location, .. }
             | Self::LocatorNotUsable { location }
+            | Self::NotARegularFile { location }
             | Self::Unwritable { location }
             | Self::Id3ChunkTooLarge { location, .. }
             | Self::TagsUnread { location, .. }

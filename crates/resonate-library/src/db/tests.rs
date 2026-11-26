@@ -883,6 +883,88 @@ fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_wi
 }
 
 #[test]
+fn a_servable_query_keeps_whole_files_named_as_audio_and_cuts_of_a_known_length() -> Result<()> {
+    let library = Library::open_in_memory()?;
+
+    run(
+        &library,
+        "INSERT INTO roots (id, path) VALUES (1, '/music');
+         INSERT INTO tracks (root_id, path, title, duration, sample_rate, channels, sample_format,
+                             codec, file_size, modified, added, seen, span_start, span_frames, hidden)
+         VALUES
+             (1, '/music/a.flac', 'A file', 100, 44100, 2, 1, 1, 0, 0, 5, 0, 0, NULL, 0),
+             (1, '/music/b.WAV', 'B shouted', NULL, 44100, 2, 1, 1, 0, 0, 5, 0, 0, NULL, 0),
+             (1, '/music/c.txt', 'C unheard of', 100, 44100, 2, 1, 1, 0, 0, 5, 0, 0, NULL, 0),
+             (1, '/music/d', 'D bare', 100, 44100, 2, 1, 1, 0, 0, 5, 0, 0, NULL, 0),
+             (1, '/music/e.wav', 'E cut first', 4410, 44100, 2, 1, 1, 0, 0, 5, 0, 0, 4410, 0),
+             (1, '/music/e.wav', 'F cut last', 4410, 44100, 2, 1, 1, 0, 0, 5, 0, 4410, NULL, 0),
+             (1, '/music/g.wav', 'G cut unmeasured', NULL, 44100, 2, 1, 1, 0, 0, 5, 0, 4410, NULL, 0),
+             (1, '/music/h.txt', 'H cut of an unheard file', 4410, 44100, 2, 1, 1, 0, 0, 5, 0, 4410, NULL, 0),
+             (1, '/music/i.flac', 'I hidden', 100, 44100, 2, 1, 1, 0, 0, 5, 0, 0, NULL, 1);",
+    );
+
+    let servable = TrackQuery {
+        servable: true,
+        sort: SortOrder::Title,
+        reading: SortOrder::Title.reads(),
+        ..TrackQuery::default()
+    };
+
+    let read = library.tracks(&servable)?;
+    let paged = paged_tracks(&library, &servable)?;
+    let every = library.tracks_counted(&TrackQuery {
+        servable: false,
+        ..servable.clone()
+    })?;
+
+    assert_eq!(
+        read.iter()
+            .map(|track| track.title.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "A file",
+            "B shouted",
+            "E cut first",
+            "F cut last",
+            "H cut of an unheard file"
+        ]
+    );
+    assert_eq!(paged, ids(&read));
+    assert_eq!(library.tracks_counted(&servable)?, 5);
+    assert_eq!(every, 8);
+    Ok(())
+}
+
+#[test]
+fn the_catalog_revision_moves_when_the_music_filters_change_and_only_then() {
+    let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
+    let before = library.catalog_revision();
+
+    library.filter_music(MusicFilters::default());
+
+    let unchanged = library.catalog_revision();
+
+    library.filter_music(MusicFilters {
+        extensions: crate::MusicExtensions::parse(&["flac"]).expect("FLAC"),
+        ..MusicFilters::default()
+    });
+
+    let narrowed = library.catalog_revision();
+
+    library.filter_music(MusicFilters {
+        minimum_length: crate::MinimumLength::new(30).expect("half a minute"),
+        ..library.music_filters()
+    });
+
+    let lengthened = library.catalog_revision();
+
+    assert_eq!(unchanged, before);
+    assert_ne!(narrowed, unchanged);
+    assert_ne!(lengthened, narrowed);
+}
+
+#[test]
 fn a_page_from_a_row_the_catalog_no_longer_holds_is_empty() -> Result<()> {
     let library = Library::open_in_memory()?;
 

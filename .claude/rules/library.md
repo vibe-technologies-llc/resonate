@@ -319,6 +319,10 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   is one's), each paged by the same keys, so the media server's search under Artists or Albums
   answers exactly what those shelves hold below
   (`a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_within_it`).
+  `servable` keeps a row that can be handed over as a file of its own: a whole file whose suffix
+  is one of `AUDIO_EXTENSIONS` (`extended_by_one_of`, the music filters' test), or a cut whose
+  duration is known, so the media server counts and pages exactly what it serves
+  (`a_servable_query_keeps_whole_files_named_as_audio_and_cuts_of_a_known_length`).
 - **Albums and artists panes have orders too, deliberately unindexed.** `AlbumOrder` and
   `ArtistOrder` read those tables, which hold thousands of rows against `tracks`' hundreds of
   thousands, so a temp B-tree beats an index. **An artist files under the name its files sort it
@@ -854,8 +858,10 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   The phones' half is `mobile.md`'s *Replacing a playlist's lossy songs*.
 - **Music filters narrow listings, keep the catalog whole.** `MusicFilters` = supported extension
   selection + `MinimumLength` bounded to ten minutes. `Library::filter_music` sets it for this
-  opened catalog (the binary fills it from config before any listing) and drops the suggestion
-  cache. Track listings and measurements apply it before ordering and paging; albums, artists, their
+  opened catalog (the binary fills it from config before any listing), drops the suggestion
+  cache and, where the filters differ from those held, moves `catalog_revision`, since every
+  listing and count it narrows reads otherwise
+  (`the_catalog_revision_moves_when_the_music_filters_change_and_only_then`). Track listings and measurements apply it before ordering and paging; albums, artists, their
   counts and search follow. Extension is matched against the file suffix, case-insensitively; a cue
   row has its backing file's extension and its own duration. Zero = no duration condition (unknown
   lengths kept); positive requires a known length at least as long.

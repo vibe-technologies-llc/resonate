@@ -354,6 +354,7 @@ impl Asked {
             artist,
             on_an_album: false,
             by_an_artist: false,
+            servable: false,
             text: self
                 .searched()
                 .filter(|_| !scoped || self.narrows_the_scope),

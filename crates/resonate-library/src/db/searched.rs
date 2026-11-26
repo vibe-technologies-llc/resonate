@@ -6,7 +6,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::Likeness;
-use resonate_core::{AlbumId, SampleFormat, TrackId};
+use resonate_core::{AUDIO_EXTENSIONS, AlbumId, SampleFormat, TrackId};
 use rusqlite::{Connection, OptionalExtension as _, params_from_iter, types::Value};
 
 use super::{
@@ -22,7 +22,9 @@ use super::{
 use crate::{
     AlbumQuery, ArtistQuery, Asked, Clause, Codec, Column, Compare, Condition, Error, Measured,
     MusicFilters, Result, Search, Shape, SortOrder, StoreOp, Term, Track, TrackQuery, Verdict,
-    Word, keyed, likeness,
+    Word,
+    filters::extended_by_one_of,
+    keyed, likeness,
     playlist::{self},
     schema, search, store,
     studies::Agreement,
@@ -677,6 +679,14 @@ const BY_OR_HOLDING_AN_ARTIST: &str = "(a.artist_id IS NOT NULL
 
 const ON_AN_ALBUM: &str = "tracks.album_id IS NOT NULL";
 
+static SERVABLE: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "(CASE WHEN tracks.span_start = 0 AND tracks.span_frames IS NULL THEN {} \
+         ELSE tracks.duration IS NOT NULL END)",
+        extended_by_one_of("tracks", AUDIO_EXTENSIONS.iter().copied())
+    )
+});
+
 const BY_AN_ARTIST: &str = "(tracks.artist_id IS NOT NULL
       OR tracks.id IN (SELECT track_id FROM track_credits))";
 
@@ -776,6 +786,9 @@ pub(super) fn matching_tracks(
     }
     if query.by_an_artist {
         matching.filters.push(BY_AN_ARTIST.to_owned());
+    }
+    if query.servable {
+        matching.filters.push(SERVABLE.clone());
     }
 
     Some(matching)
