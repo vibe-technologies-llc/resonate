@@ -14,6 +14,7 @@ use crate::{
 };
 
 const JSON: &str = "application/json";
+const POSITION_SECONDS: &str = "position_seconds";
 const NOW_PLAYING: &str = "resonate://player/now-playing";
 const QUEUE: &str = "resonate://player/queue";
 const PASSES: &str = "resonate://library/passes";
@@ -153,6 +154,16 @@ impl Resource {
 
     pub(crate) fn templates() -> Vec<Value> {
         Template::ALL.map(Template::listed).into()
+    }
+
+    pub(crate) fn watched(&self, reading: Value) -> Value {
+        match (self, reading) {
+            (Self::NowPlaying, Value::Object(mut fields)) => {
+                fields.remove(POSITION_SECONDS);
+                Value::Object(fields)
+            }
+            (_, reading) => reading,
+        }
     }
 
     pub(crate) fn read(

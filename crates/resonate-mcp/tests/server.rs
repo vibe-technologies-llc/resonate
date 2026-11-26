@@ -226,6 +226,8 @@ struct Standing {
     playing: Option<usize>,
     status: Option<PlaybackStatus>,
     position: Duration,
+    advancing_by: Duration,
+    pausing_at: Option<Duration>,
     volume: Volume,
     shuffle: bool,
     play_order: Option<Vec<TrackId>>,
@@ -247,6 +249,8 @@ impl Default for Standing {
             playing: None,
             status: Some(PlaybackStatus::Stopped),
             position: Duration::from_millis(61_500),
+            advancing_by: Duration::ZERO,
+            pausing_at: None,
             volume: Volume::MAX,
             shuffle: false,
             play_order: None,
@@ -439,7 +443,15 @@ impl Controlling for Handle {
     }
 
     fn position(&self) -> resonate_mpris::Result<Duration> {
-        Ok(self.standing.borrow().position)
+        let mut standing = self.standing.borrow_mut();
+
+        let advanced = standing.position + standing.advancing_by;
+
+        standing.position = advanced;
+        if standing.pausing_at.is_some_and(|at| advanced >= at) {
+            standing.status = Some(PlaybackStatus::Paused);
+        }
+        Ok(advanced)
     }
 
     fn queued(&self) -> resonate_mpris::Result<Vec<TrackId>> {
@@ -3202,6 +3214,68 @@ fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
                 .as_str()
                 .is_some_and(|method| method.starts_with("notifications/"))
     }));
+
+    drop(writing);
+}
+
+#[test]
+fn a_playing_song_is_told_once_over_five_seconds_not_at_every_tick() {
+    const WATCHED_FOR: Duration = Duration::from_secs(5);
+    const NOW_PLAYING: &str = "resonate://player/now-playing";
+
+    let (players, _) = Fake::with(Standing {
+        rows: vec![row(8, "Time")],
+        playing: Some(0),
+        status: Some(PlaybackStatus::Playing),
+        advancing_by: Duration::from_millis(500),
+        pausing_at: Some(Duration::from_secs(64)),
+        ..Standing::default()
+    });
+    let server = server(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        players,
+    );
+    let (stop, stoppable) = resonate_mcp::stoppable();
+    let (reading, mut writing) = io::pipe().expect("a pipe for the input");
+    let (heard, answering) = io::pipe().expect("a pipe for the output");
+
+    for message in [
+        request(
+            "initialize",
+            json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
+        ),
+        request("resources/subscribe", json!({ "uri": NOW_PLAYING })),
+    ] {
+        writeln!(writing, "{message}").expect("the pipe takes a line");
+    }
+
+    let watching = std::thread::spawn(move || {
+        io::BufRead::lines(BufReader::new(heard))
+            .map(|line| {
+                serde_json::from_str::<Value>(&line.expect("a line of output"))
+                    .expect("one message")
+            })
+            .collect::<Vec<_>>()
+    });
+
+    std::thread::spawn(move || {
+        std::thread::sleep(WATCHED_FOR);
+        stop.stop();
+    });
+    server
+        .serve_until_stopped(BufReader::new(reading), answering, stoppable)
+        .expect("a session told to stop to end cleanly");
+
+    let told = watching.join().expect("the watching thread");
+    let updates = told
+        .iter()
+        .filter(|message| {
+            message["method"] == "notifications/resources/updated"
+                && message["params"]["uri"] == NOW_PLAYING
+        })
+        .count();
+
+    assert_eq!(updates, 1, "{told:?}");
 
     drop(writing);
 }

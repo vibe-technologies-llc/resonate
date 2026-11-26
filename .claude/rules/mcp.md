@@ -34,8 +34,9 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
 - **Subscriptions and list watching, where the session can push.** `serve_until_stopped` takes input
   over a channel; thread `resonate-mcp-tick` puts a `Tick` on it every `LOOKED_OVER_EVERY` (500 ms),
   answered between lines on the one thread. Each tick re-reads every subscribed URI; a differing
-  reading (a failed read counts) sends `notifications/resources/updated`. Once the client has listed
-  resources, a changed list sends `notifications/resources/list_changed`: a tick reads the playlist
+  reading (a failed read counts; now-playing's `position_seconds` is left out of the comparison by
+  `Resource::watched`, so a playing song notifies on a song or state change, not every tick) sends
+  `notifications/resources/updated`. Once the client has listed resources, a changed list sends `notifications/resources/list_changed`: a tick reads the playlist
   names only when `Library::catalog_revision` moved and compares a hash of them
   (`resources::fingerprint`), so a quiet catalog costs one counter read.
 - **`serve` pushes nothing**: `initialize` offers `subscribe`/`listChanged` only where `pushing` was

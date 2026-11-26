@@ -362,6 +362,7 @@ impl Server {
         let resource = Resource::at(uri)?;
         resource
             .read(&self.library, &*self.players, &self.passes)
+            .map(|reading| resource.watched(reading))
             .inspect_err(|error| tracing::debug!(%uri, %error, "a subscribed resource failed"))
             .ok()
     }
