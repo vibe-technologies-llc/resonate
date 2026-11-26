@@ -1,4 +1,5 @@
 mod bundle;
+mod cli;
 mod console;
 mod dragging;
 mod icons;
