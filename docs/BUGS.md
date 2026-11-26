@@ -100,21 +100,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
   listens and playlist entries survive. Say what is kept. Done when the description matches the
   tool's test.
-- [S · 0.18.1] Let a staged write's own failures decide its outcome. **Low, builder.**
-  `write_atomically` answers `Unwritten { Place }` when the folder sync after a rename fails, though
-  the target was replaced (`crates/resonate-core/src/file_facts.rs:171-174`, `:224-241`), as the
-  sign-in jar does (`crates/resonate-signin/src/jar.rs:147-166`, so the window exits failed beside a
-  good jar); and `claimed` reads a lock the filesystem refuses as held and `taken_over` truncates
-  (`crates/resonate-core/src/writer.rs:127-137`), so two writers on a lockless mount both win.
-  Report a failed folder sync apart, and refuse to truncate an unlockable claim. Done when tests
-  show both.
-- [S · 0.18.1] Round-trip legacy text byte for byte, and write WTF-8 as Windows reads it. **Low,
-  builder.** `text::decoded` then `encoded` changes an odd UTF-16 tail and Shift_JIS duplicate
-  codes, and the UTF-8 mark is not part of `TextEncoding`, so each writer restores it by hand
-  (`crates/resonate-core/src/text.rs:100-147`); and `wide_of_wtf8` accepts four-byte forms above
-  U+10FFFF and overlongs, writing lone surrogates (`os_bytes.rs:92-133`). Carry the mark in
-  `TextEncoding`, refuse a re-encoding that differs, and replace an invalid sequence. Done when
-  `b"\x87\x90"` as Shift_JIS round-trips and `F4 90 80 80` writes U+FFFD.
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
@@ -193,26 +178,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   latency matching the queue.
 
 ## Command line
-- [S · 0.18.1] Give `abx` a verdict only on a finished test. **Medium, builder.** The conclusion
-  reads `heard_it()` or `luck()` off the answered prefix of an unfinished test
-  (`crates/resonate/src/abx.rs:235-258`), so stopping at 5 of 5 says the listener can hear it, which
-  optional stopping makes meaningless. Say only the tally for an unfinished test. Done when a test
-  leaving after five right answers prints no verdict.
-- [S · 0.18.1] Hold the terminal's lines to one line and say every word through the catalog. **Low,
-  builder.** `said::plain` keeps `\n` and `\t` (`crates/resonate/src/said.rs:9`, `:83-94`), so a
-  title holding a newline scrolls the readout on every redraw (`readout.rs:67-125`, `:153-175`), and
-  `info` and `listen` skip `on_one_line`; `sinks.rs:37-40` prints a literal `none` beside
-  `words::main::none`, `info.rs:261` a literal `faststart`, and `playing.rs:626`, `info.rs:204` the
-  `Debug` of engine enums; table counts are not grouped (`stats.rs:53-57`, `suggest.rs:51`,
-  `playing.rs:285`). Fold control characters, speak each word and group each count. Done when a
-  title holding a newline draws on one line and the catalog test refuses the literals.
-- [S · 0.18.1] Restore the terminal on SIGQUIT and fail on a write error. **Low, builder.** Ctrl-\
-  leaves the terminal raw, since `ISIG` stays on and SIGQUIT is not in `ASKING_TO_LEAVE`
-  (`crates/resonate/src/input.rs:118-125`, `signals.rs:17`); and `said` swallows a write error other
-  than a closed pipe at debug (`said.rs:73-81`, `:96-105`), so `resonate sinks > /dev/full` exits 0.
-  Restore on SIGQUIT and exit non-zero on a failed write. Done when
-  `crates/resonate/tests/terminal.rs` sends QUIT beside INT, TERM and HUP and asserts the mode
-  restored and the exit code, and `/dev/full` fails.
-- [S · 0.18.1] Print each of `Config`'s fields once. **Low, builder.** `Debug` prints `offer_name`
-  twice (`crates/resonate/src/config.rs:367-368`). Print it once. Done when the `Debug` test names
-  each field once.
