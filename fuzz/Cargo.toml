@@ -16,6 +16,7 @@ resonate-analysis.path = "../crates/resonate-analysis"
 resonate-cast.path = "../crates/resonate-cast"
 resonate-core.path = "../crates/resonate-core"
 resonate-codec.path = "../crates/resonate-codec"
+resonate-dsp.path = "../crates/resonate-dsp"
 resonate-eq.path = "../crates/resonate-eq"
 resonate-library.path = "../crates/resonate-library"
 resonate-lyrics.path = "../crates/resonate-lyrics"
@@ -294,6 +295,20 @@ bench = false
 [[bin]]
 name = "listens"
 path = "fuzz_targets/listens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store"
+path = "fuzz_targets/store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "targets"
+path = "fuzz_targets/targets.rs"
 test = false
 doc = false
 bench = false

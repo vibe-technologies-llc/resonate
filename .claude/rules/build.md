@@ -234,8 +234,8 @@ Linux sound server or GUI libraries are needed.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-eight targets: `listens` (the ListenBrainz JSON lines `history --import-file` reads, holding that each listen kept names a song and an artist and a refusal names a line the input has), `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
-  `cue` (beside the sheet's reading, `SheetText`'s `own` and `edited` over every field and scope, the edit read back), `rating` (the lofty reads a retag preview makes, `rating_in` and `Counted::read_in`, the input's first byte choosing the extension), `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Forty targets: `listens` (the ListenBrainz JSON lines `history --import-file` reads, holding that each listen kept names a song and an artist and a refusal names a line the input has), `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
+  `cue` (beside the sheet's reading, `SheetText`'s `own` and `edited` over every field and scope, the edit read back), `rating` (the lofty reads a retag preview makes, `rating_in` and `Counted::read_in`, the input's first byte choosing the extension), `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser` (a profile's text round trip, then the stage built from it at 44.1, 96 and 192 kHz with `fitted_preamp` and an impulse through it), `store` (`Store::read_in` over a file's bytes, an import held to `BOOST_AT_MOST_DB` and its stage run the same way), `targets` (`BuiltIn::parse`), `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
   indexing and the reader, and the vault's `standing::of_a_flac` and `of_a_packed_wave`), `padding` (the tag writer's padded heads and its Matroska rewrite, then a picture attached to what the rewrite laid, held byte for byte to the tags and the picture laid together as a keep writes them, kind 5), `journal` (an undo journal,
   sealed by the seam so the checksum is not the fuzzer's to guess, and a whole copy's trailer and record read off a file), `overlay` (the write overlay
@@ -263,7 +263,7 @@ Linux sound server or GUI libraries are needed.
   over a Windows pipe or a Mac's socket, read as requests and as replies and held to re-encode to
   the same bytes), `stun` (an answer on the QUIC socket, `binding_answer`), `measurement`
   (`read_response`: a measurement or calibration file, holding its points ascending and every
-  interpolation finite) and `catalogue` (the AutoEq index, holding that no `DeviceId` leaves its
+  interpolation finite, then `fit` of it to each built-in target, its stage run as `equaliser` runs one) and `catalogue` (the AutoEq index, holding that no `DeviceId` leaves its
   folder).
 - **`probe`'s input is the file and its last three bytes are the run's shape**, so a seed stays a
   plain file a player opens (`fuzz_targets/held.rs`, its `MediaProvider`, is shared with `boxes` and
@@ -280,7 +280,7 @@ Linux sound server or GUI libraries are needed.
   in MPEG frames (UTF-16 with a byte-order mark, no USLT beside it), and
   `the_probe_seeds_reach_the_timed_lyrics_reader_in_either_stamp_format` holds both to reading as
   timed words.
-  `equaliser` holds that what it writes of an EqualizerAPO profile reads back the same. `lrc`,
+  `equaliser` holds that what it writes of an EqualizerAPO profile reads back the same, and the stage the profile builds keeps an impulse finite and under `ESTIMATE_SLACK` times the loudest point the deepest preamp cannot take back (`fuzz_targets/stage.rs`, shared by `equaliser`, `store` and `measurement`; `stacked-boosts.txt`, 32 bands at +40 dB, is why the bound is the peak left over rather than full scale). `lrc`,
   `lyricsfile`, `ttml`, `playlist`, `mcp`, `ipc`, `stun` and the targets above that reach a private reader use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
   lines and envelopes and never dispatches, a tool being free to touch the filesystem.
 - **`fuzz/seeds/<target>`** holds the smallest file of each thing a target reads, a second corpus

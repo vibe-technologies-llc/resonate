@@ -1,0 +1,9 @@
+Preamp: 0 dB
+Filter 1: ON PK Fc 19000 Hz Gain 24 dB Q 40
+Filter 2: ON LSC Fc 20 Hz Gain 24 dB Q 0.1
+Filter 3: ON HSC Fc 20000 Hz Gain 24 dB Q 0.1
+Filter 4: ON LP Fc 40000 Hz Q 0.707
+Filter 5: ON HP Fc 10 Hz Q 40
+Filter 6: ON BP Fc 1000 Hz Q 40
+Filter 7: ON NO Fc 60 Hz Q 40
+Filter 8: ON AP Fc 5000 Hz Q 0.1
