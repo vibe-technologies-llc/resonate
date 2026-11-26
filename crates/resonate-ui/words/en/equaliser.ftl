@@ -13,6 +13,7 @@ measured = measured
 measurement-stopped = The measurement was stopped; nothing was kept
 nothing-heard = Nothing was heard — check the microphone is on and the output can be heard
 no-output-for-the-sweep = The output to play the sweep through isn't there
+sweep-lost-in-noise = The microphone heard the room but no sweep over its noise — quiet the room, raise the volume or bring the microphone nearer
 sweep-unheard = Couldn't play the sweep and hear it
 fit-that-measurement = fit that measurement
 lines-passed-over = { $count ->
@@ -27,7 +28,7 @@ values-clamped = { $count ->
     [one] ; { $count } value past what it holds was held to its limits
    *[other] ; { $count } values past what it holds were held to its limits
 }
-bound-but-not-kept = { $curve } is bound but not kept here
+bound-but-not-kept = { $curve } is bound but not kept here, so it plays flat
 read-that-profile = read that profile
 save-the-curve = save the curve
 carry-the-curve = carry the curve to the renamed device

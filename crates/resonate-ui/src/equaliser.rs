@@ -136,6 +136,9 @@ fn missed_the_room(error: &Missed) -> Notice {
         Missed::Heard(unmeasured) if unmeasured.is_silence() => {
             Notice::Trouble(words::equaliser::nothing_heard().to_owned())
         }
+        Missed::Heard(unmeasured) if unmeasured.is_lost_in_noise() => {
+            Notice::Trouble(words::equaliser::sweep_lost_in_noise().to_owned())
+        }
         Missed::Heard(unmeasured) if unmeasured.is_a_missing_output() => {
             Notice::Trouble(words::equaliser::no_output_for_the_sweep().to_owned())
         }
@@ -387,8 +390,12 @@ impl EqualiserModel {
                 Ok(Some(profile)) => {
                     self.held.insert(curve, Arc::new(profile));
                 }
-                Ok(None) => {}
-                Err(error) => tracing::warn!(%error, "a bound curve could not be read"),
+                Ok(None) => {
+                    tracing::warn!(curve = %curve.spoken(), "a bound curve is not kept, so it plays flat");
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "a bound curve could not be read, so it plays flat");
+                }
             }
         }
     }
@@ -633,7 +640,9 @@ impl EqualiserModel {
 
     pub fn equalisation(&self) -> Equalisation {
         let held = |owner: Option<&NodeName>, binding: &Binding| {
-            self.held.get(&Curve::of(owner, binding)).map(Arc::clone)
+            self.held
+                .get(&Curve::of(owner, binding))
+                .map_or_else(|| Arc::new(Profile::flat()), Arc::clone)
         };
 
         Equalisation {
@@ -642,15 +651,13 @@ impl EqualiserModel {
                 .bindings
                 .by_sink
                 .iter()
-                .filter_map(|(sink, binding)| {
-                    held(Some(sink), binding).map(|profile| (sink.clone(), profile))
-                })
+                .map(|(sink, binding)| (sink.clone(), held(Some(sink), binding)))
                 .collect(),
             fallback: self
                 .bindings
                 .fallback
                 .as_ref()
-                .and_then(|binding| held(None, binding)),
+                .map(|binding| held(None, binding)),
         }
     }
 
@@ -1849,6 +1856,61 @@ mod tests {
         );
     }
 
+    struct Noisy;
+
+    impl Measures for Noisy {
+        fn measure(
+            &self,
+            _through: Option<&NodeName>,
+            _from: &Listening,
+            _hearing: &Hearing,
+            _calibration: Option<&Response>,
+        ) -> Result<Response, Unmeasured> {
+            Err(Unmeasured::Deconvolved(
+                resonate_engine::DspError::SweepLostInNoise {
+                    peak_over_noise_db: 6,
+                },
+            ))
+        }
+    }
+
+    #[gpui::test]
+    fn a_room_whose_noise_drowned_the_sweep_is_told_as_the_rooms_noise(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-noisy-{}",
+            std::process::id()
+        ));
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.measure_the_room(
+                sounding(Arc::new(Noisy), Listening::Microphone(None), None),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+
+        let (kept, notice) =
+            model.update(cx, |model, _| (model.kept().to_vec(), model.take_notice()));
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(kept.is_empty());
+        assert!(matches!(
+            notice,
+            Some(Notice::Trouble(said)) if said.starts_with("The microphone heard the room")
+        ));
+    }
+
     struct Stoppable;
 
     impl Measures for Stoppable {
@@ -2081,6 +2143,44 @@ mod tests {
             Some(vec![louder])
         );
         assert!(!told.bound.contains_key(&address));
+    }
+
+    #[test]
+    fn a_device_bound_to_a_profile_that_is_not_kept_is_told_to_the_engine_flat_beside_the_fallback()
+    {
+        let folder =
+            std::env::temp_dir().join(format!("resonate-ui-equaliser-gone-{}", std::process::id()));
+        let store = Store::at(folder.clone());
+        let fallback = named("Everywhere");
+        let dac = NodeName::new("alsa_output.dac");
+        let elsewhere = NodeName::new("alsa_output.speakers");
+
+        store
+            .keep(
+                &fallback,
+                &Profile::new(Preamp::NONE, vec![a_band()]).expect("a profile"),
+            )
+            .expect("the profile is kept");
+
+        let model = EqualiserModel::new(
+            folder.clone(),
+            Arc::new(Corrected::uncorrected()),
+            Bindings {
+                enabled: true,
+                fallback: Some(Binding::Profile(fallback)),
+                by_sink: vec![(dac.clone(), Binding::Profile(named("Gone")))],
+            },
+        );
+        let told = model.equalisation();
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(told.for_name(&dac).expect("it is bound").is_transparent());
+        assert!(
+            !told
+                .for_name(&elsewhere)
+                .expect("the fallback binds it")
+                .is_transparent()
+        );
     }
 
     #[test]

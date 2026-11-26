@@ -1,6 +1,12 @@
-use std::time::Duration;
+use std::{
+    io,
+    path::{Path, PathBuf},
+    process,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
-use resonate_core::SampleRate;
+use resonate_core::{SampleRate, file_facts, naming, writer::Held};
 use resonate_dsp::Sweep;
 use resonate_engine::NodeName;
 use resonate_eq::{Error as EqError, Response};
@@ -15,6 +21,9 @@ pub const HEARD_AFTER_THE_SWEEP: Duration = resonate_dsp::HEARD_AFTER_THE_SWEEP;
 
 const APP_NAME: &str = "Resonate";
 const CSV_HEADER: &str = "frequency,raw";
+const STAGED_SUFFIX: &str = "staged";
+
+static STAGED: AtomicU64 = AtomicU64::new(0);
 
 pub type Sounded = std::result::Result<Vec<f32>, resonate_listen::Error>;
 
@@ -128,6 +137,34 @@ pub fn as_csv(response: &Response) -> String {
         .map(|point| format!("{:.3},{:.3}\n", point.hertz, point.decibels))
         .collect();
     format!("{CSV_HEADER}\n{rows}")
+}
+
+pub fn kept_whole(to: &Path, bytes: &[u8]) -> io::Result<()> {
+    let staged = staged_beside(to);
+    let mut held_while_placed = None;
+
+    file_facts::write_atomically(to, &staged, bytes, |staged| {
+        let held = Held::made(staged)?;
+        let written = held.file().try_clone()?;
+
+        held_while_placed = Some(held);
+        Ok(written)
+    })
+    .map_err(|unwritten| unwritten.source)
+}
+
+fn staged_beside(to: &Path) -> PathBuf {
+    let stamp = format!(
+        ".{}-{}.{STAGED_SUFFIX}",
+        process::id(),
+        STAGED.fetch_add(1, Ordering::Relaxed)
+    );
+
+    to.with_file_name(naming::named_within(
+        ".",
+        to.file_name().unwrap_or_default(),
+        stamp,
+    ))
 }
 
 #[cfg(test)]

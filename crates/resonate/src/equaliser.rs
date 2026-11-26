@@ -83,7 +83,7 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
         return fetch(&store, settings, config, bound.as_ref(), wanted, device);
     }
     if let Some(text) = wanted.fetch_every.as_deref() {
-        return fetch_every(&store, config, text);
+        return fetch_every(&store, config, wanted, text);
     }
     if wanted.measure {
         let through = crate::sinks::wanted_sink(cli, config);
@@ -220,7 +220,11 @@ fn import(
     }
 
     let called = wanted.profile.as_deref().map(named).transpose()?;
-    let held = store.holds(&Store::name_for_import(from, called.as_ref()));
+    let held = unless_taken(
+        store,
+        &Store::name_for_import(from, called.as_ref()),
+        wanted,
+    )?;
     let (name, kept) = store.import(from, called.as_ref())?;
 
     replaced_if(held, &name);
@@ -328,7 +332,7 @@ fn keep_fitted(
         return bound_as(settings, sink, &Binding::Own);
     }
 
-    let held = store.holds(name);
+    let held = unless_taken(store, name, wanted)?;
 
     store.keep(name, &fitted.profile)?;
     replaced_if(held, name);
@@ -352,8 +356,17 @@ fn measure(
     sink: Option<&NodeName>,
     wanted: &EqArgs,
 ) -> Result<()> {
+    let through = measured_through(through, sink)?;
+    let through = through.as_ref();
     let target = target_of(wanted);
     let goal = Store::goal_named(target)?;
+    let called = wanted.profile.as_deref().map(named).transpose()?;
+    let name = called.unwrap_or_else(|| ProfileName::after(words::equaliser::measured()));
+
+    if !wanted.own {
+        unless_taken(store, &name, wanted)?;
+    }
+
     let from = match wanted.microphone.as_deref() {
         None => config.listen_from.clone().unwrap_or_default(),
         Some("") => Listening::Microphone(None),
@@ -382,7 +395,7 @@ fn measure(
     };
 
     if let Some(to) = wanted.keep_measurement.as_deref() {
-        std::fs::write(to, measuring::as_csv(&measured)).map_err(|source| {
+        measuring::kept_whole(to, measuring::as_csv(&measured).as_bytes()).map_err(|source| {
             Error::WriteMeasurement {
                 path: to.to_path_buf(),
                 source,
@@ -395,8 +408,6 @@ fn measure(
     }
 
     let fitted = fit(&measured, &goal, &Fitting::default())?;
-    let called = wanted.profile.as_deref().map(named).transpose()?;
-    let name = called.unwrap_or_else(|| ProfileName::after(words::equaliser::measured()));
 
     keep_fitted(
         store,
@@ -413,7 +424,21 @@ fn measure(
     )
 }
 
-fn fetch_every(store: &Store, config: &Config, text: &str) -> Result<()> {
+fn measured_through(
+    through: Option<&NodeName>,
+    bound: Option<&NodeName>,
+) -> Result<Option<NodeName>> {
+    match (through, bound) {
+        (Some(through), Some(bound)) if through != bound => Err(Error::MeasuredThroughAnother {
+            through: through.clone(),
+            bound: bound.clone(),
+        }),
+        (None, Some(bound)) => Ok(Some(bound.clone())),
+        (through, _) => Ok(through.cloned()),
+    }
+}
+
+fn fetch_every(store: &Store, config: &Config, wanted: &EqArgs, text: &str) -> Result<()> {
     let (corrections, catalogue) = asked(config)?;
     let devices: Vec<&Device> = search_preferring(&catalogue, text, None)
         .into_iter()
@@ -433,6 +458,11 @@ fn fetch_every(store: &Store, config: &Config, text: &str) -> Result<()> {
             Ok(Some(profile)) => {
                 let name = ProfileName::after(&named_by_measurer(device));
                 let held = store.holds(&name);
+
+                if held && !wanted.replace {
+                    said!("{}", words::equaliser::already_kept(name.to_string()));
+                    continue;
+                }
 
                 store.keep(&name, &profile)?;
                 replaced_if(held, &name);
@@ -471,6 +501,15 @@ fn replaced_if(held: bool, name: &ProfileName) {
     if held {
         said!("{}", words::equaliser::replaced(name.to_string()));
     }
+}
+
+fn unless_taken(store: &Store, name: &ProfileName, wanted: &EqArgs) -> Result<bool> {
+    let held = store.holds(name);
+
+    if held && !wanted.replace {
+        return Err(Error::ProfileKeptAlready { name: name.clone() });
+    }
+    Ok(held)
 }
 
 fn passed_over(kept: &Kept) {
@@ -718,9 +757,17 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
         (Binding::Own, None) if sink.is_some() => spoken_own(None),
         _ => spoken_binding(binding),
     };
-    let Some(profile) = curve_of(store, owner, binding)? else {
-        said!("\n{}", words::equaliser::bound_but_not_kept(spoken));
-        return Ok(());
+    let profile = match curve_of(store, owner, binding) {
+        Ok(Some(profile)) => profile,
+        Ok(None) => {
+            said!("\n{}", words::equaliser::bound_but_not_kept(spoken));
+            return Ok(());
+        }
+        Err(error) => {
+            tracing::warn!(%error, binding = %spoken, "a bound curve could not be read");
+            said!("\n{}", words::equaliser::bound_but_unreadable(spoken));
+            return Ok(());
+        }
     };
 
     said!("\n{}", words::equaliser::for_sink(spoken_of(sink), spoken));
@@ -889,7 +936,7 @@ fn fetch(
         Some(name) => named(name)?,
         None => ProfileName::after(id.as_str().rsplit('/').next().unwrap_or(device)),
     };
-    let held = store.holds(&name);
+    let held = unless_taken(store, &name, wanted)?;
 
     store.keep(&name, &profile)?;
     replaced_if(held, &name);
@@ -927,7 +974,11 @@ pub fn resolved(config: &Config) -> resonate_engine::Equalisation {
     let Ok(folder) = config::equaliser_dir() else {
         return resonate_engine::Equalisation::default();
     };
-    let store = Store::at(folder);
+
+    resolved_in(&Store::at(folder), config)
+}
+
+fn resolved_in(store: &Store, config: &Config) -> resonate_engine::Equalisation {
     let Some(bindings) = config.equaliser_for.as_ref() else {
         return resonate_engine::Equalisation {
             enabled: config.is_on(Switch::Equaliser),
@@ -935,23 +986,23 @@ pub fn resolved(config: &Config) -> resonate_engine::Equalisation {
         };
     };
 
-    let held = |owner: Option<&NodeName>, binding: &Binding| -> Option<Arc<Profile>> {
-        match curve_of(&store, owner, binding) {
-            Ok(Some(profile)) => Some(Arc::new(profile)),
+    let held = |owner: Option<&NodeName>, binding: &Binding| -> Arc<Profile> {
+        match curve_of(store, owner, binding) {
+            Ok(Some(profile)) => Arc::new(profile),
             Ok(None) => {
                 tracing::warn!(
                     binding = %spoken_binding(binding),
-                    "a binding names a profile that is not kept"
+                    "a binding names a profile that is not kept, so it plays flat"
                 );
-                None
+                Arc::new(Profile::flat())
             }
             Err(error) => {
                 tracing::warn!(
                     %error,
                     binding = %spoken_binding(binding),
-                    "a bound curve could not be read"
+                    "a bound curve could not be read, so it plays flat"
                 );
-                None
+                Arc::new(Profile::flat())
             }
         }
     };
@@ -960,11 +1011,9 @@ pub fn resolved(config: &Config) -> resonate_engine::Equalisation {
         enabled: config.is_on(Switch::Equaliser),
         bound: bindings
             .by_sink()
-            .filter_map(|(sink, binding)| {
-                held(Some(sink), binding).map(|profile| (sink.clone(), profile))
-            })
+            .map(|(sink, binding)| (sink.clone(), held(Some(sink), binding)))
             .collect(),
-        fallback: bindings.fallback().and_then(|binding| held(None, binding)),
+        fallback: bindings.fallback().map(|binding| held(None, binding)),
     }
 }
 
@@ -1552,5 +1601,302 @@ mod tests {
         assert_eq!(counted(scratch.store.read(&held)).0, "0");
 
         profiles(&scratch.store, &scratch.config(), &[held, huge]);
+    }
+
+    #[test]
+    fn a_sink_bound_to_a_profile_that_is_gone_or_unreadable_plays_flat_beside_a_fallback_curve() {
+        let scratch = Scratch::new();
+        let gone = NodeName::new(DEVICE);
+        let unreadable = NodeName::new("alsa_output.usb-DAC.analog-stereo");
+        let other = NodeName::new("alsa_output.pci-speakers.analog-stereo");
+        let fallback = ProfileName::new("fallback").expect("a usable name");
+        let huge = ProfileName::new("huge").expect("a usable name");
+
+        scratch
+            .store
+            .keep(
+                &fallback,
+                &Store::read_in(&scratch.profile_file())
+                    .expect("it reads")
+                    .profile,
+            )
+            .expect("a writable folder");
+        fs::write(
+            scratch.store.path_of(&huge),
+            "#".repeat(resonate_eq::LARGEST_PROFILE + 1),
+        )
+        .expect("a writable folder");
+        fs::write(
+            scratch.settings(),
+            format!(
+                "equaliser = true\nequaliser-profile = \"fallback\"\n[equaliser-for]\n\"{DEVICE}\" = \"missing\"\n\"{}\" = \"huge\"\n",
+                unreadable.as_str()
+            ),
+        )
+        .expect("a writable temporary directory");
+
+        let resolved = resolved_in(&scratch.store, &scratch.config());
+
+        let curve = resolved.for_name(&other).expect("the fallback binds it");
+
+        assert!(!curve.is_transparent());
+        for sink in [&gone, &unreadable] {
+            let held = resolved.for_name(sink).expect("its own binding binds it");
+
+            assert!(held.is_transparent(), "{sink} fell to the fallback curve");
+        }
+    }
+
+    #[test]
+    fn a_fallback_bound_to_a_profile_that_is_gone_plays_flat_and_not_unbound() {
+        let scratch = Scratch::new();
+        let other = NodeName::new("alsa_output.pci-speakers.analog-stereo");
+
+        fs::write(
+            scratch.settings(),
+            "equaliser = true\nequaliser-profile = \"missing\"\n",
+        )
+        .expect("a writable temporary directory");
+
+        let resolved = resolved_in(&scratch.store, &scratch.config());
+
+        assert!(resolved.binds_anything());
+        assert!(
+            resolved
+                .for_name(&other)
+                .expect("the fallback binds it")
+                .is_transparent()
+        );
+    }
+
+    #[test]
+    fn importing_over_a_kept_name_is_refused_unless_asked_to_replace_it() {
+        let scratch = Scratch::new();
+        let from = scratch.profile_file();
+        let name = ProfileName::new("mine").expect("a usable name");
+        let first = asked(&[
+            "--import",
+            from.to_str().expect("a UTF-8 path"),
+            "--profile",
+            "mine",
+        ]);
+        let again = asked(&[
+            "--import",
+            from.to_str().expect("a UTF-8 path"),
+            "--profile",
+            "mine",
+            "--replace",
+        ]);
+
+        import(&scratch.store, &scratch.settings(), None, &first, &from).expect("it is kept");
+
+        let before = fs::read(scratch.store.path_of(&name)).expect("it is kept");
+
+        fs::write(scratch.store.path_of(&name), "Preamp: -2.0 dB\n").expect("a writable folder");
+
+        let refused = import(&scratch.store, &scratch.settings(), None, &first, &from);
+
+        assert!(matches!(
+            refused,
+            Err(Error::ProfileKeptAlready { name: taken }) if taken == name
+        ));
+        assert_eq!(
+            fs::read(scratch.store.path_of(&name)).expect("it is kept"),
+            b"Preamp: -2.0 dB\n"
+        );
+
+        import(&scratch.store, &scratch.settings(), None, &again, &from).expect("it is replaced");
+
+        assert_eq!(
+            fs::read(scratch.store.path_of(&name)).expect("it is kept"),
+            before
+        );
+    }
+
+    #[test]
+    fn a_fitted_measurement_over_a_kept_name_is_refused_unless_asked_to_replace_it() {
+        let scratch = Scratch::new();
+        let from = dipped_measurement(&scratch);
+        let name = ProfileName::new("dipped").expect("a usable name");
+        let path = from.to_str().expect("a UTF-8 path");
+        let plain = asked(&[
+            "--fit-measurement",
+            path,
+            "--target",
+            "flat",
+            "--profile",
+            "dipped",
+        ]);
+        let replacing = asked(&[
+            "--fit-measurement",
+            path,
+            "--target",
+            "flat",
+            "--profile",
+            "dipped",
+            "--replace",
+        ]);
+
+        scratch
+            .store
+            .keep(&name, &Profile::flat())
+            .expect("a writable folder");
+
+        let refused = fit_measurement(&scratch.store, &scratch.settings(), None, &plain, &from);
+
+        assert!(matches!(refused, Err(Error::ProfileKeptAlready { .. })));
+        assert!(
+            scratch
+                .store
+                .read(&name)
+                .expect("it reads")
+                .expect("it is kept")
+                .bands()
+                .is_empty()
+        );
+
+        fit_measurement(&scratch.store, &scratch.settings(), None, &replacing, &from)
+            .expect("it is replaced");
+
+        assert!(
+            !scratch
+                .store
+                .read(&name)
+                .expect("it reads")
+                .expect("it is kept")
+                .bands()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_replace_is_taken_only_beside_something_that_keeps_a_profile() {
+        assert!(asked(&["--import", "p.txt", "--replace"]).replace);
+        assert!(asked(&["--fetch", "a/b/C", "--replace"]).replace);
+        assert!(asked(&["--fit-measurement", "m.txt", "--replace"]).replace);
+        assert!(asked(&["--measure", "--replace"]).replace);
+        assert!(refused(&["--replace"]));
+        assert!(refused(&["--list", "--replace"]));
+        assert!(refused(&["--on", "--replace"]));
+    }
+
+    #[test]
+    fn a_curve_measured_through_one_output_is_refused_for_another() {
+        let measured = NodeName::new("alsa_output.pci-speakers.analog-stereo");
+        let named = NodeName::new(DEVICE);
+
+        assert!(matches!(
+            measured_through(Some(&measured), Some(&named)),
+            Err(Error::MeasuredThroughAnother { through, bound })
+                if through == measured && bound == named
+        ));
+        assert_eq!(
+            measured_through(Some(&named), Some(&named)).expect("the same output"),
+            Some(named.clone())
+        );
+        assert_eq!(
+            measured_through(None, Some(&named)).expect("the output named"),
+            Some(named)
+        );
+        assert_eq!(
+            measured_through(Some(&measured), None).expect("no binding"),
+            Some(measured)
+        );
+        assert_eq!(measured_through(None, None).expect("neither"), None);
+    }
+
+    #[test]
+    fn measuring_through_one_sink_and_naming_another_plays_nothing_and_keeps_nothing() {
+        let scratch = Scratch::new();
+        let through = NodeName::new("alsa_output.pci-speakers.analog-stereo");
+        let named = NodeName::new(DEVICE);
+        let wanted = asked(&["--measure", "--for", DEVICE]);
+
+        let refused = measure(
+            &scratch.store,
+            &scratch.settings(),
+            &Config::default(),
+            Some(&through),
+            Some(&named),
+            &wanted,
+        );
+
+        assert!(matches!(refused, Err(Error::MeasuredThroughAnother { .. })));
+        assert!(scratch.store.names().expect("it walks").is_empty());
+        assert_eq!(scratch.bound(Some(&named)), None);
+    }
+
+    #[test]
+    fn measuring_under_a_kept_name_is_refused_before_the_sweep_plays() {
+        let scratch = Scratch::new();
+        let name = ProfileName::new("measured").expect("a usable name");
+        let wanted = asked(&["--measure"]);
+
+        scratch
+            .store
+            .keep(&name, &Profile::flat())
+            .expect("a writable folder");
+
+        let refused = measure(
+            &scratch.store,
+            &scratch.settings(),
+            &Config::default(),
+            None,
+            None,
+            &wanted,
+        );
+
+        assert!(matches!(refused, Err(Error::ProfileKeptAlready { .. })));
+    }
+
+    #[test]
+    fn a_measurement_is_kept_whole_and_one_that_cannot_be_placed_leaves_no_stage() {
+        let scratch = Scratch::new();
+        let kept = scratch.folder.join("measured.csv");
+        let in_the_way = scratch.folder.join("in-the-way.csv");
+
+        measuring::kept_whole(&kept, b"first").expect("it is written");
+        measuring::kept_whole(&kept, b"second").expect("it is written over");
+        fs::create_dir_all(in_the_way.join("held")).expect("a folder in the way");
+
+        assert_eq!(fs::read(&kept).expect("it reads"), b"second");
+        assert!(measuring::kept_whole(&in_the_way, b"third").is_err());
+        assert!(in_the_way.join("held").is_dir());
+
+        let mut left: Vec<_> = fs::read_dir(&scratch.folder)
+            .expect("the folder reads")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains("staged"))
+            .collect();
+
+        left.sort();
+
+        assert!(left.is_empty(), "a stage was left: {left:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_measurement_that_cannot_be_staged_leaves_the_file_it_would_have_replaced() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let scratch = Scratch::new();
+        let folder = scratch.folder.join("kept");
+        let kept = folder.join("measured.csv");
+
+        fs::create_dir_all(&folder).expect("a writable temporary directory");
+        fs::write(&kept, b"first").expect("a writable temporary directory");
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o555))
+            .expect("a folder made read-only");
+
+        let refused = measuring::kept_whole(&kept, b"second");
+        let standing = fs::read(&kept).expect("it reads");
+
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o755))
+            .expect("a folder made writable again");
+
+        if refused.is_err() {
+            assert_eq!(standing, b"first");
+        }
     }
 }

@@ -3,6 +3,7 @@ use std::{fmt, io, num::NonZeroUsize, path::PathBuf, result};
 pub use resonate_core::ConfigKey;
 use resonate_core::MediaLocation;
 use resonate_engine::NodeName;
+use resonate_eq::ProfileName;
 use resonate_library::{PassKind, PlaylistName};
 use resonate_mpris::{PlayerName, ZoneAsked};
 use thiserror::Error;
@@ -662,6 +663,12 @@ pub enum Error {
     NoHistoryUser {
         service: resonate_library::ListeningService,
     },
+
+    #[error("a profile named {name} is kept already; --replace keeps this one over it")]
+    ProfileKeptAlready { name: ProfileName },
+
+    #[error("the sweep would play through {through} but the curve is for {bound}")]
+    MeasuredThroughAnother { through: NodeName, bound: NodeName },
 
     #[error("cannot write the measurement to {path}", path = path.display())]
     WriteMeasurement {

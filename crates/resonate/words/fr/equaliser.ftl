@@ -45,6 +45,7 @@ measurement-passed-over = { $lines ->
    *[other] { $lines } les lignes de mesure ont été dépassées
 }
 replaced = { $name } a déjà été conservé et est remplacé
+already-kept = { $name } est déjà conservé et est passé; --replace conserve le nouveau par-dessus
 lines-passed-over = { $lines ->
     [one] { $lines } la ligne a été dépassée
    *[other] { $lines } lignes ont été dépassées
@@ -69,7 +70,8 @@ profile-heading = PROFIL
 bound-to-heading = POUR
 device-heading = DÉVISEZ
 nothing-bound = rien n’est lié à aucun appareil
-bound-but-not-kept = { $spoken } est lié mais aucun profil de ce nom n’est conservé
+bound-but-not-kept = { $spoken } est lié mais aucun profil de ce nom n’est conservé, il joue donc à plat
+bound-but-unreadable = { $spoken } est lié mais ne peut pas être lu, il joue donc à plat
 for-sink = pour { $sink }: { $spoken }
 preamp = Préampli: { $preamp }
 fitted-to-graphic = monté sur une courbe graphique de { $points } points: les bandes ci-dessous sont sa position à { $rate }, et un courant à une autre vitesse est monté à nouveau à sa propre

@@ -1037,6 +1037,15 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   `Profile(ProfileName)` | `Own`, written as the name or `true` (no profile name is reserved).
   `false` is refused in the fallback key, passed over with a warning in the table. A device that
   never shaped an own curve holds a flat one, which `is_transparent` keeps out of the chain.
+- **A binding that cannot be read plays flat, never the fallback's curve.** A device bound to a
+  profile that is not kept or cannot be read is resolved to `Profile::flat()`, as an own curve with
+  no file is, in `resolved_in` (the binary's) and `EqualiserModel::equalisation` (the window's), and
+  the fallback bound to one plays flat for every device that names none. Each logs a warning; the
+  terminal's `eq` says *bound but no profile of that name is kept* or *cannot be read* and *so it
+  plays flat*, and the pane's note on a curve not kept says it too
+  (`a_sink_bound_to_a_profile_that_is_gone_or_unreadable_plays_flat_beside_a_fallback_curve`,
+  `a_fallback_bound_to_a_profile_that_is_gone_plays_flat_and_not_unbound`,
+  `a_device_bound_to_a_profile_that_is_not_kept_is_told_to_the_engine_flat_beside_the_fallback`).
 
 ## The formats
 
@@ -1174,7 +1183,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   passed_over }`; `Store::response_in` reads a file under `LARGEST_MEASUREMENT`.
 - **Reachable from `eq --fit-measurement FILE [--target NAME|FILE]`** (default
   `harman-over-ear-2018`), kept like `--import`: named by `--profile` or the file's stem
-  (`Store::name_for_import`, a replaced name said), bound by `--for`, or the device's own curve with
+  (`Store::name_for_import`), bound by `--for`, or the device's own curve with
   `--own`; it conflicts with every other action. And from the *Your own measurement* page's *Fit a measurement* group: the
   *Fit toward* `kit::pick` (`Goal::{BuiltIn, File}`, Harman over-ear 2018 by default,
   `EqualiserModel::aim_at`) and *Fit a measurement…*, which fits and keeps on the background
@@ -1228,8 +1237,10 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   white noise at its peak still stands 31 dB and is read within half a decibel
   (`a_recording_of_noise_alone_is_refused_as_no_sweep_heard_over_it`,
   `a_sweep_recorded_under_louder_noise_is_still_heard_where_it_was_played`,
-  `a_microphone_that_heard_only_the_rooms_noise_is_refused_not_fitted`). The window tells it as a
-  sweep it could not hear (`missed_the_room`). The impulse's peak is found wherever it lies, so the
+  `a_microphone_that_heard_only_the_rooms_noise_is_refused_not_fitted`). The window tells it as the
+  room's noise, a microphone that heard the room but no sweep over it (`Unmeasured::is_lost_in_noise`
+  through `missed_the_room`, silence staying `is_silence`:
+  `a_room_whose_noise_drowned_the_sweep_is_told_as_the_rooms_noise`). The impulse's peak is found wherever it lies, so the
   latency of output and microphone and their clocks' offset change nothing but `delay_frames`; the
   impulse is gated from 5 ms before the peak to 400 ms after, the last quarter Hann-tapered, which
   cuts the sweep's distortion products (they precede the impulse) and leaves a room's tail past
@@ -1239,7 +1250,18 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   **The microphone is taken flat unless a calibration says otherwise**: `--calibration FILE` is read
   as any measurement and taken off the response point by point (`measuring::calibrated`);
   without it the fit corrects the microphone too, which the command's help says.
-  `--keep-measurement FILE` writes the response as the headed CSV `frequency,raw`, which
+  **A name already kept is refused unless `--replace` is given** (`unless_taken`, `Error::ProfileKeptAlready`),
+  for `--import`, `--fetch`, `--fit-measurement` and `--measure` (the last before the sweep plays),
+  and `--fetch-every` passes a device over (`already_kept`); the replaced name is still said after
+  (`importing_over_a_kept_name_is_refused_unless_asked_to_replace_it`,
+  `a_fitted_measurement_over_a_kept_name_is_refused_unless_asked_to_replace_it`,
+  `measuring_under_a_kept_name_is_refused_before_the_sweep_plays`). `--own` shapes the device's
+  curve in place and is not asked. **`--measure --for X` binds to the output the sweep played
+  through**: with no `--sink` or configured sink it plays through `X`, and a different sink is
+  refused as `Error::MeasuredThroughAnother` before any sound (`measured_through`,
+  `measuring_through_one_sink_and_naming_another_plays_nothing_and_keeps_nothing`).
+  `--keep-measurement FILE` writes the response as the headed CSV `frequency,raw`, staged beside
+  the file and placed whole (`measuring::kept_whole`, so a failed write leaves the old file), which
   `--fit-measurement` reads back (`Layout::Headed`); `--microphone [NODE]` names the microphone
   (none: `listen-from`, the desktop's own monitor unless set, which measures the path to the output
   and no room), `--target`, `--profile`, `--for` and `--own` are `--fit-measurement`'s, and the

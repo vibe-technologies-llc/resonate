@@ -33,6 +33,10 @@ impl Unmeasured {
         ) || matches!(self, Self::Deconvolved(DspError::NothingHeard))
     }
 
+    pub(crate) fn is_lost_in_noise(&self) -> bool {
+        matches!(self, Self::Deconvolved(DspError::SweepLostInNoise { .. }))
+    }
+
     pub(crate) fn is_stopped(&self) -> bool {
         matches!(self, Self::Heard(heard) if matches!(**heard, ListenError::Stopped))
     }
@@ -68,6 +72,18 @@ mod tests {
         assert!(quiet.is_silence() && deaf.is_silence());
         assert!(!no_output.is_silence() && no_output.is_a_missing_output());
         assert!(!quiet.is_a_missing_output());
+    }
+
+    #[test]
+    fn a_sweep_lost_in_the_rooms_noise_is_told_apart_from_silence() {
+        let noisy = Unmeasured::Deconvolved(DspError::SweepLostInNoise {
+            peak_over_noise_db: 6,
+        });
+        let quiet = Unmeasured::Deconvolved(DspError::NothingHeard);
+
+        assert!(noisy.is_lost_in_noise());
+        assert!(!noisy.is_silence());
+        assert!(!quiet.is_lost_in_noise());
     }
 
     #[test]

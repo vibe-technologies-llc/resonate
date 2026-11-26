@@ -45,6 +45,7 @@ measurement-passed-over = { $lines ->
    *[other] { $lines } lines of the measurement were passed over
 }
 replaced = { $name } was kept already and is replaced
+already-kept = { $name } is kept already and is passed over; --replace keeps the new one over it
 lines-passed-over = { $lines ->
     [one] { $lines } line was passed over
    *[other] { $lines } lines were passed over
@@ -69,7 +70,8 @@ profile-heading = PROFILE
 bound-to-heading = BOUND TO
 device-heading = DEVICE
 nothing-bound = nothing is bound to any device
-bound-but-not-kept = { $spoken } is bound but no profile of that name is kept
+bound-but-not-kept = { $spoken } is bound but no profile of that name is kept, so it plays flat
+bound-but-unreadable = { $spoken } is bound but cannot be read, so it plays flat
 for-sink = for { $sink }: { $spoken }
 preamp = preamp: { $preamp }
 fitted-to-graphic = fitted to a graphic curve of { $points } points: the bands below are its fit at { $rate }, and a stream at another rate is fitted again at its own

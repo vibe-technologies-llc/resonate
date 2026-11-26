@@ -13,6 +13,7 @@ measured = mesurée
 measurement-stopped = La mesure a été arrêtée; rien n’a été conservé.
 nothing-heard = Rien n’a été entendu — vérifiez que le microphone est allumé et que la sortie peut être entendue
 no-output-for-the-sweep = La sortie pour jouer le balayage n’est pas là
+sweep-lost-in-noise = Le microphone a entendu la pièce mais aucun balayage au-dessus de son bruit — faites le silence dans la pièce, augmentez le volume ou rapprochez le microphone
 sweep-unheard = Je ne pouvais pas jouer le balayage et l’entendre
 fit-that-measurement = correspondent à cette mesure
 lines-passed-over = { $count ->
@@ -27,7 +28,7 @@ values-clamped = { $count ->
     [one] ; { $count } valeur passée ce qu’il détient a été retenue à ses limites
    *[other] ; { $count } valeurs passées ce qu’il détient ont été tenues à ses limites
 }
-bound-but-not-kept = { $curve } est lié mais n’est pas gardé ici
+bound-but-not-kept = { $curve } est lié mais n’est pas gardé ici, il joue donc à plat
 read-that-profile = lire ce profil
 save-the-curve = Enregistrer la courbe
 carry-the-curve = porter la courbe à l’appareil renommé

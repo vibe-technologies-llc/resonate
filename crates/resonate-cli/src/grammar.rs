@@ -943,6 +943,11 @@ pub struct VaultArgs {
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("looking").args(["find", "suggest"]).multiple(true)))]
 #[command(group(ArgGroup::new("measuring").args(["fit_measurement", "measure"]).multiple(true)))]
+#[command(group(
+    ArgGroup::new("keeping")
+        .args(["import", "fetch", "fetch_every", "fit_measurement", "measure"])
+        .multiple(true)
+))]
 pub struct EqArgs {
     #[arg(
         long,
@@ -1029,6 +1034,13 @@ pub struct EqArgs {
         help = words::grammar::eq_args_calibration()
     )]
     pub calibration: Option<PathBuf>,
+
+    #[arg(
+        long,
+        requires = "keeping",
+        help = words::grammar::eq_args_replace()
+    )]
+    pub replace: bool,
 
     #[arg(
         long,
