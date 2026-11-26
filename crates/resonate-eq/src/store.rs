@@ -13,7 +13,7 @@ use resonate_core::{
     eq::{BOOST_AT_MOST_DB, FITTED_AT, Profile},
     file_facts,
     naming::{self, NAME_BYTES_AT_MOST},
-    text::{self, TextEncoding, UTF8_BOM},
+    text::{self, TextEncoding},
     writer::{self, Held, Writer},
 };
 
@@ -136,34 +136,27 @@ pub struct Measured {
 struct Standing {
     text: String,
     encoding: TextEncoding,
-    marked_as_utf8: bool,
+    bytes: Vec<u8>,
 }
 
 impl Standing {
     fn of(bytes: Vec<u8>) -> Self {
         let (text, encoding) = text::decoded(&bytes);
-        let marked_as_utf8 = encoding == TextEncoding::Utf8 && bytes.starts_with(&UTF8_BOM);
         Self {
             text,
             encoding,
-            marked_as_utf8,
+            bytes,
         }
     }
 
     fn spelling(&self, text: &str) -> Vec<u8> {
-        let Some(body) = text::encoded(text, self.encoding) else {
+        text::restored(text, self.encoding, &self.bytes).unwrap_or_else(|| {
             tracing::debug!(
                 encoding = %self.encoding,
-                "a profile with a letter its code page lacks is kept as UTF-8"
+                "a profile its encoding cannot carry back is kept as UTF-8"
             );
-            return text.as_bytes().to_vec();
-        };
-        let mark: &[u8] = if self.marked_as_utf8 {
-            &UTF8_BOM
-        } else {
-            self.encoding.byte_order_mark()
-        };
-        [mark, &body].concat()
+            text.as_bytes().to_vec()
+        })
     }
 }
 
@@ -659,7 +652,7 @@ mod tests {
 
     use resonate_core::{
         eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Q},
-        text::LegacyEncoding,
+        text::{LegacyEncoding, UTF8_BOM},
     };
 
     use super::*;

@@ -429,7 +429,10 @@ impl<'a> SheetText<'a> {
     fn keeps_ascii(&self) -> bool {
         match self.encoding {
             TextEncoding::Legacy(legacy) => legacy.is_ascii_compatible(),
-            TextEncoding::Utf8 | TextEncoding::Utf16Le | TextEncoding::Utf16Be => true,
+            TextEncoding::Utf8
+            | TextEncoding::Utf8Bom
+            | TextEncoding::Utf16Le
+            | TextEncoding::Utf16Be => true,
         }
     }
 
@@ -495,7 +498,9 @@ fn lines_of(
 
 fn line_break(unit: &[u8], encoding: TextEncoding) -> Option<char> {
     let held = match (encoding, unit) {
-        (TextEncoding::Utf8 | TextEncoding::Legacy(_), [byte]) => u16::from(*byte),
+        (TextEncoding::Utf8 | TextEncoding::Utf8Bom | TextEncoding::Legacy(_), [byte]) => {
+            u16::from(*byte)
+        }
         (TextEncoding::Utf16Le, [low, high]) => u16::from_le_bytes([*low, *high]),
         (TextEncoding::Utf16Be, [high, low]) => u16::from_be_bytes([*high, *low]),
         _ => return None,

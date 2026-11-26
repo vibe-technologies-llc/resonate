@@ -2824,6 +2824,7 @@ fn write_beside(target: &Path, bytes: &[u8]) -> Result<(), Unwritten> {
         held_while_placed = Some(held);
         Ok(written)
     })
+    .map(|placement| placement.noted(target))
 }
 
 fn sweep_stages_left_beside(target: &Path) {

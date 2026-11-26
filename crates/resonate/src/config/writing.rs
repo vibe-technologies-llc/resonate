@@ -281,6 +281,7 @@ pub(super) fn write(target: &Path, text: &str) -> Result<()> {
     file_facts::write_atomically(target, &staged, text.as_bytes(), |staged| {
         staged_for_its_owner_alone(staged, target)
     })
+    .map(|placement| placement.noted(target))
     .map_err(|unwritten| Error::WriteConfig {
         path: target.to_path_buf(),
         source: unwritten.source,

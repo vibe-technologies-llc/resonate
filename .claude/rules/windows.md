@@ -248,7 +248,7 @@ no workspace crate, and hands out a safe API over the `windows` crate:
 
 - **A path is bytes through `resonate_core::os_bytes`**: Unix keeps `OsStrExt`; Windows writes WTF-8
   by hand over `encode_wide`/`from_wide` (a lone surrogate is three bytes), so `path_text`, `naming`
-  and `MediaLocation` keep their byte designs and a stored locator is the same text on either.
+  and `MediaLocation` keep their byte designs and a stored locator is the same text on either. `wide_of_wtf8` replaces with U+FFFD every byte it cannot read as a letter or a lone surrogate: a four-byte form past U+10FFFF, an overlong form, a stray or cut byte (`a_four_byte_form_past_the_last_letter_is_replaced_not_written_as_units`, `a_form_longer_than_it_needs_to_be_is_replaced`).
 - **A `file://` URI is `file:///C:/Music/a.flac`, a share `file://host/share/a.flac`**
   (`windows_uri`, tested on every host); `\\?\` prefixes are dropped; `from_uri` takes the rest of
   the URI back to a `\` path **written verbatim** (`windows_uri::verbatim`: `\\?\C:\…`,
@@ -288,7 +288,10 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   launcher's icon and the binaural pair by plain `File::create`), and the one function writes,
   `sync_all`s, renames over the target and syncs the folder, removing a stage it opened when any
   step fails and never one it could not open (another writer's); its `Unwritten` names the
-  `WriteStep` (`Stage`, `Place`) that failed
+  `WriteStep` (`Stage`, `Place`) that failed. A folder that cannot be synced once the rename
+  happened is no failure: the target was replaced, so `Placement::Unsynced` is the answer
+  (`replace`, `Placement::noted` logs it) and no caller reports the write failed
+  (`a_folder_that_cannot_be_synced_after_the_rename_is_told_apart_from_a_file_unwritten`)
   (`a_file_that_cannot_be_put_in_place_leaves_nothing_staged_behind`,
   `a_stage_that_cannot_be_opened_is_told_as_unstaged_and_another_writers_is_left_alone`).
 - **A volume is named by its GUID where a folder mounts it.** `volume_of` canonicalises the path

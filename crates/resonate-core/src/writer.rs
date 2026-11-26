@@ -42,17 +42,31 @@ impl Held {
     }
 
     fn claimed_and_emptied(path: &Path, options: &mut OpenOptions) -> io::Result<Self> {
-        let file = holding::claimed(
+        Self::emptied_by(
             path,
             options.read(true).write(true).create(true).truncate(false),
-        )?;
+            |path, options| holding::claimed(path, options, Lockless::Refused),
+        )
+    }
+
+    fn emptied_by(
+        path: &Path,
+        options: &OpenOptions,
+        claim: impl FnOnce(&Path, &OpenOptions) -> io::Result<File>,
+    ) -> io::Result<Self> {
+        let file = claim(path, options)?;
 
         file.set_len(0)?;
         Ok(Self(file))
     }
 
     pub fn resumed(path: &Path) -> io::Result<Self> {
-        holding::claimed(path, OpenOptions::new().read(true).write(true)).map(Self)
+        holding::claimed(
+            path,
+            OpenOptions::new().read(true).write(true),
+            Lockless::Tolerated,
+        )
+        .map(Self)
     }
 
     pub fn over(file: File) -> Self {
@@ -108,6 +122,12 @@ mod closing {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Lockless {
+    Tolerated,
+    Refused,
+}
+
 enum Looked {
     Held,
     Unheld(File),
@@ -122,13 +142,27 @@ mod holding {
         path::Path,
     };
 
-    use super::Looked;
+    use super::{Lockless, Looked};
 
-    pub(super) fn claimed(path: &Path, options: &OpenOptions) -> io::Result<File> {
+    pub(super) fn claimed(
+        path: &Path,
+        options: &OpenOptions,
+        lockless: Lockless,
+    ) -> io::Result<File> {
+        claimed_by(path, options, lockless, File::try_lock)
+    }
+
+    pub(super) fn claimed_by(
+        path: &Path,
+        options: &OpenOptions,
+        lockless: Lockless,
+        lock: impl FnOnce(&File) -> Result<(), TryLockError>,
+    ) -> io::Result<File> {
         let file = options.open(path)?;
-        match file.try_lock() {
-            Ok(()) | Err(TryLockError::Error(_)) => Ok(file),
-            Err(TryLockError::WouldBlock) => Err(io::ErrorKind::WouldBlock.into()),
+        match (lock(&file), lockless) {
+            (Ok(()), _) | (Err(TryLockError::Error(_)), Lockless::Tolerated) => Ok(file),
+            (Err(TryLockError::Error(error)), Lockless::Refused) => Err(error),
+            (Err(TryLockError::WouldBlock), _) => Err(io::ErrorKind::WouldBlock.into()),
         }
     }
 
@@ -162,12 +196,12 @@ mod holding {
         path::Path,
     };
 
-    use super::Looked;
+    use super::{Lockless, Looked};
 
     const ERROR_SHARING_VIOLATION: i32 = 32;
     const FILE_SHARE_DELETE: u32 = 0x0000_0004;
 
-    pub(super) fn claimed(path: &Path, options: &OpenOptions) -> io::Result<File> {
+    pub(super) fn claimed(path: &Path, options: &OpenOptions, _: Lockless) -> io::Result<File> {
         match looked_at(path) {
             Looked::Held => Err(io::ErrorKind::WouldBlock.into()),
             Looked::Unheld(probe) => {
@@ -334,6 +368,40 @@ mod tests {
         assert_eq!(fs::read(&taken.0).expect("the file"), b"");
 
         drop((made_held, taken_held));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_claim_the_filesystem_cannot_lock_is_refused_before_the_file_is_emptied() {
+        use std::fs::TryLockError;
+
+        let scratch = Scratch::new("lockless");
+
+        fs::write(&scratch.0, b"what another writer holds").expect("a file");
+
+        let unlockable = |_: &File| Err(TryLockError::Error(io::ErrorKind::Unsupported.into()));
+        let options = {
+            let mut options = OpenOptions::new();
+
+            options.read(true).write(true).create(true).truncate(false);
+            options
+        };
+
+        let refused = Held::emptied_by(&scratch.0, &options, |path, options| {
+            holding::claimed_by(path, options, Lockless::Refused, unlockable)
+        })
+        .map(drop);
+        let tolerated = holding::claimed_by(&scratch.0, &options, Lockless::Tolerated, unlockable);
+
+        assert_eq!(
+            refused.map_err(|error| error.kind()),
+            Err(io::ErrorKind::Unsupported)
+        );
+        assert!(tolerated.is_ok());
+        assert_eq!(
+            fs::read(&scratch.0).expect("the file"),
+            b"what another writer holds"
+        );
     }
 
     #[test]

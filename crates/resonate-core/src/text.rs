@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use encoding_rs::Encoding;
@@ -30,6 +30,7 @@ impl LegacyEncoding {
 pub enum TextEncoding {
     #[default]
     Utf8,
+    Utf8Bom,
     Utf16Le,
     Utf16Be,
     Legacy(LegacyEncoding),
@@ -40,7 +41,7 @@ impl TextEncoding {
 
     pub fn name(self) -> &'static str {
         match self {
-            Self::Utf8 => "UTF-8",
+            Self::Utf8 | Self::Utf8Bom => "UTF-8",
             Self::Utf16Le => "UTF-16LE",
             Self::Utf16Be => "UTF-16BE",
             Self::Legacy(legacy) => legacy.name(),
@@ -49,6 +50,7 @@ impl TextEncoding {
 
     pub const fn byte_order_mark(self) -> &'static [u8] {
         match self {
+            Self::Utf8Bom => &UTF8_BOM,
             Self::Utf16Le => &UTF16_LE_BOM,
             Self::Utf16Be => &UTF16_BE_BOM,
             Self::Utf8 | Self::Legacy(_) => &[],
@@ -57,7 +59,7 @@ impl TextEncoding {
 
     pub const fn unit_bytes(self) -> usize {
         match self {
-            Self::Utf8 | Self::Legacy(_) => 1,
+            Self::Utf8 | Self::Utf8Bom | Self::Legacy(_) => 1,
             Self::Utf16Le | Self::Utf16Be => 2,
         }
     }
@@ -82,10 +84,15 @@ pub fn detected(bytes: &[u8]) -> TextEncoding {
         return TextEncoding::Utf16Be;
     }
 
+    let marked = bytes.starts_with(&UTF8_BOM);
     let body = bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes);
 
     if std::str::from_utf8(body).is_ok() {
-        return TextEncoding::Utf8;
+        return if marked {
+            TextEncoding::Utf8Bom
+        } else {
+            TextEncoding::Utf8
+        };
     }
     TextEncoding::Legacy(LegacyEncoding(guessed(body)))
 }
@@ -107,7 +114,7 @@ pub fn decoded_as(bytes: &[u8], encoding: TextEncoding) -> String {
             bytes.strip_prefix(&UTF16_BE_BOM).unwrap_or(bytes),
             u16::from_be_bytes,
         ),
-        TextEncoding::Utf8 => {
+        TextEncoding::Utf8 | TextEncoding::Utf8Bom => {
             String::from_utf8_lossy(bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes)).into_owned()
         }
         TextEncoding::Legacy(legacy) => legacy
@@ -118,9 +125,42 @@ pub fn decoded_as(bytes: &[u8], encoding: TextEncoding) -> String {
     }
 }
 
+pub fn restored(text: &str, encoding: TextEncoding, original: &[u8]) -> Option<Vec<u8>> {
+    if decoded_as(original, encoding) == text {
+        return Some(original.to_vec());
+    }
+    decoded_strictly(original, encoding)?;
+
+    let written = [encoding.byte_order_mark(), &encoded(text, encoding)?].concat();
+
+    (decoded_as(&written, encoding) == text).then_some(written)
+}
+
+fn decoded_strictly(bytes: &[u8], encoding: TextEncoding) -> Option<String> {
+    match encoding {
+        TextEncoding::Utf16Le => wide_strictly(
+            bytes.strip_prefix(&UTF16_LE_BOM).unwrap_or(bytes),
+            u16::from_le_bytes,
+        ),
+        TextEncoding::Utf16Be => wide_strictly(
+            bytes.strip_prefix(&UTF16_BE_BOM).unwrap_or(bytes),
+            u16::from_be_bytes,
+        ),
+        TextEncoding::Utf8 | TextEncoding::Utf8Bom => {
+            String::from_utf8(bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes).to_vec()).ok()
+        }
+        TextEncoding::Legacy(legacy) => legacy
+            .0
+            .decode_without_bom_handling_and_without_replacement(
+                bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes),
+            )
+            .map(Cow::into_owned),
+    }
+}
+
 pub fn encoded(text: &str, encoding: TextEncoding) -> Option<Vec<u8>> {
     match encoding {
-        TextEncoding::Utf8 => Some(text.as_bytes().to_vec()),
+        TextEncoding::Utf8 | TextEncoding::Utf8Bom => Some(text.as_bytes().to_vec()),
         TextEncoding::Utf16Le => Some(widened(text, u16::to_le_bytes)),
         TextEncoding::Utf16Be => Some(widened(text, u16::to_be_bytes)),
         TextEncoding::Legacy(legacy) => {
@@ -134,16 +174,28 @@ fn widened(text: &str, order: fn(u16) -> [u8; 2]) -> Vec<u8> {
     text.encode_utf16().flat_map(order).collect()
 }
 
-fn wide(bytes: &[u8], order: fn([u8; 2]) -> u16) -> String {
-    let units: Vec<u16> = bytes
+fn units_of(bytes: &[u8], order: fn([u8; 2]) -> u16) -> Vec<u16> {
+    bytes
         .as_chunks::<2>()
         .0
         .iter()
         .copied()
         .map(order)
-        .collect();
+        .collect()
+}
 
-    String::from_utf16_lossy(&units)
+fn wide(bytes: &[u8], order: fn([u8; 2]) -> u16) -> String {
+    String::from_utf16_lossy(&units_of(bytes, order))
+}
+
+fn wide_strictly(bytes: &[u8], order: fn([u8; 2]) -> u16) -> Option<String> {
+    let whole = bytes
+        .len()
+        .is_multiple_of(TextEncoding::Utf16Le.unit_bytes());
+
+    whole
+        .then(|| String::from_utf16(&units_of(bytes, order)).ok())
+        .flatten()
 }
 
 #[cfg(test)]
@@ -188,6 +240,7 @@ mod tests {
         }
 
         assert!(TextEncoding::Utf8.byte_order_mark().is_empty());
+        assert_eq!(TextEncoding::Utf8Bom.byte_order_mark(), UTF8_BOM);
         assert!(TextEncoding::WINDOWS_1252.byte_order_mark().is_empty());
     }
 
@@ -206,7 +259,10 @@ mod tests {
 
         marked.extend_from_slice("Écoute".as_bytes());
 
-        assert_eq!(decoded(&marked), ("Écoute".to_owned(), TextEncoding::Utf8));
+        assert_eq!(
+            decoded(&marked),
+            ("Écoute".to_owned(), TextEncoding::Utf8Bom)
+        );
     }
 
     #[test]
@@ -269,5 +325,63 @@ mod tests {
 
         assert_eq!(encoded("Цой", cyrillic), Some(vec![0xD6, 0xEE, 0xE9]));
         assert_eq!(encoded("植松", cyrillic), None);
+    }
+
+    #[test]
+    fn duplicate_shift_jis_codes_are_written_back_as_they_were_read() {
+        let japanese = TextEncoding::Legacy(LegacyEncoding::SHIFT_JIS);
+        let original = b"\x87\x90";
+
+        let text = decoded_as(original, japanese);
+
+        assert_eq!(text, "\u{2252}");
+        assert_eq!(encoded(&text, japanese), Some(vec![0x81, 0xE0]));
+        assert_eq!(restored(&text, japanese, original), Some(original.to_vec()));
+    }
+
+    #[test]
+    fn an_odd_utf16_tail_is_kept_by_an_unchanged_text_and_refused_by_a_changed_one() {
+        let mut original = utf16("Écoute", true);
+
+        original.push(0x41);
+
+        let (text, encoding) = decoded(&original);
+
+        assert_eq!(restored(&text, encoding, &original), Some(original.clone()));
+        assert_eq!(restored("Autre", encoding, &original), None);
+    }
+
+    #[test]
+    fn the_utf8_mark_is_written_back_with_the_text_that_carried_it() {
+        let mut marked = UTF8_BOM.to_vec();
+
+        marked.extend_from_slice("Écoute".as_bytes());
+
+        let (text, encoding) = decoded(&marked);
+
+        assert_eq!(
+            restored("Autre", encoding, &marked).map(|bytes| bytes.starts_with(&UTF8_BOM)),
+            Some(true)
+        );
+        assert_eq!(restored(&text, encoding, &marked), Some(marked.clone()));
+        assert_eq!(
+            restored("Autre", TextEncoding::Utf8, b"Ecoute"),
+            Some(b"Autre".to_vec())
+        );
+    }
+
+    #[test]
+    fn text_read_with_replacements_is_not_written_back_as_another_text() {
+        let broken = b"Caf\xe9 \xff";
+
+        assert_eq!(restored("Café", TextEncoding::Utf8, broken), None);
+        assert_eq!(
+            restored(
+                "Autre",
+                TextEncoding::Legacy(LegacyEncoding::SHIFT_JIS),
+                b"\x81"
+            ),
+            None
+        );
     }
 }

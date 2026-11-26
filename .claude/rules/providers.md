@@ -1215,7 +1215,7 @@ dependency; the layering job refuses `wry`, `tao`, `webkit2gtk` and `webview2-co
 - **The jar is Netscape's** (`netscape`: `#HttpOnly_` before an HttpOnly cookie, a session cookie
   expiring `0`), **written whole, owner-only**: `written` stages `<jar>.staged` under
   `writer::Held::taken_over` (a second sign-in writing is refused `WouldBlock`), `0600` on Unix
-  before a byte, `sync_all`, rename, folder synced. `Cookie`'s `Debug` withholds the value.
+  before a byte, `sync_all`, `file_facts::replace`; a folder that cannot be synced after the rename is a jar written (`a_jar_in_a_folder_that_cannot_be_synced_is_still_a_jar_written`). `Cookie`'s `Debug` withholds the value.
 - **The binary** (`signing_in.rs`, `online`): `the_program` is `resonate-signin` beside
   `current_exe`, else the first on `PATH`; `Kept::in_the_data_folder` names
   `youtube-music-cookies.txt` and the profile `youtube-music-sign-in` in `config::data_dir`;

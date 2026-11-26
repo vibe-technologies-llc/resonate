@@ -1065,8 +1065,7 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   scope after it. The edit is read back and must equal the wanted profile, else one more try
   states the preamp, else the model is written fresh (`apo::write`). A model nothing moved leaves
   the file untouched. Line ending, UTF-8 mark and encoding are the file's own (`Standing`,
-  `text::encoded` plus `TextEncoding::byte_order_mark`; a letter the code page lacks falls to
-  UTF-8). **An import keeps the source's bytes whole** (`Kept::bytes`, `keep_read`,
+  `text::restored`; a profile its encoding cannot carry back falls to UTF-8). **An import keeps the source's bytes whole** (`Kept::bytes`, `keep_read`,
   `keep_own_read`); **an export is a save over the kept file the profile came from**
   (`Store::export(profile, standing_in, to)`, `file_of`). Every write stages as
   `.<name>.<pid>-<n>.new` (`naming::named_within`) under `writer::Held` beside its target and

@@ -521,7 +521,7 @@ fn decoded(path: &Path) -> Result<(String, TextEncoding)> {
     let encoding = text::detected(&bytes);
 
     let unreadable = match encoding {
-        TextEncoding::Utf8 => false,
+        TextEncoding::Utf8 | TextEncoding::Utf8Bom => false,
         TextEncoding::Utf16Le | TextEncoding::Utf16Be => bytes.len() % encoding.unit_bytes() != 0,
         TextEncoding::Legacy(_) => declares_utf8(path) || bytes.contains(&NOTHING_TEXT_HOLDS),
     };

@@ -55,6 +55,8 @@ const LOW_SURROGATE_BASE: u32 = 0xDC00;
 const SURROGATE_BITS: u32 = 10;
 #[cfg(any(windows, test))]
 const SURROGATE_MASK: u32 = 0x3FF;
+#[cfg(any(windows, test))]
+const LAST_CODE_POINT: u32 = 0x10_FFFF;
 
 #[cfg(any(windows, test))]
 pub fn wtf8_of_wide(units: impl Iterator<Item = u16>) -> Vec<u8> {
@@ -89,11 +91,11 @@ pub fn wide_of_wtf8(bytes: &[u8]) -> Vec<u16> {
     let mut at = 0;
 
     while let Some(&lead) = bytes.get(at) {
-        let (extra, first_bits) = match lead {
-            0x00..=0x7F => (0, u32::from(lead)),
-            0xC2..=0xDF => (1, u32::from(lead & 0x1F)),
-            0xE0..=0xEF => (2, u32::from(lead & 0x0F)),
-            0xF0..=0xF4 => (3, u32::from(lead & 0x07)),
+        let (extra, first_bits, smallest) = match lead {
+            0x00..=0x7F => (0, u32::from(lead), 0),
+            0xC2..=0xDF => (1, u32::from(lead & 0x1F), 0x80),
+            0xE0..=0xEF => (2, u32::from(lead & 0x0F), 0x800),
+            0xF0..=0xF4 => (3, u32::from(lead & 0x07), ASTRAL_BASE),
             _ => {
                 units.push(REPLACEMENT);
                 at += 1;
@@ -107,6 +109,7 @@ pub fn wide_of_wtf8(bytes: &[u8]) -> Vec<u16> {
                     .then(|| (code << CONTINUATION_BITS) | (u32::from(*byte) & CONTINUATION_MASK))
             })
         });
+        let code = code.filter(|code| (smallest..=LAST_CODE_POINT).contains(code));
         let Some(code) = code else {
             units.push(REPLACEMENT);
             at += 1;
@@ -171,5 +174,25 @@ mod tests {
     fn bytes_that_are_no_text_become_the_replacement_letter() {
         assert_eq!(wide_of_wtf8(b"a\xffb"), [0x61, 0xFFFD, 0x62]);
         assert_eq!(wide_of_wtf8(b"\xe2\x82"), [0xFFFD, 0xFFFD]);
+    }
+
+    #[test]
+    fn a_four_byte_form_past_the_last_letter_is_replaced_not_written_as_units() {
+        assert_eq!(wide_of_wtf8(b"\xf4\x90\x80\x80"), [0xFFFD; 4]);
+        assert_eq!(wide_of_wtf8(b"\xf4\x8f\xbf\xbf"), [0xDBFF, 0xDFFF]);
+        assert_eq!(
+            wide_of_wtf8(b"a\xf7\xbf\xbf\xbfb"),
+            [0x61, 0xFFFD, 0xFFFD, 0xFFFD, 0xFFFD, 0x62]
+        );
+    }
+
+    #[test]
+    fn a_form_longer_than_it_needs_to_be_is_replaced() {
+        assert_eq!(wide_of_wtf8(b"\xe0\x80\x80"), [0xFFFD; 3]);
+        assert_eq!(wide_of_wtf8(b"\xe0\x9f\xbf"), [0xFFFD; 3]);
+        assert_eq!(wide_of_wtf8(b"\xf0\x80\x80\x80"), [0xFFFD; 4]);
+        assert_eq!(wide_of_wtf8(b"\xf0\x8f\xbf\xbf"), [0xFFFD; 4]);
+        assert_eq!(wide_of_wtf8(b"\xe0\xa0\x80"), [0x0800]);
+        assert_eq!(wide_of_wtf8(b"\xf0\x90\x80\x80"), [0xD800, 0xDC00]);
     }
 }

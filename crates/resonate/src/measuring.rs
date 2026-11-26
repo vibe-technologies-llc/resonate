@@ -150,6 +150,7 @@ pub fn kept_whole(to: &Path, bytes: &[u8]) -> io::Result<()> {
         held_while_placed = Some(held);
         Ok(written)
     })
+    .map(|placement| placement.noted(to))
     .map_err(|unwritten| unwritten.source)
 }
 

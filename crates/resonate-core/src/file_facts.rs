@@ -202,12 +202,37 @@ pub struct Unwritten {
     pub source: io::Error,
 }
 
+#[derive(Debug)]
+#[must_use]
+pub enum Placement {
+    Durable,
+    Unsynced(io::Error),
+}
+
+impl Placement {
+    pub fn noted(self, target: &Path) {
+        if let Self::Unsynced(error) = self {
+            tracing::warn!(%error, target = %target.display(), "a folder was not synced after a file replaced its entry");
+        }
+    }
+}
+
+pub fn replace(staged: &Path, target: &Path) -> io::Result<Placement> {
+    fs::rename(staged, target)?;
+
+    let synced = match target.parent() {
+        Some(folder) if !folder.as_os_str().is_empty() => sync_directory(folder),
+        _ => Ok(()),
+    };
+    Ok(synced.map_or_else(Placement::Unsynced, |()| Placement::Durable))
+}
+
 pub fn write_atomically(
     target: &Path,
     staged: &Path,
     bytes: &[u8],
     opened: impl FnOnce(&Path) -> io::Result<File>,
-) -> Result<(), Unwritten> {
+) -> Result<Placement, Unwritten> {
     let unstaged = |source| Unwritten {
         step: WriteStep::Stage,
         source,
@@ -215,7 +240,7 @@ pub fn write_atomically(
     let file = opened(staged).map_err(unstaged)?;
 
     let written = filled(file, bytes).map_err(unstaged).and_then(|()| {
-        placed(target, staged).map_err(|source| Unwritten {
+        replace(staged, target).map_err(|source| Unwritten {
             step: WriteStep::Place,
             source,
         })
@@ -230,14 +255,6 @@ pub fn write_atomically(
 fn filled(mut file: File, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()
-}
-
-fn placed(target: &Path, staged: &Path) -> io::Result<()> {
-    fs::rename(staged, target)?;
-    match target.parent() {
-        Some(folder) if !folder.as_os_str().is_empty() => sync_directory(folder),
-        _ => Ok(()),
-    }
 }
 
 #[cfg(test)]
@@ -334,7 +351,7 @@ mod tests {
 
         let written = write_atomically(&target, &staged, b"after", |staged| File::create(staged));
 
-        assert!(written.is_ok());
+        assert!(matches!(written, Ok(Placement::Durable)));
         assert_eq!(fs::read(&target).expect("the file reads"), b"after");
         assert_eq!(left_in(&folder), vec![std::ffi::OsString::from("kept")]);
 
@@ -379,6 +396,38 @@ mod tests {
         );
         assert_eq!(fs::read(&target).expect("the file reads"), b"before");
         assert_eq!(fs::read(&staged).expect("the stage reads"), b"another's");
+
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_folder_that_cannot_be_synced_after_the_rename_is_told_apart_from_a_file_unwritten() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let folder = scratch("unsynced");
+        let target = folder.join("kept");
+        let staged = folder.join("kept.staged");
+
+        fs::write(&target, b"before").expect("a file standing");
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o300))
+            .expect("a folder that cannot be read");
+
+        if fs::File::open(&folder).is_ok() {
+            fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).expect("restored");
+
+            let _ = fs::remove_dir_all(&folder);
+
+            return;
+        }
+
+        let written = write_atomically(&target, &staged, b"after", |staged| File::create(staged));
+
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).expect("restored");
+
+        assert!(matches!(written, Ok(Placement::Unsynced(_))), "{written:?}");
+        assert_eq!(fs::read(&target).expect("the file reads"), b"after");
+        assert_eq!(left_in(&folder), vec![std::ffi::OsString::from("kept")]);
 
         let _ = fs::remove_dir_all(&folder);
     }

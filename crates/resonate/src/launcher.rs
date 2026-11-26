@@ -153,6 +153,7 @@ fn written(path: &Path, drawn: &str) -> Result<()> {
     file_facts::write_atomically(path, &staged, drawn.as_bytes(), |staged| {
         File::create(staged)
     })
+    .map(|placement| placement.noted(path))
     .map_err(|unwritten| match unwritten.step {
         WriteStep::Stage => Error::Icon {
             op: IconOp::Stage,

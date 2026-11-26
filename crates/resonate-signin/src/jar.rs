@@ -145,23 +145,25 @@ pub fn written(jar: &Path, cookies: &[Cookie]) -> Result<()> {
         source,
     })?;
 
-    let filled = fill(held.file(), cookies).and_then(|()| {
-        fs::rename(&staged, jar).map_err(|source| Error::Jar {
+    let placed = fill(held.file(), cookies).and_then(|()| {
+        file_facts::replace(&staged, jar).map_err(|source| Error::Jar {
             op: JarOp::PutInPlace,
             source,
         })
     });
 
-    if filled.is_err() {
-        let _ = fs::remove_file(&staged);
+    let placement = match placed {
+        Ok(placement) => placement,
+        Err(error) => {
+            let _ = fs::remove_file(&staged);
 
-        return filled;
-    }
+            return Err(error);
+        }
+    };
+
     drop(held);
-    file_facts::sync_directory(folder).map_err(|source| Error::Jar {
-        op: JarOp::Sync,
-        source,
-    })
+    placement.noted(jar);
+    Ok(())
 }
 
 fn staged_beside(jar: &Path) -> PathBuf {
@@ -340,6 +342,33 @@ mod tests {
             let mode = fs::metadata(&jar).expect("metadata").permissions().mode();
 
             assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_jar_in_a_folder_that_cannot_be_synced_is_still_a_jar_written() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let folder = scratch("unsynced");
+        let jar = folder.join("youtube-music-cookies.txt");
+        let cookies = [cookie(".youtube.com", "SAPISID", "a")];
+
+        fs::write(&jar, "kept").expect("a jar");
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o300))
+            .expect("a folder that cannot be read");
+
+        let readable = File::open(&folder).is_ok();
+        let landed = (!readable).then(|| written(&jar, &cookies));
+
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).expect("restored");
+
+        if let Some(landed) = landed {
+            assert!(landed.is_ok(), "{landed:?}");
+            assert_eq!(
+                fs::read_to_string(&jar).expect("the jar"),
+                netscape(&cookies)
+            );
         }
     }
 

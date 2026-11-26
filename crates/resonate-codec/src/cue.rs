@@ -7,7 +7,7 @@ use std::{
 
 use resonate_core::{
     FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding,
-    text::{UTF8_BOM, decoded, decoded_as, encoded},
+    text::{decoded, decoded_as, encoded},
 };
 
 use crate::{
@@ -585,17 +585,18 @@ fn carried_into_unicode(
     named: Range<usize>,
     to: &str,
 ) -> Vec<u8> {
-    let body = if sheet.starts_with(&UTF8_BOM) {
-        UTF8_BOM.len()
+    let mark = TextEncoding::Utf8Bom.byte_order_mark();
+    let body = if sheet.starts_with(mark) {
+        mark.len()
     } else {
         0
     };
     let before = decoded_as(sheet.get(body..named.start).unwrap_or_default(), encoding);
     let after = decoded_as(sheet.get(named.end..).unwrap_or_default(), encoding);
 
-    let mut written = Vec::with_capacity(UTF8_BOM.len() + before.len() + to.len() + after.len());
+    let mut written = Vec::with_capacity(mark.len() + before.len() + to.len() + after.len());
 
-    written.extend_from_slice(&UTF8_BOM);
+    written.extend_from_slice(mark);
     written.extend_from_slice(before.as_bytes());
     written.extend_from_slice(to.as_bytes());
     written.extend_from_slice(after.as_bytes());
@@ -658,7 +659,9 @@ const fn unit_bytes(encoding: TextEncoding) -> usize {
 
 fn character(piece: &[u8], encoding: TextEncoding) -> Option<char> {
     match (encoding, piece) {
-        (TextEncoding::Utf8 | TextEncoding::Legacy(_), [byte]) => Some(char::from(*byte)),
+        (TextEncoding::Utf8 | TextEncoding::Utf8Bom | TextEncoding::Legacy(_), [byte]) => {
+            Some(char::from(*byte))
+        }
         (TextEncoding::Utf16Le, [low, high]) => {
             char::from_u32(u32::from(u16::from_le_bytes([*low, *high])))
         }
@@ -1956,7 +1959,7 @@ FILE "Meddle.flac" WAVE
 
         let reread = read(&written);
 
-        assert_eq!(reread.encoding, TextEncoding::Utf8);
+        assert_eq!(reread.encoding, TextEncoding::Utf8Bom);
         assert_eq!(
             reread.claims().collect::<Vec<_>>(),
             vec!["Przybyłowicz.flac"]
