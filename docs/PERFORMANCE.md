@@ -39,19 +39,6 @@ are in [ROADMAP.md](ROADMAP.md).
   rate pairs design again on every track change on the engine thread, as does a first Very high
   minimum-phase design (a 2²¹-point transform). Keep a few entries by pair. Done when alternating
   two pairs designs each once in a test.
-- [S · 0.18.1] Bound a TIDAL BTS manifest's URLs. **Low, builder.** `bts()` checks only that `urls`
-  is not empty (`crates/providers/tidal/src/manifest.rs:100-128`), while DASH has `SEGMENTS_AT_MOST`
-  and `URL_BYTES_AT_MOST` (`:327-369`), and a DASH `media` template with no `$Number$` gives 10 000
-  identical URLs; `Fetched` reads each up to 64 MiB (`fetched.rs:13-29`, `:49-92`), so a hosted
-  service can make the client download one large object tens of thousands of times. Apply the DASH
-  bounds to BTS and refuse repeated segment URLs. Done when a manifest of 100 000 URLs is refused,
-  in a test.
-- [S · 0.18.1] Cap the work one artist's expansion asks of Subsonic and Jellyfin. **Low, builder.**
-  Subsonic's `songs_of(Artist)` makes one paced `album()` request per album with no cap or cancel
-  (`crates/providers/subsonic/src/lib.rs:480-487`), and Jellyfin allows 1 000 albums of 2 000 songs
-  (`crates/providers/jellyfin/src/lib.rs:708-715`), so queueing a "Various Artists" runs for an
-  hour. Cap albums and songs and check the cancel between albums. Done when a fake of 5 000 albums
-  stops at the cap.
 - [S · 0.18.1] Cap the covers MPRIS lays in the runtime folder. **Low, builder.** `laid_down` writes
   each cover with no size cap into `$XDG_RUNTIME_DIR` (tmpfs), up to 8 playing and 32 queued
   (`crates/resonate-mpris/src/art.rs:149-243`, `:356-389`), and names it by a 64-bit fixed-key
@@ -76,15 +63,6 @@ are in [ROADMAP.md](ROADMAP.md).
   evaluated twice, parsing the impulse twice (`crates/resonate/src/window.rs:82`, `:109`), and
   `studies` reads the catalog twice (`studies.rs:14`, `:42-46`). Reuse the first reading. Done when
   each is read once.
-- [S · 0.18.1] Stream an imported listen history. **Low, builder.** `history --import-file` reads
-  the whole file and every listen into memory (`crates/resonate/src/history.rs:84-89`,
-  `listen_lines.rs:23-43`) with no size cap. Read and write in batches. Done when a test import
-  holds a bounded number of listens at once.
-- [S · 0.18.1] Submit listens to each service on its own pace. **Low, builder.** One
-  `resonate-submit` thread serves both accounts and sends `playing_now` on each track change with no
-  back-off (`crates/resonate/src/submitting.rs:100-160`, `:293-306`), so a slow Last.fm holds
-  ListenBrainz back. Give each service its own lane. Done when a stalled fake Last.fm leaves
-  ListenBrainz submitted in a test.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

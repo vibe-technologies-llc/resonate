@@ -16,30 +16,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [S · 0.18.1] Stage `history --export` before it replaces the target. **Medium, builder.**
-  `File::create` truncates the target before the listens are read
-  (`crates/resonate/src/history.rs:34-59`), so a failure leaves a partial file in place of whatever
-  was there. Write to a held stage and rename. Done when a failing export leaves the old file byte
-  for byte.
 - [S · 0.18.1] Fold a recording key's artist and album as its title is folded. **Low, builder.**
   `crates/resonate-core/src/recorded.rs:30-38`, `:56-69` word-normalise the title but keep the
   artist's and album's punctuation and spacing, so one recording keys apart under `Guns N' Roses`
   and `Guns N Roses`. Fold all three alike. Done when both spellings key the same.
-- [S · 0.18.1] Keep a run with another config from clearing the window's scrobble mark. **Low,
-  builder.** `open_library_with` stops telling any service whose token this run's config lacks
-  (`crates/resonate/src/main.rs:676`, `:690-711`), so a run with `--config` naming another file
-  against the shared catalog deletes the window's mark
-  (`crates/resonate-library/src/scrobble.rs:610-628`) and its unsent listens are skipped. Stop only
-  on an explicit sign-out. Done when a test run with a token-less config leaves the mark.
-- [S · 0.18.1] Hold listen submission to one process. **Low, builder.** The window and `resonate
-  play` both submit from one catalog with no hold between reading the mark and `mark_through`
-  (`crates/resonate/src/submitting.rs:139-170`, `crates/resonate-library/src/scrobble.rs:291-320`),
-  so listens are sent twice. Take a held claim around a submission round. Done when two submitters
-  in a test send each listen once.
-- [S · 0.18.1] Check an imported listen's stamp from a service. **Low, builder.**
-  `crates/resonate-online/src/history.rs:340-346` adds a service's `u64` seconds to `UNIX_EPOCH`
-  unchecked, and `:210`'s `earliest + 1` overflows, so one bad stamp aborts the import. Check both
-  and pass the listen over. Done when a page with `u64::MAX` imports the rest.
 - [S · 0.18.1] Correct `forget_folder`'s description. **Low, builder.** MCP says listens and
   playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
   listens and playlist entries survive. Say what is kept. Done when the description matches the
