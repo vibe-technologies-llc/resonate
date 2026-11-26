@@ -79,10 +79,9 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let renderers = rendering.switch();
     let offered = crate::offering::Offered::for_the_window(&config, &library);
 
-    let player = rendering.player(
-        kinship::kin_from(engine_config(&cli, &config), Some(&library)),
-        Arc::clone(&sources),
-    )?;
+    let engine = kinship::kin_from(engine_config(&cli, &config), Some(&library));
+
+    let player = rendering.player(engine.clone(), Arc::clone(&sources))?;
     let player = Arc::new(match config::analyses_dir() {
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
         None => player,
@@ -107,7 +106,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let lyrics_by_the_locale = online::lyrics_by_the_locale(&config);
 
     let opener = crate::zoning::Opener::new(
-        kinship::kin_from(engine_config(&cli, &config), Some(&library)),
+        engine,
         &sources,
         rendering,
         mpris::Serving::new(

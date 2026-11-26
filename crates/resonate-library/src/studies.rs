@@ -193,6 +193,17 @@ pub struct StudyFilter {
     pub misnamed: bool,
 }
 
+impl StudyFilter {
+    pub fn admits(self, studied: &Studied) -> bool {
+        let narrowed = self.fakes || self.suspects || self.misnamed;
+
+        !narrowed
+            || (self.fakes && studied.verdict == Verdict::Fake)
+            || (self.suspects && studied.verdict == Verdict::Suspect)
+            || (self.misnamed && studied.agreement == Some(Agreement::Disagrees))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ToStudy {
     pub(crate) id: TrackId,

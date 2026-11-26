@@ -630,6 +630,8 @@ fn every_track_is_studied_as_the_pass_runs_and_a_padded_file_is_found_fake() -> 
     assert_eq!(studied.recognised, None);
     assert_eq!(library.studies(StudyFilter::default())?.len(), 2);
 
+    assert_admitted_as_queried(&library)?;
+
     let hints = library.hinting().hints(&MediaLocation::local(&fake), None);
     let true_peak = hints.true_peak.expect("a measured true peak").get();
 
@@ -775,6 +777,8 @@ fn a_track_whose_audio_is_another_song_is_misnamed_and_one_that_agrees_is_not() 
     })?;
 
     assert_eq!(misnamed.len(), 1);
+
+    assert_admitted_as_queried(&library)?;
 
     let again = enriched(
         &library,
@@ -1415,5 +1419,30 @@ fn a_lookup_with_studies_off_decodes_nothing() -> Result<()> {
             .study_of(&MediaLocation::local(&path), None)?
             .is_none()
     );
+    Ok(())
+}
+
+fn assert_admitted_as_queried(library: &Library) -> Result<()> {
+    let every = library.studies(StudyFilter::default())?;
+
+    for bits in 0..8 {
+        let filter = StudyFilter {
+            fakes: bits & 1 != 0,
+            suspects: bits & 2 != 0,
+            misnamed: bits & 4 != 0,
+        };
+        let queried: Vec<_> = library
+            .studies(filter)?
+            .into_iter()
+            .map(|track| track.id)
+            .collect();
+        let admitted: Vec<_> = every
+            .iter()
+            .filter(|track| filter.admits(&track.studied))
+            .map(|track| track.id)
+            .collect();
+
+        assert_eq!(admitted, queried, "{filter:?}");
+    }
     Ok(())
 }

@@ -39,11 +39,10 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         words::studies::named(misnamed, recognised, counted(Verdict::NotJudged)),
     );
 
-    let shown = if filter == StudyFilter::default() {
-        every
-    } else {
-        library.studies(filter)?
-    };
+    let shown: Vec<StudiedTrack> = every
+        .into_iter()
+        .filter(|track| filter.admits(&track.studied))
+        .collect();
 
     if shown.is_empty() {
         said!("{}", words::studies::none_match());
