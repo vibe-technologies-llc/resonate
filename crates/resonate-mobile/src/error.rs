@@ -137,7 +137,7 @@ pub enum Error {
     Player(#[from] resonate_engine::Error),
     #[error("{}", crate::failure::of_a_read(.0))]
     Decode(#[from] resonate_codec::Error),
-    #[error(transparent)]
+    #[error("{}", crate::failure::of_a_domain(.0))]
     Domain(#[from] resonate_core::Error),
     #[error("{}", words::errors::store(op.to_string(), source.to_string()))]
     Store {
@@ -555,10 +555,95 @@ mod tests {
 
     #[test]
     fn domain_error_names_the_rejected_value() {
-        let domain = resonate_core::Error::VolumeOutOfRange(1.5);
-        let mobile = Error::from(domain);
+        let mobile = Error::from(resonate_core::Error::VolumeOutOfRange(1.5));
 
-        assert_eq!(mobile.to_string(), domain.to_string());
+        assert_eq!(mobile.to_string(), "A volume of 1.5 is outside 0 to 1");
+    }
+
+    #[test]
+    fn a_refused_wrapped_year_is_said_by_the_catalog_in_the_language_spoken() {
+        let refused = Error::from(resonate_core::Error::YearNotHeld(10_000));
+
+        assert_eq!(
+            refused.to_string(),
+            "Wrapped does not hold the year 10000; choose one from -9998 to 9998"
+        );
+
+        resonate_words::speak(resonate_words::Language::French);
+
+        assert_eq!(
+            refused.to_string(),
+            "Wrapped ne couvre pas l’année 10000 ; choisissez-en une de -9998 à 9998"
+        );
+    }
+
+    #[test]
+    fn a_refusal_of_the_core_carries_its_figures_in_their_places() {
+        let said = |refusal| Error::from(refusal).to_string();
+
+        assert_eq!(
+            said(resonate_core::Error::SampleRateOutOfRange(7)),
+            "A sample rate of 7 Hz is outside 8,000 to 768,000 Hz"
+        );
+        assert_eq!(
+            said(resonate_core::Error::BandQOutOfRange(1)),
+            "A Q of 0.001 is outside 0.1 to 40"
+        );
+        assert_eq!(
+            said(resonate_core::Error::BandFrequencyOutOfRange(5)),
+            "A band frequency of 0.05 Hz is outside 1 to 40000 Hz"
+        );
+        assert_eq!(
+            said(resonate_core::Error::HeadYawOutOfRange(120)),
+            "A head turn of 120° is outside -90 to 90°"
+        );
+    }
+
+    #[test]
+    fn every_refusal_of_the_core_is_a_sentence_of_the_catalog_in_each_language() {
+        use resonate_core::Error as Core;
+
+        let refusals = [
+            Core::SampleRateOutOfRange(7),
+            Core::ChannelCountOutOfRange(99),
+            Core::BitDepthNotRepresentable(1),
+            Core::DecibelsNotFinite(f32::NAN),
+            Core::TrimOutOfRange(1),
+            Core::GainNotFinite(-1.0),
+            Core::VolumeOutOfRange(2.0),
+            Core::BandFrequencyOutOfRange(5),
+            Core::BandGainOutOfRange(50_000),
+            Core::BandQOutOfRange(1),
+            Core::PreampOutOfRange(50_000),
+            Core::SpeakerAngleOutOfRange(200),
+            Core::SpeakerElevationOutOfRange(90),
+            Core::HeadYawOutOfRange(120),
+            Core::TooManyBands(40),
+            Core::AbxTrialsOutOfRange(0),
+            Core::AbxFinished,
+            Core::LevelsNotMatched { millibels: 3 },
+            Core::ZeroId,
+            Core::SourceNameNotUsable,
+            Core::NotAnMbid,
+            Core::NotAnIsrc,
+            Core::NotAChromaprint,
+            Core::YearNotHeld(-10_000),
+        ];
+
+        for language in [
+            resonate_words::Language::English,
+            resonate_words::Language::French,
+        ] {
+            resonate_words::speak(language);
+
+            for refusal in refusals {
+                let said = Error::from(refusal).to_string();
+
+                assert_ne!(said, refusal.to_string(), "{refusal:?} in {language:?}");
+                assert!(!said.is_empty(), "{refusal:?} in {language:?}");
+                assert!(!said.contains('{'), "{said}");
+            }
+        }
     }
 
     #[test]

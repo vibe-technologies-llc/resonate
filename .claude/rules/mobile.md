@@ -74,7 +74,7 @@ opening and the TIDAL sign-in alike.
 with the typed fields as the variables, a count chooses its form by a Fluent selector, and a
 figure whose precision matters (a frequency, a decibel) is passed formatted. A foreign error a
 sentence carries (`{ $source }`) and the words another crate hands over (`LookupOp::asked_for`,
-`SpotifySignInFailure`, a `resonate_core::Error` passed as `Domain`, `Reason::says`, a Wrapped
+`SpotifySignInFailure`, `Reason::says`, a Wrapped
 slide, a built-in target's label, a service's title) are that crate's own.
 
 **The sentence is said in the phone's language** (`language.md`): `speak_languages(tags)`
@@ -105,7 +105,9 @@ calibration file that will not read is `Error::Measurement` naming `MeasuredFile
 `Snapshot.failure` is `would_not_play` (naming the song's title where the queue row and catalog still
 know it) or `would_not_do` for a refused command, and `Error::Player` and `Error::Decode` display
 `of_a_command` and `of_a_read`, so a missing file, an unsupported format, a damaged file and a refused
-device read differently. `Error::Reference` displays `of_a_lookup` (what was asked, through
+device read differently. `Error::Domain` displays `of_a_domain`, one sentence of the `domain` area (or
+the `errors` ones the listening test and the band count already have) for each `resonate_core::Error`
+with its typed figures, so a refused Wrapped year reads in the phone's language. `Error::Reference` displays `of_a_lookup` (what was asked, through
 `LookupOp::asked_for`, and how it failed), and `StoreOp`, `SyncOp` and `ReceivedOp` implement `Display`,
 so no variant prints an op with `{:?}`. The report text the phones show is `Finding::told` and
 `Container`'s `Display`, never a debug print.

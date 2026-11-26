@@ -1,10 +1,19 @@
+use resonate_core::{
+    ChannelCount, SampleRate, Trim,
+    abx::TRIALS_AT_MOST,
+    eq::{BandGain, Frequency, HeadYaw, MAX_BANDS, Q, SpeakerAngle, SpeakerElevation},
+    wrapped::{FIRST_YEAR_HELD, LAST_YEAR_HELD},
+};
 use resonate_dsp::Error as Dsp;
 use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, QueueRows};
 use resonate_eq::Error as Eq;
 use resonate_library::{Error as Library, ListenFault, LookupOp};
 
 use crate::{
-    MobilePlayer, documents::document_uri, measurement::MeasuredFile, words::failure as said,
+    MobilePlayer,
+    documents::document_uri,
+    measurement::MeasuredFile,
+    words::{self, domain, failure as said},
     zoning::Zoned,
 };
 
@@ -105,6 +114,80 @@ pub(crate) fn of_a_player(error: &resonate_engine::Error) -> &'static str {
         Player::LevelsTooFarApart { .. } => said::levels_too_far_apart(),
         other => of_a_command(other.cause()),
     }
+}
+
+pub(crate) fn of_a_domain(refusal: &resonate_core::Error) -> String {
+    use resonate_core::Error as Core;
+
+    match *refusal {
+        Core::SampleRateOutOfRange(rate) => {
+            domain::sample_rate_out_of_range(SampleRate::MAX_HZ, SampleRate::MIN_HZ, rate)
+        }
+        Core::ChannelCountOutOfRange(count) => {
+            domain::channel_count_out_of_range(count, ChannelCount::MAX.get())
+        }
+        Core::BitDepthNotRepresentable(bits) => domain::bit_depth_not_representable(bits),
+        Core::DecibelsNotFinite(decibels) => domain::decibels_not_finite(decibels.to_string()),
+        Core::TrimOutOfRange(millibels) => {
+            domain::trim_out_of_range(millibels, Trim::WIDEST_MILLIBELS)
+        }
+        Core::GainNotFinite(gain) => domain::gain_not_finite(gain.to_string()),
+        Core::VolumeOutOfRange(volume) => domain::volume_out_of_range(volume.to_string()),
+        Core::BandFrequencyOutOfRange(centihertz) => domain::band_frequency_out_of_range(
+            hundredths(centihertz.into()),
+            hundredths(Frequency::HIGHEST_CENTIHERTZ.into()),
+            hundredths(Frequency::LOWEST_CENTIHERTZ.into()),
+        ),
+        Core::BandGainOutOfRange(milli) => domain::band_gain_out_of_range(
+            thousandths(milli.into()),
+            thousandths(BandGain::WIDEST_MILLI_DECIBELS.into()),
+        ),
+        Core::BandQOutOfRange(milli) => domain::band_q_out_of_range(
+            thousandths(Q::WIDEST_MILLI.into()),
+            thousandths(Q::NARROWEST_MILLI.into()),
+            thousandths(milli.into()),
+        ),
+        Core::PreampOutOfRange(milli) => domain::preamp_out_of_range(
+            thousandths(milli.into()),
+            thousandths(BandGain::WIDEST_MILLI_DECIBELS.into()),
+        ),
+        Core::SpeakerAngleOutOfRange(degrees) => domain::speaker_angle_out_of_range(
+            degrees,
+            SpeakerAngle::NARROWEST_DEGREES,
+            SpeakerAngle::WIDEST_DEGREES,
+        ),
+        Core::SpeakerElevationOutOfRange(degrees) => domain::speaker_elevation_out_of_range(
+            degrees,
+            SpeakerElevation::HIGHEST_DEGREES,
+            SpeakerElevation::LOWEST_DEGREES,
+        ),
+        Core::HeadYawOutOfRange(degrees) => domain::head_yaw_out_of_range(
+            degrees,
+            HeadYaw::LEFTMOST_DEGREES,
+            HeadYaw::RIGHTMOST_DEGREES,
+        ),
+        Core::TooManyBands(found) => words::errors::too_many_bands(found, MAX_BANDS),
+        Core::AbxTrialsOutOfRange(trials) => words::errors::listening_test_trials(
+            TRIALS_AT_MOST,
+            u32::try_from(trials).unwrap_or(u32::MAX),
+        ),
+        Core::AbxFinished => words::errors::listening_test_finished().to_owned(),
+        Core::LevelsNotMatched { millibels } => words::errors::listening_test_levels(millibels),
+        Core::ZeroId => domain::zero_id().to_owned(),
+        Core::SourceNameNotUsable => domain::source_name_not_usable().to_owned(),
+        Core::NotAnMbid => domain::not_an_mbid().to_owned(),
+        Core::NotAnIsrc => domain::not_an_isrc().to_owned(),
+        Core::NotAChromaprint => domain::not_a_chromaprint().to_owned(),
+        Core::YearNotHeld(year) => domain::year_not_held(FIRST_YEAR_HELD, LAST_YEAR_HELD, year),
+    }
+}
+
+fn hundredths(whole: i64) -> String {
+    (whole as f64 / 100.0).to_string()
+}
+
+fn thousandths(whole: i64) -> String {
+    (whole as f64 / 1000.0).to_string()
 }
 
 pub(crate) fn of_a_read(read: &resonate_codec::Error) -> &'static str {

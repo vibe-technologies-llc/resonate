@@ -22,12 +22,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   builder.** A negative or non-integer `listened_at` fails the whole page
   (`crates/resonate-online/src/history.rs`), as a stamp past the clock did. Read the stamp leniently
   and pass the listen over. Done when a page holding one such listen imports the rest.
-- [S · 0.18.1] Say a refused Wrapped year on the phones in their language. **Low, builder.**
-  `resonate-mobile`'s `Error::Domain` is `transparent` over `resonate_core::Error`
-  (`crates/resonate-mobile/src/error.rs`), so `YearNotHeld` and every other core refusal reach the
-  phone as core's English diagnostic, against `language.md`'s rule that the mobile error is the
-  phone's sentence. Map each core variant through the mobile catalog. Done when a refused year reads
-  from the catalog in French.
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
