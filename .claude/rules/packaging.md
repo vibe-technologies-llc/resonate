@@ -6,8 +6,11 @@ paths:
 # Packaging
 
 `packaging/windows/` is the Windows archives' and installers' recipe (`windows.md`): the PowerShell
-`build.ps1` taking the architecture (x86-64-v3, or ARM64 at the target's baseline), which builds the
-zip and compiles `resonate.iss` (an Inno Setup script, per user, with the file associations and the
+`build.ps1` taking the architecture (x86-64-v3, or ARM64 at the target's baseline) and a stage
+(`-Stage Whole`, the default, does all; `Programs` builds the two programs into the output folder
+and signs nothing; `Package` takes them from `-Programs` and makes the zip and the installer,
+signing nothing, so the release signs between and after on a runner that built nothing,
+`release.md`), which builds the zip and compiles `resonate.iss` (an Inno Setup script, per user, with the file associations and the
 Start menu shortcut), `sign.ps1` (Authenticode where secrets exist), `icon.py` (renders the
 committed `resonate.ico` from `resonate.svg`), and the winget (`winget/`) and Scoop (`scoop.json`)
 templates `fill-manifests.sh` fills at release (`release.md`). Not a package, since the build needs no system library; `crates/resonate/tests/installer.rs` holds
@@ -24,7 +27,7 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 `packaging/macos/` is the Apple Silicon and Intel disk images' recipe (`macos.md`), not a package
 either:
 
-- **`build.sh [VERSION] [OUTPUT] [aarch64|x86_64]`** builds `resonate` and `resonate-signin` for
+- **`build.sh [VERSION] [OUTPUT] [aarch64|x86_64] [whole|bundle|image]`** builds `resonate` and `resonate-signin` for
   `aarch64-apple-darwin` (the default, `RUSTFLAGS=""`) or `x86_64-apple-darwin` (`-C
   target-cpu=x86-64-v3`: every Intel Mac macOS 13 supports has AVX2) in two `cargo` runs
   (`MACOSX_DEPLOYMENT_TARGET=13.0`; the version read from `Cargo.toml` where none is given) and
@@ -35,7 +38,13 @@ either:
   faces (`Fonts/`, where the window looks for them). It signs the application, stages it beside a
   link to `/Applications`, the README and the licence, and makes
   `resonate-<version>-aarch64-macos.dmg` or `resonate-<version>-x86_64_v3-macos.dmg` with `hdiutil` (`UDZO`; tried up to three times, a hosted
-  runner's `hdiutil` now and then finding the folder busy), then signs the image.
+  runner's `hdiutil` now and then finding the folder busy), then signs the image. The fourth
+  argument splits it for the release (`release.md`'s *Signing apart from the build*): `whole`,
+  the default, does all of it; `bundle` stops once the application is assembled, unsigned, and
+  writes it as `resonate-<version>-<architecture>-macos-unsigned.tar` in the output folder (a tar
+  keeps the programs' modes, which an artifact's zip would not; `COPYFILE_DISABLE` keeps a Mac's
+  extended attributes out of it, since `codesign` refuses them); `image` builds nothing, takes
+  that tar from the output folder and signs, images and signs from there.
 - **`sign.sh APPLICATION` and `sign.sh --image DISK_IMAGE`** sign ad hoc where no certificate is
   set (`codesign --sign -`: an Apple Silicon program runs only signed) and say so, the image being
   left as it is. With `RESONATE_MACOS_CERTIFICATE_BASE64` and `RESONATE_MACOS_CERTIFICATE_PASSWORD`

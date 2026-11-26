@@ -95,8 +95,10 @@ key or password stored in the repository: the `release` signing config exists on
 properties `resonate.signing.storeFile`, `.storePassword`, `.keyAlias` and `.keyPassword` (or the
 environment variables `RESONATE_SIGNING_STORE_FILE`, `_STORE_PASSWORD`, `_KEY_ALIAS` and
 `_KEY_PASSWORD`) name a keystore, and without them `assembleRelease` leaves the APK unsigned, never
-signed with the debug key. `.github/workflows/release.yml` builds and verifies the signed release
-APK from a version tag, the keystore and passwords coming from repository secrets. Release enables R8 and resource shrinking with
+signed with the debug key. `.github/workflows/release.yml` builds that unsigned APK with no signing
+variable set, and a job of its own that built nothing aligns it, signs it with `apksigner` and
+verifies it from a version tag, the keystore and passwords coming from the `release-signing`
+environment (`release.md`); the Gradle signing config serves a signed build by hand. Release enables R8 and resource shrinking with
 `proguard-android-optimize.txt` and `app/proguard-rules.pro`. Those rules preserve JNA and the generated `nativecore` boundary,
 including names, fields, constructors and native entry points used through JNI and reflection.
 The four absent `java.awt` types referenced by JNA's desktop-only helpers have explicit warning

@@ -48,6 +48,7 @@ const OTHER_PROGRAMS_AND_PROTOCOLS: &[&str] = &[
     "CARGO_CFG_TARGET_ARCH",
     "CFRunLoopRunInMode",
     "CLOCK_MONOTONIC",
+    "COPYFILE_DISABLE",
     "CTRL_CLOSE_EVENT",
     "CoInitializeEx",
     "CodecDelay",

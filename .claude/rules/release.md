@@ -69,9 +69,9 @@ paths:
   `aarch64-pc-windows-msvc` at the target's baseline, the licence and a README in the zip, the same
   in a per-user Inno Setup installer (Start menu entry, file associations; `windows.md`), from
   `packaging/windows/build.ps1 -Architecture`. They are signed (`sign.ps1`, Authenticode) only
-  where the repository holds the secrets `WINDOWS_CERTIFICATE_BASE64` (a PFX, base64) and
-  `WINDOWS_CERTIFICATE_PASSWORD`; none exists, so the files are unsigned and Windows SmartScreen
-  warns on a first run.
+  where the `release-signing` environment holds the secrets `WINDOWS_CERTIFICATE_BASE64` (a PFX,
+  base64) and `WINDOWS_CERTIFICATE_PASSWORD` (*Signing apart from the build*, below); none exists,
+  so the files are unsigned and Windows SmartScreen warns on a first run.
 - **`resonate-<version>-winget-manifests.zip` and `resonate-<version>-scoop.json` are filled
   from the templates** in `packaging/windows/` by `fill-manifests.sh` in the `publish` job, once
   every file above exists: the version, the repository URL of the running workflow, the asset URLs
@@ -87,8 +87,8 @@ paths:
   (`aarch64-apple-darwin`) or an Intel Mac (`x86_64-apple-darwin` at x86-64-v3), macOS 13 or
   later, beside a link to `/Applications`, the licence and a README, from `packaging/macos/build.sh`
   on `macos-latest`, one matrix leg each (`packaging.md`). The
-  application is signed with a Developer ID (`sign.sh`, hardened runtime) only where the repository
-  holds `MACOS_CERTIFICATE_BASE64` (a Developer ID Application `.p12`, base64) and
+  application is signed with a Developer ID (`sign.sh`, hardened runtime) only where the
+  `release-signing` environment holds `MACOS_CERTIFICATE_BASE64` (a Developer ID Application `.p12`, base64) and
   `MACOS_CERTIFICATE_PASSWORD`, and the image notarised and stapled only where it also holds
   `MACOS_NOTARY_KEY_BASE64` (an App Store Connect API key, the `.p8`, base64),
   `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER`; none exists, so the application is signed ad
@@ -99,9 +99,12 @@ paths:
   running workflow and each image's SHA-256. **Adding it to a Homebrew tap is a manual step** the
   maintainer takes after the release is published, as winget and Scoop are; a candidate is not
   added.
-- **The APK is a signed release build**: `assembleRelease` under the repository's signing secrets,
-  then `apksigner verify` (`build.md` has the job). The keystore is removed at the end of the job
-  and its secrets are never echoed.
+- **The APK is a signed release build**: `assembleRelease` with no signing configuration (the
+  unsigned `app-release-unsigned.apk`, held to `check-release.py`), then `zipalign -P 16` and
+  `apksigner sign` with the keystore of the `release-signing` environment, then `apksigner verify`
+  (`build.md` has the jobs). The keystore is written out only in the step that signs, removed
+  whatever happens, and its secrets are never echoed; a release whose environment holds no
+  keystore fails rather than shipping an unsigned APK.
 - **The iPhone app is `resonate-<version>-ios.ipa`**, ad-hoc signed and carrying no provisioning
   profile, so whoever installs it signs it with their own Apple ID (SideStore, AltStore, Sideloadly,
   xtool). **`resonate-altstore.json` is the AltStore and SideStore source** (`ios/altstore.py`): the
@@ -113,3 +116,50 @@ paths:
   where the draft has no source, carries the last published one forward unchanged. A candidate
   carries the IPA alone, since `latest` never names a pre-release.
 - `SHA256SUMS` lists every asset.
+
+## Signing apart from the build
+
+- **No runner that builds holds a signing secret.** A build runs the build scripts and proc-macros
+  of every package in the lock, gpui's git tree included, and anything it starts may outlive its
+  step, rewrite a script a later step runs or append to `$GITHUB_ENV`, so a secret in a later step
+  of the same job is as exposed as one in the build's own. Each signed platform is two jobs:
+  one builds with no secret and uploads the unsigned output as an `unsigned-*` artifact
+  (`windows-programs`: `build.ps1 -Stage Programs`, the two programs; `macos-bundle`:
+  `build.sh VERSION OUTPUT ARCH bundle`, `Resonate.app` in a tar, which keeps its modes;
+  `android-release`: `assembleRelease`), and a fresh runner downloads it and signs it with nothing
+  of the build on it (`windows-zip`: `sign.ps1` over the programs, `build.ps1 -Stage Package`
+  for the zip and the installer with no secret, `sign.ps1` over the installer; `macos-dmg`:
+  `build.sh VERSION OUTPUT ARCH image`, which signs the application, makes the image and signs
+  and notarises it; `android-apk`: `zipalign`, then `apksigner sign` with the keystore decoded in
+  that step alone). `publish` collects `resonate-*` alone, so an `unsigned-*` artifact is never
+  released. `build.ps1` and `build.sh` with no stage still do the whole, signing included, for a
+  build by hand. `android-apk.yml` and `macos-dmg.yml` are the same two jobs each.
+  `crates/resonate/tests/signing.rs` holds it: a job holding a `secrets.` value runs no `cargo`,
+  `rustup`, Gradle, cache or build stage, names the environment, and hands each secret only to a
+  signing step, and the keystore is decoded only where `apksigner` signs
+  (`no_job_that_builds_holds_a_signing_secret_and_every_job_that_signs_names_the_environment`).
+- **Each signing job names the environment `release-signing` for a release alone.** `release.yml`
+  asks for it where the run releases a tag (`needs.release.outputs.tag`), and the dispatch
+  workflows where they run on a `v*` tag; any other run names no environment, so a branch builds
+  unsigned: the Windows files unsigned, the application signed ad hoc, the APK uploaded as
+  `resonate-<version>-unsigned.apk`. The environment's rule reads the ref the workflow runs on, so
+  the `release` job refuses a `tag` input that is not that ref: a release dispatched by hand runs
+  as `gh workflow run release.yml --ref vX.Y.Z`
+  (`a_release_is_signed_only_from_its_own_tag_and_a_branch_is_built_unsigned`).
+- **What the repository's settings must hold, which this tree cannot**: the environment
+  `release-signing` (Settings, Environments; the first run creates it bare), its *Deployment
+  branches and tags* set to *Selected branches and tags* with the one tag rule `v*` and no branch
+  rule (`gh api -X PUT repos/OWNER/REPO/environments/release-signing -F
+  'deployment_branch_policy[protected_branches]=false' -F
+  'deployment_branch_policy[custom_branch_policies]=true'`, then `gh api -X POST
+  repos/OWNER/REPO/environments/release-signing/deployment-branch-policies -f 'name=v*' -f
+  type=tag`), and every signing secret moved into it: `ANDROID_KEYSTORE_BASE64`,
+  `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`, `RESONATE_SIGNING_KEY_PASSWORD`,
+  and, once they exist, `WINDOWS_CERTIFICATE_BASE64`, `WINDOWS_CERTIFICATE_PASSWORD`,
+  `MACOS_CERTIFICATE_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_BASE64`,
+  `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER`, each set with `gh secret set NAME --env
+  release-signing` and its repository copy removed with `gh secret delete NAME`: a repository
+  secret stays readable by every job of every branch, an environment's only shadowing it. The rule
+  admits any `v*` tag, so who may push one is the remaining boundary: a tag ruleset restricting the
+  creation of `v*` tags to the maintainer closes it, and required reviewers on the environment add
+  a hand's approval before each signing.

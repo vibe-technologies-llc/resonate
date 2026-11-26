@@ -20,8 +20,8 @@ env:
   RESONATE_RELEASES: ${{ github.repository }}
 
 jobs:
-  macos-dmg:
-    name: macOS disk image (${{ matrix.architecture }})
+  macos-bundle:
+    name: macOS application (${{ matrix.architecture }})
     runs-on: macos-latest
     timeout-minutes: 90
     strategy:
@@ -34,7 +34,36 @@ jobs:
           persist-credentials: false
       - name: Install the pinned toolchain
         run: rustup toolchain install
-      - name: Build the application and its disk image
+      - name: Build the unsigned application
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: packaging/macos/build.sh "" unsigned "$ARCHITECTURE" bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-macos-${{ matrix.architecture }}
+          path: unsigned/*-unsigned.tar
+          if-no-files-found: error
+
+  macos-dmg:
+    name: macOS disk image (${{ matrix.architecture }})
+    needs: macos-bundle
+    if: ${{ !cancelled() }}
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-signing' || '' }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: ${{ fromJSON(inputs.architecture == 'both' && '["aarch64", "x86_64"]' || format('["{0}"]', inputs.architecture)) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-macos-${{ matrix.architecture }}
+          path: assets
+      - name: Sign the application, then make, sign and notarise its disk image
         env:
           RESONATE_MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           RESONATE_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -42,7 +71,7 @@ jobs:
           RESONATE_MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           RESONATE_MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
           ARCHITECTURE: ${{ matrix.architecture }}
-        run: packaging/macos/build.sh "" assets "$ARCHITECTURE"
+        run: packaging/macos/build.sh "" assets "$ARCHITECTURE" image
       - uses: actions/upload-artifact@v7
         with:
           name: resonate-macos-${{ matrix.architecture }}

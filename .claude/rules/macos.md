@@ -234,6 +234,8 @@ does nothing; Windows wears it on its windows, `ui.md`).
 (`packaging.md`, `release.md`); `release.yml`'s `macos-dmg` job runs it on `macos-latest` for each,
 and `publish` fills the Homebrew cask over both. The
 bundle is signed ad hoc always, since an Apple Silicon binary must carry a signature to run, and
-with a Developer ID and the notary only where the repository holds the secrets; none exists, so a
+with a Developer ID and the notary only where the `release-signing` environment holds the secrets,
+on a runner that built nothing (`macos-bundle` builds the application, `macos-dmg` signs and images
+it, `release.md`); none exists, so a
 first run meets Gatekeeper and `README.txt` says how to open it. **Nothing here has run**: the
 scripts' first run is the release that carries them.

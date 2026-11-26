@@ -126,26 +126,30 @@ never measured), the layering refusals, the fuzz build, the sync server's packag
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
   `git archive` of the tag, the `packaging/release/` recipes, each set to the released version first so
-  a recipe left behind still builds the tag), `windows-zip` (`windows-latest`, a matrix of
-  `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`: the zip and the Inno Setup installer, signed where the certificate secrets exist), `macos-dmg` (`macos-latest`, `packaging/macos/build.sh` once for `aarch64` and once for `x86_64`: the application in a disk image each, signed ad hoc, or with a Developer ID and notarised where the secrets exist) and `android-apk`; `publish` collects
+  a recipe left behind still builds the tag), `windows-programs` then `windows-zip` (`windows-latest`, a matrix of
+  `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`: the programs built, then on a runner of its own signed and packed into the zip and the Inno Setup installer, signed where the certificate secrets exist), `macos-bundle` then `macos-dmg` (`macos-latest`, `packaging/macos/build.sh` once for `aarch64` and once for `x86_64`: the application built, then on a runner of its own put in a disk image each, signed ad hoc, or with a Developer ID and notarised where the secrets exist) and `android-release` then `android-apk`; the jobs that sign hold every secret and build nothing (`release.md`'s *Signing apart from the build*); `publish` collects
   every artifact, fills the winget and Scoop manifests from the Windows files (`fill-manifests.sh`) and the Homebrew cask from the two disk images (`fill-cask.sh`), writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
   release is immutable; a job that failed leaves the others' assets, `publish` running whenever `release` succeeded. Everything but the APK, the Windows ARM64 archive and the Apple Silicon disk image is x86-64-v3
-  (`packaging.md`). Secrets, set once in the repository: `ANDROID_KEYSTORE_BASE64` (the release
+  (`packaging.md`). Secrets, held by the `release-signing` environment (`release.md` says what to set): `ANDROID_KEYSTORE_BASE64` (the release
   keystore, base64), `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`,
-  `RESONATE_SIGNING_KEY_PASSWORD`; the Windows job reads `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` when they exist and signs nothing when they do not; the macOS job reads `MACOS_CERTIFICATE_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_BASE64`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER` when they exist and signs ad hoc when they do not (`packaging.md`). The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`
-  for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
-  `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens. The three third-party actions beside the keystore (`setup-android`, `rust-cache`, `setup-gradle`) are pinned by full commit SHA of the release tag they were taken from, never a movable tag; a bump resolves the new tag with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (dereferencing an annotated tag to its commit).
+  `RESONATE_SIGNING_KEY_PASSWORD`; the Windows signing job reads `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` when they exist and signs nothing when they do not; the macOS signing job reads `MACOS_CERTIFICATE_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_BASE64`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER` when they exist and signs ad hoc when they do not (`packaging.md`). `android-release` runs `assembleRelease` with no signing variable and `android/check-release.py` over the unsigned APK; `android-apk` downloads it, runs `zipalign -P 16`, decodes the keystore to `$RUNNER_TEMP/release.jks`
+  in the one step that runs `apksigner sign` (the passwords passed as `env:` references, never on the command line), runs
+  `apksigner verify` and `zipalign -c -P 16`, and removes the keystore whatever happens. The three third-party actions beside the keystore (`setup-android`, `rust-cache`, `setup-gradle`) are pinned by full commit SHA of the release tag they were taken from, never a movable tag; a bump resolves the new tag with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (dereferencing an annotated tag to its commit).
 
 - **`macos-dmg.yml` builds the macOS disk images alone, on a manual run** (input `architecture`:
   `both`, `aarch64` or `x86_64`), so a Mac can try the branch before any release: the
-  `macos-dmg` job of `release.yml` over the checked-out branch, the version the manifest names,
-  each image uploaded as the artifact `resonate-macos-<architecture>` and nothing published.
+  `macos-bundle` and `macos-dmg` jobs of `release.yml` over the checked-out branch, the version the manifest names,
+  each image uploaded as the artifact `resonate-macos-<architecture>` and nothing published. On a
+  branch the application is signed ad hoc and no environment is named; on a `v*` tag the signing
+  job takes `release-signing`.
   `gh workflow run macos-dmg.yml --ref <branch>` starts it.
 
-- **`android-apk.yml` builds the signed Android APK alone, on a manual run**: the `android-apk`
-  job of `release.yml` over the checked-out branch (the same keystore secrets, `apksigner verify`
-  and `android/check-release.py`, the keystore removed whatever happens), named by the version
+- **`android-apk.yml` builds the Android APK alone, on a manual run**: the `android-release`
+  and `android-apk` jobs of `release.yml` over the checked-out ref, named by the version
   the root manifest names and uploaded as the artifact `resonate-android-apk`, nothing published.
+  Run on a `v*` tag it signs under `release-signing` (the keystore secrets, `apksigner verify`,
+  the keystore removed whatever happens); run on a branch it names no environment and uploads
+  `resonate-<version>-unsigned.apk`, aligned and held to `android/check-release.py`.
   `gh workflow run android-apk.yml --ref <branch>` starts it.
 
 - **One runner builds and runs the headless suite.** The `headless` job runs

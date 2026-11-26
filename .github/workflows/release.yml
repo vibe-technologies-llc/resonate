@@ -45,6 +45,10 @@ jobs:
           test "$(sed -n 's/^_version=//p' packaging/release/server/PKGBUILD)" = "$version"
           if [ -n "$RELEASE_TAG" ]; then
             test "$RELEASE_TAG" = "v$version"
+            if [ "$GITHUB_REF" != "refs/tags/$RELEASE_TAG" ]; then
+              echo "::error::$RELEASE_TAG must be released from its own ref, the one the signing environment admits: run the workflow with --ref $RELEASE_TAG"
+              exit 1
+            fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
@@ -197,8 +201,8 @@ jobs:
           path: assets/*.pkg.tar.zst
           if-no-files-found: error
 
-  windows-zip:
-    name: Windows archive and installer (${{ matrix.architecture }})
+  windows-programs:
+    name: Windows programs (${{ matrix.architecture }})
     needs: release
     runs-on: windows-latest
     timeout-minutes: 90
@@ -216,12 +220,50 @@ jobs:
       - name: Find the C compiler ring assembles ARM64 with
         if: matrix.architecture == 'aarch64'
         run: clang --version
-      - name: Build the archive and the installer
+      - name: Build the unsigned programs
         env:
           VERSION: ${{ needs.release.outputs.version }}
+        run: ./packaging/windows/build.ps1 -Version $env:VERSION -Architecture ${{ matrix.architecture }} -Stage Programs -Output unsigned
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows-${{ matrix.architecture }}
+          path: unsigned/*.exe
+          if-no-files-found: error
+
+  windows-zip:
+    name: Windows archive and installer (${{ matrix.architecture }})
+    needs: [release, windows-programs]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    environment: ${{ needs.release.outputs.tag != '' && 'release-signing' || '' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-windows-${{ matrix.architecture }}
+          path: programs
+      - name: Sign the programs
+        env:
           RESONATE_WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
           RESONATE_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: ./packaging/windows/build.ps1 -Version $env:VERSION -Architecture ${{ matrix.architecture }} -Output assets
+        run: ./packaging/windows/sign.ps1 -Files programs/resonate.exe, programs/resonate-signin.exe
+      - name: Pack the archive and the installer
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: ./packaging/windows/build.ps1 -Version $env:VERSION -Architecture ${{ matrix.architecture }} -Stage Package -Programs programs -Output assets
+      - name: Sign the installer
+        env:
+          RESONATE_WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          RESONATE_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: ./packaging/windows/sign.ps1 -Files (Get-ChildItem assets/*-setup.exe).FullName
       - uses: actions/upload-artifact@v7
         with:
           name: resonate-windows-${{ matrix.architecture }}
@@ -230,8 +272,8 @@ jobs:
             assets/*-setup.exe
           if-no-files-found: error
 
-  macos-dmg:
-    name: macOS disk image (${{ matrix.architecture }})
+  macos-bundle:
+    name: macOS application (${{ matrix.architecture }})
     needs: release
     runs-on: macos-latest
     timeout-minutes: 90
@@ -246,7 +288,38 @@ jobs:
           ref: ${{ needs.release.outputs.ref }}
       - name: Install the pinned toolchain
         run: rustup toolchain install
-      - name: Build the application and its disk image
+      - name: Build the unsigned application
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: packaging/macos/build.sh "$VERSION" unsigned "$ARCHITECTURE" bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-macos-${{ matrix.architecture }}
+          path: unsigned/*-unsigned.tar
+          if-no-files-found: error
+
+  macos-dmg:
+    name: macOS disk image (${{ matrix.architecture }})
+    needs: [release, macos-bundle]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    environment: ${{ needs.release.outputs.tag != '' && 'release-signing' || '' }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [aarch64, x86_64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-macos-${{ matrix.architecture }}
+          path: assets
+      - name: Sign the application, then make, sign and notarise its disk image
         env:
           VERSION: ${{ needs.release.outputs.version }}
           RESONATE_MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
@@ -255,15 +328,15 @@ jobs:
           RESONATE_MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           RESONATE_MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
           ARCHITECTURE: ${{ matrix.architecture }}
-        run: packaging/macos/build.sh "$VERSION" assets "$ARCHITECTURE"
+        run: packaging/macos/build.sh "$VERSION" assets "$ARCHITECTURE" image
       - uses: actions/upload-artifact@v7
         with:
           name: resonate-macos-${{ matrix.architecture }}
           path: assets/*.dmg
           if-no-files-found: error
 
-  android-apk:
-    name: Signed Android APK
+  android-release:
+    name: Unsigned Android APK
     needs: release
     runs-on: ubuntu-26.04
     timeout-minutes: 120
@@ -288,30 +361,71 @@ jobs:
         with:
           workspaces: . -> android/.cargo-target
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c
-      - name: Build the signed release variant
+      - name: Build the unsigned release variant
+        run: android/gradlew -p android :app:assembleRelease
+      - name: Check the release shape
+        run: python3 android/check-release.py --sdk "$ANDROID_HOME"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-android-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+
+  android-apk:
+    name: Signed Android APK
+    needs: [release, android-release]
+    environment: ${{ needs.release.outputs.tag != '' && 'release-signing' || '' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+        with:
+          packages: platform-tools
+      - name: Install the build tools
+        run: sdkmanager "build-tools;36.0.0"
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-android-apk
+          path: unsigned
+      - name: Align the APK for 16 KB pages
+        run: |
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/zipalign" -P 16 -f 4 unsigned/app-release-unsigned.apk unsigned/app-release-aligned.apk
+          "$tools/zipalign" -c -P 16 4 unsigned/app-release-aligned.apk
+      - name: Sign the APK
+        if: needs.release.outputs.tag != ''
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          RESONATE_SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
-          RESONATE_SIGNING_STORE_PASSWORD: ${{ secrets.RESONATE_SIGNING_STORE_PASSWORD }}
-          RESONATE_SIGNING_KEY_ALIAS: ${{ secrets.RESONATE_SIGNING_KEY_ALIAS }}
-          RESONATE_SIGNING_KEY_PASSWORD: ${{ secrets.RESONATE_SIGNING_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.RESONATE_SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RESONATE_SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RESONATE_SIGNING_KEY_PASSWORD }}
         run: |
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RESONATE_SIGNING_STORE_FILE"
-          android/gradlew -p android :app:assembleRelease
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out unsigned/app-release.apk unsigned/app-release-aligned.apk
       - name: Remove the keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
-      - name: Verify the signature and the release shape
+      - name: Verify the signature and the alignment
+        if: needs.release.outputs.tag != ''
         run: |
-          apk=android/app/build/outputs/apk/release/app-release.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
-          python3 android/check-release.py --sdk "$ANDROID_HOME"
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/apksigner" verify --verbose unsigned/app-release.apk
+          "$tools/zipalign" -c -P 16 4 unsigned/app-release.apk
       - name: Name the asset for the release
         env:
           VERSION: ${{ needs.release.outputs.version }}
+          SIGNED: ${{ needs.release.outputs.tag != '' }}
         run: |
           mkdir -p assets
-          cp android/app/build/outputs/apk/release/app-release.apk "assets/resonate-$VERSION.apk"
+          if [ "$SIGNED" = true ]; then
+            cp unsigned/app-release.apk "assets/resonate-$VERSION.apk"
+          else
+            cp unsigned/app-release-aligned.apk "assets/resonate-$VERSION-unsigned.apk"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: resonate-android-apk

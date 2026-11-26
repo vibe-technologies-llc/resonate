@@ -5,4 +5,5 @@ mod icons;
 mod installer;
 mod packaging;
 mod signals;
+mod signing;
 mod terminal;

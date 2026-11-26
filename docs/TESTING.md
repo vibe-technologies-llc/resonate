@@ -282,15 +282,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Release
-- [M · 0.18.1] Sign apart from the build. **Medium, architect.** Each signing secret is set on the
-  one step that runs `build.ps1`, `build.sh` or `gradlew assembleRelease`
-  (`.github/workflows/release.yml:219-224`, `:249-258`, `:291-300`, `android-apk.yml:34-43`,
-  `macos-dmg.yml:37-45`), so every build script and proc-macro of about 1 086 packages, gpui's git
-  tree included, can read them, and the Android keystore is on disk before Gradle starts; the
-  secrets are repository-wide and `android-apk.yml` and `macos-dmg.yml` run from any branch. Build
-  with no secrets, sign in a following step, put the secrets in an environment limited to `v*` tags
-  and give the dispatch workflows the same. Done when no build step's environment names a signing
-  secret.
+- [S · 0.18.1] The signing jobs have not run. `release.yml`, `android-apk.yml` and `macos-dmg.yml`
+  build on one runner and sign on another (`release.md`'s *Signing apart from the build*), and a
+  run that releases no tag names the environment `${{ ... || '' }}`, an empty name, which GitHub's
+  documentation does not say is read as no environment; nor has `build.ps1 -Stage`, the macOS
+  `bundle` and `image` stages on a Mac or `apksigner sign` with the release keystore run. Dispatch
+  `android-apk.yml` and `macos-dmg.yml` on a branch and on a `v*` tag, and `release.yml` on a
+  branch, once the `release-signing` environment is set. Done when each leg has run and the APK it
+  signs installs over the last release.
 
 ## Dependencies
 - [S · 0.18.1] Gate on advisories in the local check. **Low, builder.** `heapless` 0.8.0, which

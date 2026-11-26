@@ -290,7 +290,7 @@ fn the_release_workflow_signs_only_with_the_secrets_the_script_reads() {
     for variable in SECRET_VARIABLES {
         assert!(
             workflow.contains(&format!("{variable}: ${{{{ secrets.")),
-            "release.yml does not hand {variable} to the build"
+            "release.yml does not hand {variable} to the signing"
         );
         assert!(
             signing.contains(&format!("$env:{variable}")),

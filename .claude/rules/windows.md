@@ -885,10 +885,14 @@ the output name as `/D` definitions the script reads (`the_build_script_compiles
 
 `packaging/windows/sign.ps1` signs the given files with the Windows SDK's `signtool` (SHA-256,
 timestamped) from a PFX in `RESONATE_WINDOWS_PFX_BASE64` and `RESONATE_WINDOWS_PFX_PASSWORD`, which
-`release.yml` fills from the secrets `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`.
-Where either is empty (no certificate exists yet) it says so and leaves the files unsigned, so a
-release without the secrets is built as before. `build.ps1` signs `resonate.exe` before the zip and the
-installer take it, and the installer after it is compiled (the uninstaller inside it is not signed).
+`release.yml` fills from the secrets `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`
+of the `release-signing` environment.
+Where either is empty (no certificate exists yet, or a branch is built) it says so and leaves the files unsigned, so a
+release without the secrets is built as before. The programs are signed before the zip and the
+installer take them, and the installer after it is compiled (the uninstaller inside it is not signed):
+`build.ps1` does so in one run by hand, and the release in a job that built nothing
+(`windows-programs` builds with `-Stage Programs`; `windows-zip` signs the programs, packs with
+`-Stage Package` and signs the installer, `release.md`).
 The certificate is written to a temporary file for the signing and removed at the end. Nothing here
 has run: it waits on a certificate (`docs/FEATURES.md`).
 

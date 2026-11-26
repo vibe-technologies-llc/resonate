@@ -4,7 +4,9 @@ set -euo pipefail
 version=${1:-}
 output=${2:-assets}
 architecture=${3:-aarch64}
+stage=${4:-whole}
 
+usage='usage: build.sh [VERSION] [OUTPUT] [aarch64|x86_64] [whole|bundle|image]'
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$here/../.." && pwd)
 cd "$root"
@@ -28,7 +30,14 @@ case "$architecture" in
         flags="-C target-cpu=x86-64-v3"
         ;;
     *)
-        echo "usage: build.sh [VERSION] [OUTPUT] [aarch64|x86_64]" >&2
+        echo "$usage" >&2
+        exit 2
+        ;;
+esac
+case "$stage" in
+    whole | bundle | image) ;;
+    *)
+        echo "$usage" >&2
         exit 2
         ;;
 esac
@@ -37,6 +46,46 @@ inter_sha256=9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e
 jetbrains_mono_archive=https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
 jetbrains_mono_sha256=6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
 images_tried_at_most=3
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+staging="$work/Resonate"
+application="$staging/Resonate.app"
+mkdir -p "$output"
+output=$(cd "$output" && pwd)
+unsigned="$output/resonate-$version-$named-macos-unsigned.tar"
+
+fetched() {
+    local address=$1 sha256=$2 archive=$3
+    curl --fail --location --silent --show-error --output "$archive" "$address"
+    printf '%s  %s\n' "$sha256" "$archive" | shasum -a 256 -c - >/dev/null
+}
+
+packed() {
+    "$here/sign.sh" "$application"
+
+    ln -s /Applications "$staging/Applications"
+    cp "$here/README.txt" LICENSE COPYRIGHT "$staging/"
+
+    local image="$output/resonate-$version-$named-macos.dmg"
+    local tried=0
+    until hdiutil create -volname Resonate -srcfolder "$staging" -format UDZO -ov "$image" >/dev/null; do
+        tried=$((tried + 1))
+        test "$tried" -lt "$images_tried_at_most"
+        sleep 5
+    done
+
+    "$here/sign.sh" --image "$image"
+    printf '%s\n' "$image"
+}
+
+if [ "$stage" = image ]; then
+    mkdir -p "$staging"
+    tar -x -f "$unsigned" -C "$staging"
+    packed
+    exit 0
+fi
 
 export RUSTFLAGS="$flags"
 export MACOSX_DEPLOYMENT_TARGET=13.0
@@ -50,17 +99,6 @@ generated=$(find "$release/build" -path '*/out/resonate.1' -print -quit)
 test -n "$generated"
 generated=$(dirname "$generated")
 
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-
-fetched() {
-    local address=$1 sha256=$2 archive=$3
-    curl --fail --location --silent --show-error --output "$archive" "$address"
-    printf '%s  %s\n' "$sha256" "$archive" | shasum -a 256 -c - >/dev/null
-}
-
-staging="$work/Resonate"
-application="$staging/Resonate.app"
 contents="$application/Contents"
 resources="$contents/Resources"
 mkdir -p "$contents/MacOS" "$resources/Fonts" "$resources/completions"
@@ -83,19 +121,10 @@ unzip -q "$work/jetbrains-mono.zip" 'fonts/ttf/JetBrainsMono-*.ttf' OFL.txt -d "
 cp "$work/jetbrains-mono/fonts/ttf"/JetBrainsMono-*.ttf "$resources/Fonts/"
 cp "$work/jetbrains-mono/OFL.txt" "$resources/Fonts/JetBrainsMono-OFL.txt"
 
-"$here/sign.sh" "$application"
+if [ "$stage" = bundle ]; then
+    COPYFILE_DISABLE=1 tar -c -f "$unsigned" -C "$staging" Resonate.app
+    printf '%s\n' "$unsigned"
+    exit 0
+fi
 
-ln -s /Applications "$staging/Applications"
-cp "$here/README.txt" LICENSE COPYRIGHT "$staging/"
-
-mkdir -p "$output"
-image="$output/resonate-$version-$named-macos.dmg"
-tried=0
-until hdiutil create -volname Resonate -srcfolder "$staging" -format UDZO -ov "$image" >/dev/null; do
-    tried=$((tried + 1))
-    test "$tried" -lt "$images_tried_at_most"
-    sleep 5
-done
-
-"$here/sign.sh" --image "$image"
-printf '%s\n' "$image"
+packed

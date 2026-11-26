@@ -7,14 +7,22 @@ permissions:
   contents: read
 
 jobs:
-  android-apk:
-    name: Signed Android APK
+  android-release:
+    name: Unsigned Android APK
     runs-on: ubuntu-26.04
     timeout-minutes: 120
+    outputs:
+      version: ${{ steps.declared.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Read the declared version
+        id: declared
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -31,30 +39,71 @@ jobs:
         with:
           workspaces: . -> android/.cargo-target
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c
-      - name: Build the signed release variant
+      - name: Build the unsigned release variant
+        run: android/gradlew -p android :app:assembleRelease
+      - name: Check the release shape
+        run: python3 android/check-release.py --sdk "$ANDROID_HOME"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-android-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+
+  android-apk:
+    name: Signed Android APK
+    needs: android-release
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-signing' || '' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+        with:
+          packages: platform-tools
+      - name: Install the build tools
+        run: sdkmanager "build-tools;36.0.0"
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-android-apk
+          path: unsigned
+      - name: Align the APK for 16 KB pages
+        run: |
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/zipalign" -P 16 -f 4 unsigned/app-release-unsigned.apk unsigned/app-release-aligned.apk
+          "$tools/zipalign" -c -P 16 4 unsigned/app-release-aligned.apk
+      - name: Sign the APK
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          RESONATE_SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
-          RESONATE_SIGNING_STORE_PASSWORD: ${{ secrets.RESONATE_SIGNING_STORE_PASSWORD }}
-          RESONATE_SIGNING_KEY_ALIAS: ${{ secrets.RESONATE_SIGNING_KEY_ALIAS }}
-          RESONATE_SIGNING_KEY_PASSWORD: ${{ secrets.RESONATE_SIGNING_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.RESONATE_SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RESONATE_SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RESONATE_SIGNING_KEY_PASSWORD }}
         run: |
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RESONATE_SIGNING_STORE_FILE"
-          android/gradlew -p android :app:assembleRelease
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out unsigned/app-release.apk unsigned/app-release-aligned.apk
       - name: Remove the keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
-      - name: Verify the signature and the release shape
+      - name: Verify the signature and the alignment
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          apk=android/app/build/outputs/apk/release/app-release.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
-          python3 android/check-release.py --sdk "$ANDROID_HOME"
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/apksigner" verify --verbose unsigned/app-release.apk
+          "$tools/zipalign" -c -P 16 4 unsigned/app-release.apk
       - name: Name the asset by the declared version
+        env:
+          VERSION: ${{ needs.android-release.outputs.version }}
+          SIGNED: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
-          test -n "$version"
           mkdir -p assets
-          cp android/app/build/outputs/apk/release/app-release.apk "assets/resonate-$version.apk"
+          if [ "$SIGNED" = true ]; then
+            cp unsigned/app-release.apk "assets/resonate-$VERSION.apk"
+          else
+            cp unsigned/app-release-aligned.apk "assets/resonate-$VERSION-unsigned.apk"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: resonate-android-apk
