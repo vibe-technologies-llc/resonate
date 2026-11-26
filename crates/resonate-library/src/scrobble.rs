@@ -290,6 +290,7 @@ impl<E> Halted<E> {
 
 pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
     let service = scrobbler.service();
+    let _alone = inner.submitting_alone(service)?;
     let Some(through) = mark(inner, service)? else {
         let last = inner.read(last_listen)?;
 

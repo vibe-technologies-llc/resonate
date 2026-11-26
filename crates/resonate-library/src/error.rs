@@ -6,7 +6,7 @@ use resonate_core::{
 use resonate_vault::VaultKey;
 use thiserror::Error;
 
-use crate::{ListenFault, LookupOp, PassKind};
+use crate::{ListenFault, ListeningService, LookupOp, PassKind};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TagName(Box<str>);
@@ -202,6 +202,11 @@ pub enum Error {
 
     #[error("another process is already running a {pass:?}, and only one may ask at a time")]
     AlreadyAsking { pass: PassKind },
+
+    #[error(
+        "another process is already telling {service:?} what was heard, and only one may tell it at a time"
+    )]
+    AlreadySubmitting { service: ListeningService },
 
     #[error("a kept song lands in the music folder, and none is set")]
     NoDeliveryFolder,

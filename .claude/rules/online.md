@@ -435,17 +435,25 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   a state: every one held when a token is first given is told. `Scrobbler::token_held` asks
   `validate-token` via `Client::json_as` (the one GET carrying an `Authorization`), answering
   `TokenHeld::By` the user, or `Unknown` (also for 400, 401, 403).
-- **The binary's half is a thread following the file.** `submitting.rs` starts `resonate-submit` for
-  the window and every playing command: after `FIRST_AFTER`, then every `SUBMITTED_EVERY`, it asks
-  `Library::submit_listens`, doubling the wait per failure up to `WAITED_AT_MOST`; loves have their
-  own `Pace`. Each service the settings hold an account for is a `Telling` of its own, so a refused
-  Last.fm session holds back nothing told to ListenBrainz. Every `PLAYING_LOOKED_AT_EVERY` it tells
-  a new row via `Library::billed_as` as playing now: once per row, not while paused, never for a
-  file the catalog names nothing for; `lapses` tells again after a resume, a repeat or a seek back.
-  The accounts follow the file as `Followed` does (`config::submitting_in` reads `online`,
-  `listenbrainz-token` and the three `lastfm-` keys into `Accounts`); a client is built once per
-  account. A 401 or 403 to listens or loves (`TOKEN_REFUSED`) holds that token back until the file
-  names another.
+- **The binary's half is a thread per service, following the file.** `submitting.rs` starts one
+  `resonate-submit` lane per service in `LANES` for the window and every playing command, each a
+  thread of its own with its own `Telling`, so a slow or stalled Last.fm holds back nothing told to
+  ListenBrainz (`a_stalled_lastfm_leaves_listenbrainz_told_what_was_heard`), and a refused session
+  only its own lane. Dropping `Submitting` drops the one sender every lane waits on, ending them
+  all. After `FIRST_AFTER`, then every `SUBMITTED_EVERY`, a lane asks `Library::submit_listens`,
+  doubling the wait per failure up to `WAITED_AT_MOST`; loves have their own `Pace`. A round
+  another process is telling (`Error::AlreadySubmitting`, `library.md`) waits its turn without
+  backing off (`a_round_another_process_is_submitting_waits_its_turn_without_backing_off`). Every
+  `PLAYING_LOOKED_AT_EVERY` a lane tells a new row via `Library::billed_as` as playing now: once
+  per row, not while paused, never for a file the catalog names nothing for; `lapses` tells again
+  after a resume, a repeat or a seek back; playing now has a `Pace` of its own with no wait, so a
+  failure backs it off as one of listens does
+  (`what_is_playing_is_told_at_once_until_the_service_fails_and_then_backs_off`). Each lane follows
+  the file as `Followed` does (`config::submitting_in` reads `online`, `listenbrainz-token` and the
+  three `lastfm-` keys into `Accounts`, `Account::of` taking its service's); a client is built once
+  per account. A 401 or 403 to listens or loves (`TOKEN_REFUSED`) holds that token back until the
+  file names another. A lane is `lane`, handed its account, its client and what plays as boxed
+  closures, so a test drives two with fake services.
 
 - **A listener's history is read back, a thousand at a time** (`history.rs`, `ListenBrainzHistory`,
   `LookupOp::History`): `GET /1/user/<user>/listens?count=1000`, then, until a page is short, `max_ts`

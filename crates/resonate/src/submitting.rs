@@ -1,14 +1,14 @@
 use std::sync::Arc;
 #[cfg(feature = "online")]
 use std::{
-    fs,
+    fs, io,
     path::PathBuf,
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, Instant, SystemTime},
 };
 
 #[cfg(feature = "online")]
-use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded};
 #[cfg(feature = "online")]
 use resonate_core::{FrameSpan, Frames, MediaLocation};
 #[cfg(feature = "online")]
@@ -16,7 +16,7 @@ use resonate_engine::PlaybackState;
 use resonate_engine::Player;
 use resonate_library::Library;
 #[cfg(feature = "online")]
-use resonate_library::{Error as LibraryError, LookupOp, Scrobbler};
+use resonate_library::{Error as LibraryError, ListeningService, LookupOp, Scrobbler};
 
 use crate::config::Config;
 #[cfg(feature = "online")]
@@ -38,7 +38,7 @@ const TOKEN_REFUSED: [u16; 2] = [401, 403];
 
 pub(crate) struct Submitting {
     #[cfg(feature = "online")]
-    stop: Sender<()>,
+    _stop: Sender<()>,
 }
 
 impl Submitting {
@@ -46,11 +46,7 @@ impl Submitting {
 }
 
 #[cfg(feature = "online")]
-impl Drop for Submitting {
-    fn drop(&mut self) {
-        let _ = self.stop.try_send(());
-    }
-}
+const LANES: [ListeningService; 2] = [ListeningService::ListenBrainz, ListeningService::LastFm];
 
 #[cfg(feature = "online")]
 #[derive(Clone, PartialEq, Eq)]
@@ -61,11 +57,11 @@ enum Account {
 
 #[cfg(feature = "online")]
 impl Account {
-    fn every(accounts: Accounts) -> [Option<Self>; 2] {
-        [
-            accounts.listenbrainz.map(Self::ListenBrainz),
-            accounts.lastfm.map(Self::LastFm),
-        ]
+    fn of(service: ListeningService, accounts: &Accounts) -> Option<Self> {
+        match service {
+            ListeningService::ListenBrainz => accounts.listenbrainz.clone().map(Self::ListenBrainz),
+            ListeningService::LastFm => accounts.lastfm.clone().map(Self::LastFm),
+        }
     }
 
     fn scrobbler(&self, config: &Config) -> Arc<dyn Scrobbler> {
@@ -77,9 +73,25 @@ impl Account {
 }
 
 #[cfg(feature = "online")]
+#[derive(Clone, Copy)]
+struct Paced {
+    first_after: Duration,
+    looked_at_every: Duration,
+}
+
+#[cfg(feature = "online")]
+impl Paced {
+    const USUAL: Self = Self {
+        first_after: FIRST_AFTER,
+        looked_at_every: PLAYING_LOOKED_AT_EVERY,
+    };
+}
+
+#[cfg(feature = "online")]
 struct Telling {
     listens: Pace,
     loves: Pace,
+    playing: Pace,
     refused: Option<Account>,
     told_playing: Option<Row>,
     scrobbling: Option<(Account, Arc<dyn Scrobbler>)>,
@@ -87,17 +99,24 @@ struct Telling {
 
 #[cfg(feature = "online")]
 impl Telling {
-    fn new() -> Self {
+    fn new(first_after: Duration) -> Self {
         Self {
-            listens: Pace::after(FIRST_AFTER),
-            loves: Pace::after(FIRST_AFTER),
+            listens: Pace::after(first_after),
+            loves: Pace::after(first_after),
+            playing: Pace::every(Duration::ZERO),
             refused: None,
             told_playing: None,
             scrobbling: None,
         }
     }
 
-    fn tell(&mut self, account: Account, config: &Config, library: &Library, player: &Player) {
+    fn tell(
+        &mut self,
+        account: Account,
+        scrobbler_of: &dyn Fn(&Account) -> Arc<dyn Scrobbler>,
+        library: &Library,
+        playing: &dyn Fn() -> Option<Row>,
+    ) {
         if self.refused.as_ref() == Some(&account) {
             return;
         }
@@ -105,19 +124,20 @@ impl Telling {
         let scrobbler = match &self.scrobbling {
             Some((kept, scrobbler)) if *kept == account => Arc::clone(scrobbler),
             _ => {
-                let made = account.scrobbler(config);
+                let made = scrobbler_of(&account);
 
                 self.scrobbling = Some((account.clone(), Arc::clone(&made)));
                 made
             }
         };
 
-        let playing = playing_row(player);
+        let playing = playing();
 
         if lapses(self.told_playing.as_ref(), playing.as_ref())
             && let Some(row) = playing.as_ref()
         {
-            tell_what_is_playing(library, &*scrobbler, row);
+            self.playing
+                .settle(|| tell_what_is_playing(library, &*scrobbler, row));
         }
         self.told_playing = playing;
 
@@ -137,36 +157,66 @@ impl Telling {
 
 #[cfg(feature = "online")]
 pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player>) -> Submitting {
-    let (stop, stopped) = bounded(1);
-    let config = config.clone();
-    let library = Arc::clone(library);
-    let player = Arc::clone(player);
+    let (stop, stopped) = bounded(0);
 
-    let started = thread::Builder::new()
+    for service in LANES {
+        let config = config.clone();
+        let player = Arc::clone(player);
+        let mut token = Token::of(&config);
+
+        let started = lane(
+            stopped.clone(),
+            Arc::clone(library),
+            Paced::USUAL,
+            Box::new(move || Account::of(service, token.current())),
+            Box::new(move |account| account.scrobbler(&config)),
+            Box::new(move || playing_row(&player)),
+        );
+        if let Err(error) = started {
+            tracing::warn!(
+                %error,
+                service = service.name(),
+                "no thread could be started to submit what is heard"
+            );
+        }
+    }
+
+    Submitting { _stop: stop }
+}
+
+#[cfg(feature = "online")]
+type Following = Box<dyn FnMut() -> Option<Account> + Send>;
+
+#[cfg(feature = "online")]
+type Making = Box<dyn Fn(&Account) -> Arc<dyn Scrobbler> + Send>;
+
+#[cfg(feature = "online")]
+type Looking = Box<dyn Fn() -> Option<Row> + Send>;
+
+#[cfg(feature = "online")]
+fn lane(
+    stopped: Receiver<()>,
+    library: Arc<Library>,
+    paced: Paced,
+    mut account: Following,
+    scrobbler_of: Making,
+    playing: Looking,
+) -> io::Result<JoinHandle<()>> {
+    thread::Builder::new()
         .name("resonate-submit".to_owned())
         .spawn(move || {
-            let mut token = Token::of(&config);
-            let mut services = [Telling::new(), Telling::new()];
+            let mut telling = Telling::new(paced.first_after);
             loop {
-                match stopped.recv_timeout(PLAYING_LOOKED_AT_EVERY) {
+                match stopped.recv_timeout(paced.looked_at_every) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
 
-                let held = Account::every(token.current().clone());
-                for (telling, account) in services.iter_mut().zip(held) {
-                    if let Some(account) = account {
-                        telling.tell(account, &config, &library, &player);
-                    }
+                if let Some(account) = account() {
+                    telling.tell(account, &*scrobbler_of, &library, &*playing);
                 }
             }
-        });
-
-    if let Err(error) = started {
-        tracing::warn!(%error, "no thread could be started to submit what is heard");
-    }
-
-    Submitting { stop }
+        })
 }
 
 #[cfg(feature = "online")]
@@ -213,6 +263,7 @@ enum Outcome {
 #[cfg(feature = "online")]
 struct Pace {
     due: Instant,
+    every: Duration,
     failed: u32,
 }
 
@@ -221,6 +272,15 @@ impl Pace {
     fn after(wait: Duration) -> Self {
         Self {
             due: Instant::now() + wait,
+            every: SUBMITTED_EVERY,
+            failed: 0,
+        }
+    }
+
+    fn every(every: Duration) -> Self {
+        Self {
+            due: Instant::now(),
+            every,
             failed: 0,
         }
     }
@@ -229,7 +289,7 @@ impl Pace {
         if Instant::now() < self.due {
             return Outcome::Waiting;
         }
-        self.due = Instant::now() + SUBMITTED_EVERY;
+        self.due = Instant::now() + self.every;
         match tell() {
             Ok(()) => {
                 self.failed = 0;
@@ -239,10 +299,17 @@ impl Pace {
                 op: LookupOp::Submit | LookupOp::Love,
                 status,
             }) if TOKEN_REFUSED.contains(&status) => Outcome::TokenRefused,
+            Err(LibraryError::AlreadySubmitting { service }) => {
+                tracing::debug!(
+                    service = service.name(),
+                    "another process is telling the service what was heard, so this one waits its turn"
+                );
+                Outcome::Waiting
+            }
             Err(error) => {
                 self.failed += 1;
                 self.due = Instant::now() + backed_off(self.failed);
-                tracing::warn!(%error, "what was heard was not submitted; it is kept and tried again");
+                tracing::warn!(%error, "the service was not told; what it is owed is kept and tried again");
                 Outcome::Failed
             }
         }
@@ -291,17 +358,14 @@ fn playing_row(player: &Player) -> Option<Row> {
 }
 
 #[cfg(feature = "online")]
-fn tell_what_is_playing(library: &Library, scrobbler: &dyn Scrobbler, row: &Row) {
-    let billed = match library.billed_as(&row.location, row.span) {
-        Ok(Some(billed)) => billed,
-        Ok(None) => return,
-        Err(error) => {
-            tracing::debug!(%error, "what is playing could not be read to tell the service");
-            return;
-        }
-    };
-    if let Err(error) = scrobbler.playing_now(&billed) {
-        tracing::debug!(%error, "the service was not told what is playing");
+fn tell_what_is_playing(
+    library: &Library,
+    scrobbler: &dyn Scrobbler,
+    row: &Row,
+) -> resonate_library::Result<()> {
+    match library.billed_as(&row.location, row.span)? {
+        Some(billed) => scrobbler.playing_now(&billed),
+        None => Ok(()),
     }
 }
 
@@ -363,7 +427,153 @@ fn modified(path: &std::path::Path) -> Option<SystemTime> {
 
 #[cfg(all(test, feature = "online"))]
 mod tests {
+    use std::sync::Barrier;
+
+    use parking_lot::Mutex;
+    use resonate_library::{Billed, Love, Loved, Scrobble, TokenHeld};
+
     use super::*;
+    use crate::fixtures::{ARTIST, TITLE, scanned, scratch, tagged_wave};
+
+    const PROMPTLY: Paced = Paced {
+        first_after: Duration::ZERO,
+        looked_at_every: Duration::from_millis(10),
+    };
+    const WAITED_FOR_AT_MOST: Duration = Duration::from_secs(30);
+
+    struct Heard {
+        service: ListeningService,
+        told: Mutex<Vec<String>>,
+        stalled: Option<Barrier>,
+    }
+
+    impl Heard {
+        fn by(service: ListeningService, stalled: Option<Barrier>) -> Arc<Self> {
+            Arc::new(Self {
+                service,
+                told: Mutex::new(Vec::new()),
+                stalled,
+            })
+        }
+    }
+
+    impl Scrobbler for Heard {
+        fn service(&self) -> ListeningService {
+            self.service
+        }
+
+        fn submit(&self, listens: &[Scrobble]) -> resonate_library::Result<()> {
+            if let Some(stalled) = &self.stalled {
+                stalled.wait();
+            }
+            self.told
+                .lock()
+                .extend(listens.iter().map(|listen| listen.billed.title.clone()));
+            Ok(())
+        }
+
+        fn playing_now(&self, _: &Billed) -> resonate_library::Result<()> {
+            Ok(())
+        }
+
+        fn love(&self, _: &Loved, _: Love) -> resonate_library::Result<()> {
+            Ok(())
+        }
+
+        fn token_held(&self) -> resonate_library::Result<TokenHeld> {
+            Ok(TokenHeld::Unknown)
+        }
+    }
+
+    fn lane_to(
+        heard: &Arc<Heard>,
+        account: Account,
+        library: &Arc<Library>,
+        stopped: &Receiver<()>,
+    ) -> JoinHandle<()> {
+        let made = Arc::clone(heard) as Arc<dyn Scrobbler>;
+
+        lane(
+            stopped.clone(),
+            Arc::clone(library),
+            PROMPTLY,
+            Box::new(move || Some(account.clone())),
+            Box::new(move |_| Arc::clone(&made)),
+            Box::new(|| None),
+        )
+        .expect("a lane")
+    }
+
+    #[test]
+    fn a_stalled_lastfm_leaves_listenbrainz_told_what_was_heard() {
+        let root = scratch("submitting-lanes");
+
+        for (title, artist) in [("Words", "Low"), ("Echoes", "Pink Floyd")] {
+            fs::write(
+                root.join(format!("{title}.wav")),
+                tagged_wave(&[(TITLE, title), (ARTIST, artist)]),
+            )
+            .expect("a song");
+        }
+
+        let library = Arc::new(scanned(&root));
+        let listenbrainz = Heard::by(ListeningService::ListenBrainz, None);
+        let lastfm = Heard::by(ListeningService::LastFm, Some(Barrier::new(2)));
+
+        for heard in [&listenbrainz, &lastfm] {
+            assert!(library.submit_listens(&**heard).expect("marked").started);
+        }
+        for title in ["Words", "Echoes"] {
+            library
+                .track_played(
+                    &MediaLocation::local(root.join(format!("{title}.wav"))),
+                    None,
+                    Duration::ZERO,
+                )
+                .expect("a listen");
+        }
+
+        let (stop, stopped) = bounded(0);
+
+        let stalled = lane_to(
+            &lastfm,
+            Account::LastFm(LastfmAccount {
+                key: "key".to_owned(),
+                secret: "secret".to_owned(),
+                session: "session".to_owned(),
+            }),
+            &library,
+            &stopped,
+        );
+        let telling = lane_to(
+            &listenbrainz,
+            Account::ListenBrainz("token".to_owned()),
+            &library,
+            &stopped,
+        );
+
+        let waited_from = Instant::now();
+
+        while listenbrainz.told.lock().len() < 2 && waited_from.elapsed() < WAITED_FOR_AT_MOST {
+            thread::sleep(PROMPTLY.looked_at_every);
+        }
+
+        let told_while_lastfm_stalled = listenbrainz.told.lock().clone();
+        let lastfm_told_while_stalled = lastfm.told.lock().len();
+
+        if let Some(stalled) = &lastfm.stalled {
+            stalled.wait();
+        }
+        drop(stop);
+        stalled.join().expect("the Last.fm lane");
+        telling.join().expect("the ListenBrainz lane");
+
+        assert_eq!(told_while_lastfm_stalled, ["Words", "Echoes"]);
+        assert_eq!(lastfm_told_while_stalled, 0);
+        assert_eq!(*lastfm.told.lock(), ["Words", "Echoes"]);
+
+        fs::remove_dir_all(root).expect("cleaned");
+    }
 
     #[test]
     fn a_failed_submission_waits_twice_as_long_each_time_up_to_an_hour() {
@@ -393,6 +603,42 @@ mod tests {
         assert_eq!(listens.failed, 0);
         assert!(loves.due > listens.due);
         assert_eq!(loves.settle(|| Ok(())), Outcome::Waiting);
+    }
+
+    #[test]
+    fn a_round_another_process_is_submitting_waits_its_turn_without_backing_off() {
+        let mut pace = Pace::after(Duration::ZERO);
+
+        let outcome = pace.settle(|| {
+            Err(LibraryError::AlreadySubmitting {
+                service: ListeningService::ListenBrainz,
+            })
+        });
+
+        assert_eq!(outcome, Outcome::Waiting);
+        assert_eq!(pace.failed, 0);
+        assert!(pace.due <= Instant::now() + SUBMITTED_EVERY);
+    }
+
+    #[test]
+    fn what_is_playing_is_told_at_once_until_the_service_fails_and_then_backs_off() {
+        let mut playing = Pace::every(Duration::ZERO);
+
+        let told = playing.settle(|| Ok(()));
+        let again = playing.settle(|| Ok(()));
+        let failed = playing.settle(|| {
+            Err(LibraryError::Refused {
+                op: LookupOp::Submit,
+                status: 503,
+            })
+        });
+        let held_back = playing.settle(|| Ok(()));
+
+        assert_eq!(
+            [told, again, failed],
+            [Outcome::Told, Outcome::Told, Outcome::Failed]
+        );
+        assert_eq!(held_back, Outcome::Waiting);
     }
 
     #[test]

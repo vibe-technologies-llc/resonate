@@ -197,8 +197,14 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   `submit_listens` after its own pass tells listens in `(through, until]`, counted in
   `Submitted::earlier`; aging holds back every listen past the lower of both marks. Counting a play
   writes nothing here, so whichever run submits next tells it. `Library::billed_as` = the same names
-  for one row, what `playing_now` is told. Two runs submitting at once may tell a batch twice;
-  ListenBrainz keeps one listen per moment and name. The binary's `submitting.rs` is the asking
+  for one row, what `playing_now` is told. **One process tells a service at a time**:
+  `submit_listens` holds an exclusive `File::try_lock` on `<catalog>.submit-<service>`
+  (`submitting_alone`, beside the walk's and the passes' locks, released as the process ends
+  however it ends) from reading the mark to moving it past the last piece told; held elsewhere it
+  answers `Error::AlreadySubmitting` at once and tells nothing, so the window and `resonate play`
+  on one catalog never tell a listen twice
+  (`two_processes_submitting_from_one_catalog_tell_each_listen_once`); a catalog in memory takes
+  no lock. The binary's `submitting.rs` is the asking
   thread (`online.md`).
 - **A suggestion is a named saved query, so it costs almost nothing.** `suggest.rs` answers
   `Suggestion { name, reason, query, rows, length, pictured_by }`; the query is written through

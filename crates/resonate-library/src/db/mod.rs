@@ -63,8 +63,8 @@ use self::{
     statements::{FILED_IN_ORDER, NOTE_WHERE_AN_OBJECT_WAS_DELIVERED_FROM},
 };
 use crate::{
-    Cancelling, CoverArt, Error, Measured, MusicFilters, PassKind, Playing, Result, SavedQuery,
-    Spellings, StoreOp, Suggestion, Track, TrackQuery, Vault,
+    Cancelling, CoverArt, Error, ListeningService, Measured, MusicFilters, PassKind, Playing,
+    Result, SavedQuery, Spellings, StoreOp, Suggestion, Track, TrackQuery, Vault,
     deleted::Trashes,
     filed::{AlbumToFile, DeliveryFolder},
     foresight::Foresight,
@@ -280,6 +280,24 @@ fn asking_across_processes(catalog: &Path, pass: PassKind) -> Result<File> {
         _ => ".poll",
     };
     lock_beside(catalog, suffix, || Error::AlreadyAsking { pass })
+}
+
+pub(crate) struct Submitting {
+    _across_processes: Option<File>,
+}
+
+impl Inner {
+    pub(crate) fn submitting_alone(&self, service: ListeningService) -> Result<Submitting> {
+        let _across_processes = match &self.source {
+            Source::File(catalog) => Some(lock_beside(
+                catalog,
+                &format!(".submit-{}", service.name()),
+                || Error::AlreadySubmitting { service },
+            )?),
+            Source::Memory => None,
+        };
+        Ok(Submitting { _across_processes })
+    }
 }
 
 fn lock_beside(catalog: &Path, suffix: &str, held: impl FnOnce() -> Error) -> Result<File> {

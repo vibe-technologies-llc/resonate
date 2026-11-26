@@ -1,7 +1,8 @@
 use std::{
     fs,
     path::Path,
-    sync::{Arc, atomic::Ordering},
+    sync::{Arc, Barrier, atomic::Ordering},
+    thread,
     time::{Duration, SystemTime},
 };
 
@@ -427,6 +428,95 @@ fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once(
 
     assert_eq!(library.submit_listens(&told)?.submitted, 0);
     assert_eq!(told.titles().len(), 1);
+    Ok(())
+}
+
+struct Stalled {
+    told: Arc<Told>,
+    entered: Barrier,
+    released: Barrier,
+}
+
+impl resonate_library::Scrobbler for Stalled {
+    fn service(&self) -> ListeningService {
+        self.told.service()
+    }
+
+    fn submit(&self, listens: &[resonate_library::Scrobble]) -> Result<()> {
+        self.entered.wait();
+        self.released.wait();
+        self.told.submit(listens)
+    }
+
+    fn playing_now(&self, playing: &resonate_library::Billed) -> Result<()> {
+        self.told.playing_now(playing)
+    }
+
+    fn love(&self, loved: &resonate_library::Loved, love: Love) -> Result<()> {
+        self.told.love(loved, love)
+    }
+
+    fn token_held(&self) -> Result<resonate_library::TokenHeld> {
+        self.told.token_held()
+    }
+}
+
+#[test]
+fn two_processes_submitting_from_one_catalog_tell_each_listen_once() -> Result<()> {
+    let tree = Tree::new();
+    let catalog = Tree::new();
+    let cold = MediaLocation::local(tree.write(
+        "cold.wav",
+        &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
+    ));
+    let heat = MediaLocation::local(tree.write(
+        "heat.wav",
+        &Wav::new().text(TITLE, "Heat").text(ARTIST, "Ben").build(),
+    ));
+    let database = catalog.path().join("library.db");
+    let window = Library::open(&database)?;
+
+    scan(&window, &options(&tree))?;
+
+    let playing = Library::open(&database)?;
+
+    let told = Arc::new(Told::default());
+    let stalled = Stalled {
+        told: Arc::clone(&told),
+        entered: Barrier::new(2),
+        released: Barrier::new(2),
+    };
+
+    assert!(window.submit_listens(&*told)?.started);
+
+    window.track_played(&cold, None, Duration::ZERO)?;
+    playing.track_played(&heat, None, Duration::ZERO)?;
+
+    let (in_the_window, from_playing) = thread::scope(|scope| {
+        let in_the_window = scope.spawn(|| window.submit_listens(&stalled));
+
+        stalled.entered.wait();
+
+        let from_playing = playing.submit_listens(&*told);
+
+        stalled.released.wait();
+        (
+            in_the_window.join().expect("the window's submitter"),
+            from_playing,
+        )
+    });
+
+    let again = playing.submit_listens(&*told)?;
+
+    assert!(matches!(
+        from_playing,
+        Err(Error::AlreadySubmitting {
+            service: ListeningService::ListenBrainz
+        })
+    ));
+    assert_eq!(in_the_window?.submitted, 2);
+    assert_eq!(again.submitted, 0);
+    assert_eq!(told.titles(), vec![vec!["Cold", "Heat"]]);
     Ok(())
 }
 
