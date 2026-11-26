@@ -16,43 +16,55 @@ use resonate_win32::{EndpointVolume, Level, VolumeWatch};
 use wasapi::{DeviceEnumerator, DeviceEventCallbacks, DeviceEventRegistration};
 
 use crate::{
-    device::{enter_the_apartment, enumerate, level_error},
+    device::{Devices, enter_the_apartment, level_error},
     stream::{Known, Opens},
+    survey::Probed,
+    surveying::{Surveys, joined_within},
     ways::endpoint_of,
 };
 
+const WATCHED_WITHIN: Duration = Duration::from_secs(2);
+const WATCHER_LET_GO_WITHIN: Duration = Duration::from_millis(500);
+
 pub struct Wasapi {
     known: Known,
+    surveys: Arc<Surveys>,
     changes: Receiver<SinkChange>,
     stopping: Sender<()>,
+    ended: Receiver<()>,
     watcher: Option<JoinHandle<()>>,
 }
 
 struct Survey {
-    known: Known,
+    surveys: Arc<Surveys>,
 }
 
 impl Wasapi {
     pub fn start(_app_name: &str) -> SinkResult<Self> {
         let known: Known = Arc::new(Mutex::new(Vec::new()));
+        let surveys = Arc::new(surveys_into(Arc::clone(&known))?);
         let (told, changes) = unbounded();
         let (stopping, stopped) = bounded(1);
-        let first = enumerate().unwrap_or_default();
+        let (ending, ended) = bounded::<()>(1);
 
-        remember(&known, &first);
-
-        let watching = Arc::clone(&known);
+        let watching = Arc::clone(&surveys);
         let watcher = thread::Builder::new()
             .name("resonate-wasapi-watch".into())
-            .spawn(move || watched(first, &watching, &told, &stopped))
+            .spawn(move || {
+                let _ending = ending;
+
+                watched(&watching, &told, &stopped);
+            })
             .map_err(|source| Error::Backend {
                 op: Operation::Connect,
                 source,
             })?;
         Ok(Self {
             known,
+            surveys,
             changes,
             stopping,
+            ended,
             watcher: Some(watcher),
         })
     }
@@ -72,26 +84,39 @@ impl Wasapi {
     }
 }
 
-fn remember(known: &Known, sinks: &[SinkInfo]) {
-    *known.lock() = sinks
-        .iter()
-        .map(|sink| (sink.id, sink.name.clone()))
-        .collect();
+fn surveys_into(known: Known) -> SinkResult<Surveys> {
+    let mut probed = Probed::default();
+
+    Surveys::start(move || {
+        let sinks = probed.survey(&mut Devices)?;
+
+        *known.lock() = sinks
+            .iter()
+            .map(|sink| (sink.id, sink.name.clone()))
+            .collect();
+        Ok(sinks)
+    })
 }
 
-fn watched(first: Vec<SinkInfo>, known: &Known, told: &Sender<SinkChange>, stopped: &Receiver<()>) {
+fn watched(surveys: &Surveys, told: &Sender<SinkChange>, stopped: &Receiver<()>) {
     enter_the_apartment();
 
     let (nudge, nudged) = bounded(1);
     let _registration = told_of_endpoints(nudge.clone());
+    let Some(first) = surveys.baseline(
+        stopped,
+        Pace::ENDPOINTS.surveyed_at_least_every,
+        WATCHED_WITHIN,
+    ) else {
+        return;
+    };
     let mut volumes = VolumesWatched::default();
 
     volumes.follow(&first, &nudge);
 
     let survey = || {
-        let now = enumerate().ok()?;
+        let now = surveys.within(WATCHED_WITHIN)?.ok()?;
 
-        remember(known, &now);
         volumes.follow(&now, &nudge);
         Some(now)
     };
@@ -164,11 +189,8 @@ fn told_of_endpoints(nudge: Sender<()>) -> Option<DeviceEventRegistration> {
 }
 
 impl Surveyor for Survey {
-    fn enumerate_sinks(&self, _: Duration) -> SinkResult<Vec<SinkInfo>> {
-        let sinks = enumerate()?;
-
-        remember(&self.known, &sinks);
-        Ok(sinks)
+    fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
+        self.surveys.answered_within(timeout)
     }
 }
 
@@ -179,13 +201,14 @@ impl Backend for Wasapi {
 
     fn surveyor(&self) -> Arc<dyn Surveyor> {
         Arc::new(Survey {
-            known: Arc::clone(&self.known),
+            surveys: Arc::clone(&self.surveys),
         })
     }
 
     fn opener(&self) -> Arc<dyn Opener> {
         Arc::new(Opens {
             known: Arc::clone(&self.known),
+            surveys: Arc::clone(&self.surveys),
         })
     }
 
@@ -204,8 +227,10 @@ impl Backend for Wasapi {
     fn shutdown(mut self: Box<Self>) -> SinkResult<()> {
         let _ = self.stopping.send(());
 
-        if let Some(watcher) = self.watcher.take() {
-            let _ = watcher.join();
+        if let Some(watcher) = self.watcher.take()
+            && !joined_within(watcher, &self.ended, WATCHER_LET_GO_WITHIN)
+        {
+            tracing::debug!("the endpoint watcher is still in a survey; it ends once that returns");
         }
         Ok(())
     }

@@ -368,6 +368,7 @@ mod tests {
     use resonate_core::{ChannelLayout, SampleRate, StreamSpec};
 
     use super::*;
+    use crate::opening::{Status, refused_at_open};
 
     const WAIT: Duration = Duration::from_secs(5);
     const SHORT: Duration = Duration::from_millis(300);
@@ -939,6 +940,31 @@ mod tests {
 
         release.send(()).expect("the opening thread is waiting");
         wait_until(|| seen.let_go());
+    }
+
+    #[test]
+    fn an_endpoint_unplugged_at_open_is_the_sink_gone_and_one_held_is_refused() {
+        let node = request(SampleFormat::F32).target.expect("a target");
+        let refusing = |status| {
+            launch(
+                &request(SampleFormat::F32),
+                Box::new(Silent),
+                WAIT,
+                move |_| -> SinkResult<Fake> {
+                    Err(refused_at_open(Some(node), Operation::Open, status)
+                        .unwrap_or(Error::LoopStopped))
+                },
+            )
+        };
+
+        let unplugged = refusing(Status::DEVICE_INVALIDATED);
+        let held = refusing(Status::DEVICE_IN_USE);
+
+        assert!(matches!(unplugged, Err(Error::SinkGone { node: gone }) if gone == node));
+        assert!(matches!(
+            held,
+            Err(Error::StreamRefused { node: refused, op: Operation::Open, .. }) if refused == node
+        ));
     }
 
     #[test]

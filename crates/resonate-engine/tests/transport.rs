@@ -196,6 +196,7 @@ struct Graph {
     muted: Vec<(SinkId, bool)>,
     away: bool,
     unanswering: bool,
+    gone_at_open: bool,
     clock: Option<Arc<StreamClock>>,
     survey_gate: Option<Receiver<()>>,
     survey_breaks: bool,
@@ -382,6 +383,11 @@ impl Opener for FakeSink {
             }
             if graph.unanswering {
                 return Err(SinkError::OpenUnanswered);
+            }
+            if graph.gone_at_open {
+                return Err(request
+                    .target
+                    .map_or(SinkError::NoSink, |node| SinkError::SinkGone { node }));
             }
             graph.opens += 1;
 
@@ -4298,6 +4304,49 @@ fn a_skip_onto_a_daemon_that_never_answers_the_open_waits_for_it_rather_than_fai
         "the second row to play once the daemon answers",
     );
     neither_failed_nor_finished(&player);
+    Ok(())
+}
+
+#[test]
+fn a_device_unplugged_between_the_survey_and_the_open_leaves_the_row_waiting_for_it() -> Result<()>
+{
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+
+    let first = tree.write("first.wav", &source.file);
+    let device = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
+    let (player, graph) = player(vec![device.clone()])?;
+
+    {
+        let mut unplugged = graph.lock();
+
+        unplugged.sinks.clear();
+        unplugged.gone_at_open = true;
+    }
+    player.send(Command::Load {
+        items: vec![track(&first, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    thread::sleep(A_SHORT_DOZE);
+    neither_failed_nor_finished(&player);
+
+    assert!(plays(&player, 1), "{}", transport(&player));
+    assert_eq!(graph.lock().opens, 0);
+    assert_eq!(bound_to(&player), None);
+
+    graph.lock().gone_at_open = false;
+    change_the_graph(&graph, SinkChange::Added(device.id), |sinks| {
+        sinks.push(device.clone());
+    });
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 1),
+        "the row to play once the device is back",
+    );
+    neither_failed_nor_finished(&player);
+
+    assert_eq!(graph.lock().opens, 1);
     Ok(())
 }
 

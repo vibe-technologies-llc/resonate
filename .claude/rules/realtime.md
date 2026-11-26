@@ -59,11 +59,14 @@ rest on this discipline alone):
 - `resonate-wasapi/src/fill.rs` and `render.rs`: the WASAPI render cycle (`windows.md`).
   `fill_buffer` takes the quantum the device has room for out of the source into a scratch buffer
   allocated when the stream opened, zeroes a short fill, shifts a 24-bit word against the top of its
-  32-bit container (`left_aligned`) and reports how many frames were music; `Playing::cycle` then hands the scratch
-  to `AudioRenderClient::write_to_device`, which is `GetBuffer`, a copy and `ReleaseBuffer`, so the
-  cycle allocates nothing. `fill.rs` and `clock.rs` (the audio clock's arithmetic) are portable and
-  tested on every host. The cycle runs on the stream's own thread, woken by the endpoint's event, and
-  publishes the frames between the write head and the device position through `StreamClock::note`; unlike the three callbacks above it is a loop on a thread the crate owns,
+  32-bit container (`left_aligned`) and reports how many frames were music; `Cycle::turn` then hands the scratch
+  to the `Buffer`'s `write`, which for a WASAPI client is `AudioRenderClient::write_to_device`, `GetBuffer`, a copy and `ReleaseBuffer`, so the
+  cycle allocates nothing. `fill.rs`, `clock.rs` (the audio clock's arithmetic) and `render.rs`' `Cycle`, generic over the
+  `Buffer` it writes to, are portable and tested on every host against a fake buffer; `render.rs`' `Playing` and its client are
+  `cfg(windows)`. The cycle runs on the stream's own thread, woken by the endpoint's event, and
+  publishes the frames between the write head and the device position through `StreamClock::note` once it has written,
+  so the latency counts the frames that cycle wrote (`the_latency_a_cycle_notes_counts_the_frames_it_wrote_by_the_devices_clock`);
+  the fill is stamped with the frames ahead before the write; unlike the three callbacks above it is a loop on a thread the crate owns,
   not a function the system calls, so a panic would end that stream's thread only (`panic = "abort"`
   makes it the process in a release build all the same).
 - `resonate-apple/src/render.rs`, `buffers.rs` and `clock.rs`, and `resonate-coreaudio/src/fill.rs`:
@@ -116,7 +119,7 @@ landing the fill's first frame as far past that moment as it lies past that fram
 (`oboe_frames::heard_by_the_device`), and `rendered` stamps each chunk with the frames of the chunks
 before it added; RemoteIO's `render` reads the buffer's `mHostTime` against `mach_absolute_time`
 and `Rendering::fill` stamps it with the route's latency less the buffer's frames; WASAPI's
-`Playing::cycle` reads `IAudioClock::GetPosition` (a device position and the performance counter at
+`Cycle::turn` reads `IAudioClock::GetPosition` (a device position and the performance counter at
 it) against the counter read now and the frames written less those the position has played
 (`windows.md`). An Oboe stream
 whose API gives no timestamp (OpenSL ES), a RemoteIO stamp without a valid host time or a WASAPI

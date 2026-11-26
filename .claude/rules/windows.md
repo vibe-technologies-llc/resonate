@@ -147,8 +147,9 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   none of PipeWire, Wayland, `rustix` or `signal-hook` (the layering job).
 - **`resonate-wasapi` is `resonate-audio`'s `Backend` over the `wasapi` crate** and reaches core,
   audio and (on Windows) `resonate-win32` alone. Its portable halves compile and are tested everywhere (`ways`, `formats`,
-  `fill`, `clock`, `serving`); `device`, `stream`, `render`, `priority` and
-  `backend` are `cfg(windows)`. **What every desktop backend past PipeWire does the same way is
+  `fill`, `clock`, `serving`, `survey`, `surveying`, `opening`, and `render`'s `Cycle`), each a trait the
+  `wasapi` crate fills on Windows and a fake fills in its tests; `device`, `stream`, `priority`,
+  `backend` and `render`'s `Playing` are `cfg(windows)`. **What every desktop backend past PipeWire does the same way is
   `resonate-audio`'s** and reexported here: `sink_id_of`, `changes_between`, `watch` and `Pace`,
   `refusal_of`, `scalar_of` and `gain_of`, `left_aligned` (`resonate-coreaudio` is the other user).
 - **An endpoint is two sinks.** `wasapi:<endpoint id>` plays through the Windows mixer in shared mode
@@ -157,11 +158,20 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   exclusive event-driven mode at the format the engine plans, offered for every rate, word and layout
   `IsFormatSupported` accepts out of a fixed grid (`PROBED_RATES` x `SampleFormat::ALL` x
   `PROBED_LAYOUTS`, each combination its own `SinkFormats` entry so a rate is never claimed for a
-  layout it was not probed with). **A held endpoint keeps the formats it took while free**: while a
-  client holds it exclusively (this player's own stream included) every exclusive probe answers
-  `AUDCLNT_E_DEVICE_IN_USE`, so `taken_while_free` answers the grid last probed for that endpoint id
-  instead (nothing where it was never free this run); listing it empty made the engine read its own
-  open stream as the device gone, rebind, and fail the row when the next survey dropped it again.
+  layout it was not probed with). **An endpoint's exclusive formats are probed only when it is first
+  listed or listed again after leaving** (`Probed::survey`, over the `Endpoints` trait `device::Devices`
+  fills): the grid is 128 `IsFormatSupported` calls an endpoint, and every nudge (a volume dragged in
+  the Windows mixer nudges on each step) surveys, so an endpoint listed last survey answers the grid
+  it took while free (`taken_while_free`) and a survey otherwise reads only the default, the mix format,
+  the volume and the mute (`a_volume_turned_is_surveyed_without_a_probe_and_read_into_the_port`,
+  `an_endpoint_added_or_back_after_leaving_is_probed_and_only_it`). **A held endpoint keeps the formats
+  it took while free**: while a client holds it exclusively (this player's own stream included) every
+  exclusive probe answers `AUDCLNT_E_DEVICE_IN_USE` (`Probe::InUse`), so the probe stops at the first
+  answer and the grid last probed for that endpoint id stands (nothing where it was never free this
+  run, the endpoint asked once again each survey until it is); listing it empty made the engine read
+  its own open stream as the device gone, rebind, and fail the row when the next survey dropped it
+  again. An endpoint whose exclusive use the listener barred (`AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED`,
+  `Probe::Barred`) is offered shared alone, keeps nothing and is asked again next survey.
   Bit-perfect on Windows is therefore a choice of device the
   listener makes in the output pane, and following the default never takes a device away from other
   programs. The two node names are hashed with FNV-1a and reduced below the network renderer
@@ -188,9 +198,24 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   signalling fails the stream as a refused `cycle` would rather than freezing its position:
   `a_stream_whose_event_falls_quiet_is_probed_and_a_refused_probe_fails_it_once`), `start`, `pause` (stop and reset), `stop` and `prioritise`
   (MMCSS, set as the stream opens and on every reshape). `render::Playing` implements it over the
-  `wasapi` crate under `cfg(windows)`, and `stream.rs` is only the open: the target's endpoint, the
+  `wasapi` crate under `cfg(windows)`, its `cycle` being `Cycle::turn` over its client, and `stream.rs` is only the open: the target's endpoint, the
   client's `Initialize` and the `Playing` handed back to `launch`'s `make`. The fake in
   `serving.rs`' tests logs every call and refuses the one a test names.
+- **An open's failures are typed by the HRESULT** (`opening::Status`, `Refusal::of`,
+  `refused_at_open`): an endpoint unplugged or unknown (`AUDCLNT_E_DEVICE_INVALIDATED`, `E_NOTFOUND`)
+  at any step of the open is `SinkGone` (`NoSink` while no default endpoint is found), so the engine
+  waits for the device as for one gone mid-song rather than failing the row
+  (`a_device_unplugged_between_the_survey_and_the_open_leaves_the_row_waiting_for_it`); one another
+  client holds or whose exclusive use is barred (`AUDCLNT_E_DEVICE_IN_USE`,
+  `AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED`) is `StreamRefused` with the status; an unsupported format is
+  `FormatRefused`; the rest stay `Backend` with the step's `Operation`
+  (`an_endpoint_unplugged_at_open_is_the_sink_gone_and_one_held_is_refused`). An id the known list
+  lacks is looked up through a survey bounded by `OPEN_WITHIN`. **A misaligned exclusive buffer is
+  asked again once** (`opening::initialized`, over the `Initialize` trait): where `Initialize` answers
+  `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED`, the failed client's `GetBufferSize` is the aligned size, the
+  client is let go, a fresh one is activated and initialised at that many frames' period
+  (`period_of`, rounded to 100 ns), as Microsoft's own recipe does
+  (`a_misaligned_buffer_is_asked_again_of_a_fresh_client_at_the_size_the_device_aligns_to`).
 - **`Close` returns only once the thread has let go of its client** (a `disposed` signal waited on
   within `OPEN_WITHIN`, else `Error::Backend { op: Close }`), since the engine closes the retiring
   output and opens the next in one pass and an exclusive endpoint holds one client, so a rate, word
@@ -215,6 +240,20 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   `resonate_win32::ProAudioClass`) while the request is `realtime`, left on the same thread when a
   reshape lowers it or the thread ends; where MMCSS refuses (the service stopped),
   `thread-priority`'s `Max` stands in.
+- **Every survey runs on one worker and is answered within the time asked** (`surveying::Surveys`,
+  a `resonate-wasapi-survey` thread owning the `Probed` grid and filling the known list): an
+  endpoint's `Activate` or `IsFormatSupported` can stall, so `Survey::enumerate_sinks` asks the worker
+  and waits at most its timeout (`Surveys::answered_within`), answering the last list surveyed past it
+  (`OpenUnanswered` where none was) as PipeWire's roundtrip answers within it
+  (`a_survey_that_never_returns_is_answered_within_the_timeout_by_the_last_list`). One survey is in
+  flight at a time: an ask while one runs waits on that one, and its answer reaches every waiter (a
+  failure each its own copy). The engine, an open and the watcher all ask through it.
+  **`Wasapi::start` surveys nothing**, so `Player::new` answers before the first survey (`audio.md`):
+  the watcher takes its baseline from the first list anyone surveyed, normally the engine's, and
+  surveys for itself only where none came within the poll's two seconds (`Surveys::baseline`,
+  `the_watcher_takes_its_baseline_from_the_first_survey_anyone_asked_for`). **`shutdown` waits for the
+  watcher at most half a second** (`joined_within`), leaving one still in a stalled survey to end as
+  it returns.
 - **Devices are told by the system and checked by a poll.** The watcher thread registers the
   `wasapi` crate's endpoint notification client (added, removed, state, default and property
   changes), whose callbacks only nudge a one-slot channel; `resonate_audio::watch` waits on the nudge or
@@ -242,8 +281,8 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   its frequency read once as the stream opens; a counter that cannot be read stamps by the padding), and
   `clock::ClockReading::device_time` hands `StreamClock::stamp_by` both in nanoseconds with the
   frames written less those played, so a zone handed a song lands within frames of the other
-  (`audio.md`). The same frames are the latency the clock notes and the device position a drain
-  waits for. A stream with no audio clock, a reading naming no counter or one more than 100 ms from
+  (`audio.md`). The same frames, with those the cycle then wrote, are the latency the clock notes
+  after the write (`Cycle::turn`), and the device position is what a drain waits for. A stream with no audio clock, a reading naming no counter or one more than 100 ms from
   now falls back to the buffer's padding and `StreamClock::stamp`.
 
 ## The filesystem under the shared crates

@@ -1,10 +1,6 @@
-use std::{collections::BTreeMap, io, sync::LazyLock};
+use std::io;
 
-use parking_lot::Mutex;
-use resonate_audio::{
-    Error, HardwareVolume, Operation, Plugged, SinkFormats, SinkInfo, SinkPort, SinkResult,
-    gain_of, sink_id_of,
-};
+use resonate_audio::{Error, HardwareVolume, Operation, Plugged, SinkPort, SinkResult, gain_of};
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate};
 use resonate_win32::EndpointVolume;
 use wasapi::{
@@ -13,14 +9,10 @@ use wasapi::{
 };
 
 use crate::{
-    formats::{Wire, format_of, formats_taken, mask_of, rates_of, wire_of},
-    ways::{Way, node_of},
+    formats::{Wire, format_of, mask_of, wire_of},
+    opening::Status,
+    survey::{Endpoint, Endpoints, Mix, Probe},
 };
-
-const DEVICE_IN_USE: i32 = i32::from_ne_bytes(0x8889_000A_u32.to_ne_bytes());
-
-static TAKEN_WHILE_FREE: LazyLock<Mutex<BTreeMap<String, Vec<SinkFormats>>>> =
-    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 pub(crate) fn backend_error(op: Operation, source: WasapiError) -> Error {
     Error::Backend {
@@ -33,6 +25,13 @@ pub(crate) fn level_error(source: resonate_win32::Error) -> Error {
     Error::Backend {
         op: Operation::Volume,
         source: io::Error::other(source),
+    }
+}
+
+pub(crate) fn status_of(error: &WasapiError) -> Option<Status> {
+    match error {
+        WasapiError::Windows(error) => Some(Status(error.code().0)),
+        _ => None,
     }
 }
 
@@ -57,7 +56,7 @@ pub(crate) fn wave_of(format: SampleFormat, rate: SampleRate, layout: ChannelLay
     )
 }
 
-fn mix_of(client: &AudioClient) -> Option<(SampleFormat, SampleRate, ChannelLayout)> {
+fn mix_of(client: &AudioClient) -> Option<Mix> {
     let mix = client.get_mixformat().ok()?;
     let float = matches!(mix.get_subformat(), Ok(SampleType::Float));
 
@@ -69,50 +68,73 @@ fn mix_of(client: &AudioClient) -> Option<(SampleFormat, SampleRate, ChannelLayo
     let format = format_of(wire)?;
     let rate = SampleRate::new(mix.get_samplespersec()).ok()?;
     let channels = ChannelCount::new(mix.get_nchannels()).ok()?;
-    Some((format, rate, ChannelLayout::from_count(channels)))
+    Some(Mix {
+        format,
+        rate,
+        layout: ChannelLayout::from_count(channels),
+    })
 }
 
-pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
-    enter_the_apartment();
+pub(crate) struct Devices;
 
-    let enumerator = DeviceEnumerator::new().map_err(|e| backend_error(Operation::Connect, e))?;
-    let default = enumerator
-        .get_default_device(Direction::Render)
-        .and_then(|device| device.get_id())
-        .ok();
-    let collection = enumerator
-        .get_device_collection(Direction::Render)
-        .map_err(|e| backend_error(Operation::Connect, e))?;
+impl Endpoints for Devices {
+    type Client = AudioClient;
 
-    let mut sinks = Vec::new();
+    fn listed(&mut self) -> SinkResult<Vec<Endpoint<AudioClient>>> {
+        enter_the_apartment();
 
-    for device in &collection {
-        let Ok(device) = device else {
-            continue;
-        };
-        let Ok(endpoint) = device.get_id() else {
-            continue;
-        };
-        let is_default = default.as_deref() == Some(endpoint.as_str());
+        let enumerator =
+            DeviceEnumerator::new().map_err(|e| backend_error(Operation::Connect, e))?;
+        let default = enumerator
+            .get_default_device(Direction::Render)
+            .and_then(|device| device.get_id())
+            .ok();
+        let collection = enumerator
+            .get_device_collection(Direction::Render)
+            .map_err(|e| backend_error(Operation::Connect, e))?;
 
-        let name = device
-            .get_friendlyname()
-            .unwrap_or_else(|_| endpoint.clone());
-        let Ok(client) = device.get_iaudioclient() else {
-            continue;
-        };
-        let port = port_of(&device, &endpoint);
+        let mut listed = Vec::new();
 
-        sinks.extend(shared_sink(
-            &endpoint,
-            &name,
-            is_default,
-            &client,
-            port.clone(),
-        ));
-        sinks.extend(exclusive_sink(&endpoint, &name, &client, port));
+        for device in &collection {
+            let Ok(device) = device else {
+                continue;
+            };
+            let Ok(id) = device.get_id() else {
+                continue;
+            };
+            let Ok(client) = device.get_iaudioclient() else {
+                continue;
+            };
+
+            listed.push(Endpoint {
+                is_default: default.as_deref() == Some(id.as_str()),
+                name: device.get_friendlyname().unwrap_or_else(|_| id.clone()),
+                mix: mix_of(&client),
+                port: port_of(&device, &id),
+                client,
+                id,
+            });
+        }
+        Ok(listed)
     }
-    Ok(sinks)
+
+    fn exclusive(
+        &self,
+        client: &AudioClient,
+        format: SampleFormat,
+        rate: SampleRate,
+        layout: ChannelLayout,
+    ) -> Probe {
+        match client.is_supported(&wave_of(format, rate, layout), ShareMode::Exclusive) {
+            Ok(None) => Probe::Taken,
+            Ok(Some(_)) => Probe::Refused,
+            Err(error) => match status_of(&error) {
+                Some(Status::DEVICE_IN_USE) => Probe::InUse,
+                Some(Status::EXCLUSIVE_MODE_NOT_ALLOWED) => Probe::Barred,
+                _ => Probe::Refused,
+            },
+        }
+    }
 }
 
 fn port_of(device: &Device, endpoint: &str) -> Option<SinkPort> {
@@ -137,98 +159,10 @@ fn port_of(device: &Device, endpoint: &str) -> Option<SinkPort> {
     })
 }
 
-fn shared_sink(
-    endpoint: &str,
-    name: &str,
-    is_default: bool,
-    client: &AudioClient,
-    port: Option<SinkPort>,
-) -> Option<SinkInfo> {
-    let (format, rate, layout) = mix_of(client)?;
-    let node = node_of(Way::Shared, endpoint);
-    Some(SinkInfo {
-        id: sink_id_of(&node),
-        name: node,
-        aliases: Vec::new(),
-        description: format!("{name}{}", Way::Shared.described()),
-        is_default,
-        is_hardware: true,
-        port,
-        profile: None,
-        formats: vec![resonate_audio::SinkFormats {
-            format,
-            words: resonate_audio::Words::Whole,
-            rates: vec![rate],
-            channels: vec![layout],
-        }],
-        allowed_rates: vec![rate],
-        current_rate: Some(rate),
-    })
+pub(crate) fn device_for(endpoint: &str) -> Result<Device, WasapiError> {
+    DeviceEnumerator::new()?.get_device(endpoint)
 }
 
-fn exclusive_sink(
-    endpoint: &str,
-    name: &str,
-    client: &AudioClient,
-    port: Option<SinkPort>,
-) -> Option<SinkInfo> {
-    let mut held = false;
-
-    let probed = formats_taken(|format, rate, layout| {
-        if held {
-            return false;
-        }
-        match client.is_supported(&wave_of(format, rate, layout), ShareMode::Exclusive) {
-            Ok(None) => true,
-            Err(WasapiError::Windows(error)) if error.code().0 == DEVICE_IN_USE => {
-                held = true;
-                false
-            }
-            _ => false,
-        }
-    });
-    let formats = taken_while_free(endpoint, held, probed);
-
-    if formats.is_empty() {
-        return None;
-    }
-
-    let node = node_of(Way::Exclusive, endpoint);
-    Some(SinkInfo {
-        id: sink_id_of(&node),
-        name: node,
-        aliases: Vec::new(),
-        description: format!("{name}{}", Way::Exclusive.described()),
-        is_default: false,
-        is_hardware: true,
-        allowed_rates: rates_of(&formats),
-        formats,
-        port,
-        profile: None,
-        current_rate: None,
-    })
-}
-
-fn taken_while_free(endpoint: &str, held: bool, probed: Vec<SinkFormats>) -> Vec<SinkFormats> {
-    let mut remembered = TAKEN_WHILE_FREE.lock();
-
-    if held {
-        return remembered.get(endpoint).cloned().unwrap_or_default();
-    }
-    remembered.insert(endpoint.to_owned(), probed.clone());
-    probed
-}
-
-pub(crate) fn device_for(endpoint: &str) -> SinkResult<Device> {
-    let enumerator = DeviceEnumerator::new().map_err(|e| backend_error(Operation::Open, e))?;
-    enumerator
-        .get_device(endpoint)
-        .map_err(|e| backend_error(Operation::Open, e))
-}
-
-pub(crate) fn default_device() -> SinkResult<Device> {
-    let enumerator = DeviceEnumerator::new().map_err(|e| backend_error(Operation::Open, e))?;
-    enumerator
-        .get_default_device(Direction::Render)
-        .map_err(|e| backend_error(Operation::Open, e))
+pub(crate) fn default_device() -> Result<Device, WasapiError> {
+    DeviceEnumerator::new()?.get_default_device(Direction::Render)
 }
