@@ -8,14 +8,16 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
-- [S · 0.18.1] Stream a history file the phones import. **Low, builder.** The desktop now reads an
-  import a page at a time (`resonate_library::bring_in_file`), but the phones'
-  `import_history_file` reads the whole file into memory (`crates/resonate-mobile`). Read it through
-  the same pages. Done when a phone import holds a bounded number of listens at once, in a test.
 - [S · 0.18.1] Stop a study's walk once its crew has panicked. **Low, builder.** A crew's panic now
   ends the pass with `CrewPanicked`, but the walk decodes to the end of the file first, since `feed`
   cannot tell it to stop (`crates/resonate-analysis/src/crew.rs`). Let `feed` answer a stop. Done
   when a test's panicking stage ends the walk within a slab.
+- [S · 0.18.1] Hold a phone's history import from a pipe to a page too. **Low, builder.** A
+  descriptor that seeks is now read a page of listens at a time (`bring_in_stream`), but one that
+  cannot, as a cloud provider's picker may hand Android, is still read whole into memory and passed
+  to `bring_in_lines` (`crates/resonate-mobile/src/history.rs`), since the check and the landing
+  are two passes. Spool such a descriptor to a staged file first, or check and land in one pass.
+  Done when a pipe's import holds a bounded number of listens at once, in a test.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
