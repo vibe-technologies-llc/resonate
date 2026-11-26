@@ -209,7 +209,10 @@ by-title = title
 by-length = length
 by-file-name = file name
 renamed = { $name } is called { $into } now
-exported = wrote { $rows } rows of { $name } to { $path } as { $format }
+exported = { $rows ->
+    [one] wrote { $rows } row of { $name } to { $path } as { $format }
+   *[other] wrote { $rows } rows of { $name } to { $path } as { $format }
+}
 back-in-hand = { $name } is back in hand, and a row added to it lands at the end
 holds-nothing = { $name } holds nothing to play
 copied = copied { $copied } of { $name } into { $target }, which now holds { $held }
