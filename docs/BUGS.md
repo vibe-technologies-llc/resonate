@@ -18,6 +18,22 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
+## Equaliser
+- [M · 0.18.1] A profile kept or edited past the import's lift plays at any gain. **Medium,
+  architect.** `Store::read_in` refuses a lift over `BOOST_AT_MOST_DB` (24 dB, `PeakTooHigh`), as
+  the phones' parser does, but `Store::read`, `Store::own`, `read_profile`, the AutoEq reads and the
+  desktop editor do not, so 32 bands of +40 dB can be built, kept and played at up to +1240 dB
+  while `Preamp` reaches -40 dB alone (`fuzz/seeds/equaliser/stacked-boosts.txt`). Guarding the read
+  alone would make a profile the editor allowed unreadable: bound the editor and `keep` too, or
+  read the limit in `apo::read`, or widen the preamp. Done when no path keeps or plays a lift the
+  preamp cannot take back, and a kept profile past it still loads (as a migration would).
+- [S · 0.18.1] A shelf above 20 kHz at a hi-res rate passes full scale after *Fit the preamp*.
+  **Low, builder.** `fitted_preamp` weighs 20 Hz to 20 kHz alone (`RESPONSE_TO_HZ`), so a high
+  shelf of +24 dB at 20 kHz played at 192 kHz lifts everything above it unweighed: an impulse
+  peaked at 2.25 (found by the `equaliser` fuzz target, whose bound now reads to Nyquist). Weigh the
+  response to the stream's Nyquist, or say why the band past hearing is left. Done when the fitted
+  preamp holds that profile's impulse under full scale, in a test.
+
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its

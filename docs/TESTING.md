@@ -4,12 +4,6 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [M · 0.18.1] Build and run the equaliser a fuzzed profile describes. **Medium, builder.** The
-  `equaliser` target stops at a text round trip (`fuzz/fuzz_targets/equaliser.rs:7-11`),
-  `measurement` never fits (`measurement.rs:12-22`), and `Store::read_in` and `targets::parse` have
-  no target. Build the stage at 44.1, 96 and 192 kHz, call `fitted_preamp` and process an impulse,
-  asserting finite bounded output. Done when a profile of 32 bands at +40 dB fails the target before
-  its fix.
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
