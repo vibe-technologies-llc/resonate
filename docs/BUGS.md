@@ -13,11 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Catalog
-- [S · 0.18.1] Let a queued artist's expansion be cancelled. **Low, builder.** Subsonic and Jellyfin
-  now check a cancel between albums through `PlaysInPlace::songs_until`, but every caller still asks
-  `songs_of` with none (`crates/resonate/src/served.rs`, `crates/resonate-ui/src/serving.rs`,
-  `crates/resonate-mobile/src/served.rs`), so a listener who leaves waits for the cap. Pass the
-  caller's cancel. Done when a test cancelling a queued artist stops before the next album.
 - [S · 0.18.1] Pass over a ListenBrainz listen stamped below zero or with a fraction. **Low,
   builder.** A negative or non-integer `listened_at` fails the whole page
   (`crates/resonate-online/src/history.rs`), as a stamp past the clock did. Read the stamp leniently

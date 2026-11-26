@@ -1,7 +1,10 @@
 use std::{
     collections::VecDeque,
     num::{NonZeroU32, NonZeroUsize},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::AHashMap;
@@ -243,6 +246,19 @@ fn the_same(held: &[Arc<dyn Serves>], opened: &[Arc<dyn Serves>]) -> bool {
             .all(|(held, opened)| Arc::ptr_eq(held, opened))
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct Leaving(Arc<AtomicBool>);
+
+impl Leaving {
+    fn raise(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn is_raised(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
 pub(crate) struct ServerModel {
     services: Vec<Arc<dyn Serves>>,
     chosen: usize,
@@ -257,6 +273,13 @@ pub(crate) struct ServerModel {
     scale: Scale,
     shown: bool,
     owes_a_first_page: bool,
+    leaving: Leaving,
+}
+
+impl Drop for ServerModel {
+    fn drop(&mut self) {
+        self.leaving.raise();
+    }
 }
 
 impl ServerModel {
@@ -275,6 +298,7 @@ impl ServerModel {
             scale: Scale::ONE,
             shown: false,
             owes_a_first_page: false,
+            leaving: Leaving::default(),
         };
 
         model.refresh(cx);
@@ -300,6 +324,10 @@ impl ServerModel {
     pub(crate) fn lists_the_network(&self) -> bool {
         self.serves()
             .is_some_and(|serves| serves.lists_the_network())
+    }
+
+    pub(crate) fn leaving(&self) -> Leaving {
+        self.leaving.clone()
     }
 
     pub(crate) fn serves(&self) -> Option<Arc<dyn Serves>> {
@@ -442,6 +470,8 @@ impl ServerModel {
         self.chosen = was
             .and_then(|was| opened.iter().position(|serves| *serves.scheme() == was))
             .unwrap_or_default();
+        self.leaving.raise();
+        self.leaving = Leaving::default();
         self.services = opened;
         self.favoured.clear();
         self.explored.clear();

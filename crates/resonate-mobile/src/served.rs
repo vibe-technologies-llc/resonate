@@ -1,4 +1,11 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    mem,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use parking_lot::{Mutex, RwLock};
 use resonate_codec::Sources;
@@ -169,9 +176,23 @@ impl Service {
 
 type Slot = Arc<RwLock<Vec<Service>>>;
 
+#[derive(Clone, Default)]
+struct Leaving(Arc<AtomicBool>);
+
+impl Leaving {
+    fn raise(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    fn is_raised(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Served {
     slot: Slot,
+    leaving: Mutex<Leaving>,
     known: Mutex<BTreeMap<MediaLocation, ServedSong>>,
     marked: Mutex<BTreeMap<MediaLocation, bool>>,
     explored_songs: Mutex<BTreeMap<MediaLocation, crate::explore::ExploreSong>>,
@@ -196,6 +217,11 @@ impl Served {
 
     fn services(&self) -> Vec<Service> {
         self.slot.read().clone()
+    }
+
+    fn leaving(&self) -> impl Fn() -> bool + Sync + use<> {
+        let leaving = self.leaving.lock().clone();
+        move || leaving.is_raised()
     }
 
     pub(crate) fn playing_services(&self) -> Vec<Arc<dyn PlaysInPlace>> {
@@ -307,6 +333,7 @@ impl Served {
             });
         }
         *held = services;
+        mem::take(&mut *self.leaving.lock()).raise();
         self.known.lock().clear();
         self.marked.lock().clear();
         self.explored_songs.lock().clear();
@@ -535,7 +562,7 @@ impl MobilePlayer {
 
         let songs = service
             .plays
-            .songs_of(&named)
+            .songs_until(&named, &self.served.leaving())
             .map_err(|error| service.refused(&error))?;
         let mut songs: Vec<ServedSong> = songs
             .into_iter()
@@ -879,6 +906,13 @@ mod tests {
     }
 
     fn fake_held_by(held: Arc<AtomicBool>) -> (String, Arc<Mutex<Vec<String>>>) {
+        fake_arriving(held, Arc::new(AtomicBool::new(false)))
+    }
+
+    fn fake_arriving(
+        held: Arc<AtomicBool>,
+        arrived: Arc<AtomicBool>,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
         let server = format!("http://{}", listener.local_addr().expect("a bound address"));
         let asked = Arc::new(Mutex::new(Vec::new()));
@@ -886,6 +920,7 @@ mod tests {
 
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
+                arrived.store(true, Ordering::Release);
                 while held.load(Ordering::Acquire) {
                     thread::sleep(LOOKED_AGAIN_AFTER);
                 }
@@ -1090,6 +1125,40 @@ mod tests {
         assert_eq!(found.songs[0].title, "A Pillow of Winds");
         assert_eq!(picture, PICTURE);
         assert_eq!(expanded.len(), 2);
+    }
+
+    #[test]
+    fn an_artist_being_expanded_stops_before_its_first_album_when_the_accounts_move() {
+        let harness = online();
+        let held = Arc::new(AtomicBool::new(true));
+        let arrived = Arc::new(AtomicBool::new(false));
+
+        let (server, asked) = fake_arriving(Arc::clone(&held), Arc::clone(&arrived));
+
+        harness
+            .player
+            .serve_from(vec![of(MusicProvider::Subsonic, server)]);
+
+        let expanded = thread::scope(|scope| {
+            let expanding = scope.spawn(|| {
+                harness
+                    .player
+                    .served_song_uris("subsonic:artist/ar-1".to_owned())
+            });
+
+            while !arrived.load(Ordering::Acquire) {
+                thread::sleep(LOOKED_AGAIN_AFTER);
+            }
+            harness.player.serve_from(Vec::new());
+            held.store(false, Ordering::Release);
+            expanding.join().expect("the expansion ran")
+        });
+
+        assert!(expanded.is_err());
+        assert!(
+            asked.lock().iter().all(|line| !line.contains("/getAlbum")),
+            "an album was asked after the accounts moved"
+        );
     }
 
     fn device_ids_signed_in_under(asked: &Mutex<Vec<String>>) -> Vec<String> {

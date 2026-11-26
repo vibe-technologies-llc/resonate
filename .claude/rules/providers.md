@@ -593,7 +593,14 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
   checks the cancel `songs_until` takes between albums (`Error::Cancelled`), the same for Jellyfin
   (`an_artist_of_five_thousand_albums_is_refused_before_any_album_is_asked`,
   `an_artist_whose_albums_hold_past_the_most_songs_stops_at_the_album_that_passes_it`,
-  `a_cancel_between_albums_stops_an_artists_expansion`). Each is one paced request under `Patience::answered_within`, `ProviderOp::Browse`,
+  `a_cancel_between_albums_stops_an_artists_expansion`). **Every caller that expands an artist asks
+  `songs_until` with a cancel of its own**: the window's `ServerModel` raises one when it is dropped
+  or its services are replaced (`Serves::expand` takes it), the phones' `Served` when the accounts
+  change (`served_song_uris`), and the command line's expansion (`Served::songs_at`) is ended by the
+  interrupt killing the process
+  (`a_queued_artists_expansion_stops_before_the_next_album_once_cancelled`,
+  `the_windows_expansion_of_an_artist_stops_before_the_next_album_once_cancelled`,
+  `an_artist_being_expanded_stops_before_its_first_album_when_the_accounts_move`). Each is one paced request under `Patience::answered_within`, `ProviderOp::Browse`,
   the answer read part by part (`part`) through the same `readable`/`id_spelt` tolerance as a search,
   a number written as text read too (`a_servers_artists_albums_and_songs_are_browsed_by_their_ids`,
   `an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order`). The seam's

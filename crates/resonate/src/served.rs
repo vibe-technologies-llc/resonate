@@ -140,7 +140,11 @@ impl Served {
     }
 
     #[cfg(feature = "online")]
-    pub fn songs_at(&self, location: &MediaLocation) -> Option<Vec<MediaLocation>> {
+    pub fn songs_at(
+        &self,
+        location: &MediaLocation,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Option<Vec<MediaLocation>> {
         if !is_played_in_place(location.source()) {
             tracing::warn!(%location, "this service's songs are not played from here");
             return Some(Vec::new());
@@ -152,7 +156,7 @@ impl Served {
         if let Named::Song(_) = named {
             return Some(vec![location.clone()]);
         }
-        match service.songs_of(&named) {
+        match service.songs_until(&named, cancelled) {
             Ok(songs) => Some(
                 songs
                     .into_iter()
@@ -167,7 +171,11 @@ impl Served {
     }
 
     #[cfg(not(feature = "online"))]
-    pub fn songs_at(&self, _location: &MediaLocation) -> Option<Vec<MediaLocation>> {
+    pub fn songs_at(
+        &self,
+        _location: &MediaLocation,
+        _cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Option<Vec<MediaLocation>> {
         None
     }
 
@@ -375,7 +383,11 @@ impl resonate_ui::Serves for ServedBy {
         Ok(self.found(self.0.search(words)?))
     }
 
-    fn expand(&self, named: &MediaLocation) -> resonate_providers::Result<Vec<MediaLocation>> {
+    fn expand(
+        &self,
+        named: &MediaLocation,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> resonate_providers::Result<Vec<MediaLocation>> {
         let Some(named) = self.0.named_by(named) else {
             return Err(self.unreadable());
         };
@@ -385,7 +397,7 @@ impl resonate_ui::Serves for ServedBy {
         }
         Ok(self
             .0
-            .songs_of(&named)?
+            .songs_until(&named, cancelled)?
             .into_iter()
             .map(|song| self.0.location_of(&Named::Song(song.id)))
             .collect())
@@ -691,6 +703,7 @@ mod tests {
         ffi::OsString,
         io::{self, BufRead, BufReader, Read, Write},
         net::{TcpListener, TcpStream},
+        sync::atomic::{AtomicUsize, Ordering},
         thread,
     };
 
@@ -1460,6 +1473,68 @@ mod tests {
         assert!(queued[0].location.is_local());
     }
 
+    const ALBUMS_OF_A_CROWDED_ARTIST: usize = 5;
+
+    fn a_crowded_artist() -> (String, Arc<AtomicUsize>) {
+        let albums_asked = Arc::new(AtomicUsize::new(0));
+        let counting = Arc::clone(&albums_asked);
+
+        let url = fake(move |asked, _| match asked.path() {
+            "/rest/getArtist" => {
+                let listed: Vec<String> = (0..ALBUMS_OF_A_CROWDED_ARTIST)
+                    .map(|each| format!(r#"{{"id":"al-{each}","name":"Album {each}"}}"#))
+                    .collect();
+                Answer::Json(format!(
+                    r#"{{"subsonic-response":{{"status":"ok","version":"1.16.1","artist":{{"id":"ar-many","name":"Many","album":[{}]}}}}}}"#,
+                    listed.join(",")
+                ))
+            }
+            "/rest/getAlbum" => {
+                counting.fetch_add(1, Ordering::SeqCst);
+                Answer::Json(ALBUM.to_owned())
+            }
+            _ => Answer::Missing,
+        });
+        (url, albums_asked)
+    }
+
+    #[test]
+    fn a_queued_artists_expansion_stops_before_the_next_album_once_cancelled() {
+        let (url, albums_asked) = a_crowded_artist();
+        let served = Served::over(vec![subsonic_at(url)], false);
+        let artist = MediaLocation::from_uri("subsonic:artist/ar-many").expect("a uri");
+        let cancelled = || albums_asked.load(Ordering::SeqCst) >= 1;
+
+        let cancelled_after_one = served.songs_at(&artist, &cancelled);
+        let asked_when_cancelled = albums_asked.load(Ordering::SeqCst);
+
+        let never_cancelled = served.songs_at(&artist, &|| false).expect("an artist");
+
+        assert_eq!(cancelled_after_one, Some(Vec::new()));
+        assert_eq!(asked_when_cancelled, 1);
+        assert_eq!(never_cancelled.len(), ALBUMS_OF_A_CROWDED_ARTIST * 2);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn the_windows_expansion_of_an_artist_stops_before_the_next_album_once_cancelled() {
+        use resonate_ui::Serves as _;
+
+        let (url, albums_asked) = a_crowded_artist();
+        let adapted = ServedBy(subsonic_at(url));
+        let artist = MediaLocation::from_uri("subsonic:artist/ar-many").expect("a uri");
+
+        let refused = adapted
+            .expand(&artist, &|| albums_asked.load(Ordering::SeqCst) >= 1)
+            .expect_err("a cancelled expansion");
+
+        assert!(matches!(
+            refused,
+            resonate_providers::Error::Cancelled { .. }
+        ));
+        assert_eq!(albums_asked.load(Ordering::SeqCst), 1);
+    }
+
     fn kept_only(program: Option<std::path::PathBuf>) -> Served {
         let tool = resonate_ytmusic::Tool::new(program, resonate_ytmusic::Cookies::None);
         Served::over(vec![Arc::new(resonate_ytmusic::YtMusic::new(tool))], false)
@@ -1471,7 +1546,7 @@ mod tests {
         let location = MediaLocation::from_uri("ytmusic:track/abc").expect("a uri");
         let named = OsString::from("ytmusic:track/abc");
 
-        assert_eq!(served.songs_at(&location), Some(Vec::new()));
+        assert_eq!(served.songs_at(&location, &|| false), Some(Vec::new()));
         assert!(
             crate::arguments::queue_items_served(std::slice::from_ref(&named), &served).is_empty()
         );
@@ -1497,7 +1572,7 @@ mod tests {
 
         let location = MediaLocation::from_uri("ytmusic:mix/LM").expect("a uri");
 
-        let songs = kept_only(Some(program)).songs_at(&location);
+        let songs = kept_only(Some(program)).songs_at(&location, &|| false);
         let asked = ran.exists();
 
         std::fs::remove_dir_all(&folder).expect("the folder removed");

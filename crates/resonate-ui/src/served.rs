@@ -74,7 +74,11 @@ pub trait Serves: Send + Sync {
 
     fn search(&self, words: &str) -> Result<ServedFound>;
 
-    fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>>;
+    fn expand(
+        &self,
+        named: &MediaLocation,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Vec<MediaLocation>>;
 
     fn keeps_favourites(&self) -> bool {
         false

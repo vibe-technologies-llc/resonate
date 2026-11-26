@@ -108,7 +108,7 @@ pub(crate) fn queue_items_served(arguments: &[OsString], served: &Served) -> Vec
             });
             continue;
         }
-        if let Some(songs) = served.songs_at(&location) {
+        if let Some(songs) = served.songs_at(&location, &ended_by_the_interrupt) {
             items.extend(
                 songs
                     .into_iter()
@@ -119,6 +119,10 @@ pub(crate) fn queue_items_served(arguments: &[OsString], served: &Served) -> Vec
         items.extend(items_of(&sources, location, &mut minting));
     }
     items
+}
+
+fn ended_by_the_interrupt() -> bool {
+    false
 }
 
 fn items_of(sources: &Sources, location: MediaLocation, minting: &mut Unclaimed) -> Vec<QueueItem> {

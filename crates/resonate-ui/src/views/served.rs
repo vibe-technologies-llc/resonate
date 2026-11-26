@@ -780,14 +780,16 @@ impl RootView {
         cx: &mut Context<Self>,
         then: impl FnOnce(&mut Self, Vec<MediaLocation>, &mut Context<Self>) + 'static,
     ) {
-        let Some(serves) = self.server.read(cx).serves() else {
+        let model = self.server.read(cx);
+        let Some(serves) = model.serves() else {
             return;
         };
+        let leaving = model.leaving();
 
         cx.spawn(async move |this, cx| {
             let expanded = cx
                 .background_executor()
-                .spawn(async move { serves.expand(&named) })
+                .spawn(async move { serves.expand(&named, &|| leaving.is_raised()) })
                 .await;
             let _ = this.update(cx, |this, cx| match expanded {
                 Ok(songs) => then(this, songs, cx),
@@ -1009,7 +1011,11 @@ mod tests {
             })
         }
 
-        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+        fn expand(
+            &self,
+            named: &MediaLocation,
+            _: &(dyn Fn() -> bool + Sync),
+        ) -> Result<Vec<MediaLocation>> {
             Ok(vec![named.clone()])
         }
 
@@ -1060,7 +1066,11 @@ mod tests {
             })
         }
 
-        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+        fn expand(
+            &self,
+            named: &MediaLocation,
+            _: &(dyn Fn() -> bool + Sync),
+        ) -> Result<Vec<MediaLocation>> {
             Ok(vec![named.clone()])
         }
 
@@ -1121,7 +1131,11 @@ mod tests {
             Ok(ServedFound::default())
         }
 
-        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+        fn expand(
+            &self,
+            named: &MediaLocation,
+            _: &(dyn Fn() -> bool + Sync),
+        ) -> Result<Vec<MediaLocation>> {
             Ok(vec![named.clone()])
         }
 
@@ -1192,7 +1206,11 @@ mod tests {
             Ok(ServedFound::default())
         }
 
-        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+        fn expand(
+            &self,
+            named: &MediaLocation,
+            _: &(dyn Fn() -> bool + Sync),
+        ) -> Result<Vec<MediaLocation>> {
             Ok(vec![named.clone()])
         }
 
@@ -1580,7 +1598,11 @@ mod tests {
             Ok(ServedFound::default())
         }
 
-        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+        fn expand(
+            &self,
+            named: &MediaLocation,
+            _: &(dyn Fn() -> bool + Sync),
+        ) -> Result<Vec<MediaLocation>> {
             Ok(vec![named.clone()])
         }
 
@@ -1893,7 +1915,11 @@ mod tests {
             Ok(ServedFound::default())
         }
 
-        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+        fn expand(
+            &self,
+            named: &MediaLocation,
+            _: &(dyn Fn() -> bool + Sync),
+        ) -> Result<Vec<MediaLocation>> {
             Ok(vec![named.clone()])
         }
 
