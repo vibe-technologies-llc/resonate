@@ -67,17 +67,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   recogniser; settling it needs a Mac with such an output
 
 ## Windows
-- [S · 0.18.1] Keep the old window icons until the new ones are worn. **Low, builder.**
-  `WindowIcons::wear` destroys the replaced icons after a `WM_SETICON` that timed out
-  (`crates/resonate-win32/src/icons.rs:61-69`, `:151-168`), so a hung window keeps a destroyed icon.
-  Destroy only once every window answered. Done when the fake's timed-out send keeps the old pair
-  alive.
-- [S · 0.18.1] Check the stop before starting a late WASAPI capture, and pad a discontinuity. **Low,
-  builder.** A capture whose open timed out is detached and later starts the client before seeing
-  `stop` (`crates/resonate-listen/src/wasapi_capture.rs:92-95`, `:251-277`), flashing the microphone
-  indicator; and `drained` ignores `AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY` (`:279-305`), so a stall
-  loses time from the clip silently. Check `stop` before `start_stream`, and pad the elapsed time on
-  a discontinuity. Done when tests with a fake show both.
 - [S · 0.18.1] Bound a WASAPI survey by the time the engine gives it. **Low, builder.**
   `Survey::enumerate_sinks` ignores its timeout (`crates/resonate-wasapi/src/backend.rs:166-173`),
   and the engine surveys in line at start, with no stream open and in `select_sink`
