@@ -83,11 +83,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [M · 0.18.1] Build the MusicBrainz copy from a hostile or failing export. **Medium, builder.**
-  `crates/resonate-musicbrainz/tests/mirror.rs:112-160` always writes a valid schema and well-formed
-  COPY text, and no test builds over an existing copy with a cut archive, a wrong `SCHEMA_SEQUENCE`
-  or an oversized row, or shows a failed build leaves the old copy answering and nothing staged. Add
-  those builds. Done when each fails with its error and the old copy still answers.
 - [M · 0.18.1] Fuzz the lyric readers at the sizes their costs appear. **Medium, builder.** `lrc`,
   `ttml` and `lyricsfile` check only for a panic (`fuzz/fuzz_targets/lrc.rs:5-7`), their seeds are
   under 500 bytes and the documented run leaves `-max_len` at libFuzzer's 4 KiB, where neither the
