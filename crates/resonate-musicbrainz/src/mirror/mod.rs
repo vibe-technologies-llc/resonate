@@ -693,7 +693,7 @@ impl Mirror {
                     return Ok(None);
                 }
 
-                let bytes = self.unpack(kind, &packed, MOST_UNPACKED_BLOCK)?;
+                let bytes = self.unpack(kind, &packed, framed_size(&packed))?;
                 let mut reader = Reader::new(&bytes);
 
                 let read = read(&mut reader)?;
@@ -808,5 +808,47 @@ impl Mirror {
                 op: PackOp::Unpack,
                 source,
             })
+    }
+}
+
+fn framed_size(packed: &[u8]) -> usize {
+    match zstd::zstd_safe::get_frame_content_size(packed) {
+        Ok(Some(size)) => usize::try_from(size)
+            .unwrap_or(MOST_UNPACKED_BLOCK)
+            .min(MOST_UNPACKED_BLOCK),
+        Ok(None) | Err(_) => MOST_UNPACKED_BLOCK,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_frame_naming_its_size_is_unpacked_into_exactly_that() {
+        let document = vec![7_u8; 1_500];
+        let packed = zstd::bulk::compress(&document, 3).expect("a frame");
+
+        assert_eq!(framed_size(&packed), document.len());
+    }
+
+    #[test]
+    fn a_frame_naming_a_size_past_the_ceiling_is_held_to_the_ceiling() {
+        let document = vec![7_u8; MOST_UNPACKED_BLOCK + 1];
+        let packed = zstd::bulk::compress(&document, 1).expect("a frame");
+
+        assert_eq!(framed_size(&packed), MOST_UNPACKED_BLOCK);
+    }
+
+    #[test]
+    fn a_frame_naming_no_size_or_no_frame_at_all_is_given_the_ceiling() {
+        let mut compressor = zstd::bulk::Compressor::new(3).expect("a compressor");
+
+        compressor.include_contentsize(false).expect("a setting");
+
+        let unsized_frame = compressor.compress(&[7_u8; 64]).expect("a frame");
+
+        assert_eq!(framed_size(&unsized_frame), MOST_UNPACKED_BLOCK);
+        assert_eq!(framed_size(b"not a frame"), MOST_UNPACKED_BLOCK);
     }
 }

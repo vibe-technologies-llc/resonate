@@ -214,7 +214,9 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
   off `blocks_by_first` alone and its packed bytes only on a miss of the last `BLOCKS_KEPT_UNPACKED`
   blocks, kept most recently used last. Each kind's dictionary is digested once as the copy opens
   (`unpackers`, a decompressor a kind), and the connection keeps `MIRROR_CACHE_KIB` (64 MiB) of
-  pages, so the upper levels of every index stay in memory.
+  pages, so the upper levels of every index stay in memory. An amended document is unpacked into
+  the size its zstd frame names (`framed_size`), `MOST_UNPACKED_BLOCK` being the ceiling for a frame
+  that names none.
 - **An artist's pressings are listed once.** `releases_of_artist` flattens the artist's groups into
   one list of release ids and pages that; the list of the last `ARTISTS_KEPT_LISTED` artists is kept,
   so a page after the first unpacks only the releases it returns.
