@@ -16,16 +16,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [M · 0.18.1] Stop calling a band-limited lossless file Fake on a lone wall. **Medium, architect.**
-  `judged` answers Fake for a lone wall at or below `LOSSY_CEILING_HZ` (19.5 kHz) or an upsampling
-  match, excused only under 44.1 kHz (`crates/resonate-analysis/src/verdict.rs:341-408`, `:455-457`,
-  `:565-567`), and says "it is not the lossless master it claims to be" (`words/en/verdict.ftl:3`),
-  so a genuine band-limited source (an FM air-check, a 32 kHz DAT master at 44.1, a lathe-filtered
-  needle-drop) reads as fraud. Answer a lone wall as suspect with the wording of a doubt, keeping
-  Fake for a lossy signature. Done when lossless and lossy pairs walled at 18, 19, 19.5 and 20.5
-  kHz, at 44.1, 48 and 96 kHz, are judged as intended in
-  `crates/resonate-analysis/tests/analysis.rs`, whose fixtures today sit only at 16 kHz and 21.7
-  kHz.
 - [S · 0.18.1] Report organise's refusals after `--undo --apply`. **Medium, builder.**
   `organising.rs:43` returns "nothing to put back" when the plan's moves are empty after applying,
   though refusals or a cancel emptied them (`crates/resonate-library/src/organise.rs:820`, `:2350`,
@@ -122,12 +112,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   build's pass hangs; and `loudest_through` maps a worker's panic to `Stopped` while the others run
   on (`headroom.rs:247`). Clear the flag on unwind and stop the others. Done when a test worker that
   panics ends the pass with an error.
-- [S · 0.18.1] Judge padding behind the same evidence gate. **Low, builder.** Padding answers Fake
-  on any effective length short of the declared, ORed before `heard_enough`
-  (`crates/resonate-analysis/src/verdict.rs:569-582`), and the wall's wording is fixed to 20.7 kHz
-  (`:217-223`, `:459-467`), so a sub-44.1 kHz file's anti-alias wall reads as a lossy encode beside
-  Genuine. Gate padding with the rest and word the wall by the rate. Done when a short clip is not
-  judged and a 32 kHz file's wall is worded as its rate's.
 - [S · 0.18.1] Let a staged write's own failures decide its outcome. **Low, builder.**
   `write_atomically` answers `Unwritten { Place }` when the folder sync after a rename fails, though
   the target was replaced (`crates/resonate-core/src/file_facts.rs:171-174`, `:224-241`), as the
