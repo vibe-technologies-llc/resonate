@@ -1564,7 +1564,8 @@ fn running(config: &Config, settings: &Path, library: &Arc<Library>) -> Result<R
         filed_as,
     )? {
         Begun::Running(running) => Ok(running),
-        Begun::Off | Begun::Busy => Err(Error::SyncBusy),
+        Begun::Off => Err(Error::SyncOff),
+        Begun::Busy => Err(Error::SyncBusy),
     }
 }
 
