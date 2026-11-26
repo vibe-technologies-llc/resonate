@@ -4,20 +4,6 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [M · 0.18.1] Hold every DSP stage to its latency claim. **Medium, builder.** `frames_held` and
-  `frames_short_of_its_latency` are referenced by no lab suite or integration test, `Restore` is
-  checked by a band level of its left channel alone
-  (`crates/resonate-dsp/tests/restoration.rs:236-287`), and the lab's claimed and measured latency
-  rows (768 against 0) are not tied to each other (`dsp-lab/src/suites/restore.rs:147-176`);
-  restoration and the guard run only at 44.1 kHz stereo, never mono, many channels, low or high
-  rates, a reset or a track shorter than a hop. Add a contract test over every `Processor` that
-  feeds odd block sizes, records `frames_held`, flushes and cross-correlates both channels with the
-  input, at 8 to 192 kHz. Done when that test fails against today's `Restore`.
-- [M · 0.18.1] Prove that a DSP stage's `process` allocates nothing. **Medium, builder.**
-  `realtime.md` says `process` never allocates, but no counting allocator exists in the tree, and
-  `Restore::new` leaves its buffers empty (`crates/resonate-dsp/src/restore.rs:323-334`). Add a test
-  per stage under a counting `#[global_allocator]` that prepares, warms up and asserts no allocation
-  across varied blocks, a reset and a gain change. Done when the test runs for every stage.
 - [M · 0.18.1] Drive the resampler over every rate pair with audio. **Medium, builder.** The lab's
   pairs stop at 44.1, 48, 96 and 192 kHz (`dsp-lab/src/suites/resample/mod.rs:31-39`), the bench at
   a few (`crates/resonate-dsp/benches/stages.rs:40-47`), and the one grid test only builds a
