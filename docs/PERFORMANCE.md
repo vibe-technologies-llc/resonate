@@ -27,12 +27,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`crates/resonate-musicbrainz/src/mirror/mod.rs:695`, `:767-770`), up to 64 times a search. Store
   the unpacked length or read it from the frame. Done when an amended read allocates its document's
   size.
-- [S · 0.18.1] Let the renderer subscriptions' forwarder go with its sink. **Low, builder.**
-  `Beside::subscribe_sinks`' forwarder thread and the network's listener live until the next sink
-  change (`crates/resonate-upnp/src/beside.rs:62-129`, `network.rs:344-349`, `:600-607`), and Cast
-  keeps a link, thread, socket and pings per address for good
-  (`crates/resonate-cast/src/casting.rs:811-862`). End each with its subscription or receiver. Done
-  when tests count no thread left after unsubscribing.
 - [S · 0.18.1] Tell MCP's now-playing subscribers only when the song or state changes. **Low,
   builder.** The compared reading includes `position_seconds`
   (`crates/resonate-mcp/src/transport.rs:152`), so every 500 ms tick notifies. Leave the position
