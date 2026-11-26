@@ -111,7 +111,9 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   `CreateIconFromResourceEx`, every top-level window `EnumWindows` lists whose owning process
   `GetWindowThreadProcessId` names as this one sent `WM_SETICON` for both sizes through
   `SendMessageTimeoutW`, so a hung window is not waited on, and the pair it replaces destroyed only
-  once the windows wear the new one; `every_window_of_this_process_wears_both_sizes_and_another_process_is_left_alone`);
+  once every window answered (a send that timed out keeps the pairs it replaced alive, to be destroyed with the next wear every window answers);
+  `every_window_of_this_process_wears_both_sizes_and_another_process_is_left_alone`,
+  `a_send_that_timed_out_keeps_the_old_pair_alive`);
   `disconnect_pipe` (`DisconnectNamedPipe` on a
   borrowed handle, so the window's pipe severs a client from another thread, `mpris.md`);
   `cancel_pipe_io` (`CancelIoEx` on a borrowed handle, nothing pending being no refusal, so a
@@ -591,7 +593,10 @@ PipeWire sink is `admit`) and `endpoints.rs` (naming, the listing, the choice of
 - **A capture is a thread of its own** (`resonate-listen-capture`, as the render stream is):
   every COM object is made on it, the open is answered through a one-slot channel within five
   seconds, the loop waits on the event for 100 ms and drains every packet each turn, and `Capture::stop`
-  sets the flag and joins (dropping does the same). A failure of any call ends the thread with
+  sets the flag and joins (dropping does the same). The loop is `wasapi_serve.rs`'s `serve` over a
+  `Device`, portable and tested on the host: it looks at the stop flag before `start_stream`, so a
+  capture whose open timed out (detached, still opening) never starts its client and flashes the
+  microphone indicator (`a_late_capture_whose_stop_was_set_never_starts_the_client`). A failure of any call ends the thread with
   `lost` set, which is `Held::is_lost`, so `Sitting::until_full` opens the same capture again behind a
   held-back `Recorder` and the gap is silence of the time lost (`audio.md`'s recording survives the
   restart); a device unplugged is that. **A loopback follows the default render endpoint**: no call
@@ -601,6 +606,10 @@ PipeWire sink is `admit`) and `endpoints.rs` (naming, the listing, the choice of
   console-role render default whose id is not the one tapped, or no default at all, is a loss
   (`TappedDefault::is_moved_by`): the loop stops the client and sets `lost`, so the sitting reopens
   on the new default.
+- **A discontinuity is silence of the time the packet does not account for.** A packet flagged
+  `AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY` pads, before it is admitted, the frames of the time since
+  the last turn less the frames this turn has already accounted for, so a stall does not shorten the
+  clip (`a_discontinuity_pads_the_time_the_packet_does_not_account_for_before_it`).
 - **A quiet loopback is silence of the time that passed.** A render endpoint with nothing playing
   delivers no packets, so a turn of the loop that drained none pads the clip with the frames of the
   time since the last turn (`Recorder::pad`, loopback only; a microphone never starves, its quiet

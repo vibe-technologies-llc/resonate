@@ -16,13 +16,14 @@ pub(crate) trait Iconing {
 
     fn icon_of(&self, png: &[u8]) -> Raw<Self::Icon>;
     fn top_level_windows(&self) -> Raw<Vec<(Self::Window, u32)>>;
-    fn set(&self, window: Self::Window, size: Size, icon: Self::Icon);
+    fn set(&self, window: Self::Window, size: Size, icon: Self::Icon) -> bool;
     fn destroy(&self, icon: Self::Icon);
 }
 
 pub(crate) struct Worn<T: Iconing> {
     iconing: T,
     worn: Option<[T::Icon; 2]>,
+    unanswered: Vec<[T::Icon; 2]>,
 }
 
 impl<T: Iconing> Worn<T> {
@@ -30,6 +31,7 @@ impl<T: Iconing> Worn<T> {
         Self {
             iconing,
             worn: None,
+            unanswered: Vec::new(),
         }
     }
 
@@ -58,12 +60,15 @@ impl<T: Iconing> Worn<T> {
             .map(|(window, _)| window)
             .collect();
 
+        let mut answered = true;
+
         for window in &ours {
-            self.iconing.set(*window, Size::Big, big);
-            self.iconing.set(*window, Size::Small, small);
+            answered &= self.iconing.set(*window, Size::Big, big);
+            answered &= self.iconing.set(*window, Size::Small, small);
         }
-        if let Some(replaced) = self.worn.replace([big, small]) {
-            for icon in replaced {
+        self.unanswered.extend(self.worn.replace([big, small]));
+        if answered {
+            for icon in self.unanswered.drain(..).flatten() {
                 self.iconing.destroy(icon);
             }
         }
@@ -148,7 +153,7 @@ mod real {
             Ok(listing)
         }
 
-        fn set(&self, window: isize, size: Size, icon: isize) {
+        fn set(&self, window: isize, size: Size, icon: isize) -> bool {
             let which = match size {
                 Size::Big => ICON_BIG,
                 Size::Small => ICON_SMALL,
@@ -164,7 +169,8 @@ mod real {
                     SET_WITHIN_MS,
                     None,
                 )
-            };
+            }
+            .0 != 0
         }
 
         fn destroy(&self, icon: isize) {
@@ -201,6 +207,7 @@ mod tests {
         calls: Arc<Mutex<Vec<Call>>>,
         refusing_the_icon: Option<u8>,
         refusing_the_list: bool,
+        hung_window: Option<u8>,
     }
 
     impl Fake {
@@ -231,8 +238,9 @@ mod tests {
             Ok(vec![(1, process::id()), (2, STRANGER), (3, process::id())])
         }
 
-        fn set(&self, window: u8, size: Size, icon: u8) {
+        fn set(&self, window: u8, size: Size, icon: u8) -> bool {
             self.calls.lock().push(Call::Set(window, size, icon));
+            self.hung_window != Some(window)
         }
 
         fn destroy(&self, icon: u8) {
@@ -323,6 +331,56 @@ mod tests {
         assert_eq!(
             fake.calls()[3..],
             [Call::Destroyed(10), Call::Destroyed(11)]
+        );
+    }
+
+    #[test]
+    fn a_send_that_timed_out_keeps_the_old_pair_alive() {
+        let mut fake = Fake::default();
+
+        let mut worn = Worn::new(fake.clone());
+
+        worn.wear(&[10], &[11]).expect("the first worn");
+        fake.hung_window = Some(3);
+        worn.iconing = fake.clone();
+        fake.calls.lock().clear();
+        worn.wear(&[20], &[21]).expect("the second worn");
+
+        let calls = fake.calls();
+
+        assert!(!calls.iter().any(|call| matches!(call, Call::Destroyed(_))));
+    }
+
+    #[test]
+    fn the_pairs_kept_for_a_hung_window_are_destroyed_once_every_window_answers() {
+        let mut fake = Fake::default();
+
+        let mut worn = Worn::new(fake.clone());
+
+        worn.wear(&[10], &[11]).expect("the first worn");
+        fake.hung_window = Some(3);
+        worn.iconing = fake.clone();
+        worn.wear(&[20], &[21]).expect("the second worn");
+        fake.hung_window = None;
+        worn.iconing = fake.clone();
+        fake.calls.lock().clear();
+        worn.wear(&[30], &[31]).expect("the third worn");
+
+        let calls = fake.calls();
+        let destroyed: Vec<Call> = calls
+            .iter()
+            .copied()
+            .filter(|call| matches!(call, Call::Destroyed(_)))
+            .collect();
+
+        assert_eq!(
+            destroyed,
+            [
+                Call::Destroyed(10),
+                Call::Destroyed(11),
+                Call::Destroyed(20),
+                Call::Destroyed(21)
+            ]
         );
     }
 }

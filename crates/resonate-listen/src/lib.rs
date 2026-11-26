@@ -33,6 +33,8 @@ mod wasapi_capture;
 mod wasapi_listener;
 #[cfg(windows)]
 mod wasapi_playback;
+#[cfg(any(windows, test))]
+mod wasapi_serve;
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod words {

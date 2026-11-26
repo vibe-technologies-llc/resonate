@@ -11,15 +11,15 @@ use std::{
 use resonate_audio::{Error, Operation, Result};
 use wasapi::{
     AudioCaptureClient, AudioClient, DeviceEnumerator, DeviceEventCallbacks,
-    DeviceEventRegistration, Direction, Handle, Role, SampleType, StreamMode, WasapiError,
-    WaveFormat,
+    DeviceEventRegistration, Direction, Handle, Role, SampleType, StreamMode, WaveFormat,
 };
 
 use crate::{
     endpoints::{Tap, TappedDefault},
     recording::Recorder,
-    session::{BYTES_PER_FRAME, HEARD_AT, HEARD_IN_CHANNELS, Held, frames_in, zeroed_if_silent},
+    session::{BYTES_PER_FRAME, HEARD_AT, HEARD_IN_CHANNELS, Held},
     wasapi_apartment::{Apartment, backend_error, initialize_error},
+    wasapi_serve::{Delivery, Device, Running, serve},
 };
 
 const OPEN_WITHIN: Duration = Duration::from_secs(5);
@@ -51,12 +51,6 @@ impl DefaultFollowed {
     fn has_moved(&self) -> bool {
         self.moved.load(Ordering::Acquire)
     }
-}
-
-struct Running {
-    stop: Arc<AtomicBool>,
-    lost: Arc<AtomicBool>,
-    quiet_is_silence: bool,
 }
 
 impl Capture {
@@ -123,12 +117,12 @@ impl Drop for Capture {
 
 fn run(
     tap: &Tap,
-    recorder: Recorder,
+    mut recorder: Recorder,
     ready: &SyncSender<Result<()>>,
     running: &Running,
 ) -> Result<()> {
     let _apartment = Apartment::enter();
-    let opened = match opened_for(tap) {
+    let mut opened = match opened_for(tap) {
         Ok(opened) => opened,
         Err(error) => {
             let _ = ready.send(Err(error));
@@ -137,7 +131,7 @@ fn run(
         }
     };
     let _ = ready.send(Ok(()));
-    let served = serve(opened, recorder, running);
+    let served = serve(&mut opened, &mut recorder, running);
 
     if let Err(error) = &served {
         tracing::warn!(%error, "a WASAPI capture failed");
@@ -239,67 +233,60 @@ fn followed_from(enumerator: &DeviceEnumerator, tapped: TappedDefault) -> Option
     })
 }
 
-fn serve(opened: Opened, mut recorder: Recorder, running: &Running) -> Result<()> {
-    let Opened {
-        client,
-        capture,
-        event,
-        mut scratch,
-        followed,
-    } = opened;
-
-    client
-        .start_stream()
-        .map_err(|e| backend_error(Operation::Start, e))?;
-
-    let mut turned = Instant::now();
-
-    while !running.stop.load(Ordering::Acquire) {
-        if followed.as_ref().is_some_and(DefaultFollowed::has_moved) {
-            tracing::debug!("the default output moved from under the desktop's loopback");
-            running.lost.store(true, Ordering::Release);
-            break;
-        }
-
-        let _ = event.wait_for_event(EVENT_WAIT_MS);
-        let heard = drained(&capture, &mut scratch, &mut recorder)
-            .map_err(|e| backend_error(Operation::Start, e))?;
-        let now = Instant::now();
-
-        if heard == 0 && running.quiet_is_silence {
-            recorder.pad(frames_in(now - turned), HEARD_IN_CHANNELS);
-        }
-        turned = now;
+impl Device for Opened {
+    fn start(&mut self) -> Result<()> {
+        self.client
+            .start_stream()
+            .map_err(|e| backend_error(Operation::Start, e))
     }
-    client
-        .stop_stream()
-        .map_err(|e| backend_error(Operation::Close, e))
-}
 
-fn drained(
-    capture: &AudioCaptureClient,
-    scratch: &mut [u8],
-    recorder: &mut Recorder,
-) -> std::result::Result<usize, WasapiError> {
-    let mut frames = 0;
-    loop {
-        let waiting = capture.get_next_packet_size()?.unwrap_or(0);
+    fn stop(&mut self) -> Result<()> {
+        self.client
+            .stop_stream()
+            .map_err(|e| backend_error(Operation::Close, e))
+    }
+
+    fn wait(&mut self) {
+        let _ = self.event.wait_for_event(EVENT_WAIT_MS);
+    }
+
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn has_moved(&self) -> bool {
+        self.followed
+            .as_ref()
+            .is_some_and(DefaultFollowed::has_moved)
+    }
+
+    fn next(&mut self) -> Result<Option<Delivery<'_>>> {
+        let waiting = self
+            .capture
+            .get_next_packet_size()
+            .map_err(|e| backend_error(Operation::Start, e))?
+            .unwrap_or(0);
 
         if waiting == 0 {
-            return Ok(frames);
+            return Ok(None);
         }
 
-        let (read, info) = capture.read_from_device(scratch)?;
+        let (read, info) = self
+            .capture
+            .read_from_device(&mut self.scratch)
+            .map_err(|e| backend_error(Operation::Start, e))?;
         let read = usize::try_from(read).unwrap_or_default();
-        let Some(window) = scratch.get_mut(..read * BYTES_PER_FRAME) else {
-            return Ok(frames);
-        };
 
         if read == 0 {
-            return Ok(frames);
+            return Ok(None);
         }
-        zeroed_if_silent(window, info.flags.silent);
-        recorder.admit(window);
-        frames += read;
+        Ok(self
+            .scratch
+            .get_mut(..read * BYTES_PER_FRAME)
+            .map(|window| Delivery {
+                window,
+                silent: info.flags.silent,
+                discontinuity: info.flags.data_discontinuity,
+            }))
     }
 }
