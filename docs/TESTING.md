@@ -12,31 +12,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   pair, quality, phase, block size and reset that asserts finite output and the expected frames, and
   fail the grid on an unexpected `Err`. Done when the property test finds the compaction underflow
   before its fix.
-- [M · 0.18.1] Fail the lab's `--against` when a reading goes missing. **Medium, builder.**
-  `weighed` passes over a baseline row whose case was not measured, a metric gone is only printed
-  (`dsp-lab/src/lab/readings.rs:140-168`), `held_to` succeeds with nothing compared
-  (`dsp-lab/src/main.rs:111-124`), and a worker's panic becomes an empty result (`runner.rs:61-63`).
-  On a whole run fail on a missing row or metric and carry a panic as an error. Done when deleting a
-  subject makes `measure --against baseline.tsv` fail.
 - [M · 0.18.1] Build and run the equaliser a fuzzed profile describes. **Medium, builder.** The
   `equaliser` target stops at a text round trip (`fuzz/fuzz_targets/equaliser.rs:7-11`),
   `measurement` never fits (`measurement.rs:12-22`), and `Store::read_in` and `targets::parse` have
   no target. Build the stage at 44.1, 96 and 192 kHz, call `fitted_preamp` and process an impulse,
   asserting finite bounded output. Done when a profile of 32 bands at +40 dB fails the target before
   its fix.
-- [S · 0.18.1] Hold the DSP lab and the bench ceilings closer to what they measure. **Low,
-  builder.** The chain's THD and IMD use `AMONG_DITHER` (10 dB) beside float and 24-bit readings
-  near −170 dB, `LEVEL`'s 2 % allows 4.9 dB at −245 dB, and `SHARE` lets a ripple rise 50 %
-  (`dsp-lab/src/lab/metric.rs:18-24`); the bench passes over a measured name with no ceiling and
-  never asks for a listed one (`crates/resonate-dsp/benches/stages.rs:85-103`), and its ceilings sit
-  about four times above the costs recorded. Use the dither tolerance only for dithered sinks, cap
-  the relative terms, and fail on a bench without a ceiling. Done when a 5 dB loss on a float chain
-  fails `--against`.
-- [S · 0.18.1] Build and test the DSP lab in the local gate. **Low, builder.** `cargo xtask check`
-  only formats `dsp-lab/` (`crates/xtask/src/plan.rs:14`), so its 43 tests and its build against
-  `resonate-dsp` and `resonate-engine` go unchecked until someone measures by hand. Lint and test it
-  with `--no-default-features` in `cargo xtask check`. Done when a change breaking the lab's build
-  fails the gate.
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
@@ -245,11 +226,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
   (`crates/resonate-words-build/src/comments.rs:26-38`). Add them and update `rust-style.md`'s list.
   Done when `# x` in `android/gradle.properties` fails the test.
-- [S · 0.18.1] Raise the DSP lab's lock with the workspace and correct `AGENTS.md`'s fmt line.
-  **Low, builder.** `dsp-lab/Cargo.lock` still names every `resonate-*` crate at 0.17.0 and differs
-  in eight external versions, and `AGENTS.md:82` says `xtask fmt` covers the workspace and `fuzz/`
-  though `DETACHED` holds `dsp-lab` too. Refresh the lock in the version raise and correct the line.
-  Done when both match.
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
