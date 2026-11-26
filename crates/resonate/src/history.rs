@@ -143,9 +143,9 @@ fn brought_in(
     said!(
         "{}",
         words::history::brought_in(
-            service.name(),
             brought.credited,
             brought.held_already,
+            service.name(),
             brought.unmatched
         )
     );
@@ -158,8 +158,8 @@ fn brought_in_from_file(library: &Library, file: &Path) -> Result<()> {
     said!(
         "{}",
         words::history::brought_in_from_file(
-            file.display().to_string(),
             brought.credited,
+            file.display().to_string(),
             brought.held_already,
             brought.unmatched
         )
