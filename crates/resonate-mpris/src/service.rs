@@ -33,6 +33,7 @@ use crate::{
     interfaces::{Owed, OwnInterface, PlayerInterface, Root, RowArt, Shared, waiting_to_play},
     notify::{Shown, shown},
     playlists::{PlaylistsInterface, listed, moved},
+    reopening::Reopening,
     track::{
         PlaybackStatus, Sleep, metadata, micros, no_track, playing_digest, queued_metadata,
         sleep_status, sounding, track_path,
@@ -51,12 +52,14 @@ pub(crate) const ZONE_PREFIX: &str = "zone";
 
 struct Claimed {
     name: RwLock<WellKnownName<'static>>,
+    connection: RwLock<Option<Connection>>,
 }
 
 impl Claimed {
-    fn new(name: WellKnownName<'static>) -> Self {
+    fn wanting(name: WellKnownName<'static>) -> Self {
         Self {
             name: RwLock::new(name),
+            connection: RwLock::new(None),
         }
     }
 
@@ -66,6 +69,19 @@ impl Claimed {
 
     fn moved_to(&self, name: WellKnownName<'static>) {
         *self.name.write() = name;
+    }
+
+    fn took(&self, name: WellKnownName<'static>, connection: Connection) {
+        *self.name.write() = name;
+        *self.connection.write() = Some(connection);
+    }
+
+    fn unique_name(&self) -> Option<OwnedUniqueName> {
+        self.connection.read().as_ref()?.unique_name().cloned()
+    }
+
+    fn let_go(&self) -> Option<Connection> {
+        self.connection.write().take()
     }
 }
 
@@ -118,7 +134,6 @@ struct OnThePipe {
 
 struct OnTheBus {
     claimed: Arc<Claimed>,
-    connection: Option<Connection>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -199,7 +214,7 @@ impl Mpris {
 
     pub fn unique_name(&self) -> Option<OwnedUniqueName> {
         match &self.service {
-            Service::Bus(bus) => bus.connection.as_ref()?.unique_name().cloned(),
+            Service::Bus(bus) => bus.claimed.unique_name(),
             #[cfg(any(windows, target_os = "macos"))]
             Service::Pipe(_) => None,
         }
@@ -385,83 +400,41 @@ impl OnTheBus {
         told: &Receiver<Told>,
         stop: &Arc<AtomicBool>,
     ) -> Result<Self> {
-        let mut builder = connection::Builder::session()
-            .map_err(|source| Error::bus(BusOp::Connect, source))?
-            .serve_at(
-                OBJECT_PATH,
-                Root {
-                    shared: Arc::clone(shared),
-                },
-            )
-            .map_err(|source| Error::bus(BusOp::Serve, source))?
-            .serve_at(
-                OBJECT_PATH,
-                PlayerInterface {
-                    shared: Arc::clone(shared),
-                },
-            )
-            .map_err(|source| Error::bus(BusOp::Serve, source))?
-            .serve_at(
-                OBJECT_PATH,
-                TrackList {
-                    shared: Arc::clone(shared),
-                },
-            )
-            .map_err(|source| Error::bus(BusOp::Serve, source))?
-            .serve_at(
-                OBJECT_PATH,
-                OwnInterface {
-                    shared: Arc::clone(shared),
-                },
-            )
-            .map_err(|source| Error::bus(BusOp::Serve, source))?;
-
-        if let Some(playlists) = playlists.clone() {
-            builder = builder
-                .serve_at(OBJECT_PATH, PlaylistsInterface { playlists })
-                .map_err(|source| Error::bus(BusOp::Serve, source))?;
-        }
-
-        let connection = builder
-            .build()
-            .map_err(|source| Error::bus(BusOp::Connect, source))?;
-
-        let losses = name_losses(&connection);
-        let claimed = Arc::new(Claimed::new(claim(&connection, zone)?));
-        let thread = {
-            let stop = Arc::clone(stop);
-            let shared = Arc::clone(shared);
-            let connection = connection.clone();
-            let told = told.clone();
-            thread::Builder::new()
-                .name("resonate-mpris".to_owned())
-                .spawn(move || announce(&connection, &shared, playlists.as_ref(), &told, &stop))
-                .map_err(|_| Error::ThreadStopped)?
+        let linking = Linking {
+            zone,
+            shared: Arc::clone(shared),
+            playlists,
+            claimed: Arc::new(Claimed::wanting(preferred_name(zone)?)),
+            stop: Arc::clone(stop),
         };
+        let claimed = Arc::clone(&linking.claimed);
 
-        if let Some(losses) = losses {
-            watch_the_name(
-                connection.clone(),
-                zone,
-                Arc::clone(&claimed),
-                Arc::clone(stop),
-                losses,
-            );
+        let link = linking.open()?;
+        let told = told.clone();
+
+        let spawned = thread::Builder::new()
+            .name("resonate-mpris".to_owned())
+            .spawn(move || announce(&linking, link, &told));
+
+        match spawned {
+            Ok(thread) => Ok(Self {
+                claimed,
+                thread: Some(thread),
+            }),
+            Err(_) => {
+                if let Some(connection) = claimed.let_go() {
+                    let _ = connection.close();
+                }
+                Err(Error::ThreadStopped)
+            }
         }
-
-        tracing::info!(name = %claimed.name(), "the MPRIS interface is on the session bus");
-        Ok(Self {
-            claimed,
-            connection: Some(connection),
-            thread: Some(thread),
-        })
     }
 
     fn rest(&mut self) {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-        if let Some(connection) = self.connection.take() {
+        if let Some(connection) = self.claimed.let_go() {
             hand_back(&connection, &self.claimed.name());
 
             let _ = connection.close();
@@ -475,9 +448,158 @@ impl Drop for Mpris {
     }
 }
 
+struct Linking {
+    zone: ZoneId,
+    shared: Arc<Shared>,
+    playlists: Option<Arc<dyn Playlists>>,
+    claimed: Arc<Claimed>,
+    stop: Arc<AtomicBool>,
+}
+
+impl Linking {
+    fn open(&self) -> Result<Link> {
+        let link = Link::over(self.served()?, self.playlists.is_some())?;
+        let losses = name_losses(&link.connection);
+        let name = claim(&link.connection, self.zone)?;
+
+        self.claimed.took(name, link.connection.clone());
+        if let Some(losses) = losses {
+            watch_the_name(
+                link.connection.clone(),
+                self.zone,
+                Arc::clone(&self.claimed),
+                Arc::clone(&self.stop),
+                losses,
+            );
+        }
+
+        tracing::info!(name = %self.claimed.name(), "the MPRIS interface is on the session bus");
+        Ok(link)
+    }
+
+    fn served(&self) -> Result<Connection> {
+        let mut builder = connection::Builder::session()
+            .map_err(|source| Error::bus(BusOp::Connect, source))?
+            .serve_at(
+                OBJECT_PATH,
+                Root {
+                    shared: Arc::clone(&self.shared),
+                },
+            )
+            .map_err(|source| Error::bus(BusOp::Serve, source))?
+            .serve_at(
+                OBJECT_PATH,
+                PlayerInterface {
+                    shared: Arc::clone(&self.shared),
+                },
+            )
+            .map_err(|source| Error::bus(BusOp::Serve, source))?
+            .serve_at(
+                OBJECT_PATH,
+                TrackList {
+                    shared: Arc::clone(&self.shared),
+                },
+            )
+            .map_err(|source| Error::bus(BusOp::Serve, source))?
+            .serve_at(
+                OBJECT_PATH,
+                OwnInterface {
+                    shared: Arc::clone(&self.shared),
+                },
+            )
+            .map_err(|source| Error::bus(BusOp::Serve, source))?;
+
+        if let Some(playlists) = self.playlists.clone() {
+            builder = builder
+                .serve_at(OBJECT_PATH, PlaylistsInterface { playlists })
+                .map_err(|source| Error::bus(BusOp::Serve, source))?;
+        }
+
+        builder
+            .build()
+            .map_err(|source| Error::bus(BusOp::Connect, source))
+    }
+
+    fn kept(&self, link: Option<Link>, reopening: &mut Reopening) -> Option<Link> {
+        match link {
+            Some(link) if !link.connection.is_closed() => Some(link),
+            Some(_) => {
+                tracing::warn!(
+                    "the session bus closed the player's connection; claiming its name again on another"
+                );
+                self.claimed.let_go();
+                self.reopened(reopening)
+            }
+            None => self.reopened(reopening),
+        }
+    }
+
+    fn reopened(&self, reopening: &mut Reopening) -> Option<Link> {
+        if !reopening.due(Instant::now()) {
+            return None;
+        }
+        self.open()
+            .inspect_err(|error| {
+                tracing::warn!(%error, "the player could not be put on the session bus again");
+            })
+            .ok()
+    }
+}
+
+struct Link {
+    connection: Connection,
+    root: InterfaceRef<Root>,
+    player: InterfaceRef<PlayerInterface>,
+    tracks: InterfaceRef<TrackList>,
+    ours: InterfaceRef<OwnInterface>,
+    collected: Option<InterfaceRef<PlaylistsInterface>>,
+}
+
+impl Link {
+    fn over(connection: Connection, collects: bool) -> Result<Self> {
+        let server = connection.object_server();
+        let served = |source| Error::bus(BusOp::Serve, source);
+
+        let root = server.interface(OBJECT_PATH).map_err(served)?;
+        let player = server.interface(OBJECT_PATH).map_err(served)?;
+        let tracks = server.interface(OBJECT_PATH).map_err(served)?;
+        let ours = server.interface(OBJECT_PATH).map_err(served)?;
+        let collected = match collects {
+            true => Some(server.interface(OBJECT_PATH).map_err(served)?),
+            false => None,
+        };
+
+        Ok(Self {
+            connection,
+            root,
+            player,
+            tracks,
+            ours,
+            collected,
+        })
+    }
+
+    fn publish(&self, shared: &Arc<Shared>, before: &Watched, now: &Watched, seeked: Option<i64>) {
+        publish(&self.player, before, now);
+        publish_root(&self.root, before, now);
+        publish_ours(&self.ours, before, now);
+        publish_tracks(&self.tracks, shared, before, now);
+        if let Some(collected) = self.collected.as_ref() {
+            publish_playlists(collected, &before.playlists, &now.playlists);
+        }
+        if let Some(position) = seeked {
+            emit_seeked(&self.player, position);
+        }
+    }
+}
+
+fn preferred_name(zone: ZoneId) -> Result<WellKnownName<'static>> {
+    WellKnownName::try_from(bus_name_of(zone))
+        .map_err(|source| Error::bus(BusOp::ClaimName, source))
+}
+
 fn claim(connection: &Connection, zone: ZoneId) -> Result<WellKnownName<'static>> {
-    let preferred = WellKnownName::try_from(bus_name_of(zone))
-        .map_err(|source| Error::bus(BusOp::ClaimName, source))?;
+    let preferred = preferred_name(zone)?;
 
     if owned(connection, &preferred)? {
         return Ok(preferred);
@@ -651,46 +773,19 @@ struct Playhead {
     rate: u32,
 }
 
-fn announce(
-    connection: &Connection,
-    shared: &Arc<Shared>,
-    playlists: Option<&Arc<dyn Playlists>>,
-    told: &Receiver<Told>,
-    stop: &AtomicBool,
-) {
-    let server = connection.object_server();
-    let Ok(player) = server.interface::<_, PlayerInterface>(OBJECT_PATH) else {
-        tracing::warn!("the MPRIS player interface vanished from the object server");
-        return;
-    };
-    let Ok(tracks) = server.interface::<_, TrackList>(OBJECT_PATH) else {
-        tracing::warn!("the MPRIS track list vanished from the object server");
-        return;
-    };
-    let Ok(root) = server.interface::<_, Root>(OBJECT_PATH) else {
-        tracing::warn!("the MPRIS root interface vanished from the object server");
-        return;
-    };
-    let Ok(ours) = server.interface::<_, OwnInterface>(OBJECT_PATH) else {
-        tracing::warn!("the sleep timer interface vanished from the object server");
-        return;
-    };
-    let collected = playlists.and_then(|_| {
-        server
-            .interface::<_, PlaylistsInterface>(OBJECT_PATH)
-            .map_err(|_| tracing::warn!("the MPRIS playlists vanished from the object server"))
-            .ok()
-    });
-
+fn announce(linking: &Linking, link: Link, told: &Receiver<Told>) {
+    let shared = &linking.shared;
+    let playlists = linking.playlists.as_ref();
     let errands = Errands::start(shared);
     let headsets = Headsets::start(shared);
     let heard_from = told;
     let mut told = None;
 
     let mut watched = snapshot(shared, playlists, None);
-    let mut serving = BusConnection::Open;
+    let mut link = Some(link);
+    let mut reopening = Reopening::default();
 
-    while !stop.load(Ordering::Acquire) {
+    while !linking.stop.load(Ordering::Acquire) {
         thread::sleep(POLL);
 
         let next = snapshot(shared, playlists, Some(&watched));
@@ -699,17 +794,9 @@ fn announce(
             .filter(|_| watched.seeks != next.seeks)
             .map(|playhead| micros(playhead.position, playhead.rate));
 
-        if serving.still(connection) {
-            publish(&player, &watched, &next);
-            publish_root(&root, &watched, &next);
-            publish_ours(&ours, &watched, &next);
-            publish_tracks(&tracks, shared, &watched, &next);
-            if let Some(collected) = collected.as_ref() {
-                publish_playlists(collected, &watched.playlists, &next.playlists);
-            }
-            if let Some(position) = seeked {
-                emit_seeked(&player, position);
-            }
+        link = linking.kept(link, &mut reopening);
+        if let Some(link) = link.as_ref() {
+            link.publish(shared, &watched, &next, seeked);
         }
         if let Some(headsets) = headsets.as_ref() {
             publish(headsets.player(), &watched, &next);
@@ -726,24 +813,6 @@ fn announce(
     }
     if let Some(headsets) = headsets {
         headsets.rest();
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BusConnection {
-    Open,
-    Closed,
-}
-
-impl BusConnection {
-    fn still(&mut self, connection: &Connection) -> bool {
-        if *self == Self::Open && connection.is_closed() {
-            tracing::warn!(
-                "the session bus closed the player's connection; MPRIS is gone until the player starts again"
-            );
-            *self = Self::Closed;
-        }
-        *self == Self::Open
     }
 }
 

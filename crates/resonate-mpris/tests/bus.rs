@@ -72,6 +72,7 @@ const ON_A_BUS_OF_ITS_OWN: &str = "RESONATE_ON_A_BUS_OF_ITS_OWN";
 const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
 const NOTIFICATIONS_PATH: &str = "/org/freedesktop/Notifications";
 const RAISED: u32 = 41;
+const IDENTITY: &str = "Resonate";
 const SYSTEM_BUS_TOO: &str = r#"DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" exec "$@""#;
 const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
 const NETWORK_MANAGER_PATH: &str = "/org/freedesktop/NetworkManager";
@@ -487,6 +488,7 @@ impl Backend for RealtimeSink {
 type Catalog = Arc<Mutex<Vec<(MediaLocation, Option<FrameSpan>, Heard)>>>;
 
 struct Desktop {
+    identity: Arc<Mutex<String>>,
     quit: Arc<AtomicBool>,
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
@@ -499,7 +501,7 @@ struct Desktop {
 
 impl Host for Desktop {
     fn identity(&self) -> String {
-        "Resonate".to_owned()
+        self.identity.lock().clone()
     }
 
     fn desktop_entry(&self) -> Option<String> {
@@ -665,6 +667,7 @@ struct Harness {
     player: Arc<Player>,
     connection: Connection,
     destination: OwnedUniqueName,
+    identity: Arc<Mutex<String>>,
     quit: Arc<AtomicBool>,
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
@@ -709,6 +712,7 @@ impl Harness {
             .expect("the engine starts behind a fake sink"),
         );
 
+        let identity = Arc::new(Mutex::new(IDENTITY.to_owned()));
         let quit = Arc::new(AtomicBool::new(false));
         let raised = Arc::new(AtomicBool::new(false));
         let opened = Arc::new(Mutex::new(Vec::new()));
@@ -718,6 +722,7 @@ impl Harness {
         let catalog: Catalog = Arc::new(Mutex::new(Vec::new()));
 
         let host = Desktop {
+            identity: Arc::clone(&identity),
             quit: Arc::clone(&quit),
             raised: Arc::clone(&raised),
             opened: Arc::clone(&opened),
@@ -743,6 +748,7 @@ impl Harness {
                 .expect("a connection to the bus has a unique name"),
             player,
             connection,
+            identity,
             quit,
             raised,
             opened,
@@ -859,31 +865,7 @@ impl Harness {
     }
 
     fn changed(&self, property: &'static str) -> Receiver<OwnedVariant> {
-        let signals = self
-            .proxy(PROPERTIES)
-            .receive_signal("PropertiesChanged")
-            .expect("the served object announces its property changes");
-
-        let (announced, heard) = unbounded();
-
-        thread::spawn(move || {
-            for message in signals {
-                let Ok((_, mut changed, _)) =
-                    message
-                        .body()
-                        .deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
-                else {
-                    continue;
-                };
-                let Some(value) = changed.remove(property) else {
-                    continue;
-                };
-                if announced.send(value).is_err() {
-                    return;
-                }
-            }
-        });
-        heard
+        changes(&self.proxy(PROPERTIES), property)
     }
 
     fn invalidated(&self, property: &'static str) -> Receiver<()> {
@@ -1027,6 +1009,33 @@ impl Drop for Harness {
             mpris.shutdown();
         }
     }
+}
+
+fn changes(properties: &Proxy<'_>, property: &'static str) -> Receiver<OwnedVariant> {
+    let signals = properties
+        .receive_signal("PropertiesChanged")
+        .expect("the served object announces its property changes");
+
+    let (announced, heard) = unbounded();
+
+    thread::spawn(move || {
+        for message in signals {
+            let Ok((_, mut changed, _)) =
+                message
+                    .body()
+                    .deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
+            else {
+                continue;
+            };
+            let Some(value) = changed.remove(property) else {
+                continue;
+            };
+            if announced.send(value).is_err() {
+                return;
+            }
+        }
+    });
+    heard
 }
 
 fn announced(signals: &Receiver<String>, wanted: &str) {
@@ -2242,6 +2251,7 @@ fn connected_pair() -> (TcpStream, TcpStream) {
 
 fn piped(harness: &Harness) -> Running {
     let host = Desktop {
+        identity: Arc::clone(&harness.identity),
         quit: Arc::clone(&harness.quit),
         raised: Arc::clone(&harness.raised),
         opened: Arc::clone(&harness.opened),
@@ -4011,6 +4021,74 @@ fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up()
 
     assert_eq!(after.summary, "After");
     assert_eq!(harness.names(), [BUS_NAME]);
+}
+
+#[test]
+fn a_player_whose_connection_the_bus_closed_claims_its_name_again_and_answers_on_it() {
+    if !on_a_bus_of_its_own(
+        "a_player_whose_connection_the_bus_closed_claims_its_name_again_and_answers_on_it",
+    ) {
+        return;
+    }
+
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let bus = DBusProxy::new(&harness.connection).expect("the bus answers about itself");
+    let closed = BusName::try_from(harness.destination.as_str()).expect("a unique name");
+    let served = BusName::try_from(BUS_NAME).expect("the player's name");
+
+    harness.load(&tree.flac("before.flac", &[("TITLE", "Before")]));
+    harness.wait_for(
+        |harness| text(&harness.metadata(), "xesam:title").as_deref() == Some("Before"),
+        "the track to reach the bus",
+    );
+
+    *harness.identity.lock() = format!("{IDENTITY}\0");
+    harness.wait_for(
+        |_| !bus.name_has_owner(closed.clone()).expect("the bus answers"),
+        "the bus to close the connection that sent it a NUL",
+    );
+    *harness.identity.lock() = IDENTITY.to_owned();
+    harness.wait_for(
+        |harness| {
+            bus.get_name_owner(served.clone())
+                .is_ok_and(|owner| owner != harness.destination)
+        },
+        "the player's name to be claimed again on another connection",
+    );
+
+    let owner = bus.get_name_owner(served).expect("the name has an owner");
+    let player = Proxy::new(&harness.connection, BUS_NAME, OBJECT_PATH, PLAYER)
+        .expect("the player answers under its name again");
+    let properties = Proxy::new(&harness.connection, BUS_NAME, OBJECT_PATH, PROPERTIES)
+        .expect("the player's properties answer again");
+    let statuses = changes(&properties, "PlaybackStatus");
+
+    let fields = player
+        .get_property::<HashMap<String, OwnedVariant>>("Metadata")
+        .expect("Metadata is readable again");
+
+    assert_eq!(text(&fields, "xesam:title").as_deref(), Some("Before"));
+    assert_eq!(
+        harness.mpris.as_ref().and_then(Mpris::unique_name).as_ref(),
+        Some(&owner)
+    );
+
+    player
+        .call_method("Pause", &())
+        .expect("a media key reaches the player again");
+
+    let status = statuses
+        .recv_timeout(PATIENCE)
+        .expect("the pause is announced on the new connection");
+
+    assert_eq!(
+        String::try_from(status).expect("a status is a string"),
+        "Paused"
+    );
+    assert_eq!(harness.player.state().playback, PlaybackState::Paused);
 }
 
 #[test]

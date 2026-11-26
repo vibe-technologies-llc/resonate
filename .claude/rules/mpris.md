@@ -122,7 +122,7 @@ demand and never announced. Ids:
   feed and carriage return, U+FFFE and U+FFFF) and cuts on a letter at `FIELD_BYTES_AT_MOST`
   (4 KiB), `xesam:asText` at `LYRICS_BYTES_AT_MOST` (32 KiB), a list before it is split. zvariant
   writes an interior NUL unchecked and the daemon drops a connection sending one, taking MPRIS,
-  media keys, notifications and the idle inhibit with it; a megabyte tag would ride every property
+  media keys, notifications and the idle inhibit with it until each is opened again; a megabyte tag would ride every property
   change (`a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up`, a FLAC
   under `dbus-run-session`). **`TagSet` keeps what was read**: the tag writer writes it back and
   ID3v2.4 parts values with NUL, so a strip where tags enter would merge or lose what the listener
@@ -155,7 +155,8 @@ demand and never announced. Ids:
 subscribes to `NameLost` *before* claiming; a thread of its own reads it. On losing, `instances`
 claims `org.mpris.MediaPlayer2.resonate.instance<pid>` (then `instance<pid>-<n>`, up to `INSTANCES`
 = 16, else `Error::NameTaken`), as `claim` does for a name taken before start. `Claimed` is the cell
-both threads share (`Mpris::name` = current name). `Mpris::shutdown`: stop flag, join poll thread,
+the poll, the name watch and `Mpris` share: the name held (`Mpris::name`) and the connection holding
+it (`Mpris::unique_name`, `None` while the player is off the bus). `Mpris::shutdown`: stop flag, join poll thread,
 `ReleaseName`, close connection (so the release's `NameLost` reads as teardown), remove the cover
 folder; idempotent (`Drop` reruns it). `crates/resonate-mpris/tests/name.rs` is its own test binary:
 instance names are keyed by pid and each process has its own `INSTANCES` pool.
@@ -204,9 +205,17 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   closed one is warned of and dropped with its notifier, `Awake` and `Gripping` (the portal lets an
   inhibit go with the connection that asked), and another is opened at once, then at most every
   `REOPENED_AT_MOST_EVERY` (10 s) (`Reopening`), its fresh `Gripping` taking the inhibit again
-  where sound is wanted. The poll's own connection is only noticed (`BusConnection`): warned of once,
-  publishing to it stops while headsets and the desktop's errands go on; claiming the name again
-  on a new connection is not built. The poll's telling is one function,
+  where sound is wanted. **The player's own connection is opened again the same way**, asked at
+  every `POLL` (`Linking::kept`): a closed one is warned of and dropped with its object server (its
+  name watch ends with its `NameLost` stream), `Claimed` lets it go, and `Linking::open` builds
+  another at once, then at most every `REOPENED_AT_MOST_EVERY` (a `Reopening` of its own): every
+  interface served again (`Link`), `NameLost` subscribed before `claim` takes the zone's name again
+  (an instance name where another player took it meanwhile), `Claimed` pointed at both and a new
+  name watch started. The poll's `Watched` is kept across, so nothing is announced for the gap and a
+  client reads the properties afresh on the name's new owner; headsets and the desktop's errands go
+  on throughout (`a_player_whose_connection_the_bus_closed_claims_its_name_again_and_answers_on_it`,
+  in which the daemon drops the player for a NUL in `Identity`, the host's own and so unfitted). The
+  poll's telling is one function,
   `tell_the_desktop`, for the bus loop and for Windows's pipe service, which has no bus to publish
   on and runs only that (`toast_what_plays`). A failed `Inhibit` still counts as taken.
   **An `Inhibit` that timed out may still be granted**: `hold` names its request with a

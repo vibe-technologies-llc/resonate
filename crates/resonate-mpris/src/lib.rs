@@ -48,6 +48,7 @@ mod preferences;
 #[cfg(any(windows, target_os = "macos", test))]
 mod registry;
 mod remote;
+mod reopening;
 #[cfg(any(target_os = "macos", test))]
 mod route;
 mod service;
