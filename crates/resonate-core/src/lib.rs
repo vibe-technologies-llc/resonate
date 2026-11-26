@@ -20,6 +20,7 @@ mod hosted;
 mod id;
 mod identity;
 mod link;
+pub mod lrc;
 mod media;
 mod metered;
 pub mod naming;

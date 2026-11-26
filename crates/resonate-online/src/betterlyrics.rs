@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
-use resonate_core::SourceId;
+use resonate_core::{SourceId, lrc::escaped_for_lrc};
 use resonate_library::{LookupOp, LyricText, LyricsAsked};
-use resonate_lyrics::{LyricOp, Lyrics, Timing, Voice, escaped_for_lrc, read_ttml};
+use resonate_lyrics::{LyricOp, Lyrics, Timing, Voice, read_ttml};
 use serde::Deserialize;
 
 use crate::{Client, Error, Host, lyrics::Failed, query::Params};

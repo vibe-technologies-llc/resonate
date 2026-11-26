@@ -4,6 +4,7 @@ paths:
   - "crates/resonate-ui/src/lyrics.rs"
   - "crates/resonate-ui/src/views/lyrics.rs"
   - "crates/resonate-codec/src/sylt.rs"
+  - "crates/resonate-core/src/lrc.rs"
   - "crates/resonate-online/src/lrclib.rs"
   - "crates/resonate-online/src/betterlyrics.rs"
   - "crates/resonate-online/src/lyrics.rs"
@@ -241,12 +242,26 @@ dependency (tested without a window).
   mis-take it, and `unescaped` undoes exactly that.** A text is escaped (one backslash in front)
   when its leading bracket opens what the reader takes (a moment, an id tag, a `[v1:`/`[v2:` voice
   marker, or a marker ahead of a stamp, all decided by the reader's own `Bracket::read`,
-  `heads_a_timed_line` and `voiced_text` through `is_taken_by_the_reader`) or when it already leads
+  `heads_a_timed_line` and `voice_marked` through `is_taken_by_the_reader`) or when it already leads
   with backslashes then `[`. `[Chorus] x` stays as it is on disk, read as text anyway, and a
   hand-written `\[Chorus]` is left as written. So `[offset:30000] x` written by Better Lyrics'
   `lrc_of` reads back as that text, not as an offset
   (`a_line_led_by_a_bracket_the_reader_would_take_is_read_back_as_text_once_escaped`,
   `a_marker_written_by_hand_is_text_and_a_backslash_before_it_is_left_as_written`).
+- **The bracket grammar and the escape live in `resonate_core::lrc`; the reader stays here.**
+  `resonate-codec`'s `sylt.rs` writes LRC too and may not reach this crate (its `serde` would land
+  under `resonate-musicbrainz`), and an escape copied into the codec would drift from what the
+  reader takes, so a harmless `[Chorus] x` would read back with a backslash. So core holds what
+  both must agree on and nothing more: `Bracket`, `Identified`, `moment`, `span`, `brackets`,
+  `heads_a_timed_line`, `voice_marked`, `escaped_for_lrc` and `unescaped` (tested there by
+  `a_text_the_reader_would_take_is_escaped_once_and_unescaped_back_to_itself`), while
+  `lrc.rs` here keeps the reading of a sheet (`Reading::absorb`, `Stamped`, the bounds,
+  `voiced_text` turning a `VoiceMarker` into a `Voice`). The SYLT writer escapes an unmarked
+  line's text and `sylt::timed` unescapes it before framing, so a frame's `[offset:5] x` or
+  `[00:09.00] x` survives the sheet both ways; a syllable-marked line opens on its `<` stamp and
+  needs none
+  (`a_line_led_by_a_bracket_the_reader_would_take_is_escaped_and_framed_back_as_written`,
+  `an_id3_sylt_line_led_by_a_bracket_the_reader_would_take_is_read_as_its_text`).
 - **A line repeats once per timestamp on it**, hence `LARGEST_SHEET`, `LARGEST_SET`, `MOST_LINES`;
   past any: `Error::Unreadable { op: Parse }`. In the reader because `Embedded` is handed a tag from
   an untrusted file. `model::MOST_LINES` is the one count: a Lyricsfile's `lines` past it are

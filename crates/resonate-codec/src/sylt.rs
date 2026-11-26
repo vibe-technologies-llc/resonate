@@ -1,6 +1,10 @@
 use std::fmt::Write as _;
 
-use resonate_core::{TextEncoding, text::decoded_as};
+use resonate_core::{
+    TextEncoding,
+    lrc::{escaped_for_lrc, unescaped},
+    text::decoded_as,
+};
 
 use crate::mpa::FrameClock;
 
@@ -188,7 +192,7 @@ fn syllables_of_a_sheet(sheet: &str) -> Option<Vec<Syllable>> {
         let (at, said) = line.strip_prefix('[')?.split_once(']')?;
         let Some(marked) = said.strip_prefix('<') else {
             read.push(Syllable {
-                text: said.to_owned(),
+                text: unescaped(said).to_owned(),
                 at: stamped(at)?,
             });
             continue;
@@ -327,7 +331,10 @@ fn written(syllables: &[Syllable]) -> Option<String> {
                     syllable.text.trim_start_matches(['\n', '\r'])
                 ),
             )),
-            _ => lines.push((syllable.at, syllable.text.clone())),
+            _ => lines.push((
+                syllable.at,
+                escaped_for_lrc(syllable.text.trim()).into_owned(),
+            )),
         }
     }
 
@@ -573,6 +580,53 @@ mod tests {
             assert_eq!(timed.frame, bytes);
             assert_eq!(timed.words, words);
         }
+    }
+
+    #[test]
+    fn a_line_led_by_a_bracket_the_reader_would_take_is_escaped_and_framed_back_as_written() {
+        let bytes = frame(
+            UTF8,
+            MILLISECONDS,
+            &[
+                (b"[offset:5] overhead", 1_000),
+                (b"[00:09.00] the albatross", 9_000),
+                (b"[Chorus] hangs", 12_000),
+            ],
+            &[0],
+        );
+
+        let sheet = as_lrc(&bytes, None).expect("a sheet");
+        let timed = timed(&sheet, ENGLISH).expect("a sheet a frame can hold");
+
+        assert_eq!(
+            sheet,
+            "[00:01.000]\\[offset:5] overhead\n\
+             [00:09.000]\\[00:09.00] the albatross\n\
+             [00:12.000][Chorus] hangs\n",
+        );
+        assert_eq!(timed.frame, bytes);
+        assert_eq!(
+            timed.words,
+            "[offset:5] overhead\n[00:09.00] the albatross\n[Chorus] hangs"
+        );
+    }
+
+    #[test]
+    fn a_marked_line_opens_on_its_word_stamp_and_needs_no_escape() {
+        let bytes = frame(
+            UTF8,
+            MILLISECONDS,
+            &[(b"\n[offset:5] over", 1_000), (b"head", 1_400)],
+            &[0],
+        );
+
+        let sheet = as_lrc(&bytes, None).expect("a sheet");
+
+        assert_eq!(
+            sheet,
+            "[00:01.000]<00:01.000>[offset:5] over<00:01.400>head\n"
+        );
+        assert_eq!(timed(&sheet, ENGLISH).map(|timed| timed.frame), Some(bytes));
     }
 
     #[test]

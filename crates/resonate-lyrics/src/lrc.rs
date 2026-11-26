@@ -1,17 +1,17 @@
-use std::{borrow::Cow, iter, time::Duration};
+use std::{iter, time::Duration};
 
-use resonate_core::{SourceId, folded_letters};
+use resonate_core::{
+    SourceId, folded_letters,
+    lrc::{
+        Bracket, Identified, VoiceMarker, brackets, heads_a_timed_line, moment, span, unescaped,
+        voice_marked,
+    },
+};
 
 use crate::{
     Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted, model::MOST_LINES,
 };
 
-const ESCAPE: char = '\\';
-const BRACKET: char = '[';
-const SECONDS_PER_MINUTE: u64 = 60;
-const MINUTES_PER_HOUR: u64 = 60;
-const COLONS_WHEN_HOURS_ARE_WRITTEN: usize = 2;
-const NANOSECOND_DIGITS: usize = 9;
 pub(crate) const LARGEST_SHEET: usize = 512 * 1024;
 const LARGEST_SET: usize = 1024 * 1024;
 const LONGEST_WORD_STAMP: usize = 32;
@@ -20,41 +20,6 @@ const LENGTH_MAY_DIFFER_BY: Duration = Duration::from_secs(30);
 pub(crate) struct Sheet {
     pub(crate) declared: Declared,
     pub(crate) lyrics: Option<Lyrics>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Identified {
-    Title,
-    Artist,
-    Album,
-    Author,
-    Transcriber,
-    Editor,
-    Version,
-    Length,
-    Offset,
-}
-
-impl Identified {
-    const NAMED: [(&'static str, Self); 10] = [
-        ("ti", Self::Title),
-        ("ar", Self::Artist),
-        ("al", Self::Album),
-        ("au", Self::Author),
-        ("by", Self::Transcriber),
-        ("re", Self::Editor),
-        ("tool", Self::Editor),
-        ("ve", Self::Version),
-        ("length", Self::Length),
-        ("offset", Self::Offset),
-    ];
-
-    fn read(name: &str) -> Option<Self> {
-        Self::NAMED
-            .iter()
-            .find(|(tag, _)| name.eq_ignore_ascii_case(tag))
-            .map(|(_, identified)| *identified)
-    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -499,53 +464,12 @@ fn lyric_of(timed: Timed, shift: i64) -> LyricLine {
     line.voiced(timed.voice)
 }
 
-pub fn escaped_for_lrc(text: &str) -> Cow<'_, str> {
-    if is_taken_by_the_reader(text) || leads_with_escaped_bracket(text) {
-        Cow::Owned(format!("{ESCAPE}{text}"))
-    } else {
-        Cow::Borrowed(text)
-    }
-}
-
-fn unescaped(text: &str) -> &str {
-    let Some(rest) = text.strip_prefix(ESCAPE) else {
-        return text;
-    };
-
-    if leads_with_escaped_bracket(rest)
-        || (rest.starts_with(BRACKET) && is_taken_by_the_reader(rest))
-    {
-        rest
-    } else {
-        text
-    }
-}
-
-fn is_taken_by_the_reader(text: &str) -> bool {
-    let opens_something =
-        brackets(text).is_some_and(|(inside, tail)| match Bracket::read(inside) {
-            Bracket::Text => heads_a_timed_line(tail),
-            Bracket::Moment(_) | Bracket::Identifying { .. } => true,
-        });
-
-    opens_something || voiced_text(text).1.len() != text.len()
-}
-
-fn leads_with_escaped_bracket(text: &str) -> bool {
-    text.starts_with(ESCAPE) && text.trim_start_matches(ESCAPE).starts_with(BRACKET)
-}
-
 fn voiced_text(text: &str) -> (Voice, &str) {
-    for (marker, voice) in [("[v1:", Voice::One), ("[v2:", Voice::Two)] {
-        if let Some(words) = text
-            .strip_prefix(marker)
-            .and_then(|words| words.strip_suffix(']'))
-        {
-            return (voice, words.trim());
-        }
+    match voice_marked(text) {
+        Some((VoiceMarker::One, words)) => (Voice::One, words),
+        Some((VoiceMarker::Two, words)) => (Voice::Two, words),
+        None => (Voice::One, text),
     }
-
-    (Voice::One, text)
 }
 
 fn worth_drawing(lyrics: Lyrics) -> Option<Lyrics> {
@@ -562,103 +486,9 @@ fn shifted(at: Duration, shift: i64) -> Duration {
     }
 }
 
-enum Bracket<'a> {
-    Moment(Duration),
-    Identifying { tag: Identified, value: &'a str },
-    Text,
-}
-
-impl<'a> Bracket<'a> {
-    fn read(inside: &'a str) -> Self {
-        if let Some(at) = moment(inside).or_else(|| span(inside)) {
-            return Self::Moment(at);
-        }
-
-        let Some((name, value)) = inside.split_once(':') else {
-            return Self::Text;
-        };
-        let Some(tag) = Identified::read(name.trim()) else {
-            return Self::Text;
-        };
-
-        Self::Identifying { tag, value }
-    }
-}
-
-fn heads_a_timed_line(mut rest: &str) -> bool {
-    while let Some((inside, tail)) = brackets(rest.trim_start()) {
-        match Bracket::read(inside) {
-            Bracket::Moment(_) => return true,
-            Bracket::Identifying { .. } => return false,
-            Bracket::Text => rest = tail,
-        }
-    }
-
-    false
-}
-
-fn brackets(line: &str) -> Option<(&str, &str)> {
-    line.strip_prefix('[')?.split_once(']')
-}
-
-fn span(text: &str) -> Option<Duration> {
-    let text = text.trim();
-    let colons = text.bytes().filter(|byte| *byte == b':').count();
-
-    if colons < COLONS_WHEN_HOURS_ARE_WRITTEN {
-        return moment(text);
-    }
-
-    let (hours, rest) = text.split_once(':')?;
-    let hours = whole(hours)?
-        .checked_mul(MINUTES_PER_HOUR)?
-        .checked_mul(SECONDS_PER_MINUTE)?;
-
-    moment(rest)?.checked_add(Duration::from_secs(hours))
-}
-
-fn moment(inside: &str) -> Option<Duration> {
-    let (minutes, rest) = inside.split_once(':')?;
-    let (seconds, fraction) = match rest.split_once(['.', ':']) {
-        Some((seconds, fraction)) => (seconds, Some(fraction)),
-        None => (rest, None),
-    };
-    let nanoseconds = match fraction {
-        Some(fraction) => sub_second(fraction)?,
-        None => 0,
-    };
-
-    let seconds = whole(minutes)?
-        .checked_mul(SECONDS_PER_MINUTE)?
-        .checked_add(whole(seconds)?)?;
-
-    Some(Duration::new(seconds, nanoseconds))
-}
-
-fn whole(text: &str) -> Option<u64> {
-    decimal(text)?.parse().ok()
-}
-
-fn sub_second(text: &str) -> Option<u32> {
-    let scaled: String = decimal(text)?
-        .chars()
-        .chain(iter::repeat('0'))
-        .take(NANOSECOND_DIGITS)
-        .collect();
-
-    scaled.parse().ok()
-}
-
-fn decimal(text: &str) -> Option<&str> {
-    let text = text.trim();
-    let all_digits = !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
-
-    all_digits.then_some(text)
-}
-
 #[cfg(test)]
 mod tests {
-    use resonate_core::MediaLocation;
+    use resonate_core::{MediaLocation, lrc::escaped_for_lrc};
 
     use super::*;
     use crate::Timing;
@@ -838,6 +668,25 @@ mod tests {
             ]
         );
         assert_eq!(lyrics.lines()[1].text, "Hangs motionless");
+    }
+
+    #[test]
+    fn an_id3_sylt_line_led_by_a_bracket_the_reader_would_take_is_read_as_its_text() {
+        let lyrics = lyrics(
+            "[00:01.000]\\[offset:5] overhead\n\
+             [00:09.000]\\[00:09.00] the albatross\n\
+             [00:12.000][Chorus] hangs\n",
+        )
+        .expect("the sheet holds lines");
+
+        assert_eq!(
+            timed(&lyrics),
+            [
+                (millis(1_000), "[offset:5] overhead"),
+                (millis(9_000), "[00:09.00] the albatross"),
+                (millis(12_000), "[Chorus] hangs"),
+            ]
+        );
     }
 
     #[test]
