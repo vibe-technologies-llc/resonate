@@ -21,10 +21,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   flush. Done when the contract test asserts nothing held after a flush for every stage.
 
 ## Catalog
-- [S · 0.18.1] Fold a recording key's artist and album as its title is folded. **Low, builder.**
-  `crates/resonate-core/src/recorded.rs:30-38`, `:56-69` word-normalise the title but keep the
-  artist's and album's punctuation and spacing, so one recording keys apart under `Guns N' Roses`
-  and `Guns N Roses`. Fold all three alike. Done when both spellings key the same.
 - [S · 0.18.1] Correct `forget_folder`'s description. **Low, builder.** MCP says listens and
   playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
   listens and playlist entries survive. Say what is kept. Done when the description matches the
