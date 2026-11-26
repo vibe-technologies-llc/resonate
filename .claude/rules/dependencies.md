@@ -76,7 +76,7 @@ clone, `library.md`) and, on iOS, `resonate-mobile` alone.
 `#[implement]` and `HSTRING`), at the `wasapi` crate's versions, so no second copy is built: `wasapi`,
 `windows` (no features) and `windows-core` are written once in `[workspace.dependencies]`, and each
 crate adds the features it calls, so a bump moves every user together. It
-reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec`, `resonate-mpris` and the binary
+reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec`, `resonate-mpris`, `resonate-discord` and the binary
 alone (the binary's tests take `console`); the layering job holds both. Its sequencing is compiled
 for `test` on every host (`thiserror` and, for the tests, `parking_lot` are not Windows-only) and
 its `windows` and `windows-core` stay `cfg(windows)`: `HResult` stands for `windows_core::Error`
@@ -85,7 +85,7 @@ in its errors.
 Everywhere else Windows reaches its COM and Win32 calls through safe wrapper crates: `wasapi`
 (`resonate-wasapi`'s device enumeration, endpoint notifications, render client and audio clock;
 `resonate-listen`'s capture endpoints, loopback capture and measuring playback), `thread-priority`
-(the fallback where MMCSS refuses the stream thread), `interprocess` (Discord's named pipe and the window's own, `resonate-mpris`), `keepawake` (the machine awake while playing), `windows` (`resonate-mpris`'s toasts, connection cost and media transport through the Windows Runtime's safe projections, eight features: `Data_Xml_Dom`, `Foundation`, `Media`, `Media_Playback`, `Networking_Connectivity`, `Storage`, `Storage_Streams`, `UI_Notifications`; the `wasapi` crate again for its safe apartment), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
+(the fallback where MMCSS refuses the stream thread), `interprocess` (the window's named pipe, `resonate-mpris`, and the fake Discord `resonate-discord`'s Windows tests serve), `keepawake` (the machine awake while playing), `windows` (`resonate-mpris`'s toasts, connection cost and media transport through the Windows Runtime's safe projections, eight features: `Data_Xml_Dom`, `Foundation`, `Media`, `Media_Playback`, `Networking_Connectivity`, `Storage`, `Storage_Streams`, `UI_Notifications`; the `wasapi` crate again for its safe apartment), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
 recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` target dependency, so
 none is built elsewhere, but for three a Mac takes as well, `cfg(any(windows, target_os = "macos"))`:
 `keepawake` (an IOKit power assertion, idle sleep alone), `trash` (Finder's Trash through
@@ -164,7 +164,7 @@ here, add it there.
   The phones need the paced metadata/lyric/scrobbling services but never a Linux audio dependency.
   `-mcp` and `-discord` remain binary-only. These are optional behind CLI features, so
   `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and `cargo tree -p resonate --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui, UI. `-discord`: core,
-  engine vocabulary, serde; no gpui, library, HTTP client.
+  engine vocabulary, serde, and on Windows `resonate-win32` (its named pipe); no gpui, library, HTTP client.
 - A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone. The one
   exception is `resonate-dlna`, which reaches core, the seam and `resonate-upnp` (and through it
   `resonate-audio`) instead: a media server on the local network speaks SSDP, a description, SOAP,

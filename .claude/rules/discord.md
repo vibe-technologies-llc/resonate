@@ -34,7 +34,9 @@ Binary only (`discord` feature); `cargo tree -p resonate-discord` stays free of 
 
 - **Frame**: little-endian opcode, length, JSON; at most `LARGEST_FRAME`. Bytes read stay in
   `Session::received` until `frame::split_frame` finds a whole frame, so pieces arriving apart are
-  read whole and a timeout loses nothing; a read waits at most `ANSWERS_WITHIN`. Handshake waits
+  read whole and a timeout loses nothing; a read waits at most `ANSWERS_WITHIN`, and so does a write, on the
+  socket and Windows's pipe alike, so a Discord that never reads ends the session rather than the
+  publisher's thread (`windows.md`). Handshake waits
   `READY_WITHIN` for `READY`; `ERROR` instead is `Refused` at once. `Close` 4000 = unknown
   application: warned once, waited out until the id changes. `Ping` gets `Pong`.
 - **A socket Discord has shut reads as gone, never as a failure to configure**: macOS answers

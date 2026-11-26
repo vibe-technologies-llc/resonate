@@ -70,11 +70,11 @@ no workspace crate, and hands out a safe API over the `windows` crate:
 - **Each module's raw calls are a trait, so its sequencing runs on every host against a fake**, as
   `resonate-apple`'s `Toolbox` does (`macos.md`): `Scheduling` (MMCSS), `Counting`, `Naming`,
   `Attachment` (the console), `Identifying`, `PowerModes`, `Endpoints` (COM), `Securing`,
-  `Disconnecting`, `Iconing`,
+  `Disconnecting`, `Connecting` (a client's pipe), `Iconing`,
   `Streaming` and, under `console`, `Terminal`. The unit struct `system::Windows` implements each
   in a `cfg(windows)` `mod real` at the foot of its module, and that is the only place the module's
   `unsafe` blocks and `windows` imports are; the module's generic type or function over the trait
-  (`Joined<T>`, `Opened<T>`, `carrying_security`, `Pseudo<T>`) holds every decision (which `Op` a
+  (`Joined<T>`, `Opened<T>`, `carrying_security`, `Pseudo<T>`, `Connected<T>`) holds every decision (which `Op` a
   refusal is, what is freed or closed on which path, the order of the calls, how a buffer is sized,
   how a flag is chosen), and the public type is a newtype over it instantiated with `Windows`
   (`ProAudioClass(Joined<Windows>)`), so the safe API callers see is unchanged. A handle the
@@ -97,7 +97,7 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   than said beside it: a name is a `Wide` (UTF-16 ending in its NUL, refused as `NulInName` where
   the text holds one) that lives across the call; an out-parameter is a local taken `&raw mut`; a
   handle the system returns is owned by a type that closes it on drop (`StreamSearch` and
-  `FindClose`, `Descriptor` and `LocalFree`, `Attributes` and `DeleteProcThreadAttributeList`,
+  `FindClose`, `Connected` and `CloseHandle`, `Descriptor` and `LocalFree`, `Attributes` and `DeleteProcThreadAttributeList`,
   `PseudoConsole` and `ClosePseudoConsole`, `Process` over `OwnedHandle`); a thread-bound handle is
   `!Send` (`ProAudioClass` holds a `PhantomData<*const ()>`, so it is reverted on the thread that
   joined).
@@ -116,6 +116,7 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   borrowed handle, so the window's pipe severs a client from another thread, `mpris.md`);
   `cancel_pipe_io` (`CancelIoEx` on a borrowed handle, nothing pending being no refusal, so a
   client's link cancels the read its own thread waits in);
+  `ClientPipe` (a named pipe's client end, below under *Discord*);
   `leave_a_console_of_its_own` (`GetConsoleProcessList`, then `FreeConsole` only where this process
   is the console's one, answering a `Console`);
   `carry_alternate_streams` and `carry_security` (below); and, under the `console` feature the
@@ -129,7 +130,9 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   through `wasapi::initialize_mta`); one in none is refused `CO_E_NOTINITIALIZED` as an `Error`.
 - Errors are `Error::{Windows, WindowsOnFile} { op: Op, source: HResult }` (the code the call
   returned, printed as eight hex digits with the system's message beside it on Windows), `Io` for a
-  stream copied through `std`, `NulInName`, `CounterStandsStill`; the command-line quoting, the
+  stream copied through `std`, `NulInName`, `CounterStandsStill`, but for `ClientPipe`, a stream,
+  which answers `io::Error` as `std`'s streams do: the Win32 code inside the `HResult` as the raw OS
+  error (`HResult::as_io`), a wait run out as `TimedOut`; the command-line quoting, the
   environment block and every `Terminal` sequence are tests on every host, the `console` module being
   compiled for `test` as well as under the feature.
 
@@ -482,14 +485,28 @@ man page say "the sound system".
 
 ## Discord
 
-- **The IPC is the named pipe `\\.\pipe\discord-ipc-0` to `-9`** (`pipe.rs`, `interprocess`'s
-  overlapped `DuplexPipeStream`), the same `Session` as the Unix socket's: `session.rs` holds the
-  handshake, frames and replies over a `Wire` (`receive` within a time, `poll` without waiting) and
-  `socket.rs` and `pipe.rs` are the two wires. A reader thread (`resonate-discord-pipe`) feeds
-  chunks to a channel, since a pipe handle has no read timeout and `PIPE_NOWAIT` reports an empty
-  pipe as `ERROR_NO_DATA`, which `std` reads as a broken pipe; the thread ends when the pipe closes
-  or, after the session is dropped, when Discord next sends. The overlapped handle lets the reader
-  and a write run at once.
+- **The IPC is the named pipe `\\.\pipe\discord-ipc-0` to `-9`** (`pipe.rs`), the same `Session` as
+  the Unix socket's: `session.rs` holds the handshake, frames and replies over a `Wire` (`receive`
+  within a time, `poll` without waiting) and `socket.rs` and `pipe.rs` are the two wires. The pipe
+  is `resonate_win32::ClientPipe`, so `resonate-discord` reaches `resonate-win32` on Windows (the
+  layering job admits it).
+- **Opened at identification level**: `ClientPipe::open` calls `CreateFileW` with
+  `SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION` beside `FILE_FLAG_OVERLAPPED`, so a server
+  squatting the name may learn who the listener is but never act as them, even holding
+  the privilege to impersonate (`a_server_may_identify_the_client_but_never_impersonate_it`). A busy pipe
+  is waited for with `WaitNamedPipeW` until `ANSWERS_WITHIN` is out.
+- **Every read and write is bounded on the caller's thread, as the socket's timeouts bound it**:
+  `write_within` and `read_within` start an overlapped transfer with an event of their own, wait
+  for it up to the time given, and past it `CancelIoEx` that transfer alone and take its result
+  with `GetOverlappedResult`, waiting, so nothing still points into the buffer when the call returns
+  and bytes that landed as the cancel did are kept. A write waits `ANSWERS_WITHIN` and a Discord
+  that never reads ends the session with a timed-out write
+  (`a_discord_that_never_reads_ends_the_session_within_the_answer_time`); `flush` does nothing,
+  since a pipe write completes only once the pipe has taken all of it, and `FlushFileBuffers` would
+  wait on the peer's reading with no deadline. `receive` reads within its time and `poll` within
+  none; a server gone reads as `Received::Ended`, the socket's end-of-stream. There is no reader
+  thread and no channel, so nothing holds the handle past the session, and dropping it closes the
+  pipe at once (`a_session_dropped_lets_go_of_its_pipe_at_once`).
 - **Any user may create a pipe of that name**, so a squatter on a shared machine could learn what
   plays; the Unix socket's owner check has no counterpart yet.
 

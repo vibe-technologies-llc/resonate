@@ -1,5 +1,7 @@
 #[cfg(any(windows, test))]
 mod attached;
+#[cfg(any(windows, test))]
+mod client_pipe;
 #[cfg(any(all(windows, feature = "console"), test))]
 mod console;
 #[cfg(any(windows, test))]
@@ -36,6 +38,7 @@ pub use crate::console::{
 #[cfg(windows)]
 pub use crate::{
     attached::{Console, hear_console_interrupts, leave_a_console_of_its_own},
+    client_pipe::{ClientPipe, Received},
     counter::{PerformanceCounter, performance_counter},
     endpoint::{EndpointVolume, Level, VolumeWatch},
     error::{Error, HResult, Op, Result},

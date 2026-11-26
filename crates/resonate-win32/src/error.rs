@@ -1,5 +1,9 @@
 use std::{fmt, io, path::PathBuf};
 
+const SEVERITY_AND_FACILITY: u32 = 0xFFFF_0000;
+const A_WIN32_FAILURE: u32 = 0x8007_0000;
+const WIN32_CODE: u32 = 0x0000_FFFF;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     WatchGameMode,
@@ -43,6 +47,21 @@ pub struct HResult(pub i32);
 impl HResult {
     pub(crate) const HANDLE_EOF: Self = Self(0x8007_0026_u32.cast_signed());
     pub(crate) const NOTHING_PENDING: Self = Self(0x8007_0490_u32.cast_signed());
+    pub(crate) const BROKEN_PIPE: Self = Self(0x8007_006D_u32.cast_signed());
+    pub(crate) const SEM_TIMEOUT: Self = Self(0x8007_0079_u32.cast_signed());
+    pub(crate) const PIPE_BUSY: Self = Self(0x8007_00E7_u32.cast_signed());
+    pub(crate) const PIPE_NOT_CONNECTED: Self = Self(0x8007_00E9_u32.cast_signed());
+
+    pub(crate) fn as_io(self) -> io::Error {
+        let code = self.0.cast_unsigned();
+        let system = if code & SEVERITY_AND_FACILITY == A_WIN32_FAILURE {
+            code & WIN32_CODE
+        } else {
+            code
+        };
+
+        io::Error::from_raw_os_error(system.cast_signed())
+    }
 
     #[cfg(windows)]
     fn explanation(self) -> String {
@@ -132,6 +151,18 @@ mod tests {
     #[test]
     fn handle_eof_is_the_win32_code_made_a_failure() {
         assert_eq!(HResult::HANDLE_EOF, HResult(0x8007_0026_u32.cast_signed()));
+    }
+
+    #[test]
+    fn a_win32_failure_is_the_system_code_it_carries_and_any_other_is_kept_whole() {
+        assert_eq!(HResult::PIPE_BUSY.as_io().raw_os_error(), Some(231));
+        assert_eq!(HResult::BROKEN_PIPE.as_io().raw_os_error(), Some(109));
+        assert_eq!(
+            HResult(0x8000_4005_u32.cast_signed())
+                .as_io()
+                .raw_os_error(),
+            Some(0x8000_4005_u32.cast_signed())
+        );
     }
 
     #[test]

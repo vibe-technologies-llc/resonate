@@ -22,13 +22,16 @@ tracing.workspace = true
 rustix.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-interprocess.workspace = true
+resonate-win32.workspace = true
 
 [build-dependencies]
 resonate-words-build.workspace = true
 
 [dev-dependencies]
 resonate-words-build.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+interprocess.workspace = true
 
 [lints]
 workspace = true

@@ -73,7 +73,7 @@ lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`)
   `reached_directly_on` (the workspace crates that may name a crate, in one target's tree), and one `cargo tree --target x86_64-pc-windows-msvc`
   refusal that holds PipeWire, Wayland and `rustix` out of the binary's Windows tree; `resonate-mpris`'s direct normal edges are checked
   for `resonate-codec`, and `resonate-win32`'s Windows tree reaches no workspace crate while only the
-  binary, `resonate-wasapi`, `resonate-codec` and `resonate-mpris` reach it directly; `resonate-linux`
+  binary, `resonate-wasapi`, `resonate-codec`, `resonate-mpris` and `resonate-discord` reach it directly; `resonate-linux`
   reaches no workspace crate and only `resonate-codec` reaches it directly, and it stays out of the
   binary's Windows and macOS trees. The macOS lines read
   `cargo tree --target aarch64-apple-darwin`: PipeWire, Wayland, WASAPI, `resonate-win32` and the
