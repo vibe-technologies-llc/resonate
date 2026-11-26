@@ -299,18 +299,21 @@ impl Player {
         span: Option<FrameSpan>,
         watch: &dyn Watching,
     ) -> resonate_analysis::Result<Analysis> {
-        if let Some(recalled) = self
+        let keeping = self
             .kept
             .as_ref()
-            .and_then(|kept| kept.recalled(location, span))
+            .and_then(|kept| Some((kept, kept.key_of(location, span)?)));
+
+        if let Some((kept, key)) = &keeping
+            && let Some(recalled) = kept.recalled(key)
         {
             return Ok(recalled);
         }
 
         let analysis = resonate_analysis::analyse(&self.sources, location, span, watch)?;
 
-        if let Some(kept) = &self.kept {
-            kept.keep(location, span, &analysis);
+        if let Some((kept, key)) = &keeping {
+            kept.keep(key, &analysis);
         }
         Ok(analysis)
     }

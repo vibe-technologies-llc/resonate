@@ -47,6 +47,12 @@ pub enum Error {
         source: Box<resonate_dsp::Error>,
     },
 
+    #[error("a stage of the analysis crew panicked")]
+    CrewPanicked,
+
+    #[error("a worker measuring the cuts panicked")]
+    WorkerPanicked,
+
     #[error("the analysis was stopped before it reached the end of the stream")]
     Stopped,
 }
@@ -59,6 +65,8 @@ impl Error {
             | Self::Equalising { .. }
             | Self::Correcting { .. }
             | Self::Signing { .. }
+            | Self::CrewPanicked
+            | Self::WorkerPanicked
             | Self::Stopped => false,
         }
     }

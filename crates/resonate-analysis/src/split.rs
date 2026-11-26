@@ -930,7 +930,8 @@ mod tests {
                     feed(part);
                 }
             },
-        );
+        )
+        .expect("a pass");
         splitting.finished().peaks
     }
 

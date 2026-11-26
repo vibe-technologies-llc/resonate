@@ -1683,11 +1683,13 @@ pub(crate) mod tests {
 
         let mut crewed = Stepping::<G>::new(rate, 2);
 
-        Crew::AsTheMachineAllows.fanned(rate as usize * 2, vec![&mut crewed], &|| false, |feed| {
-            for block in interleaved.chunks(4_096 * 2) {
-                feed(block);
-            }
-        });
+        Crew::AsTheMachineAllows
+            .fanned(rate as usize * 2, vec![&mut crewed], &|| false, |feed| {
+                for block in interleaved.chunks(4_096 * 2) {
+                    feed(block);
+                }
+            })
+            .expect("a pass");
         [alone.finished(), crewed.finished()]
     }
 

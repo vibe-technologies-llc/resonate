@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    panic::{self, AssertUnwindSafe},
     sync::{
         Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
@@ -10,6 +11,8 @@ use std::{
 
 use parking_lot::{Condvar, Mutex};
 use rayon::{Scope, ThreadPool, ThreadPoolBuilder};
+
+use crate::{Error, Result};
 
 const SAMPLES_A_SLAB_AT_LEAST: usize = 1 << 12;
 const BYTES_QUEUED_AT_MOST: usize = 8 << 20;
@@ -111,21 +114,23 @@ impl Crew {
         stages: Vec<&'stages mut (dyn Noting + 'stages)>,
         stopped: &'stages (dyn Fn() -> bool + Sync),
         walk: impl FnOnce(&mut dyn FnMut(&[f32])) -> T,
-    ) -> T {
+    ) -> Result<T> {
         let Some(pool) = self.pool() else {
             let mut stages = stages;
 
-            return walk(&mut |samples| {
-                for stage in &mut stages {
-                    if self == Self::Background {
-                        resonate_core::gaming::wait(stopped);
+            return survived(|| {
+                walk(&mut |samples| {
+                    for stage in &mut stages {
+                        if self == Self::Background {
+                            resonate_core::gaming::wait(stopped);
+                        }
+
+                        let began = Instant::now();
+
+                        stage.note(samples);
+                        self.rest(began, stopped);
                     }
-
-                    let began = Instant::now();
-
-                    stage.note(samples);
-                    self.rest(began, stopped);
-                }
+                })
             });
         };
 
@@ -135,29 +140,45 @@ impl Crew {
             stopped,
             queued: Arc::new(Queued::default()),
             cancelled: AtomicBool::new(false),
+            panicked: AtomicBool::new(false),
         };
         let samples_a_slab =
             (samples_a_second / self.slabs_a_second()).max(SAMPLES_A_SLAB_AT_LEAST);
-        pool.in_place_scope(|scope| {
-            let mut gathering = Slab::gathering(Arc::clone(&fan.queued));
 
-            let answer = walk(&mut |samples| {
-                if self == Self::Background {
-                    resonate_core::gaming::wait(stopped);
-                }
-                gathering.hold(samples);
-                if gathering.samples.len() >= samples_a_slab {
-                    let next = Slab::gathering(Arc::clone(&fan.queued));
+        let answer = survived(|| {
+            pool.in_place_scope(|scope| {
+                let mut gathering = Slab::gathering(Arc::clone(&fan.queued));
 
-                    fan.send(std::mem::replace(&mut gathering, next), scope);
-                }
-            });
+                let answer = walk(&mut |samples| {
+                    if self == Self::Background {
+                        resonate_core::gaming::wait(stopped);
+                    }
+                    gathering.hold(samples);
+                    if gathering.samples.len() >= samples_a_slab {
+                        let next = Slab::gathering(Arc::clone(&fan.queued));
 
-            fan.send(gathering, scope);
-            fan.settled(stopped);
-            answer
-        })
+                        fan.send(std::mem::replace(&mut gathering, next), scope);
+                    }
+                });
+
+                fan.send(gathering, scope);
+                fan.settled(stopped);
+                answer
+            })
+        });
+
+        if fan.panicked.load(Ordering::Acquire) {
+            return Err(Error::CrewPanicked);
+        }
+        answer
     }
+}
+
+fn survived<T>(run: impl FnOnce() -> T) -> Result<T> {
+    panic::catch_unwind(AssertUnwindSafe(run)).map_err(|_| {
+        tracing::warn!("a stage of the crew panicked");
+        Error::CrewPanicked
+    })
 }
 
 struct Lane<'stages> {
@@ -190,6 +211,7 @@ impl<'stages> Lane<'stages> {
             fan.cancelled.store(true, Ordering::Relaxed);
         }
 
+        let _unwinding = Unwinding { lane: self, fan };
         let mut stage = self.stage.lock();
         let slab = self.waiting.lock().slabs.pop_front();
 
@@ -218,12 +240,34 @@ impl<'stages> Lane<'stages> {
     }
 }
 
+struct Unwinding<'lane, 'stages> {
+    lane: &'lane Lane<'stages>,
+    fan: &'lane Fan<'stages>,
+}
+
+impl Drop for Unwinding<'_, '_> {
+    fn drop(&mut self) {
+        if !thread::panicking() {
+            return;
+        }
+
+        self.fan.panicked.store(true, Ordering::Release);
+        self.fan.cancelled.store(true, Ordering::Relaxed);
+
+        let mut waiting = self.lane.waiting.lock();
+
+        waiting.slabs.clear();
+        waiting.draining = false;
+    }
+}
+
 struct Fan<'stages> {
     lanes: Vec<Lane<'stages>>,
     crew: Crew,
     stopped: &'stages (dyn Fn() -> bool + Sync),
     queued: Arc<Queued>,
     cancelled: AtomicBool,
+    panicked: AtomicBool,
 }
 
 impl<'stages> Fan<'stages> {
@@ -417,7 +461,8 @@ mod tests {
                 for piece in pieces() {
                     feed(&piece);
                 }
-            });
+            })
+            .expect("a pass");
 
             assert_eq!(first.0, pieces());
             assert_eq!(second.0, pieces());
@@ -438,11 +483,13 @@ mod tests {
         let mut slow = Slow(0);
         let piece = vec![0.0_f32; 1 << 18];
 
-        Crew::Background.fanned(RATE, vec![&mut slow], &|| false, |feed| {
-            for _ in 0..64 {
-                feed(&piece);
-            }
-        });
+        Crew::Background
+            .fanned(RATE, vec![&mut slow], &|| false, |feed| {
+                for _ in 0..64 {
+                    feed(&piece);
+                }
+            })
+            .expect("a pass");
 
         assert_eq!(slow.0, 64 * piece.len());
     }
@@ -461,12 +508,43 @@ mod tests {
         let mut gated = Gated(0);
         let piece = vec![0.0_f32; RATE];
 
-        Crew::AsTheMachineAllows.fanned(RATE, vec![&mut gated], &|| true, |feed| {
-            for _ in 0..32 {
-                feed(&piece);
-            }
-        });
+        Crew::AsTheMachineAllows
+            .fanned(RATE, vec![&mut gated], &|| true, |feed| {
+                for _ in 0..32 {
+                    feed(&piece);
+                }
+            })
+            .expect("a pass");
 
         assert!(gated.0 < 32, "{}", gated.0);
+    }
+
+    #[test]
+    fn a_stage_that_panics_ends_the_pass_with_an_error_and_does_not_hang_the_walk() {
+        struct Falls(usize);
+
+        impl Noting for Falls {
+            fn note(&mut self, _: &[f32]) {
+                self.0 += 1;
+                if self.0 == 3 {
+                    panic!("a stage fell over");
+                }
+            }
+        }
+
+        for crew in [Crew::AsTheMachineAllows, Crew::Background] {
+            let (mut falls, mut steady) = (Falls(0), Gathered(Vec::new()));
+            let piece = vec![0.0_f32; RATE];
+
+            let began = Instant::now();
+            let passed = crew.fanned(RATE, vec![&mut falls, &mut steady], &|| false, |feed| {
+                for _ in 0..512 {
+                    feed(&piece);
+                }
+            });
+
+            assert!(matches!(passed, Err(Error::CrewPanicked)));
+            assert!(began.elapsed() < Duration::from_secs(30));
+        }
     }
 }

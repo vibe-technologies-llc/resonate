@@ -47,6 +47,13 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   the same code runs in line (`every_grid_reads_the_same_alone_as_on_a_crew`,
   `a_stream_heard_on_a_crew_has_the_peaks_it_has_heard_alone`,
   `a_study_alone_and_the_study_inside_an_analysis_are_one_answer`).
+  **A stage that panics ends the pass, never hangs it**: `Lane::drain`'s `Unwinding` guard, on unwind,
+  marks the fan cancelled and panicked, drops the lane's queued slabs (freeing their bytes) and clears
+  `draining`, so the other lanes discard what is queued and `fanned` answers `Error::CrewPanicked`
+  (`a_stage_that_panics_ends_the_pass_with_an_error_and_does_not_hang_the_walk`); `loudest_through`'s
+  workers share an `Abandoning` watch, so one worker's panic stops the rest and the pass answers
+  `Error::WorkerPanicked`, never the `Stopped` the others then return
+  (`a_worker_that_panics_ends_the_pass_with_an_error_and_stops_the_others`).
   **Two crews, so a library pass keeps its share of the machine.** `analyse` (a listener is waiting)
   takes `AsTheMachineAllows`, every core but one, a slab a second so a bank has chunks to settle
   apart; `study` and `band_figures` choose from `Watching::is_background`: enrichment
@@ -293,10 +300,16 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
 **Per-file, forgotten when the file changes.** `KeptAnalyses`: one file each in
 `$XDG_CACHE_HOME/resonate/analyses` (given to the window's `Player` by `Player::keeping_analyses`),
 named by FNV-1a of path, span, size, mtime; where only a vault object serves the row, path and span
-(`NO_FILE_STANDS`). `Player::analyse` asks it before decoding and keeps what it decoded. Another
+(`NO_FILE_STANDS`). The key (`KeptAnalyses::key_of`) is taken once, before the decode: `Player::analyse`
+asks with it and keeps what it decoded under it, so a file changed mid-decode keeps the old bytes'
+analysis under the old key, which nothing asks for again
+(`a_file_changed_while_it_was_decoded_is_not_kept_under_the_key_it_has_now`). Another
 `JUDGED_UNDER` stamp reads as nothing; judgement is unwritten (`read` runs `judged` over the kept
 spectrum, levels and `Steps`). Reader trusts no shape: envelope with no lanes, over `ENVELOPE_LANES`, or
-columns of no frames → nothing. Unreadable files are deleted; writes staged (`<pid>-<n>.staged`,
+columns of no frames → nothing. An entry another version wrote (magic right, another `WRITTEN_AS` or
+`JUDGED_UNDER`, `written_by_another_version`) is passed over and left, so a dev build and the release do
+not erase each other's cache; any other unreadable file is deleted
+(`another_versions_entry_is_passed_over_and_left_and_this_versions_corrupt_one_is_removed`); writes staged (`<pid>-<n>.staged`,
 under `writer::Held`) + renamed; `trim` sweeps what a dead writer staged, counts what a living one is
 writing, and drops least lately used past `KEPT_BYTES_AT_MOST`
 (`what_a_dead_writer_staged_is_swept_and_a_living_ones_is_counted_and_left`). Cache failure = debug

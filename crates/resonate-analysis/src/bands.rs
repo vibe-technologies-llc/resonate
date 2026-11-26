@@ -914,7 +914,7 @@ pub fn band_figures(
                 feed(heard.samples);
             }
         },
-    )?;
+    )??;
 
     Ok(BandFigures {
         levels: BandLevels::of(&transforming.finished()),

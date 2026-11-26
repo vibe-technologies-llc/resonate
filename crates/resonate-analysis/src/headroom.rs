@@ -9,7 +9,7 @@ use std::{
 
 use resonate_codec::{Codec, Sources};
 use resonate_core::{
-    FrameSpan, MediaLocation, SampleFormat, SampleRate, StreamSpec,
+    FrameSpan, Frames, MediaLocation, SampleFormat, SampleRate, StreamSpec,
     eq::{Preamp, Profile},
 };
 use resonate_dsp::{Convolver, Equaliser, Processor, TruePeakMeter};
@@ -238,16 +238,72 @@ pub fn loudest_through(
         .map_or(1, |available| (available.get() / 2).max(1))
         .min(cuts.len().max(1));
 
+    gathered(workers, watch, |watch| {
+        measure_the_cuts(sources, cuts, applied, watch, &next)
+    })
+}
+
+struct Abandoning<'watch> {
+    watch: &'watch dyn Watching,
+    abandoned: AtomicBool,
+}
+
+impl Watching for Abandoning<'_> {
+    fn stopped(&self) -> bool {
+        self.abandoned.load(Ordering::Relaxed) || self.watch.stopped()
+    }
+
+    fn is_background(&self) -> bool {
+        self.watch.is_background()
+    }
+
+    fn reached(&self, done: Frames, of: Option<Frames>) {
+        self.watch.reached(done, of);
+    }
+}
+
+struct Abandons<'watch, 'run>(&'run Abandoning<'watch>);
+
+impl Drop for Abandons<'_, '_> {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            self.0.abandoned.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+fn gathered(
+    workers: usize,
+    watch: &dyn Watching,
+    work: impl Fn(&dyn Watching) -> Result<Loudest> + Sync,
+) -> Result<Loudest> {
+    let abandoning = Abandoning {
+        watch,
+        abandoned: AtomicBool::new(false),
+    };
+
     let measured: Vec<Result<Loudest>> = thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
-            .map(|_| scope.spawn(|| measure_the_cuts(sources, cuts, applied, watch, &next)))
+            .map(|_| {
+                scope.spawn(|| {
+                    let _abandons = Abandons(&abandoning);
+
+                    work(&abandoning)
+                })
+            })
             .collect();
         handles
             .into_iter()
-            .map(|handle| handle.join().unwrap_or(Err(Error::Stopped)))
+            .map(|handle| handle.join().unwrap_or(Err(Error::WorkerPanicked)))
             .collect()
     });
 
+    if measured
+        .iter()
+        .any(|each| matches!(each, Err(Error::WorkerPanicked)))
+    {
+        return Err(Error::WorkerPanicked);
+    }
     measured
         .into_iter()
         .try_fold(Loudest::default(), |all, each| Ok(all.joined(each?)))
@@ -283,4 +339,39 @@ fn without_the_preamp(profile: &Arc<Profile>, rate: SampleRate) -> Arc<Profile> 
 
     bare.set_preamp(Preamp::NONE);
     Arc::new(bare)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    struct Never;
+
+    impl Watching for Never {
+        fn stopped(&self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn a_worker_that_panics_ends_the_pass_with_an_error_and_stops_the_others() {
+        let arrived = AtomicUsize::new(0);
+        let waited_for = Duration::from_secs(30);
+
+        let began = Instant::now();
+        let measured = gathered(3, &Never, |watch| {
+            if arrived.fetch_add(1, Ordering::Relaxed) == 0 {
+                panic!("a worker fell over");
+            }
+            while !watch.stopped() && began.elapsed() < waited_for {
+                thread::yield_now();
+            }
+            Err(Error::Stopped)
+        });
+
+        assert!(matches!(measured, Err(Error::WorkerPanicked)));
+        assert!(began.elapsed() < waited_for);
+    }
 }

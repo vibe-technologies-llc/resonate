@@ -44,7 +44,7 @@ pub use crate::{
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
     error::{AnalysisOp, Error, Result},
     headroom::{CUTS_AT_MOST, Cut, Loudest, loudest_through, peak_through},
-    kept::{KEPT_BYTES_AT_MOST, KeptAnalyses},
+    kept::{KEPT_BYTES_AT_MOST, KeptAnalyses, Key},
     levels::{Levels, Stereo},
     loudness::{Loudness, LoudnessMeter},
     peaks::{BAND_PEAKS_BYTES, BAND_PEAKS_BYTES_BEFORE_TOGETHER, BandPeaks},

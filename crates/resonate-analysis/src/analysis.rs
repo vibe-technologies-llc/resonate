@@ -412,7 +412,7 @@ fn walked<D: Drawing>(
                 watch.reached(Frames(frames), info.duration);
             }
         },
-    )?;
+    )??;
 
     examined.length = Frames(frames).to_duration(rate);
 

@@ -39,6 +39,9 @@ const NO_FILE_STANDS: u64 = u64::MAX;
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Key(PathBuf);
+
 pub struct KeptAnalyses {
     dir: PathBuf,
     at_most: u64,
@@ -59,39 +62,7 @@ impl KeptAnalyses {
         }
     }
 
-    pub fn recalled(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<Analysis> {
-        let path = self.path_of(location, span)?;
-        let bytes = fs::read(&path).ok()?;
-        let recalled = read(&bytes);
-
-        match &recalled {
-            Some(_) => {
-                if let Ok(file) = File::options().append(true).open(&path) {
-                    let _ = file.set_modified(SystemTime::now());
-                }
-            }
-            None => {
-                tracing::debug!(path = %path.display(), "a kept analysis could not be read back");
-
-                let _ = fs::remove_file(&path);
-            }
-        }
-        recalled
-    }
-
-    pub fn keep(&self, location: &MediaLocation, span: Option<FrameSpan>, analysis: &Analysis) {
-        let Some(path) = self.path_of(location, span) else {
-            return;
-        };
-
-        if let Err(error) = self.written(&path, &written(analysis)) {
-            tracing::debug!(%error, path = %path.display(), "an analysis could not be kept");
-            return;
-        }
-        self.trim();
-    }
-
-    fn path_of(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<PathBuf> {
+    pub fn key_of(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<Key> {
         let file = location.as_path()?;
         let (length, modified) = match fs::metadata(file) {
             Ok(held) => (held.len(), nanos_since_the_epoch(held.modified().ok()?)),
@@ -119,7 +90,38 @@ impl KeptAnalyses {
         );
         take(&length.to_le_bytes());
         take(&modified.to_le_bytes());
-        Some(self.dir.join(format!("{hash:016x}.{KEPT_AS}")))
+        Some(Key(self.dir.join(format!("{hash:016x}.{KEPT_AS}"))))
+    }
+
+    pub fn recalled(&self, key: &Key) -> Option<Analysis> {
+        let path = &key.0;
+        let bytes = fs::read(path).ok()?;
+        let recalled = read(&bytes);
+
+        match &recalled {
+            Some(_) => {
+                if let Ok(file) = File::options().append(true).open(path) {
+                    let _ = file.set_modified(SystemTime::now());
+                }
+            }
+            None if written_by_another_version(&bytes) => {
+                tracing::debug!(path = %path.display(), "a kept analysis was written by another version");
+            }
+            None => {
+                tracing::debug!(path = %path.display(), "a kept analysis could not be read back");
+
+                let _ = fs::remove_file(path);
+            }
+        }
+        recalled
+    }
+
+    pub fn keep(&self, key: &Key, analysis: &Analysis) {
+        if let Err(error) = self.written(&key.0, &written(analysis)) {
+            tracing::debug!(%error, path = %key.0.display(), "an analysis could not be kept");
+            return;
+        }
+        self.trim();
     }
 
     fn written(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -182,6 +184,19 @@ impl KeptAnalyses {
                 total = total.saturating_sub(size);
             }
         }
+    }
+}
+
+fn written_by_another_version(bytes: &[u8]) -> bool {
+    let mut reader = Reader(bytes);
+
+    if reader.taken(MAGIC.len()) != Some(MAGIC.as_slice()) {
+        return false;
+    }
+    match reader.u8() {
+        Some(WRITTEN_AS) => reader.u32().is_some_and(|judged| judged != JUDGED_UNDER),
+        Some(_) => true,
+        None => false,
     }
 }
 
@@ -679,6 +694,18 @@ mod tests {
         }
     }
 
+    fn recalled_at(
+        kept: &KeptAnalyses,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+    ) -> Option<Analysis> {
+        kept.recalled(&kept.key_of(location, span)?)
+    }
+
+    fn keep_at(kept: &KeptAnalyses, location: &MediaLocation, span: Option<FrameSpan>) {
+        kept.keep(&kept.key_of(location, span).expect("a key"), &analysed());
+    }
+
     #[test]
     fn an_analysis_reads_back_as_it_was_written_and_a_truncated_one_does_not() {
         let analysis = analysed();
@@ -752,19 +779,82 @@ mod tests {
         let location = MediaLocation::local(&file);
         let kept = KeptAnalyses::at(folder.0.join("kept"));
 
-        assert_eq!(kept.recalled(&location, None), None);
+        assert_eq!(recalled_at(&kept, &location, None), None);
 
-        kept.keep(&location, None, &analysed());
+        keep_at(&kept, &location, None);
 
-        assert_eq!(kept.recalled(&location, None), Some(analysed()));
+        assert_eq!(recalled_at(&kept, &location, None), Some(analysed()));
 
         let span = FrameSpan::starting(resonate_core::Frames(10));
 
-        assert_eq!(kept.recalled(&location, Some(span)), None);
+        assert_eq!(recalled_at(&kept, &location, Some(span)), None);
 
         fs::write(&file, b"other audio").expect("a changed file");
 
-        assert_eq!(kept.recalled(&location, None), None);
+        assert_eq!(recalled_at(&kept, &location, None), None);
+    }
+
+    #[test]
+    fn a_file_changed_while_it_was_decoded_is_not_kept_under_the_key_it_has_now() {
+        let folder = Folder::new();
+        let file = folder.0.join("track.wav");
+
+        fs::write(&file, b"audio").expect("a file");
+
+        let location = MediaLocation::local(&file);
+        let kept = KeptAnalyses::at(folder.0.join("kept"));
+
+        let before_the_decode = kept.key_of(&location, None).expect("a key");
+
+        fs::write(&file, b"other audio").expect("a file changed mid-decode");
+
+        kept.keep(&before_the_decode, &analysed());
+
+        assert_eq!(recalled_at(&kept, &location, None), None);
+        assert_eq!(kept.recalled(&before_the_decode), Some(analysed()));
+    }
+
+    #[test]
+    fn another_versions_entry_is_passed_over_and_left_and_this_versions_corrupt_one_is_removed() {
+        let folder = Folder::new();
+        let file = folder.0.join("track.wav");
+
+        fs::write(&file, b"audio").expect("a file");
+
+        let location = MediaLocation::local(&file);
+        let kept = KeptAnalyses::at(folder.0.join("kept"));
+
+        keep_at(&kept, &location, None);
+
+        let key = kept.key_of(&location, None).expect("a key");
+        let written = fs::read(&key.0).expect("the entry");
+        let judged_at = MAGIC.len() + 1;
+
+        let mut another_heuristic = written.clone();
+
+        another_heuristic[judged_at..judged_at + 4]
+            .copy_from_slice(&(JUDGED_UNDER + 1).to_le_bytes());
+
+        let mut another_layout = written.clone();
+
+        another_layout[MAGIC.len()] = WRITTEN_AS + 1;
+
+        for another in [another_heuristic, another_layout] {
+            fs::write(&key.0, &another).expect("another version's entry");
+
+            assert_eq!(kept.recalled(&key), None);
+            assert_eq!(fs::read(&key.0).expect("it is left"), another);
+        }
+
+        fs::write(&key.0, &written[..written.len() - 1]).expect("a corrupt entry");
+
+        assert_eq!(kept.recalled(&key), None);
+        assert!(!key.0.exists(), "a corrupt entry of this version was left");
+
+        fs::write(&key.0, b"RS").expect("a cut header");
+
+        assert_eq!(kept.recalled(&key), None);
+        assert!(!key.0.exists(), "a cut header was left");
     }
 
     #[test]
@@ -773,20 +863,24 @@ mod tests {
         let location = MediaLocation::local(folder.0.join("vaulted.wav"));
         let kept = KeptAnalyses::at(folder.0.join("kept"));
 
-        assert_eq!(kept.recalled(&location, None), None);
+        assert_eq!(recalled_at(&kept, &location, None), None);
 
-        kept.keep(&location, None, &analysed());
+        keep_at(&kept, &location, None);
 
-        assert_eq!(kept.recalled(&location, None), Some(analysed()));
+        assert_eq!(recalled_at(&kept, &location, None), Some(analysed()));
         assert_eq!(
-            kept.recalled(&MediaLocation::local(folder.0.join("another.wav")), None),
+            recalled_at(
+                &kept,
+                &MediaLocation::local(folder.0.join("another.wav")),
+                None
+            ),
             None
         );
 
         fs::write(folder.0.join("vaulted.wav"), b"audio").expect("a file arrives at the path");
 
         assert_eq!(
-            kept.recalled(&location, None),
+            recalled_at(&kept, &location, None),
             None,
             "a file at the path read the analysis of the one that was gone"
         );
@@ -802,9 +896,9 @@ mod tests {
 
         let location = MediaLocation::local(&file);
 
-        kept.keep(&location, None, &analysed());
+        keep_at(&kept, &location, None);
 
-        assert_eq!(kept.recalled(&location, None), None);
+        assert_eq!(recalled_at(&kept, &location, None), None);
     }
 
     #[test]
@@ -837,12 +931,12 @@ mod tests {
 
         let location = MediaLocation::local(&file);
 
-        kept.keep(&location, None, &analysed());
+        keep_at(&kept, &location, None);
 
         assert!(!dead.exists(), "what a dead writer staged was left");
         assert!(living.exists(), "what a living writer staged was taken");
         assert_eq!(
-            kept.recalled(&location, None),
+            recalled_at(&kept, &location, None),
             None,
             "what a living writer staged was not counted against the bound"
         );
