@@ -38,6 +38,11 @@ const SECONDS_READ_BOTH_WAYS: u32 = 6;
 const PRINT_SECONDS: u32 = 20;
 const PRINT_RATE: u32 = 11_025;
 const PRINT_ALGORITHM: &str = "2";
+const PRINT_RATES: [u32; 4] = [PRINT_RATE, 44_100, 48_000, 96_000];
+const GOLDEN_PRINTS: &str = include_str!("fixtures/prints.tsv");
+const NOTES_HZ: [f64; 8] = [220.0, 277.18, 329.63, 440.0, 392.0, 329.63, 246.94, 293.66];
+const NOTE_FRAMES_DIVISOR: u32 = 4;
+const PHASE_TURN: f64 = 4_294_967_296.0;
 
 const MUSIC_RATE: u32 = 44_100;
 const MUSIC_SECONDS: u32 = 30;
@@ -432,6 +437,77 @@ fn a_print_of_a_clip_at_chromaprints_own_rate_is_the_one_fpcalc_makes() {
         Duration::from_secs(u64::from(PRINT_SECONDS))
     );
     assert_eq!(printed.encoded(), reference.trim_end_matches('='));
+}
+
+fn seeded_notes(rate: u32, seconds: u32) -> Vec<f32> {
+    let mut noise = Noise(0x600d_f00d);
+    let mut smoothed = 0.0_f32;
+    let mut phases = [0_u32; 2];
+    let note_frames = (rate / NOTE_FRAMES_DIVISOR) as usize;
+
+    (0..(rate * seconds) as usize)
+        .map(|frame| {
+            let hz = NOTES_HZ[(frame / note_frames) % NOTES_HZ.len()];
+            let steps = [
+                (hz * PHASE_TURN / f64::from(rate)) as u32,
+                (hz * 1.5 * PHASE_TURN / f64::from(rate)) as u32,
+            ];
+
+            for (phase, step) in phases.iter_mut().zip(steps) {
+                *phase = phase.wrapping_add(step);
+            }
+            smoothed = smoothed * 0.8 + noise.next() * 0.2;
+
+            let saws = phases.map(|phase| (phase as i32) as f32 / 2_147_483_648.0);
+            0.2 * saws[0] + 0.1 * saws[1] + 0.1 * smoothed
+        })
+        .collect()
+}
+
+fn seeded_print_file(tree: &Tree, rate: u32) -> PathBuf {
+    let mono = seeded_notes(rate, PRINT_SECONDS);
+    let interleaved: Vec<f32> = mono.iter().flat_map(|sample| [*sample, *sample]).collect();
+
+    tree.wave(&format!("seeded-{rate}.wav"), rate, STEREO, &interleaved)
+}
+
+fn golden_print_at(rate: u32) -> &'static str {
+    GOLDEN_PRINTS
+        .lines()
+        .find_map(|line| {
+            let (at, print) = line.split_once('\t')?;
+            (at.parse() == Ok(rate)).then_some(print)
+        })
+        .expect("a golden print at the rate")
+}
+
+#[test]
+fn a_seeded_signal_prints_as_the_committed_print_at_every_rate_without_fpcalc() {
+    let tree = Tree::new();
+
+    for rate in PRINT_RATES {
+        let path = seeded_print_file(&tree, rate);
+        let printed = studied(&path).print.expect("a print");
+
+        assert_eq!(
+            printed.length(),
+            Duration::from_secs(u64::from(PRINT_SECONDS))
+        );
+        assert_eq!(printed.encoded(), golden_print_at(rate), "{rate} Hz");
+    }
+}
+
+#[test]
+fn the_committed_print_at_chromaprints_own_rate_is_the_one_fpcalc_makes_of_the_same_signal() {
+    let tree = Tree::new();
+    let path = seeded_print_file(&tree, PRINT_RATE);
+
+    let Some(reference) = fpcalc_print_of(&path) else {
+        eprintln!("skipped: no fpcalc to print against");
+        return;
+    };
+
+    assert_eq!(reference.trim_end_matches('='), golden_print_at(PRINT_RATE));
 }
 
 fn wideband_music(rate: u32, seconds: u32) -> Vec<f32> {

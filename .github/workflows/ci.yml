@@ -21,7 +21,7 @@ env:
   ARCH_PACKAGES: >-
     base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
     fontconfig freetype2 ttf-dejavu vulkan-headers vulkan-icd-loader ffmpeg flac wavpack mac lame dbus
-    webkit2gtk-4.1 cargo-nextest
+    webkit2gtk-4.1 cargo-nextest chromaprint
 
 jobs:
   clippy:
