@@ -60,7 +60,7 @@ impl Frequency {
     }
 
     fn angle_at(self, rate: SampleRate) -> f64 {
-        (std::f64::consts::TAU * self.hertz() / f64::from(rate.hz())).min(std::f64::consts::PI)
+        std::f64::consts::TAU * self.hertz() / f64::from(rate.hz())
     }
 }
 
@@ -105,12 +105,29 @@ impl BandGain {
         Self::from_milli_decibels(milli_decibels as i32)
     }
 
+    pub fn clamped(decibels: f64) -> Self {
+        if decibels.is_nan() {
+            return Self::FLAT;
+        }
+
+        let widest = f64::from(Self::WIDEST_MILLI_DECIBELS);
+        Self(
+            (decibels * MILLI_DECIBELS_PER_DECIBEL)
+                .round()
+                .clamp(-widest, widest) as i32,
+        )
+    }
+
     pub const fn milli_decibels(self) -> i32 {
         self.0
     }
 
     pub fn decibels(self) -> f64 {
         f64::from(self.0) / MILLI_DECIBELS_PER_DECIBEL
+    }
+
+    pub fn widest_decibels() -> f64 {
+        f64::from(Self::WIDEST_MILLI_DECIBELS) / MILLI_DECIBELS_PER_DECIBEL
     }
 
     pub const fn is_flat(self) -> bool {
@@ -1297,8 +1314,7 @@ impl Target {
         let worth_it: Vec<bool> = gains
             .iter()
             .map(|gain| {
-                BandGain::from_decibels(*gain)
-                    .is_ok_and(|held| held.milli_decibels().abs() >= WORTH_A_BAND_MILLI_DECIBELS)
+                BandGain::clamped(*gain).milli_decibels().abs() >= WORTH_A_BAND_MILLI_DECIBELS
             })
             .collect();
 
@@ -1322,7 +1338,8 @@ impl Target {
         for _ in 0..FITTING_PASSES {
             let realised = third_octave_bank(centres, &gains);
             for ((gain, centre), target) in gains.iter_mut().zip(centres).zip(&wanted) {
-                *gain -= realised.magnitude_db(centre.hertz(), rate) - target;
+                *gain = (*gain - (realised.magnitude_db(centre.hertz(), rate) - target))
+                    .clamp(-BandGain::widest_decibels(), BandGain::widest_decibels());
             }
         }
         gains
@@ -1333,13 +1350,7 @@ fn third_octave_bank(centres: &[Frequency], gains: &[f64]) -> Profile {
     let bands = centres
         .iter()
         .zip(gains)
-        .map(|(centre, gain)| {
-            Band::peaking(
-                *centre,
-                BandGain::from_decibels(*gain).unwrap_or(BandGain::FLAT),
-                Q::THIRD_OCTAVE,
-            )
-        })
+        .map(|(centre, gain)| Band::peaking(*centre, BandGain::clamped(*gain), Q::THIRD_OCTAVE))
         .collect();
     Profile::new(Preamp::NONE, bands).unwrap_or_default()
 }
@@ -1500,6 +1511,50 @@ mod tests {
         assert_eq!(target.points().first(), Some(&first));
         assert_eq!(target.points().last(), Some(&last));
         assert!(target.points().windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn a_fit_past_the_gain_range_holds_every_band_at_its_bound() {
+        let bound = BandGain::WIDEST_MILLI_DECIBELS;
+
+        for depth in [40.0, 55.0, 90.0] {
+            let points: Vec<TargetPoint> = THIRD_OCTAVE_CENTRES
+                .into_iter()
+                .enumerate()
+                .map(|(at, centihertz)| TargetPoint {
+                    frequency: Frequency::from_centihertz(centihertz).expect("in range"),
+                    gain: BandGain::clamped(if at % 2 == 0 { depth } else { -depth }),
+                })
+                .collect();
+            let target = Target::new(points).expect("a curve");
+
+            let fitted = target.bands_at(SampleRate::HZ_96000);
+
+            assert!(fitted.bands().len() > 20, "{depth} dB");
+            assert!(
+                fitted
+                    .bands()
+                    .iter()
+                    .all(|band| band.gain.milli_decibels().abs() <= bound),
+                "{depth} dB"
+            );
+            assert!(
+                fitted
+                    .bands()
+                    .iter()
+                    .any(|band| band.gain.milli_decibels().abs() == bound),
+                "{depth} dB"
+            );
+        }
+    }
+
+    #[test]
+    fn a_gain_past_the_range_is_clamped_and_one_that_is_not_a_number_is_flat() {
+        assert_eq!(BandGain::clamped(63.0).milli_decibels(), 40_000);
+        assert_eq!(BandGain::clamped(-63.0).milli_decibels(), -40_000);
+        assert_eq!(BandGain::clamped(f64::INFINITY).milli_decibels(), 40_000);
+        assert_eq!(BandGain::clamped(f64::NAN), BandGain::FLAT);
+        assert_eq!(BandGain::clamped(-2.5).milli_decibels(), -2_500);
     }
 
     #[test]

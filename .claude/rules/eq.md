@@ -71,9 +71,9 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   revision and rate in `EqualiserModel::drawn`.
 - **`Band::new` normalises**: gainless kinds carry no gain, else equal notches compare unequal and
   republish `OutputSettings`.
-- **`w0` clamps to π** (else a centre past Nyquist wraps `cos` and mirrors down); at π every kind is
-  identity. `Band::design` is identity where `Band::applies_at` is false; `explain` prints how many
-  bands a rate passed over.
+- **A band at or past Nyquist is passed over**: `Band::design` is identity where `Band::applies_at`
+  is false, so `w0` never reaches π (a centre past it would wrap `cos` and mirror down); `explain`
+  prints how many bands a rate passed over.
 
 ## The stage
 
@@ -1113,7 +1113,9 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   this build holds).
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** Its 127 points are fitted
   onto the 31 ISO third-octave centres at `Q::THIRD_OCTAVE`, iterating the bank's response against
-  the target `FITTING_PASSES` (12) times (neighbours sum and overshoot). Points interpolate linearly
+  the target `FITTING_PASSES` (12) times (neighbours sum and overshoot), each band held to
+  `BandGain::clamped`'s range so a deep null keeps its band at the bound
+  (`a_fit_past_the_gain_range_holds_every_band_at_its_bound`). Points interpolate linearly
   in log frequency; endpoints held, not extrapolated. A band under
   `WORTH_A_BAND_MILLI_DECIBELS` (200) is dropped and the rest refitted: a flat curve imports as no
   bands.
