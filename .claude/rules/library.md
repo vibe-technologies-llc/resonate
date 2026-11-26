@@ -339,6 +339,20 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   is one of `AUDIO_EXTENSIONS` (`extended_by_one_of`, the music filters' test), or a cut whose
   duration is known, so the media server counts and pages exactly what it serves
   (`a_servable_query_keeps_whole_files_named_as_audio_and_cuts_of_a_known_length`).
+  **A playlist's servable rows are counted and paged in SQL** for the same server:
+  `Library::playlist_servable` (a page, in the list's order, narrowed by a search as
+  `playlist_entries` narrows) and `playlist_servable_counted` keep a row the list holds that is
+  shown and `servable` (`SHOWN_AND_SERVABLE`); a list's rows are joined on the cut as
+  `playlist_entries` joins them (an alternative copy held by the list stays, no music filter), and
+  a saved query's are taken as `playlist_entries` lists them (its own text, order and limit, the
+  music filters) and only then held to the test (`listed_then_served`, a subquery of the ids in
+  order joined back), so a limit counts the rows the query lists, not the servable ones beyond
+  them. `playlists_servable_counted` counts a page of playlists in one statement (a correlated
+  count per list, a saved query counted on its own) and answers only the ids that name a
+  playlist, an empty one as 0; `playlist_names_within` pages names alone, narrowed as
+  `playlist_count` is, so a page of playlists reads no row of any of them
+  (`a_playlist_serves_its_shown_rows_a_page_at_a_time_and_counts_them_without_reading_them`,
+  `a_page_of_names_is_narrowed_by_the_words_a_name_holds`).
 - **Albums and artists panes have orders too, deliberately unindexed.** `AlbumOrder` and
   `ArtistOrder` read those tables, which hold thousands of rows against `tracks`' hundreds of
   thousands, so a temp B-tree beats an index. **An artist files under the name its files sort it
@@ -371,7 +385,16 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   `WRITER_PAGE_CACHE_KIB` (8 MiB), `Reading` `READER_PAGE_CACHE_KIB` (2 MiB).
 - **A reader is checked out and handed back; `READER_POOL` (8) is how many may exist, not how many
   are kept.** `Inner::checkout` takes a parked connection, opens one while under the count, else
-  waits on `Inner::freed`. `Reader` returns its connection from `Drop`.
+  waits on `Inner::freed`, at most `READER_AWAITED_AT_MOST` (30 s, `checkout_within`), after which
+  the read fails as `Error::NoReaderFreed` rather than hanging behind readers that never come back
+  (`a_checkout_waits_no_longer_than_it_is_given_once_every_reader_is_out`). `Reader` returns its
+  connection from `Drop`. **A caller that may ask many reads at once from outside takes a
+  `ReaderShare`**: a `Turn` per call, at most `ReaderShare::TAKES_AT_MOST` (half the pool, held
+  below it at compile time) at once, a turn awaited at most the share's own wait and refused as
+  `Error::NoTurnToRead` past it, so the rest of the pool stays the window's
+  (`a_share_of_the_readers_hands_out_half_the_pool_and_wakes_a_waiter_as_one_comes_back`). The
+  media server is the one such caller (`upnp.md`). A call holding a turn reads one reader at a
+  time, so the share bounds the readers it holds.
 - **Every write begins `IMMEDIATE`.** `Inner::write`, `reconcile_artists`,
   `settle_the_credits_if_owed` take the write lock as the transaction opens, so a second process
   waits its `busy_timeout`; a deferred transaction that read before writing fails at once with

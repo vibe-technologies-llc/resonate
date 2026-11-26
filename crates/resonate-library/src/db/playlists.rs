@@ -5,7 +5,7 @@ use resonate_core::{AlbumId, PlaylistId, Span};
 use super::Library;
 use crate::{
     AsDrawn, Cut, Direction, Exported, Imported, Kept, NamedPlaylist, Playlist, PlaylistEntry,
-    PlaylistOrder, Result, RowOrder, SavedQuery, Undoable,
+    PlaylistOrder, Result, RowOrder, SavedQuery, Track, Undoable,
     playlist::{self},
     undo::{self},
 };
@@ -50,7 +50,18 @@ impl Library {
         from: usize,
         most: Option<usize>,
     ) -> Result<Vec<NamedPlaylist>> {
-        playlist::names(&self.inner, order, direction, from, most)
+        playlist::names(&self.inner, order, direction, None, from, most)
+    }
+
+    pub fn playlist_names_within(
+        &self,
+        order: PlaylistOrder,
+        direction: Direction,
+        named: Option<&str>,
+        from: usize,
+        most: usize,
+    ) -> Result<Vec<NamedPlaylist>> {
+        playlist::names(&self.inner, order, direction, named, from, Some(most))
     }
 
     pub fn playlist_count(&self, named: Option<&str>) -> Result<u32> {
@@ -80,6 +91,24 @@ impl Library {
         most: usize,
     ) -> Result<(Vec<PlaylistEntry>, usize)> {
         playlist::entries_within(&self.inner, id, matching, Some(most))
+    }
+
+    pub fn playlist_servable(
+        &self,
+        id: PlaylistId,
+        matching: Option<&str>,
+        from: usize,
+        most: usize,
+    ) -> Result<Vec<Track>> {
+        playlist::servable(&self.inner, id, matching, from, most)
+    }
+
+    pub fn playlist_servable_counted(&self, id: PlaylistId, matching: Option<&str>) -> Result<u32> {
+        playlist::servable_counted(&self.inner, id, matching)
+    }
+
+    pub fn playlists_servable_counted(&self, ids: &[PlaylistId]) -> Result<Vec<(PlaylistId, u32)>> {
+        playlist::servable_counted_each(&self.inner, ids)
     }
 
     pub fn playlist_cuts(&self, id: PlaylistId) -> Result<Vec<Cut>> {

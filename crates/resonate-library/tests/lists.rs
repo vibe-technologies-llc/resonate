@@ -3,7 +3,7 @@ use std::{fs, slice, thread, time::Duration};
 use resonate_core::{AlbumId, MediaLocation, PlaylistId, QueueStamp, SourceId, Span};
 use resonate_library::{
     AlbumQuery, Cut, Direction, Edit, Error, Kept, Library, MOST_PLAYLIST_NAME_CHARS, Playing,
-    PlaylistOrder, Result, RowOrder, SavedQuery, SortOrder,
+    PlaylistOrder, Result, RowOrder, SavedQuery, SortOrder, TrackQuery,
 };
 
 use crate::support::{
@@ -2421,5 +2421,106 @@ fn the_pinned_playlists_are_listed_most_lately_pinned_first() -> Result<()> {
     library.pin_playlist(evening, false)?;
 
     assert_eq!(named(8)?, ["Morning"]);
+    Ok(())
+}
+
+#[test]
+fn a_playlist_serves_its_shown_rows_a_page_at_a_time_and_counts_them_without_reading_them()
+-> Result<()> {
+    let (tree, library) = scanned_playlist_tree();
+    let rows = library.tracks(&TrackQuery::default())?;
+    let dogs = rows
+        .iter()
+        .find(|track| track.title == "Dogs")
+        .expect("a row titled Dogs")
+        .id;
+
+    library.hide_track(dogs, true)?;
+
+    let evening = library.create_playlist("Evening")?;
+
+    library.add_to_playlist(
+        evening,
+        &["b.wav", "a.wav", "c.wav", "a.wav", "nothing-scanned.wav"]
+            .iter()
+            .map(|file| Cut::whole(MediaLocation::local(tree.path().join(file))))
+            .collect::<Vec<_>>(),
+    )?;
+
+    let first_two = library.save_query(
+        "First two",
+        &SavedQuery {
+            text: None,
+            sort: SortOrder::Title,
+            reading: SortOrder::Title.reads(),
+            limit: Some(2),
+        },
+    )?;
+    let empty = library.create_playlist("Empty")?;
+    let gone = PlaylistId::new(9_999)?;
+
+    let titles = |id: PlaylistId, matching: Option<&str>, from: usize, most: usize| {
+        library
+            .playlist_servable(id, matching, from, most)
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|track| track.title)
+                    .collect::<Vec<_>>()
+            })
+    };
+
+    let whole = titles(evening, None, 0, 10)?;
+    let second = titles(evening, None, 1, 1)?;
+    let past_the_end = titles(evening, None, 3, 5)?;
+    let sheep = titles(evening, Some("sheep"), 0, 10)?;
+    let asked = titles(first_two, None, 0, 10)?;
+    let asked_after_the_first = titles(first_two, None, 1, 10)?;
+    let counted = (
+        library.playlist_servable_counted(evening, None)?,
+        library.playlist_servable_counted(evening, Some("sheep"))?,
+        library.playlist_servable_counted(evening, Some("nothing here"))?,
+        library.playlist_servable_counted(first_two, None)?,
+    );
+    let mut each = library.playlists_servable_counted(&[evening, first_two, empty, gone])?;
+
+    each.sort_unstable();
+
+    assert_eq!(whole, ["Echoes", "Sheep", "Echoes"]);
+    assert_eq!(second, ["Sheep"]);
+    assert!(past_the_end.is_empty());
+    assert_eq!(sheep, ["Sheep"]);
+    assert_eq!(asked, ["Echoes", "Sheep"]);
+    assert_eq!(asked_after_the_first, ["Sheep"]);
+    assert_eq!(counted, (3, 1, 0, 2));
+    assert_eq!(each, [(evening, 3), (first_two, 2), (empty, 0)]);
+    Ok(())
+}
+
+#[test]
+fn a_page_of_names_is_narrowed_by_the_words_a_name_holds() -> Result<()> {
+    let library = Library::open_in_memory()?;
+
+    for name in ["Evening Songs", "Morning", "Late Evening", "Songs at Dawn"] {
+        library.create_playlist(name)?;
+    }
+
+    let names = |named: Option<&str>, from, most| -> Result<Vec<String>> {
+        Ok(library
+            .playlist_names_within(PlaylistOrder::Name, Direction::Ascending, named, from, most)?
+            .into_iter()
+            .map(|playlist| playlist.name)
+            .collect())
+    };
+
+    assert_eq!(
+        names(Some("evening"), 0, 10)?,
+        ["Evening Songs", "Late Evening"]
+    );
+    assert_eq!(names(Some("songs"), 1, 1)?, ["Songs at Dawn"]);
+    assert_eq!(names(None, 0, 2)?, ["Evening Songs", "Late Evening"]);
+    assert_eq!(
+        names(Some("evening"), 0, 10)?.len() as u32,
+        library.playlist_count(Some("evening"))?
+    );
     Ok(())
 }

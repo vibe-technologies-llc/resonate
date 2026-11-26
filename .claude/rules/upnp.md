@@ -643,13 +643,21 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   per catalog revision) is its total, and the row after each page served is remembered
   (`CURSORS_AT_MOST`, 256, a revision) so the next page in order is `Library::tracks_from` that
   row, an index seek, and a jump is `Library::tracks` by offset. An album's songs are counted and
-  read the same way; a playlist's served rows are read whole once a revision (`LISTS_KEPT_AT_MOST`,
-  32) and paged in memory. A whole file is served only where its row is a local file whose
+  read the same way. **A playlist is counted and paged in SQL, never loaded**: the Playlists shelf
+  reads a page of names (`Library::playlist_names_within`) and their counts in one statement
+  (`Library::playlists_servable_counted`), each count kept per catalog revision
+  (`Shelves::served_counts`, every count of the revision, since a playlist's id is the catalog's
+  own), so a playlist's `childCount`, its `shelf` and the total its pages carry read one kept
+  figure, and a page of its songs is `Library::playlist_servable` at that offset
+  (`five_hundred_playlists_of_a_thousand_rows_are_browsed_without_reading_an_entry`: every track
+  row made unreadable, the Playlists shelf of 500 lists of 1 000 rows and the root still answer).
+  A whole file is served only where its row is a local file whose
   extension names an `AudioKind`, and a file gone is 404; a cut only where its row is a local file
   with a known length (*A cut served as WAVE*). **What is counted is what is served**: every query
   a shelf or search reads (`songs_in_order`, `on_the_album`, `played_by`) asks
-  `TrackQuery::servable`, so the library pages and counts those rows alone, and a playlist's kept
-  list keeps only what `is_served` (shown, and `served_as` describes) admits; `kind_of` reads the
+  `TrackQuery::servable`, so the library pages and counts those rows alone, and a playlist's
+  rows are the library's `SHOWN_AND_SERVABLE` ones, what `is_served` (shown, and `served_as`
+  describes) admits, a saved query's held to it after its own limit as its list was; `kind_of` reads the
   extension after the file name's last dot as the library's suffix test does, and every
   `AUDIO_EXTENSIONS` entry names an `AudioKind`, so a row the library admits is never dropped
   after it is counted, and `TotalMatches`, `childCount` and the rows a page returns agree
@@ -670,9 +678,20 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   `on_an_album`, albums and songs by title
   (`a_search_under_artists_or_albums_finds_what_is_nested_below_and_nothing_loose`), each with the
   search's text beside the narrowing; under a playlist the
-  songs are its entries narrowed by the text (`Library::playlist_entries` with it, so a saved query's
-  playlist narrows its own query) in the playlist's order, hidden rows left out, paged in memory
-  (`played_from_matching`), and with no text the kept list `played_from` pages. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network` and `offer-name`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
+  songs are its entries narrowed by the text (`Library::playlist_servable` and
+  `playlist_servable_counted` with it, so a saved query's playlist narrows its own query) in the
+  playlist's order, hidden rows left out, paged in SQL (`played_from_matching`), and with no text
+  `played_from` pages them under the kept count. **A word a `contains` or `doesNotContain` begins
+  holds two letters at least** (`LETTERS_BEGUN_AT_LEAST`, `begins_with_enough_letters`, a
+  playlist's name words too), else the query is unanswered, 708 as any query the catalog will not
+  read: a one-letter prefix matches most of a catalog and ranks all of it
+  (`a_search_word_of_one_letter_is_unanswered_and_one_of_two_is_read`). A whole name (`=`) of one
+  letter is still read, being no prefix. **The shelves take no more than their share of the
+  catalog's readers**: every `Catalog` call but `revision` takes a `Turn` of the `Shelves`'
+  `ReaderShare` (`library.md`), half the pool, awaited at most `A_TURN_IS_AWAITED_AT_MOST` (5 s)
+  and failed past it (`NoTurnToRead`, a SOAP `501` as any failure), so sixteen answers at once,
+  each a root search's four ranked reads, leave the window readers of its own
+  (`sixteen_root_searches_at_once_leave_a_window_read_answered_within_its_deadline`). `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network` and `offer-name`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
 - **A cut served as WAVE.** A song cut from a cue sheet is a span of a file and no byte range of
   it, so it is decoded and sent as WAVE, and the crate stays blind to decoding: the seam's `Pcm`
   (`decoded.rs`, `seek` to a frame of the cut and `next_block`, each with its own `Failure`) is what

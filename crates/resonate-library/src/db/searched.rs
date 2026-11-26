@@ -98,6 +98,77 @@ pub(crate) fn tracks_from(inner: &Inner, query: &TrackQuery, at: TrackId) -> Res
     read_from(inner, query, &matching, at)
 }
 
+pub(crate) fn servable_of(
+    inner: &Inner,
+    query: &TrackQuery,
+    narrowing: Option<&str>,
+    from: usize,
+    most: usize,
+) -> Result<Vec<Track>> {
+    let Some(listed) = listed_then_served(query, narrowing, *inner.music_filters.lock()) else {
+        return Ok(Vec::new());
+    };
+    let sql = format!(
+        "SELECT {TRACK_COLUMNS}{} ORDER BY {} LIMIT ? OFFSET ?",
+        listed.from, listed.order
+    );
+    let mut binds = listed.binds;
+
+    binds.push(Value::Integer(limit(Some(most))));
+    binds.push(Value::Integer(i64::try_from(from).unwrap_or(i64::MAX)));
+    collect(inner, &sql, binds)
+}
+
+pub(crate) fn servable_of_counted(
+    inner: &Inner,
+    query: &TrackQuery,
+    narrowing: Option<&str>,
+) -> Result<u32> {
+    let Some(listed) = listed_then_served(query, narrowing, *inner.music_filters.lock()) else {
+        return Ok(0);
+    };
+    let sql = format!("SELECT count(*){}", listed.from);
+
+    inner.read(|connection| {
+        connection
+            .query_row(&sql, params_from_iter(listed.binds), |row| {
+                row.get::<_, i64>(0)
+            })
+            .map(|rows| u32::try_from(rows).unwrap_or(u32::MAX))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+struct ListedThenServed {
+    from: String,
+    binds: Vec<Value>,
+    order: &'static str,
+}
+
+fn listed_then_served(
+    query: &TrackQuery,
+    narrowing: Option<&str>,
+    filters: MusicFilters,
+) -> Option<ListedThenServed> {
+    let scoped = scoped(query, narrowing, filters)?;
+    let order = order_by(query.sort, query.reading, scoped.ranked);
+    let rank = if scoped.ranked {
+        "tracks_fts.rank"
+    } else {
+        "NULL"
+    };
+
+    Some(ListedThenServed {
+        from: format!(
+            " FROM tracks JOIN (SELECT tracks.id AS id, {rank} AS rank{} ORDER BY {order} \
+             LIMIT ? OFFSET ?) listed ON listed.id = tracks.id WHERE {}",
+            scoped.from, *SHOWN_AND_SERVABLE
+        ),
+        binds: paged(scoped.binds, query),
+        order,
+    })
+}
+
 pub(crate) fn tracks_counted(inner: &Inner, query: &TrackQuery) -> Result<u32> {
     let filters = *inner.music_filters.lock();
     let Some(matching) = matching_tracks(query, None, filters) else {
@@ -687,6 +758,9 @@ static SERVABLE: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
+pub(crate) static SHOWN_AND_SERVABLE: LazyLock<String> =
+    LazyLock::new(|| format!("{A_SHOWN_TRACK} AND {}", *SERVABLE));
+
 const BY_AN_ARTIST: &str = "(tracks.artist_id IS NOT NULL
       OR tracks.id IN (SELECT track_id FROM track_credits))";
 
@@ -1188,7 +1262,7 @@ pub(super) fn played(seconds: Option<f64>) -> Option<Duration> {
         .map(|seconds| Duration::try_from_secs_f64(seconds).unwrap_or_default())
 }
 
-pub(super) fn collect(inner: &Inner, sql: &str, binds: Vec<Value>) -> Result<Vec<Track>> {
+pub(crate) fn collect(inner: &Inner, sql: &str, binds: Vec<Value>) -> Result<Vec<Track>> {
     let raw = inner.read(|connection| {
         let mut statement = connection
             .prepare(sql)

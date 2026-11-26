@@ -24,6 +24,7 @@ mod syncing;
 #[cfg(test)]
 mod tests;
 mod tracks;
+mod turns;
 mod vault;
 mod versions_chosen;
 mod wants;
@@ -50,11 +51,13 @@ use rusqlite::{
     params, types::Value,
 };
 
+pub use self::turns::{ReaderShare, Turn};
 pub(crate) use self::{
     rows::{RawTrack, TrackToVault},
     searched::{
-        Narrowed, PICTURES_WEIGHED_PER_TILE, clause, cuts_matching, distinct_pictures, measured,
-        measured_narrowed, pictured_by, pictures_of_albums, reads_listening, tracks,
+        Narrowed, PICTURES_WEIGHED_PER_TILE, SHOWN_AND_SERVABLE, clause, collect, cuts_matching,
+        distinct_pictures, measured, measured_narrowed, pictured_by, pictures_of_albums,
+        reads_listening, servable_of, servable_of_counted, tracks,
     },
     statements::{BESIDE_A_TRACK, TRACK_COLUMNS},
 };
@@ -78,6 +81,8 @@ use crate::{
 };
 
 const READER_POOL: usize = 8;
+
+const READER_AWAITED_AT_MOST: Duration = Duration::from_secs(30);
 
 enum Visited {
     Held(Option<Box<RawTrack>>, i64),
@@ -493,6 +498,12 @@ impl Inner {
     }
 
     fn checkout(&self) -> Result<Reader<'_>> {
+        self.checkout_within(READER_AWAITED_AT_MOST)
+    }
+
+    fn checkout_within(&self, patience: Duration) -> Result<Reader<'_>> {
+        let since = Instant::now();
+        let deadline = since + patience;
         let mut pool = self.readers.lock();
         loop {
             if let Some(connection) = pool.parked.pop() {
@@ -516,7 +527,14 @@ impl Inner {
                     }
                 };
             }
-            self.freed.wait(&mut pool);
+            if self.freed.wait_until(&mut pool, deadline).timed_out()
+                && pool.parked.is_empty()
+                && pool.open >= READER_POOL
+            {
+                return Err(Error::NoReaderFreed {
+                    waited: since.elapsed(),
+                });
+            }
         }
     }
 

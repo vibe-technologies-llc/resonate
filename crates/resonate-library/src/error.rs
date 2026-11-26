@@ -1,4 +1,4 @@
-use std::{fmt, io, path::PathBuf, result};
+use std::{fmt, io, path::PathBuf, result, time::Duration};
 
 use resonate_core::{
     AlbumId, ArtistId, Mbid, MediaLocation, PlaylistId, ReleaseTrackId, TrackId, WantId,
@@ -405,6 +405,12 @@ pub enum Error {
         #[source]
         source: Box<rusqlite::Error>,
     },
+
+    #[error("no catalog reader was handed back within {waited:?}")]
+    NoReaderFreed { waited: Duration },
+
+    #[error("no turn among a share of the catalog's readers came within {waited:?}")]
+    NoTurnToRead { waited: Duration },
 
     #[error("catalog was written to schema {found}, this build writes {expected}")]
     SchemaMismatch {

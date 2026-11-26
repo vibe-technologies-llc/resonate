@@ -127,7 +127,7 @@ pub use explore::{
 pub use crate::{
     chosen::{Chosen, ChosenVersion, Played, Variants},
     copies::{Copies, IdenticalCopy},
-    db::{CatalogStamp, HiddenTracks, Library, WrittenElsewhere},
+    db::{CatalogStamp, HiddenTracks, Library, ReaderShare, Turn, WrittenElsewhere},
     deleted::{Deleted, Removal, Trashes},
     elsewhere::{
         ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, AlbumFound, ArtistFound,

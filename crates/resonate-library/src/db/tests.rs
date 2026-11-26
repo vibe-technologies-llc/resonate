@@ -1755,6 +1755,71 @@ fn no_more_readers_are_open_at_once_than_the_pool_parks() {
     );
 }
 
+const A_SHORT_WAIT: Duration = Duration::from_millis(50);
+
+const A_LONG_WAIT: Duration = Duration::from_secs(30);
+
+#[test]
+fn a_checkout_waits_no_longer_than_it_is_given_once_every_reader_is_out() {
+    let scratch = Scratch::new("readers-out");
+    let library = Library::open(&scratch.path.join("library.db")).expect("a catalog opens on disk");
+    let inner = &library.inner;
+
+    let mut out: Vec<_> = (0..READER_POOL)
+        .map(|_| inner.checkout().expect("a reader under the pool's count"))
+        .collect();
+    let refused = inner.checkout_within(A_SHORT_WAIT).err();
+
+    drop(out.pop());
+
+    let handed_back = inner.checkout_within(A_SHORT_WAIT);
+
+    assert!(
+        matches!(refused, Some(Error::NoReaderFreed { waited }) if waited >= A_SHORT_WAIT),
+        "{refused:?}"
+    );
+    assert!(handed_back.is_ok());
+}
+
+#[test]
+fn a_share_of_the_readers_hands_out_half_the_pool_and_wakes_a_waiter_as_one_comes_back() {
+    let share = ReaderShare::waiting_at_most(A_SHORT_WAIT);
+    let patient = ReaderShare::waiting_at_most(A_LONG_WAIT);
+
+    let mut taken: Vec<_> = (0..ReaderShare::TAKES_AT_MOST)
+        .map(|_| share.turn().expect("a turn within the share"))
+        .collect();
+    let refused = share.turn().err();
+
+    drop(taken.pop());
+
+    let handed_back = share.turn();
+    let held: Vec<_> = (0..ReaderShare::TAKES_AT_MOST)
+        .map(|_| patient.turn().expect("a turn within the share"))
+        .collect();
+
+    let woken = thread::scope(|scope| {
+        let waiter = scope.spawn(|| {
+            let since = Instant::now();
+            patient.turn().map(|_| since.elapsed())
+        });
+
+        thread::sleep(A_SHORT_WAIT);
+        drop(held);
+        waiter.join().expect("the waiter")
+    });
+
+    assert!(
+        matches!(refused, Some(Error::NoTurnToRead { waited }) if waited >= A_SHORT_WAIT),
+        "{refused:?}"
+    );
+    assert!(handed_back.is_ok());
+    assert!(
+        woken.as_ref().is_ok_and(|waited| *waited < A_LONG_WAIT),
+        "{woken:?}"
+    );
+}
+
 fn nothing_to_walk() -> ScanOptions {
     ScanOptions {
         roots: Vec::new(),

@@ -61,6 +61,8 @@ const HOLDS_A_LIST: &str = "q.playlist_id IS NULL";
 
 const NO_LIMIT: i64 = -1;
 
+const PLAYLISTS_COUNTED_AT_ONCE: usize = 500;
+
 const LIKE_ESCAPE: char = '\\';
 
 const ANY_RUN: char = '%';
@@ -134,14 +136,21 @@ pub fn names(
     inner: &Inner,
     order: PlaylistOrder,
     direction: Direction,
+    named: Option<&str>,
     from: usize,
     most: Option<usize>,
 ) -> Result<Vec<NamedPlaylist>> {
+    let (filters, mut binds) = narrowed_by(named);
     let sql = format!(
-        "SELECT p.id, p.name FROM playlists p ORDER BY {} LIMIT ?1 OFFSET ?2",
+        "SELECT p.id, p.name FROM playlists p{} ORDER BY {} LIMIT ? OFFSET ?",
+        db::clause(&filters),
         order_by(order, direction)
     );
-    let taking = most.map_or(NO_LIMIT, |most| i64::try_from(most).unwrap_or(i64::MAX));
+
+    binds.push(Value::Integer(
+        most.map_or(NO_LIMIT, |most| i64::try_from(most).unwrap_or(i64::MAX)),
+    ));
+    binds.push(Value::Integer(i64::try_from(from).unwrap_or(i64::MAX)));
 
     inner.read(|connection| {
         let mut statement = connection
@@ -149,10 +158,7 @@ pub fn names(
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
         let found = statement
-            .query_map(
-                params![taking, i64::try_from(from).unwrap_or(i64::MAX)],
-                named_row,
-            )
+            .query_map(params_from_iter(binds), named_row)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
 
@@ -782,17 +788,9 @@ pub fn entries_within(
         return Ok((entries, matched));
     }
 
-    let mut filters = vec![HELD_BY_THE_PLAYLIST.to_owned()];
-    let mut binds = vec![Value::Integer(id.get() as i64)];
-
-    match matching.map(|text| db::cuts_matching(text, ROW)) {
-        None | Some(Narrowed::Unasked) => {}
-        Some(Narrowed::To(narrowed)) => {
-            filters.push(narrowed.sql);
-            binds.extend(narrowed.binds);
-        }
-        Some(Narrowed::Nothing) => return Ok((Vec::new(), 0)),
-    }
+    let Some((filters, binds)) = held_rows(id, matching) else {
+        return Ok((Vec::new(), 0));
+    };
 
     let matched = match most {
         Some(_) => {
@@ -853,6 +851,119 @@ pub fn entries_within(
         entries.len()
     };
     Ok((entries, matched))
+}
+
+fn held_rows(id: PlaylistId, matching: Option<&str>) -> Option<(Vec<String>, Vec<Value>)> {
+    let mut filters = vec![HELD_BY_THE_PLAYLIST.to_owned()];
+    let mut binds = vec![Value::Integer(id.get() as i64)];
+
+    match matching.map(|text| db::cuts_matching(text, ROW)) {
+        None | Some(Narrowed::Unasked) => {}
+        Some(Narrowed::To(narrowed)) => {
+            filters.push(narrowed.sql);
+            binds.extend(narrowed.binds);
+        }
+        Some(Narrowed::Nothing) => return None,
+    }
+    Some((filters, binds))
+}
+
+fn held_and_servable(id: PlaylistId, matching: Option<&str>) -> Option<(String, Vec<Value>)> {
+    let (mut filters, binds) = held_rows(id, matching)?;
+
+    filters.push(db::SHOWN_AND_SERVABLE.clone());
+    Some((
+        format!(
+            " FROM playlist_entries e JOIN tracks ON {ON_THE_SAME_CUT}{}",
+            db::clause(&filters)
+        ),
+        binds,
+    ))
+}
+
+pub fn servable(
+    inner: &Inner,
+    id: PlaylistId,
+    matching: Option<&str>,
+    from: usize,
+    most: usize,
+) -> Result<Vec<Track>> {
+    if let Some(query) = inner.read(|connection| asked_in(connection, id))? {
+        return db::servable_of(inner, &TrackQuery::from(&query), matching, from, most);
+    }
+
+    let Some((held, mut binds)) = held_and_servable(id, matching) else {
+        return Ok(Vec::new());
+    };
+    let sql = format!("SELECT {TRACK_COLUMNS}{held} ORDER BY e.position LIMIT ? OFFSET ?");
+
+    binds.push(Value::Integer(i64::try_from(most).unwrap_or(i64::MAX)));
+    binds.push(Value::Integer(i64::try_from(from).unwrap_or(i64::MAX)));
+    db::collect(inner, &sql, binds)
+}
+
+pub fn servable_counted(inner: &Inner, id: PlaylistId, matching: Option<&str>) -> Result<u32> {
+    if let Some(query) = inner.read(|connection| asked_in(connection, id))? {
+        return db::servable_of_counted(inner, &TrackQuery::from(&query), matching);
+    }
+
+    let Some((held, binds)) = held_and_servable(id, matching) else {
+        return Ok(0);
+    };
+    let sql = format!("SELECT count(*){held}");
+
+    inner.read(|connection| {
+        connection
+            .query_row(&sql, params_from_iter(binds), |row| row.get::<_, i64>(0))
+            .map(|rows| u32::try_from(rows).unwrap_or(u32::MAX))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+pub fn servable_counted_each(inner: &Inner, ids: &[PlaylistId]) -> Result<Vec<(PlaylistId, u32)>> {
+    let mut counted = Vec::with_capacity(ids.len());
+
+    for some in ids.chunks(PLAYLISTS_COUNTED_AT_ONCE) {
+        let sql = format!(
+            "SELECT p.id, q.playlist_id IS NOT NULL,
+                    (SELECT count(*) FROM playlist_entries e JOIN tracks ON {ON_THE_SAME_CUT}
+                      WHERE e.playlist_id = p.id AND {})
+               FROM playlists p LEFT JOIN playlist_queries q ON q.playlist_id = p.id
+              WHERE p.id IN ({})",
+            *db::SHOWN_AND_SERVABLE,
+            vec!["?"; some.len()].join(", ")
+        );
+        let read = inner.read(|connection| {
+            let mut statement = connection
+                .prepare(&sql)
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+            statement
+                .query_map(
+                    params_from_iter(some.iter().map(|id| id.get() as i64)),
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, bool>(1)?,
+                            row.get::<_, i64>(2)?,
+                        ))
+                    },
+                )
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
+
+        for (id, asks, held) in read {
+            let id = PlaylistId::new(id as u64)?;
+            let served = match asks {
+                true => servable_counted(inner, id, None)?,
+                false => u32::try_from(held).unwrap_or(u32::MAX),
+            };
+
+            counted.push((id, served));
+        }
+    }
+    Ok(counted)
 }
 
 pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {
