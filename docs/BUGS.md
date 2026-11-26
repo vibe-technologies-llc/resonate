@@ -11,17 +11,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   for TIDAL), so each phone client signs in under a fresh id and leaves a live token behind. Hand the
   minted id back across the boundary and store it on both platforms. Done when a phone signing in
   twice sends one device id, in a boundary test and each platform's unit test.
-- [M · 0.18.1] Harden the Windows Discord pipe. **Low, architect.** The pipe is opened with no
-  security quality of service (`crates/resonate-discord/src/pipe.rs:44-51` through interprocess's
-  `CreateFileW(..., FILE_FLAG_OVERLAPPED, ...)`), so a squatting server holding
-  `SeImpersonatePrivilege` can impersonate the listener, beyond the learning of what plays that
-  `windows.md` names; its `flush` is `FlushFileBuffers` with no deadline (`frame.rs:60-61`,
-  `pipe.rs:101-103`), so a peer that never reads blocks the publisher thread for good; the reader's
-  channel is unbounded (`pipe.rs:54-73`, `:118-131`); and the reader thread keeps the handle after
-  the session drops, one leaked thread a retry against a silent pipe. Open with identification-level
-  QoS, bound the write and flush as the reader is bounded, bound the channel and cancel the read on
-  drop. Done when tests on Windows show a pipe that never reads ends the session within
-  `ANSWERS_WITHIN` and leaves no thread behind.
 - [S · 0.18.1] Serve a cue sheet's cut only from a regular file. **Low, builder.** The media server's
   `bytes_of` now opens only a regular file without following a link
   (`crates/resonate/src/offering.rs`, `regular_file`), but a cut of a cue sheet opens its file through
