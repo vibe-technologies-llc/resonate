@@ -4,12 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.18.1] Serve a cue sheet's cut only from a regular file. **Low, builder.** The media server's
-  `bytes_of` now opens only a regular file without following a link
-  (`crates/resonate/src/offering.rs`, `regular_file`), but a cut of a cue sheet opens its file through
-  `Shelves::cut_opened` and the codec's `Sources` (`LocalFiles`), which follow a link and block on a
-  FIFO put in the file's place. Check the kind there too. Done when a FIFO behind a cut answers 404
-  at once, in a test.
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
   takes the forged member keys from the snapshot: the first key heard for a `MemberId` stands, so
   devices that already held the list keep the true keys, but a newcomer's first is the forger's, and
@@ -32,12 +26,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   kHz, at 44.1, 48 and 96 kHz, are judged as intended in
   `crates/resonate-analysis/tests/analysis.rs`, whose fixtures today sit only at 16 kHz and 21.7
   kHz.
-- [S · 0.18.1] Count the rows a media server's page returns. **Medium, builder.** `songs_of` and the
-  album shelf drop rows with `filter_map(song_of)`, a song with no local file, an unknown extension
-  or a cut with no duration (`crates/resonate/src/offering.rs:142-158`, `:491-524`, `:633-638`),
-  while `TotalMatches` and `childCount` come from `tracks_counted`, so a control point is answered
-  fewer rows than asked and reads rows twice across pages. Count what is offered, or page over what
-  can be offered. Done when a test catalog with unplayable rows pages without gaps or repeats.
 - [S · 0.18.1] Report organise's refusals after `--undo --apply`. **Medium, builder.**
   `organising.rs:43` returns "nothing to put back" when the plan's moves are empty after applying,
   though refusals or a cancel emptied them (`crates/resonate-library/src/organise.rs:820`, `:2350`,
@@ -79,10 +67,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-core/src/elapsed.rs:5-92` counts months of 30 days and years of 365, so 361 to
   364 days read "12 months ago". Promote twelve months to a year. Done when 362 days reads a year
   ago.
-- [S · 0.18.1] Tell the media server when music folders change. **Low, builder.** `filter_music`
-  does not move `catalog_revision` (`crates/resonate-library/src/db/mod.rs:1040-1046`), so the
-  offered totals, cursors and lists and `SystemUpdateID` stay stale. Move the revision. Done when a
-  test sees `SystemUpdateID` change after a folder is filtered out.
 - [S · 0.18.1] Make a bare `resonate served` ask which service. **Low, builder.** Online, a bare
   `served` always picks dlna (`crates/resonate/src/providers.rs:125-133`, `served.rs:496-498`), so
   `NoServedService` never fires. Pick only a configured service. Done when a test with none
