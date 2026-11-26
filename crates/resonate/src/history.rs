@@ -1,6 +1,6 @@
 use std::{
-    fs,
-    io::{BufWriter, Write as _},
+    fs::{self, OpenOptions},
+    io::{self, BufWriter, Write as _},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -41,15 +41,11 @@ pub(crate) fn history(library: &Library, config: &Config, asked: &HistoryArgs) -
 
 fn exported(kept: &dyn KeptListens, file: &Path) -> Result<()> {
     let target = fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
-    let staged = staged_beside(&target);
 
-    let placed = written_and_placed(kept, &target, &staged);
-
-    if placed.is_err() {
-        let _ = fs::remove_file(&staged);
-    }
-
-    let listens = placed?;
+    let listens = match fs::metadata(&target) {
+        Ok(standing) if !standing.is_file() => written_straight(kept, &target)?,
+        _ => staged_and_placed(kept, &target)?,
+    };
 
     said!(
         "{}",
@@ -58,23 +54,57 @@ fn exported(kept: &dyn KeptListens, file: &Path) -> Result<()> {
     Ok(())
 }
 
+fn staged_and_placed(kept: &dyn KeptListens, target: &Path) -> Result<u64> {
+    let staged = staged_beside(target);
+
+    let placed = written_and_placed(kept, target, &staged);
+
+    if placed.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    placed
+}
+
+fn written_straight(kept: &dyn KeptListens, target: &Path) -> Result<u64> {
+    let failed = |source| Error::WriteHistory {
+        path: target.to_path_buf(),
+        source,
+    };
+    let opened = OpenOptions::new()
+        .write(true)
+        .open(target)
+        .map_err(failed)?;
+
+    every_line_into(kept, &opened, &failed)
+}
+
+fn every_line_into(
+    kept: &dyn KeptListens,
+    file: &fs::File,
+    failed: &dyn Fn(io::Error) -> Error,
+) -> Result<u64> {
+    let mut written = BufWriter::new(file);
+
+    let mut listens = 0_u64;
+
+    for line in history_lines(kept) {
+        writeln!(written, "{}", line?).map_err(failed)?;
+        listens += 1;
+    }
+
+    written.flush().map_err(failed)?;
+    Ok(listens)
+}
+
 fn written_and_placed(kept: &dyn KeptListens, target: &Path, staged: &Path) -> Result<u64> {
     let staging = |source| Error::WriteHistory {
         path: staged.to_path_buf(),
         source,
     };
     let held = Held::made(staged).map_err(staging)?;
-    let mut written = BufWriter::new(held.file());
 
-    let mut listens = 0_u64;
+    let listens = every_line_into(kept, held.file(), &staging)?;
 
-    for line in history_lines(kept) {
-        writeln!(written, "{}", line?).map_err(staging)?;
-        listens += 1;
-    }
-
-    written.flush().map_err(staging)?;
-    drop(written);
     held.file().sync_all().map_err(staging)?;
     file_facts::replace(staged, target)
         .map_err(|source| Error::WriteHistory {
@@ -351,6 +381,22 @@ mod tests {
         assert_eq!(fs::read_dir(&root).expect("the folder").count(), 3);
 
         fs::remove_dir_all(root).expect("cleaned");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_export_to_something_that_is_no_file_is_written_into_it_as_it_stands() {
+        let (root, library) = catalog_of_songs("history-export-device");
+
+        library
+            .bring_in(ListeningService::LastFm, &[heard_at(0, MOMENTS[0])])
+            .expect("a listen to export");
+
+        let written = exported(&library, Path::new("/dev/null"));
+
+        fs::remove_dir_all(root).expect("cleaned");
+
+        assert!(written.is_ok(), "{written:?}");
     }
 
     #[test]

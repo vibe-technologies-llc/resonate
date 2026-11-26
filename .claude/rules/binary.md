@@ -164,7 +164,9 @@ paths:
   `named_within`), synced and renamed over the file only once every line is written, so an export
   failing part way leaves whatever the file held byte for byte and takes its stage away
   (`an_export_failing_part_way_leaves_the_file_it_would_replace_as_it_was_and_no_stage`,
-  `an_export_replaces_the_file_it_names_whole_and_leaves_no_stage`); each line is written by hand since the headless build has no `serde_json` (`line_of`): `listened_at` the second
+  `an_export_replaces_the_file_it_names_whole_and_leaves_no_stage`); a target that is there and
+  no file (`/dev/stdout`, a pipe) has no folder to stage in and is written into as it stands
+  (`written_straight`, `an_export_to_something_that_is_no_file_is_written_into_it_as_it_stands`); each line is written by hand since the headless build has no `serde_json` (`line_of`): `listened_at` the second
   it began, `track_metadata` the billed names and an `additional_info` of the MusicBrainz ids, ISRC,
   track number, `duration_ms`, `listened_ms` (time heard), `heard_elsewhere`, `origin_url` (the
   location, so a song no longer held is still named) and this build as `media_player` and
@@ -376,7 +378,9 @@ what follows describes Unix, where `signals.rs` and termios are used.
   failure only logged, so it works over SSH), the wait runs under `signals::cancel_when_told`, an end
   without the allowing is `LastfmSignInEnded`, and the session lands in `lastfm-session`. No password
   is read: the unechoed prompt is gone. `signals::leaving_on` leaves on any signals through any
-  `leaving` (`a_signal_during_a_prompt_leaves_with_its_number`).
+  `leaving` (`a_signal_during_a_prompt_leaves_with_its_number`). `--forget` is `lastfm::sign_out`,
+  in every build: it clears `lastfm-session` and lets go of Last.fm's mark in the catalog, the one
+  way besides the settings pane that a service stops holding the history back (`library.md`).
 - **`play` takes a key at a time on a terminal.** `input::KeyAtATime` leaves canonical mode and echo
   via `rustix`'s safe `termios`, keeps `ISIG`, restores on drop. A wedged front end's
   `process::exit` and a panic (release aborts) run no destructor: exit goes through
