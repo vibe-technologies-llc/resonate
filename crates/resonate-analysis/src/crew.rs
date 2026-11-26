@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    ops::ControlFlow,
     panic::{self, AssertUnwindSafe},
     sync::{
         Arc, OnceLock,
@@ -108,12 +109,16 @@ impl Crew {
         }
     }
 
+    fn samples_a_slab(self, samples_a_second: usize) -> usize {
+        (samples_a_second / self.slabs_a_second()).max(SAMPLES_A_SLAB_AT_LEAST)
+    }
+
     pub(crate) fn fanned<'stages, T>(
         self,
         samples_a_second: usize,
         stages: Vec<&'stages mut (dyn Noting + 'stages)>,
         stopped: &'stages (dyn Fn() -> bool + Sync),
-        walk: impl FnOnce(&mut dyn FnMut(&[f32])) -> T,
+        walk: impl FnOnce(&mut dyn FnMut(&[f32]) -> ControlFlow<()>) -> T,
     ) -> Result<T> {
         let Some(pool) = self.pool() else {
             let mut stages = stages;
@@ -130,6 +135,7 @@ impl Crew {
                         stage.note(samples);
                         self.rest(began, stopped);
                     }
+                    ControlFlow::Continue(())
                 })
             });
         };
@@ -142,14 +148,16 @@ impl Crew {
             cancelled: AtomicBool::new(false),
             panicked: AtomicBool::new(false),
         };
-        let samples_a_slab =
-            (samples_a_second / self.slabs_a_second()).max(SAMPLES_A_SLAB_AT_LEAST);
+        let samples_a_slab = self.samples_a_slab(samples_a_second);
 
         let answer = survived(|| {
             pool.in_place_scope(|scope| {
                 let mut gathering = Slab::gathering(Arc::clone(&fan.queued));
 
                 let answer = walk(&mut |samples| {
+                    if fan.panicked.load(Ordering::Acquire) {
+                        return ControlFlow::Break(());
+                    }
                     if self == Self::Background {
                         resonate_core::gaming::wait(stopped);
                     }
@@ -159,6 +167,7 @@ impl Crew {
 
                         fan.send(std::mem::replace(&mut gathering, next), scope);
                     }
+                    ControlFlow::Continue(())
                 });
 
                 fan.send(gathering, scope);
@@ -459,7 +468,7 @@ mod tests {
 
             crew.fanned(RATE, vec![&mut first, &mut second], &|| false, |feed| {
                 for piece in pieces() {
-                    feed(&piece);
+                    let _ = feed(&piece);
                 }
             })
             .expect("a pass");
@@ -486,7 +495,7 @@ mod tests {
         Crew::Background
             .fanned(RATE, vec![&mut slow], &|| false, |feed| {
                 for _ in 0..64 {
-                    feed(&piece);
+                    let _ = feed(&piece);
                 }
             })
             .expect("a pass");
@@ -511,7 +520,7 @@ mod tests {
         Crew::AsTheMachineAllows
             .fanned(RATE, vec![&mut gated], &|| true, |feed| {
                 for _ in 0..32 {
-                    feed(&piece);
+                    let _ = feed(&piece);
                 }
             })
             .expect("a pass");
@@ -539,12 +548,65 @@ mod tests {
             let began = Instant::now();
             let passed = crew.fanned(RATE, vec![&mut falls, &mut steady], &|| false, |feed| {
                 for _ in 0..512 {
-                    feed(&piece);
+                    let _ = feed(&piece);
                 }
             });
 
             assert!(matches!(passed, Err(Error::CrewPanicked)));
             assert!(began.elapsed() < Duration::from_secs(30));
+        }
+    }
+
+    #[test]
+    fn a_walk_is_told_to_stop_within_a_slab_of_a_stage_panicking() {
+        struct FallsAtOnce<'fell>(&'fell AtomicBool);
+
+        impl Noting for FallsAtOnce<'_> {
+            fn note(&mut self, _: &[f32]) {
+                self.0.store(true, Ordering::Release);
+                panic!("a stage fell over");
+            }
+        }
+
+        const PIECE: usize = 1_024;
+        const PIECES: usize = 4_096;
+        const UNWINDING_ALLOWED: Duration = Duration::from_millis(250);
+        const PACE: Duration = Duration::from_micros(200);
+
+        for crew in [Crew::AsTheMachineAllows, Crew::Background] {
+            let fell = AtomicBool::new(false);
+            let (mut falls, mut steady) = (FallsAtOnce(&fell), Gathered(Vec::new()));
+            let piece = vec![0.0_f32; PIECE];
+
+            let mut fed_after = 0;
+            let mut fed = 0;
+            let mut waited = false;
+
+            let passed = crew.fanned(RATE, vec![&mut falls, &mut steady], &|| false, |feed| {
+                for _ in 0..PIECES {
+                    let flow = feed(&piece);
+
+                    fed += 1;
+                    thread::sleep(PACE);
+                    if fell.load(Ordering::Acquire) {
+                        if !waited {
+                            thread::sleep(UNWINDING_ALLOWED);
+                            waited = true;
+                        }
+                        fed_after += 1;
+                    }
+                    if flow.is_break() {
+                        break;
+                    }
+                }
+            });
+
+            assert!(matches!(passed, Err(Error::CrewPanicked)));
+            assert!(
+                fed_after * PIECE <= crew.samples_a_slab(RATE),
+                "{crew:?} {fed_after}"
+            );
+            assert!(fed < PIECES, "{crew:?} {fed}");
         }
     }
 }

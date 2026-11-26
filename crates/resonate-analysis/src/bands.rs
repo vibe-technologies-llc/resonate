@@ -911,7 +911,9 @@ pub fn band_figures(
                     return Ok(());
                 };
 
-                feed(heard.samples);
+                if feed(heard.samples).is_break() {
+                    return Ok(());
+                }
             }
         },
     )??;

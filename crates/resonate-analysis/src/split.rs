@@ -927,7 +927,7 @@ mod tests {
             &|| false,
             |feed| {
                 for part in signal.chunks(4_096 * channels) {
-                    feed(part);
+                    let _ = feed(part);
                 }
             },
         )

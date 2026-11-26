@@ -406,7 +406,9 @@ fn walked<D: Drawing>(
 
                 leveling.note(heard.native, heard.samples);
                 printing.note(heard.samples);
-                feed(heard.samples);
+                if feed(heard.samples).is_break() {
+                    return Ok(());
+                }
 
                 frames += (heard.samples.len() / channels) as u64;
                 watch.reached(Frames(frames), info.duration);

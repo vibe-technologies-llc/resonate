@@ -50,7 +50,11 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   **A stage that panics ends the pass, never hangs it**: `Lane::drain`'s `Unwinding` guard, on unwind,
   marks the fan cancelled and panicked, drops the lane's queued slabs (freeing their bytes) and clears
   `draining`, so the other lanes discard what is queued and `fanned` answers `Error::CrewPanicked`
-  (`a_stage_that_panics_ends_the_pass_with_an_error_and_does_not_hang_the_walk`); `loudest_through`'s
+  (`a_stage_that_panics_ends_the_pass_with_an_error_and_does_not_hang_the_walk`). **The walk stops
+  too**: the `feed` a walk is handed answers a `ControlFlow<()>`, `Break` once the fan has panicked, and
+  `walked` and `band_figures` stop decoding on it, so a panic costs the slab being gathered and no more
+  of the file (`a_walk_is_told_to_stop_within_a_slab_of_a_stage_panicking`, on both crews); a stop
+  from the watch is not a `Break`, the walk reads it itself and answers `Error::Stopped`; `loudest_through`'s
   workers share an `Abandoning` watch, so one worker's panic stops the rest and the pass answers
   `Error::WorkerPanicked`, never the `Stopped` the others then return
   (`a_worker_that_panics_ends_the_pass_with_an_error_and_stops_the_others`).

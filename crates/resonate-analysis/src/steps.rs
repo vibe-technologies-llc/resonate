@@ -1686,7 +1686,7 @@ pub(crate) mod tests {
         Crew::AsTheMachineAllows
             .fanned(rate as usize * 2, vec![&mut crewed], &|| false, |feed| {
                 for block in interleaved.chunks(4_096 * 2) {
-                    feed(block);
+                    let _ = feed(block);
                 }
             })
             .expect("a pass");
