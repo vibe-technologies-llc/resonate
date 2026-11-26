@@ -8,13 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
-- [M · 0.18.1] Give the phones' media server the desktop's paging, counts and reader share.
-  **Medium, builder.** The desktop's offering now pages servable rows in SQL, counts playlists
-  without loading them, takes catalog reads through a capped `ReaderShare` and asks for two letters
-  in a search (`crates/resonate/src/offering.rs`, `crates/resonate-library/src/db/turns.rs`), but
-  the phones' `Shelves` (`crates/resonate-mobile/src/offering.rs`) has none of it. Bring the same
-  guarantees there. Done when the desktop's paging, 500-playlist and concurrent-search tests have
-  phone twins that pass.
 - [S · 0.18.1] Stream a history file the phones import. **Low, builder.** The desktop now reads an
   import a page at a time (`resonate_library::bring_in_file`), but the phones'
   `import_history_file` reads the whole file into memory (`crates/resonate-mobile`). Read it through
