@@ -158,6 +158,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.18.1] Give the library's scan a seam to hold it. **Low, builder.** The scan walks a
+  tree and reads each file with nothing a test can gate (`crates/resonate-library/src/scan.rs`), so
+  MCP's drain test holds a lookup instead (`crates/resonate-mcp/tests/server.rs`) and a scan
+  stopped mid-walk by a session ending is not proved. Add a hook the scan calls per file. Done when
+  a test holds a scan on its third file and the session's drain cancels it there.
 - [M · 0.18.1] Run the binary's subcommands as processes in a test. **Medium, builder.**
   `crates/resonate/tests` spawns the binary only for `play` and `mcp` (`terminal.rs:109`,
   `signals.rs:37`), and `organising.rs`, `kinship.rs`, `share.rs`, `sync.rs`, `vault.rs`,
@@ -190,11 +195,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   hostile tag text, a NUL, markup, a newline or 10 kB (`crates/resonate-mcp/tests/server.rs:72-90`,
   `bus.rs:148-180`). Record both stand-ins' calls and parameterise the fixtures. Done when pause
   releases the inhibit and a NUL title is notified, in tests.
-- [M · 0.18.1] Test MCP's `refresh_playlist` and pin each tool's hints. **Medium, builder.** No test
-  calls `refresh_playlist` (`crates/resonate-mcp/src/tools.rs:174-213`, `:902-907`), and the
-  annotation test compares `destroys()` with itself (`crates/resonate-mcp/tests/server.rs:881-923`).
-  Test a refresh, a list with no link and a failed fetch leaving rows, and pin hints by a table of
-  names. Done when a tool losing its destructive hint fails.
 - [M · 0.18.1] Make the layering job fail when `cargo tree` does. **Medium, builder.** Its loops end
   `|| true` (`.github/workflows/ci.yml:144`, `:153`, `:163`, `:173`, `:217`, `:232`, `:239`, `:251`,
   `:258`, `:276`, `:280`), which under `pipefail` swallows a failing `cargo tree`, and `check

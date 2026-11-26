@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -18,10 +18,10 @@ use resonate_engine::{Asleep, Placement, Until};
 use resonate_library::{
     AlbumLink, AlbumMatch, AlbumNames, AlbumQuery, ArtistLink, ArtistMatch, ArtistPressings,
     ArtistProfile, Barcode, BarcodeMatch, CoverArt, Cut, DeliveryFolder, Discography, GroupAsked,
-    GroupMatch, Isrc, Layout, Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LookingFor,
-    LyricText, LyricsAsked, Mbid, Medium, PlaylistLink, ProfileLink, Recording, RecordingAsked,
-    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Removal, ScanOptions, SongLink, SongsAsked, StreamAsked, Trashes,
+    GroupMatch, Isrc, Layout, Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, ListedSong,
+    LookingFor, LookupOp, LyricText, LyricsAsked, Mbid, Medium, PlaylistLink, ProfileLink,
+    Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, ReleaseTrack, Removal, ScanOptions, SongLink, SongsAsked, StreamAsked, Trashes,
 };
 use resonate_mcp::{Controlling, Error, Lookups, Reach, Resource, Row, Server, Tool};
 use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking, ZoneAsked};
@@ -78,10 +78,14 @@ impl Tree {
     }
 
     fn mp3(&self, name: &str, title: &str, album: &str) -> PathBuf {
+        self.mp3_coded(name, title, album, None)
+    }
+
+    fn mp3_coded(&self, name: &str, title: &str, album: &str, isrc: Option<&str>) -> PathBuf {
         let path = self.root.join(name);
 
         fs::create_dir_all(path.parent().expect("a folder to hold it")).expect("a folder");
-        fs::write(&path, mp3(title, album)).expect("a writable temporary file");
+        fs::write(&path, mp3(title, album, isrc)).expect("a writable temporary file");
         path
     }
 }
@@ -152,14 +156,18 @@ fn synchsafe(value: usize) -> [u8; 4] {
     ]
 }
 
-fn mp3(title: &str, album: &str) -> Vec<u8> {
+fn mp3(title: &str, album: &str, isrc: Option<&str>) -> Vec<u8> {
     let mut frames = Vec::new();
+    let coded = isrc.map(|code| (b"TSRC", code));
 
     for (id, value) in [
         (b"TIT2", title),
         (b"TPE1", "The Orbiters"),
         (b"TALB", album),
-    ] {
+    ]
+    .into_iter()
+    .chain(coded)
+    {
         let mut body = vec![3];
 
         body.extend_from_slice(value.as_bytes());
@@ -889,6 +897,83 @@ fn a_refusal_answers_under_the_id_it_was_asked_under() {
     assert_eq!(answer["error"]["code"], -32_601);
 }
 
+const READ_ONLY_TOOLS: [&str; 12] = [
+    "search_library",
+    "list_playlists",
+    "playlist_tracks",
+    "playlist_lossy_songs",
+    "favourites",
+    "listening_statistics",
+    "suggested_playlists",
+    "list_missing",
+    "now_playing",
+    "show_queue",
+    "list_zones",
+    "library_passes",
+];
+
+const DESTRUCTIVE_TOOLS: [&str; 8] = [
+    "remove_from_playlist",
+    "discard_playlist",
+    "refresh_playlist",
+    "undo_edit",
+    "remove_from_queue",
+    "play_playlist",
+    "move_playback",
+    "forget_folder",
+];
+
+const OPEN_WORLD_TOOLS: [&str; 5] = [
+    "import_playlist_link",
+    "refresh_playlist",
+    "follow_profile",
+    "start_lookup",
+    "start_poll",
+];
+
+#[test]
+fn each_tool_carries_the_hints_the_table_gives_it_and_no_tool_is_left_out_of_it() {
+    let server = nothing_running();
+    let listed = result(&server, "tools/list", json!({}));
+    let tools = listed["tools"].as_array().expect("a list of tools");
+    let known: Vec<&str> = Tool::ALL.iter().map(|tool| tool.name()).collect();
+
+    for named in READ_ONLY_TOOLS
+        .iter()
+        .chain(&DESTRUCTIVE_TOOLS)
+        .chain(&OPEN_WORLD_TOOLS)
+    {
+        assert!(known.contains(named), "the table names no tool {named}");
+    }
+
+    assert_eq!(tools.len(), known.len());
+    for entry in tools {
+        let name = entry["name"].as_str().expect("a tool is named");
+        let hints = &entry["annotations"];
+
+        assert_eq!(
+            hints["readOnlyHint"],
+            READ_ONLY_TOOLS.contains(&name),
+            "{name}"
+        );
+        assert_eq!(
+            hints["destructiveHint"],
+            DESTRUCTIVE_TOOLS.contains(&name),
+            "{name}"
+        );
+        assert_eq!(
+            hints["openWorldHint"],
+            OPEN_WORLD_TOOLS.contains(&name),
+            "{name}"
+        );
+        assert_eq!(
+            hints.as_object().map(|hints| hints.len()),
+            Some(3),
+            "{name}"
+        );
+    }
+}
+
 #[test]
 fn every_tool_is_listed_with_a_schema_naming_what_it_requires() {
     let server = nothing_running();
@@ -902,12 +987,6 @@ fn every_tool_is_listed_with_a_schema_naming_what_it_requires() {
         assert_eq!(entry["inputSchema"]["type"], "object");
         assert_eq!(entry["outputSchema"]["type"], "object");
         assert!(entry["outputSchema"]["properties"].is_object());
-        assert_eq!(entry["annotations"]["readOnlyHint"], tool.reads_only());
-        assert_eq!(entry["annotations"]["destructiveHint"], tool.destroys());
-        assert_eq!(
-            entry["annotations"]["openWorldHint"],
-            tool.reaches_the_network()
-        );
         assert!(
             !(tool.reads_only() && tool.reaches_the_network()),
             "{}",
@@ -2058,9 +2137,8 @@ fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained(
     )
     .looking_up_with(Lookups {
         reference: Some(Arc::new(Silent {
-            source: SourceId::new("musicbrainz").expect("a nameable source"),
-            signed_in_to_spotify: false,
             gate: Some(Arc::clone(&gate)),
+            ..Silent::quiet()
         })),
         ..Lookups::none()
     });
@@ -3474,13 +3552,63 @@ impl Gate {
     }
 }
 
+const LISTED_CODES: [&str; 3] = ["GBAAA2600001", "GBAAA2600002", "GBAAA2600003"];
+const LIKED_SONGS_PAGE: &str = "https://open.spotify.com/collection/tracks";
+
+#[derive(Default)]
+struct Listing {
+    listed: AtomicU8,
+    failing: AtomicBool,
+}
+
+impl Listing {
+    fn lists(&self, codes: &[usize]) {
+        self.listed.store(
+            codes.iter().fold(0, |listed, code| listed | (1 << code)),
+            Ordering::Release,
+        );
+    }
+
+    fn fails(&self, failing: bool) {
+        self.failing.store(failing, Ordering::Release);
+    }
+
+    fn songs(&self) -> Vec<ListedSong> {
+        let listed = self.listed.load(Ordering::Acquire);
+
+        LISTED_CODES
+            .iter()
+            .enumerate()
+            .filter(|(at, _)| listed & (1 << at) != 0)
+            .map(|(_, code)| {
+                ListedSong::Named(LinkNames {
+                    isrcs: vec![Isrc::new(code).expect("an ISRC")],
+                    length: None,
+                    title: None,
+                    artist: None,
+                })
+            })
+            .collect()
+    }
+}
+
 struct Silent {
     source: SourceId,
     signed_in_to_spotify: bool,
     gate: Option<Arc<Gate>>,
+    listing: Arc<Listing>,
 }
 
 impl Silent {
+    fn quiet() -> Self {
+        Self {
+            source: SourceId::new("musicbrainz").expect("a nameable source"),
+            signed_in_to_spotify: false,
+            gate: None,
+            listing: Arc::default(),
+        }
+    }
+
     fn hold(&self) {
         if let Some(gate) = &self.gate {
             gate.hold();
@@ -3615,11 +3743,18 @@ impl Reference for Silent {
         &self,
         link: &PlaylistLink,
     ) -> resonate_library::Result<Option<LinkedPlaylist>> {
+        if self.listing.failing.load(Ordering::Acquire) {
+            return Err(resonate_library::Error::Unreachable {
+                op: LookupOp::FollowLink,
+                source: io::ErrorKind::ConnectionRefused.into(),
+            });
+        }
+
         Ok(
             (self.signed_in_to_spotify && *link == PlaylistLink::SpotifyLiked).then(|| {
                 LinkedPlaylist {
                     name: "Liked Songs".to_owned(),
-                    songs: Vec::new(),
+                    songs: self.listing.songs(),
                 }
             }),
         )
@@ -3658,9 +3793,8 @@ fn consulting(after_a_scan: bool, signed_in_to_spotify: bool) -> Server {
     )
     .looking_up_with(Lookups {
         reference: Some(Arc::new(Silent {
-            source: SourceId::new("musicbrainz").expect("a nameable source"),
             signed_in_to_spotify,
-            gate: None,
+            ..Silent::quiet()
         })),
         after_a_scan,
         ..Lookups::none()
@@ -3780,6 +3914,168 @@ fn a_playlist_link_is_read_only_with_a_reference_and_a_link_that_names_no_playli
     assert!(unnamed.contains("names no playlist"), "{unnamed}");
     assert_eq!(unread, -32_602);
     assert!(unlinked.contains("came from no link"), "{unlinked}");
+}
+
+fn following_liked_songs() -> (Tree, Server, Arc<Listing>) {
+    let tree = Tree::new();
+
+    for (number, code) in LISTED_CODES.iter().enumerate() {
+        tree.mp3_coded(
+            &format!("{number}.mp3"),
+            &format!("Take {number}"),
+            "Hours",
+            Some(code),
+        );
+    }
+
+    let listing = Arc::new(Listing::default());
+    let server = Server::new(scanned(&tree), Fake::default()).looking_up_with(Lookups {
+        reference: Some(Arc::new(Silent {
+            signed_in_to_spotify: true,
+            listing: Arc::clone(&listing),
+            ..Silent::quiet()
+        })),
+        ..Lookups::none()
+    });
+
+    (tree, server, listing)
+}
+
+fn titles_of(server: &Server, playlist: &str) -> Vec<String> {
+    called(server, "playlist_tracks", json!({ "playlist": playlist }))["tracks"]
+        .as_array()
+        .expect("a list of rows")
+        .iter()
+        .map(|row| row["title"].as_str().expect("a title").to_owned())
+        .collect()
+}
+
+#[test]
+fn a_playlist_kept_in_step_is_refreshed_to_the_songs_and_order_its_link_holds_now() {
+    let (_tree, server, listing) = following_liked_songs();
+
+    listing.lists(&[0, 1]);
+
+    let imported = called(
+        &server,
+        "import_playlist_link",
+        json!({ "link": LIKED_SONGS_PAGE, "in_step": true }),
+    );
+
+    assert_eq!(imported["started"], true, "{imported}");
+    assert_eq!(imported["added"], 2, "{imported}");
+    assert_eq!(titles_of(&server, "Liked Songs"), ["Take 0", "Take 1"]);
+
+    listing.lists(&[1, 2]);
+
+    let refreshed = called(
+        &server,
+        "refresh_playlist",
+        json!({ "playlist": "Liked Songs" }),
+    );
+
+    assert_eq!(refreshed["started"], false, "{refreshed}");
+    assert_eq!(refreshed["added"], 1, "{refreshed}");
+    assert_eq!(refreshed["removed"], 1, "{refreshed}");
+    assert_eq!(refreshed["playlist"]["name"], "Liked Songs");
+    assert_eq!(titles_of(&server, "Liked Songs"), ["Take 1", "Take 2"]);
+}
+
+#[test]
+fn a_playlist_imported_once_gains_what_its_link_added_and_loses_nothing_on_a_refresh() {
+    let (_tree, server, listing) = following_liked_songs();
+
+    listing.lists(&[0, 1]);
+    called(
+        &server,
+        "import_playlist_link",
+        json!({ "link": LIKED_SONGS_PAGE }),
+    );
+    listing.lists(&[1, 2]);
+
+    let refreshed = called(
+        &server,
+        "refresh_playlist",
+        json!({ "playlist": "Liked Songs" }),
+    );
+
+    assert_eq!(refreshed["added"], 1, "{refreshed}");
+    assert_eq!(refreshed["removed"], 0, "{refreshed}");
+    assert_eq!(
+        titles_of(&server, "Liked Songs"),
+        ["Take 0", "Take 1", "Take 2"]
+    );
+}
+
+#[test]
+fn a_playlist_with_no_link_is_not_refreshed_and_keeps_its_rows() {
+    let (_tree, server, _listing) = following_liked_songs();
+    let track =
+        called(&server, "search_library", json!({ "query": "take" }))["tracks"][0]["track_id"]
+            .clone();
+
+    called(&server, "create_playlist", json!({ "name": "Evening" }));
+    called(
+        &server,
+        "add_to_playlist",
+        json!({ "playlist": "Evening", "track_ids": [track] }),
+    );
+
+    let unlinked = failed(
+        &server,
+        "refresh_playlist",
+        json!({ "playlist": "Evening" }),
+    );
+    let nowhere = failed(
+        &server,
+        "refresh_playlist",
+        json!({ "playlist": "Nowhere" }),
+    );
+    let unreferenced = failed(
+        &nothing_running(),
+        "refresh_playlist",
+        json!({ "playlist": "Evening" }),
+    );
+
+    assert!(unlinked.contains("came from no link"), "{unlinked}");
+    assert!(nowhere.contains("no playlist named Nowhere"), "{nowhere}");
+    assert!(unreferenced.contains("look anything up"), "{unreferenced}");
+    assert_eq!(titles_of(&server, "Evening").len(), 1);
+}
+
+#[test]
+fn a_refresh_the_link_cannot_answer_leaves_the_rows_and_says_why() {
+    let (_tree, server, listing) = following_liked_songs();
+
+    listing.lists(&[0, 1]);
+    called(
+        &server,
+        "import_playlist_link",
+        json!({ "link": LIKED_SONGS_PAGE, "in_step": true }),
+    );
+    listing.lists(&[2]);
+    listing.fails(true);
+
+    let unreached = failed(
+        &server,
+        "refresh_playlist",
+        json!({ "playlist": "Liked Songs" }),
+    );
+
+    assert!(unreached.contains("could not be reached"), "{unreached}");
+    assert_eq!(titles_of(&server, "Liked Songs"), ["Take 0", "Take 1"]);
+
+    listing.fails(false);
+
+    let refreshed = called(
+        &server,
+        "refresh_playlist",
+        json!({ "playlist": "Liked Songs" }),
+    );
+
+    assert_eq!(refreshed["added"], 1, "{refreshed}");
+    assert_eq!(refreshed["removed"], 2, "{refreshed}");
+    assert_eq!(titles_of(&server, "Liked Songs"), ["Take 2"]);
 }
 
 #[test]

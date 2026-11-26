@@ -180,7 +180,10 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,
   `play_playlist`, `move_playback`, `refresh_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
-  `start_poll`, `import_playlist_link`, `refresh_playlist`, `follow_profile`.
+  `start_poll`, `import_playlist_link`, `refresh_playlist`, `follow_profile`. No tool carries an
+  `idempotentHint`. A table of tool names pins every hint
+  (`each_tool_carries_the_hints_the_table_gives_it_and_no_tool_is_left_out_of_it`), so a tool losing or
+  gaining one fails it.
 - **A session undoes only its own edits.** `undo_edit` is `Library::undo` (`Library::redo` with
   `redo`) over this process's stack; a playlist since changed by anything else (a window that took
   the step and walked it back included) is `Error::PlaylistChanged`. Undoing withdraws the step's
@@ -209,8 +212,9 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   transaction once it holds the walk, so a refused scan keeps none
   (`a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots`). **Admission first**: filesystem
   root is `Error::FilesystemRoot`; a list taking the library past `MOST_ROOTS` (64) is
-  `Error::TooManyRoots`; `forget_folder` (`Library::remove_root` with its tracks; `Error::NotARoot`)
-  is the way back. `Lookups` is filled by the binary; `Server::new` alone has `Lookups::none()`, so
+  `Error::TooManyRoots`; `forget_folder` (`Library::remove_root` with its tracks, which keeps the plays heard and the
+  playlist rows that named them, `a_folder_forgotten_keeps_what_was_heard_of_its_songs_and_the_playlist_rows_naming_them`;
+  `Error::NotARoot`) is the way back. `Lookups` is filled by the binary; `Server::new` alone has `Lookups::none()`, so
   `start_lookup` with no network is `Error::NoReference` (a tool failure, not a refusal).
 - **An ending session leaves no pass half-written.** `serve` drains passes when input ends (each
   running one cancelled and joined, all cancelled before any is joined); `Drop for Passes` on every
@@ -219,4 +223,7 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   input still open; a second signal leaves at once. **`Stop::stop` never waits**: it sets a flag the
   loop reads before each message and only `try_send`s the wake-up, so the signal thread is free for
   the second signal however long a call runs
-  (`a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it`).
+  (`a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it`). A session told to stop while a gated
+  lookup runs ends only once it has been released
+  (`a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained`); a scan has no seam
+  to hold it, so its drain is not held apart.
