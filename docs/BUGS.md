@@ -13,10 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Catalog
-- [S · 0.18.1] Pass over a ListenBrainz listen stamped below zero or with a fraction. **Low,
-  builder.** A negative or non-integer `listened_at` fails the whole page
-  (`crates/resonate-online/src/history.rs`), as a stamp past the clock did. Read the stamp leniently
-  and pass the listen over. Done when a page holding one such listen imports the rest.
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as

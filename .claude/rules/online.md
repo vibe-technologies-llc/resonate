@@ -471,7 +471,10 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   saturates rather than overflowing
   (`a_listen_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read`,
   `a_full_page_stamped_past_the_clock_moves_on_rather_than_overflowing`,
-  `a_scrobble_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read`).
+  `a_scrobble_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read`). A
+  `listened_at` that is not a whole non-negative number (below zero, a fraction, text, absent) is read
+  as no stamp, passed over with a `tracing` line and left out of the page's earliest second, so the rest
+  of the page is read (`a_listen_stamped_below_zero_or_with_a_fraction_is_passed_over_and_the_rest_are_read`).
 
 ## Last.fm
 

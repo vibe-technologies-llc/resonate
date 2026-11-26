@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use resonate_core::{Mbid, Recording};
 use resonate_fetch::escaped;
 use resonate_library::{HeardElsewhere, HeardPage, History, ListeningService, LookupOp};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{Client, Host, lastfm::Application, query::Params};
 
@@ -159,8 +159,18 @@ struct ListensPayload {
 
 #[derive(Deserialize)]
 struct ListenDoc {
-    listened_at: u64,
+    #[serde(default)]
+    listened_at: Stamp,
     track_metadata: TrackMetadata,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Stamp(Option<u64>);
+
+impl<'de> Deserialize<'de> for Stamp {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self(serde_json::Value::deserialize(deserializer)?.as_u64()))
+    }
 }
 
 #[derive(Deserialize)]
@@ -195,16 +205,26 @@ impl ListensAnswer {
     fn page(self, asked_before: Option<u64>, edge: &mut Edge) -> HeardPage {
         let listens = self.payload.listens;
         let full = listens.len() >= LISTENS_A_PAGE;
-        let Some(earliest) = listens.iter().map(|listen| listen.listened_at).min() else {
+        let stamped = listens
+            .into_iter()
+            .filter_map(|listen| match listen.listened_at.0 {
+                Some(second) => Some((second, listen)),
+                None => {
+                    tracing::debug!(
+                        title = listen.track_metadata.track_name,
+                        "a listen stamped with no whole second was passed over"
+                    );
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let Some(earliest) = stamped.iter().map(|(second, _)| *second).min() else {
             return nothing_more();
         };
 
-        let heard = listens
+        let heard = stamped
             .into_iter()
-            .filter_map(|listen| {
-                let second = listen.listened_at;
-                listen.heard().map(|heard| (second, heard))
-            })
+            .filter_map(|(second, listen)| listen.heard(second).map(|heard| (second, heard)))
             .filter(|(second, heard)| !edge.passes_over(asked_before, *second, heard))
             .collect::<Vec<_>>();
         let including_the_earliest = earliest.saturating_add(1);
@@ -230,7 +250,7 @@ impl ListensAnswer {
 }
 
 impl ListenDoc {
-    fn heard(self) -> Option<HeardElsewhere> {
+    fn heard(self, second: u64) -> Option<HeardElsewhere> {
         let metadata = self.track_metadata;
         let told = metadata.additional_info;
         let recording = told
@@ -248,7 +268,7 @@ impl ListenDoc {
             .filter(|ms| *ms > 0)
             .map(Duration::from_millis);
         named(
-            self.listened_at,
+            second,
             Recording {
                 mbid: recording,
                 title: metadata.track_name,
@@ -379,7 +399,7 @@ mod tests {
 
     fn listen(at: u64, title: &str) -> ListenDoc {
         ListenDoc {
-            listened_at: at,
+            listened_at: Stamp(Some(at)),
             track_metadata: TrackMetadata {
                 artist_name: "Low".to_owned(),
                 track_name: title.to_owned(),
@@ -474,6 +494,30 @@ mod tests {
         assert_eq!(read.heard[0].at, UNIX_EPOCH + Duration::from_secs(HEARD));
         assert_eq!(titles(&all_beyond), ["Lullaby"]);
         assert_eq!(titles(&past_the_edge), ["Sunflower"]);
+    }
+
+    #[test]
+    fn a_listen_stamped_below_zero_or_with_a_fraction_is_passed_over_and_the_rest_are_read() {
+        let answer: ListensAnswer = serde_json::from_str(
+            r#"{"payload":{"listens":[
+                {"listened_at":1700000300,"track_metadata":{"artist_name":"Low","track_name":"Words"}},
+                {"listened_at":-5,"track_metadata":{"artist_name":"Low","track_name":"Below zero"}},
+                {"listened_at":1700000200.5,"track_metadata":{"artist_name":"Low","track_name":"Fractional"}},
+                {"listened_at":"1700000150","track_metadata":{"artist_name":"Low","track_name":"Written as text"}},
+                {"track_metadata":{"artist_name":"Low","track_name":"Unstamped"}},
+                {"listened_at":1700000100,"track_metadata":{"artist_name":"Low","track_name":"Lullaby"}}
+            ]}}"#,
+        )
+        .expect("the listens read");
+
+        let page = answer.page(None, &mut Edge::default());
+
+        assert_eq!(titles(&page), ["Words", "Lullaby"]);
+        assert_eq!(
+            page.heard[1].at,
+            UNIX_EPOCH + Duration::from_secs(1_700_000_100)
+        );
+        assert_eq!(page.next, None);
     }
 
     #[test]
