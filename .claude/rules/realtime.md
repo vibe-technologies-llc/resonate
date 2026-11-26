@@ -165,3 +165,20 @@ lives). Whatever can fail has failed in `prepare`, which allocates every buffer 
 `Frames` is always at the decoded source rate; only `resonate-dsp` may reinterpret it at the sink
 rate. `ProcessCount::frames_out` is the one crossing point and the only workspace value at the sink
 rate; the engine never lets it escape into transport state.
+
+**Two test files of `resonate-dsp`'s suite hold every stage to what this says and what it claims.**
+`tests/allocation.rs` runs under `allocation-counter`, a dev-dependency that installs its own
+`#[global_allocator]` for the whole `suite` binary (the workspace forbids the `unsafe` a counting
+allocator of ours would need) and counts only on the thread inside `measure`, so the other files pay
+nothing but the thread-local read. Each stage of `every_stage` (every rate from 8 to 192 kHz, mono,
+stereo and 5.1, each resampler quality, each restoration and tuning) is prepared, warmed up, then
+`process`, `reset`, `set_gain`, `set_gain_after`, `set_equalisation`, `ease_equalisation`,
+`forget_the_source_heard` and `flush` run over odd block sizes inside `measure` and must allocate
+nothing (`allocates_nothing_in`). `tests/contract.rs` holds the latency claim (`holds_for`): after
+every block `frames_in - frames_out` is `frames_held`, and the chain's formula (the rounded
+`latency_frames`, plus `frames_past_its_latency`, less `frames_short_of_its_latency`) equals what the
+stage holds plus the frames its output lags its input by, the lag being found by cross-correlating
+each channel with the input, over a long run, one cut short by a reset, and tracks shorter than a hop.
+A convolver's latency is all lag (its output is its input delayed, nothing held); `Restore`'s is all
+held (its output is aligned with its input, handed on a hop late), which is why the lab's claimed and
+measured latency rows differ for it. Both files share `tests/stages/mod.rs`.

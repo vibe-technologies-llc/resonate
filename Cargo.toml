@@ -139,6 +139,7 @@ rusty-chromaprint = { version = "0.3.0", default-features = false }
 wide = { version = "1.7.1", default-features = false }
 
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+allocation-counter = "0.8.1"
 
 symphonia = {
     version = "0.6.1",

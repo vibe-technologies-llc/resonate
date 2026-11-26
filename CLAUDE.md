@@ -288,7 +288,7 @@ Invariants the layering protects (the rules files have the rest):
   `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris`'s `bus::` (session
   bus; notification and headset presses run under `dbus-run-session`); `resonate-sync`'s `nearby::` (a LAN
   interface, IPv6 loopback, multicast delivery; `RESONATE_SYNC_NEARBY_TESTS=required` makes a skip a failure); `resonate-codec`'s
-  `encoded::` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp`'s `restoration`
+  `encoded::` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp`'s `restoration::`
   (ffmpeg); `resonate-library`'s `cues::`, `keeps::`, `lossless::` and `retag::`
   (ffmpeg); `resonate-analysis`'s `references::` (ffmpeg with libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each skipped without); `resonate-online`'s `live` (`RESONATE_ONLINE_TESTS`); `resonate`'s `terminal::`
   (`setsid`, a pseudo-terminal) and, on Windows, `resonate`'s `console::` (ConPTY, an audio
