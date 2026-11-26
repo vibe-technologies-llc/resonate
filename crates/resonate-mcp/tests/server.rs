@@ -8,9 +8,9 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, Volume, ZoneId};
@@ -2038,38 +2038,78 @@ fn a_line_longer_than_a_message_may_be_is_refused_and_passed_over_whole() {
 
 #[test]
 fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained() {
+    const LONG_ENOUGH_TO_SEE_A_SESSION_LEAVE_EARLY: Duration = Duration::from_millis(300);
+
     let tree = Tree::new();
 
-    tree.wav("01.wav", "Signal", "Hours", "1");
+    for number in 1..=40 {
+        tree.wav(
+            &format!("{number:02}.wav"),
+            &format!("Take {number}"),
+            "Hours",
+            &number.to_string(),
+        );
+    }
 
-    let server = nothing_running();
-    let started = called(
+    let gate = Arc::new(Gate::default());
+    let server = Server::new(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        Fake::default(),
+    )
+    .looking_up_with(Lookups {
+        reference: Some(Arc::new(Silent {
+            source: SourceId::new("musicbrainz").expect("a nameable source"),
+            signed_in_to_spotify: false,
+            gate: Some(Arc::clone(&gate)),
+        })),
+        ..Lookups::none()
+    });
+
+    called(
         &server,
         "start_scan",
         json!({ "roots": [tree.root.display().to_string()] }),
     );
-    let (reading, mut writing) = io::pipe().expect("a pipe");
+
+    assert_eq!(once_settled(&server, "scan")["state"], "finished");
+
+    let started = called(&server, "start_lookup", json!({}));
+
+    while !gate.is_reached() {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    let running = called(&server, "library_passes", json!({}));
+
+    let (reading, writing) = io::pipe().expect("a pipe");
     let (stop, stoppable) = resonate_mcp::stoppable();
 
-    writeln!(writing, "{}", request("ping", json!({}))).expect("the pipe takes a line");
-
+    let releasing = Arc::clone(&gate);
     let stopping = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(200));
         stop.stop();
+        std::thread::sleep(LONG_ENOUGH_TO_SEE_A_SESSION_LEAVE_EARLY);
+        releasing.release();
     });
     let mut output = Vec::new();
 
     server
         .serve_until_stopped(BufReader::new(reading), &mut output, stoppable)
         .expect("a session told to stop to end cleanly");
+
+    let released_before_it_ended = gate.is_released();
+
     stopping.join().expect("the stopping thread");
 
-    let answered = String::from_utf8(output).expect("the output to be text");
-    let scan = called(&server, "library_passes", json!({}))["scan"].clone();
+    let lookup = called(&server, "library_passes", json!({}))["lookup"].clone();
 
-    assert_eq!(started["started"], "scan");
-    assert!(answered.contains("\"result\":{}"), "{answered}");
-    assert_ne!(scan["state"], "running", "{scan}");
+    assert_eq!(started["started"], "lookup");
+    assert_eq!(running["lookup"]["state"], "running", "{running}");
+    assert!(
+        released_before_it_ended,
+        "the session ended while a pass was still running"
+    );
+    assert_eq!(lookup["state"], "finished", "{lookup}");
+    assert_eq!(lookup["cancelled"], true, "{lookup}");
 
     drop(writing);
 }
@@ -2083,7 +2123,7 @@ fn a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it
         }
     });
 
-    let started = std::time::Instant::now();
+    let started = Instant::now();
 
     while !telling.is_finished() {
         assert!(
@@ -3403,9 +3443,49 @@ fn a_session_that_cannot_push_offers_no_subscription() {
     );
 }
 
+const HELD_AT_MOST: Duration = Duration::from_secs(20);
+
+#[derive(Default)]
+struct Gate {
+    reached: AtomicBool,
+    released: AtomicBool,
+}
+
+impl Gate {
+    fn hold(&self) {
+        let began = Instant::now();
+
+        self.reached.store(true, Ordering::Release);
+        while !self.released.load(Ordering::Acquire) && began.elapsed() < HELD_AT_MOST {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn is_reached(&self) -> bool {
+        self.reached.load(Ordering::Acquire)
+    }
+
+    fn release(&self) {
+        self.released.store(true, Ordering::Release);
+    }
+
+    fn is_released(&self) -> bool {
+        self.released.load(Ordering::Acquire)
+    }
+}
+
 struct Silent {
     source: SourceId,
     signed_in_to_spotify: bool,
+    gate: Option<Arc<Gate>>,
+}
+
+impl Silent {
+    fn hold(&self) {
+        if let Some(gate) = &self.gate {
+            gate.hold();
+        }
+    }
 }
 
 impl Reference for Silent {
@@ -3414,10 +3494,12 @@ impl Reference for Silent {
     }
 
     fn release(&self, _id: &Mbid) -> resonate_library::Result<Option<Release>> {
+        self.hold();
         Ok(None)
     }
 
     fn find_release(&self, _asked: &ReleaseAsked) -> resonate_library::Result<Vec<ReleaseMatch>> {
+        self.hold();
         Ok(Vec::new())
     }
 
@@ -3429,10 +3511,12 @@ impl Reference for Silent {
     }
 
     fn recording(&self, _id: &Mbid) -> resonate_library::Result<Option<Recording>> {
+        self.hold();
         Ok(None)
     }
 
     fn recordings_of_isrc(&self, _isrc: &Isrc) -> resonate_library::Result<Vec<Recording>> {
+        self.hold();
         Ok(Vec::new())
     }
 
@@ -3440,6 +3524,7 @@ impl Reference for Silent {
         &self,
         _asked: &RecordingAsked,
     ) -> resonate_library::Result<Vec<RecordingMatch>> {
+        self.hold();
         Ok(Vec::new())
     }
 
@@ -3448,6 +3533,7 @@ impl Reference for Silent {
     }
 
     fn release_group(&self, _id: &Mbid) -> resonate_library::Result<Option<ReleaseGroup>> {
+        self.hold();
         Ok(None)
     }
 
@@ -3464,10 +3550,12 @@ impl Reference for Silent {
     }
 
     fn artist(&self, _id: &Mbid) -> resonate_library::Result<Option<ArtistProfile>> {
+        self.hold();
         Ok(None)
     }
 
     fn find_artist(&self, _name: &str) -> resonate_library::Result<Vec<ArtistMatch>> {
+        self.hold();
         Ok(Vec::new())
     }
 
@@ -3572,6 +3660,7 @@ fn consulting(after_a_scan: bool, signed_in_to_spotify: bool) -> Server {
         reference: Some(Arc::new(Silent {
             source: SourceId::new("musicbrainz").expect("a nameable source"),
             signed_in_to_spotify,
+            gate: None,
         })),
         after_a_scan,
         ..Lookups::none()

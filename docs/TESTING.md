@@ -209,10 +209,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `resonate-codec`, `resonate-sync` and `resonate-musicbrainz` have tests reading them. Map those
   paths to their readers, or treat an unowned file as workspace-wide. Done when touching
   `packaging/resonate.spec` selects `resonate`.
-- [S · 0.18.1] Stop a session in MCP's drain test while its scan still runs. **Low, builder.**
-  `crates/resonate-mcp/tests/server.rs:1949-1984` stops 200 ms into a one-file scan that has
-  finished by then, so it passes whether or not passes drain. Use the gated 40-file tree. Done when
-  the test fails with draining removed.
 - [S · 0.18.1] Walk every commented config the tree holds for comments. **Low, builder.** `ROOTS`
   leaves out `.cargo/` and `.config/` (`crates/resonate-words-build/tests/comments.rs:3-12`), and
   `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
