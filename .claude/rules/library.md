@@ -171,7 +171,7 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   `bring_in_lines` (a file's bytes, as `LINES_READ_AS`), `bring_in_file` (the same read from a path
   a line at a time, so a file of any size holds at most a page of listens:
   `a_file_read_as_it_is_brought_in_holds_no_more_than_a_page_of_listens_at_once`; both check every
-  line before landing any, `a_file_with_a_bad_line_past_the_first_page_brings_nothing_in`) and `bring_in_history` (a service's pages until it
+  line before landing any, `a_file_with_a_bad_line_past_the_first_page_brings_nothing_in`), `bring_in_stream` (the same over one `BufRead + Seek` that is rewound instead of reopened, for the phones' descriptor, an unreadable stream `Error::Unread`: `a_stream_brought_in_holds_no_more_than_a_page_of_listens_at_once`) and `bring_in_history` (a service's pages until it
   names no next page or the same one again) are written once for the binary and the phones
   (`listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already_heard_here_is_not_counted_again`,
   `the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_where_they_were`).

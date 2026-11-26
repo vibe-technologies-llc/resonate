@@ -1,4 +1,9 @@
-use std::{fs::File, io::BufReader, path::Path, vec};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, Seek, SeekFrom},
+    path::Path,
+    vec,
+};
 
 use crate::{
     BroughtIn, Error, HeardElsewhere, HeardOnce, History, HistoryFrom, HistoryRead, Library,
@@ -123,6 +128,22 @@ pub fn bring_in_file(
     )
 }
 
+pub fn bring_in_stream(
+    kept: &dyn KeptListens,
+    mut stream: impl BufRead + Seek,
+    so_far: &mut dyn FnMut(BroughtIn),
+) -> Result<BroughtIn> {
+    let unread = |source| Error::Unread { source };
+    brought_in_pages(
+        kept,
+        |each| {
+            stream.seek(SeekFrom::Start(0)).map_err(unread)?;
+            listen_lines::each_listen_read(&mut stream, &unread, each)
+        },
+        so_far,
+    )
+}
+
 fn brought_in_pages(
     kept: &dyn KeptListens,
     mut read: impl FnMut(&mut dyn FnMut(HeardElsewhere) -> Result<()>) -> Result<()>,
@@ -177,7 +198,7 @@ pub fn bring_in_history(
 mod tests {
     use std::{
         cell::{Cell, RefCell},
-        io::{self, BufRead, Read},
+        io::{self, BufRead, Read, Seek, SeekFrom},
         rc::Rc,
         time::{Duration, UNIX_EPOCH},
     };
@@ -378,6 +399,44 @@ mod tests {
         }
     }
 
+    impl Seek for OneLineAtATime {
+        fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+            match to {
+                SeekFrom::Start(0) => {
+                    self.handed.set(0);
+                    self.line.clear();
+                    self.at = 0;
+                    Ok(0)
+                }
+                SeekFrom::Start(_) | SeekFrom::End(_) | SeekFrom::Current(_) => {
+                    Err(io::ErrorKind::Unsupported.into())
+                }
+            }
+        }
+    }
+
+    struct Refusing;
+
+    impl Read for Refusing {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+    }
+
+    impl BufRead for Refusing {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+
+        fn consume(&mut self, _: usize) {}
+    }
+
+    impl Seek for Refusing {
+        fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+            Ok(0)
+        }
+    }
+
     struct Watched<'a> {
         handed: &'a Cell<usize>,
         brought: Cell<usize>,
@@ -452,6 +511,57 @@ mod tests {
         assert!(matches!(
             refused,
             Err(Error::ListenLine { line, .. }) if line == LISTENS_READ_AT_ONCE * 2 + 1
+        ));
+        assert!(kept.brought.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_stream_brought_in_holds_no_more_than_a_page_of_listens_at_once() {
+        const LINES: usize = 2_500;
+
+        let handed = Rc::new(Cell::new(0));
+        let kept = Watched {
+            handed: &handed,
+            brought: Cell::new(0),
+            ahead: RefCell::new(Vec::new()),
+        };
+
+        let brought = bring_in_stream(&kept, OneLineAtATime::new(LINES, &handed), &mut |_| {})
+            .expect("brought in");
+
+        assert_eq!(brought.credited, LINES as u64);
+        assert_eq!(kept.brought.get(), LINES);
+        assert_eq!(
+            *kept.ahead.borrow(),
+            [LISTENS_READ_AT_ONCE, LISTENS_READ_AT_ONCE, 500]
+        );
+    }
+
+    #[test]
+    fn a_stream_with_a_bad_line_past_the_first_page_brings_nothing_in() {
+        let kept = Kept::default();
+        let mut lines = vec![LISTENED; LISTENS_READ_AT_ONCE * 2].join("\n");
+
+        lines.push_str("\nnot a listen\n");
+
+        let refused = bring_in_stream(&kept, io::Cursor::new(lines.into_bytes()), &mut |_| {});
+
+        assert!(matches!(
+            refused,
+            Err(Error::ListenLine { line, .. }) if line == LISTENS_READ_AT_ONCE * 2 + 1
+        ));
+        assert!(kept.brought.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_stream_that_cannot_be_read_is_unread() {
+        let kept = Kept::default();
+
+        let refused = bring_in_stream(&kept, Refusing, &mut |_| {});
+
+        assert!(matches!(
+            refused,
+            Err(Error::Unread { source }) if source.kind() == io::ErrorKind::BrokenPipe
         ));
         assert!(kept.brought.borrow().is_empty());
     }

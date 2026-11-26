@@ -1070,7 +1070,14 @@ page in one transaction
 `CreateDocument`, iOS a file of its temporary folder handed to `fileExporter`), through
 `fresh_destination`, and answers the count; `import_history_file(descriptor)` reads a document
 the picker granted through `owned`, a bad line refusing the whole file as `Error::History` naming
-it; `import_history(service, user, account)` needs online, takes the user named or else the
+it. **The descriptor is read a page of `LISTENS_READ_AT_ONCE` listens at a time** through
+`bring_in_stream`, the library's reader over one `BufRead + Seek` (it cannot reopen by path as
+`bring_in_file` does, so it rewinds: once to check every line, once to land the pages), so the
+file's size is never held
+(`a_file_of_more_than_a_page_of_listens_is_read_from_its_descriptor_a_page_at_a_time`); a descriptor
+that cannot be rewound (a provider's pipe) is read whole and goes through `bring_in_lines`
+(`a_descriptor_that_cannot_be_rewound_is_read_whole_and_brings_in_the_same`), and a read that fails
+past the open is `HistoryFile` as the open's is; `import_history(service, user, account)` needs online, takes the user named or else the
 account's own (`token_held`), and refuses `NoHistoryUser` or, for Last.fm without a key and
 secret, `NoLastfmApplication` (`a_service_import_asks_for_online_a_user_and_for_lastfm_an_application`).
 Each answers a `HistoryBroughtIn`.

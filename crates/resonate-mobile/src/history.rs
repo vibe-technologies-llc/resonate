@@ -1,5 +1,5 @@
 use std::{
-    io::{BufWriter, Read as _, Write as _},
+    io::{BufReader, BufWriter, Read as _, Seek as _, Write as _},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -8,7 +8,7 @@ use resonate_core::seconds_since_the_epoch;
 use resonate_library::{
     BroughtIn, HeardElsewhere, HeardOnce, History, HistoryFrom, HistoryPages, HistoryRead,
     KeptListens, ListeningService, LookupOp, SAME_LISTEN_WITHIN, Scrobbler, StoreOp, TokenHeld,
-    Unpinned, bring_in_history, bring_in_lines, history_lines,
+    Unpinned, bring_in_history, bring_in_lines, bring_in_stream, history_lines,
 };
 use resonate_online::{Application, LastFm, LastfmHistory, ListenBrainz, ListenBrainzHistory};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
@@ -86,18 +86,27 @@ impl MobilePlayer {
     }
 
     pub fn import_history_file(&self, descriptor: i32) -> Result<HistoryBroughtIn> {
-        let mut bytes = Vec::new();
+        let unread = |source| Error::HistoryFile {
+            op: HistoryFileOp::Read,
+            source,
+        };
+        let mut file = owned(descriptor).map_err(unread)?;
+        let kept = PhoneListens(&self.catalog);
 
-        owned(descriptor)
-            .and_then(|mut file| file.read_to_end(&mut bytes))
-            .map_err(|source| Error::HistoryFile {
-                op: HistoryFileOp::Read,
-                source,
-            })?;
+        let brought = match file.stream_position() {
+            Ok(_) => bring_in_stream(&kept, BufReader::new(file), &mut |_| {}),
+            Err(_) => {
+                let mut bytes = Vec::new();
 
-        bring_in_lines(&PhoneListens(&self.catalog), &bytes, &mut |_| {})
-            .map(Into::into)
-            .map_err(Error::history)
+                file.read_to_end(&mut bytes).map_err(unread)?;
+                bring_in_lines(&kept, &bytes, &mut |_| {})
+            }
+        };
+
+        brought.map(Into::into).map_err(|error| match error {
+            resonate_library::Error::Unread { source } => unread(source),
+            error => Error::history(error),
+        })
     }
 
     pub fn import_history(
@@ -361,15 +370,16 @@ fn credited(
 #[cfg(test)]
 pub(crate) mod tests {
     use std::{
-        env, fs,
+        env, fs, io,
         os::fd::IntoRawFd as _,
         path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
+        thread,
     };
 
     use parking_lot::Mutex;
     use resonate_core::Recording;
-    use resonate_library::{HeardPage, Mbid};
+    use resonate_library::{HeardPage, LISTENS_READ_AT_ONCE, Mbid};
 
     use super::*;
     use crate::{Track, playlists::tests::player};
@@ -620,6 +630,76 @@ pub(crate) mod tests {
         assert_eq!(free_between.len(), 6);
         assert_eq!(after.len(), 5);
         assert!(!after.contains(&at_its_start[2]));
+    }
+
+    fn listens_of(count: u64) -> String {
+        (0..count)
+            .map(|index| {
+                format!(
+                    "{{\"listened_at\":{},\"track_metadata\":{{\"artist_name\":\"Low\",\"track_name\":\"Say\"}}}}\n",
+                    MOMENTS[0] + i64::try_from(index).expect("an index") * 10
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_file_of_more_than_a_page_of_listens_is_read_from_its_descriptor_a_page_at_a_time() {
+        const LISTENS: u64 = LISTENS_READ_AT_ONCE as u64 * 2 + 500;
+
+        let to = player();
+
+        songs_held(&to);
+
+        let file = scratch("pages.jsonl");
+
+        fs::write(&file, listens_of(LISTENS)).expect("a file");
+
+        let brought = to.import_history_file(read_from(&file)).expect("imported");
+
+        fs::remove_file(&file).expect("cleaned");
+
+        assert_eq!(
+            brought,
+            HistoryBroughtIn {
+                credited: LISTENS,
+                held_already: 0,
+                unmatched: 0,
+            }
+        );
+        assert_eq!(
+            listens(&to).len(),
+            usize::try_from(LISTENS).expect("a count")
+        );
+    }
+
+    #[test]
+    fn a_descriptor_that_cannot_be_rewound_is_read_whole_and_brings_in_the_same() {
+        let to = player();
+
+        songs_held(&to);
+
+        let (reader, mut writer) = io::pipe().expect("a pipe");
+        let text = listens_of(3);
+
+        let writing = thread::spawn(move || {
+            writer.write_all(text.as_bytes()).expect("written");
+        });
+
+        let brought = to
+            .import_history_file(reader.into_raw_fd())
+            .expect("imported");
+
+        writing.join().expect("the writer finished");
+
+        assert_eq!(
+            brought,
+            HistoryBroughtIn {
+                credited: 3,
+                held_already: 0,
+                unmatched: 0,
+            }
+        );
     }
 
     #[test]

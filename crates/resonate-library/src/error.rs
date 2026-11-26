@@ -150,6 +150,12 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("cannot read the listens")]
+    Unread {
+        #[source]
+        source: io::Error,
+    },
+
     #[error("line {line} of the listens is refused: {fault:?}")]
     ListenLine { line: usize, fault: ListenFault },
 
