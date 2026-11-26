@@ -53,7 +53,7 @@ pub use crate::{
     spectrogram::{Ramp, SPECTROGRAM_COLUMNS, SPECTROGRAM_FLOOR_DB, SPECTROGRAM_ROWS, Spectrogram},
     spectrum::{FLOOR_DB, Spectrum},
     steps::{Coding, Steps, Tell},
-    verdict::{Cutoff, Finding, JUDGED_UNDER, Judgement, LossyGuess, Verdict},
+    verdict::{Cutoff, Finding, JUDGED_UNDER, Judgement, LossyGuess, Verdict, WallReading},
     watch::{Watch, Watching},
 };
 

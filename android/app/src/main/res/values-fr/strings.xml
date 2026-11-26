@@ -560,7 +560,7 @@
     <string name="analysis_verdict_genuine">Conformément au principe de l ’ absence de pertes</string>
     <string name="analysis_verdict_genuine_detail">Rien dans l’audio ne suggère une source perdue.</string>
     <string name="analysis_verdict_suspect">Suspect</string>
-    <string name="analysis_verdict_suspect_detail">Il peut s’agir d’un code de perte à haut débit.</string>
+    <string name="analysis_verdict_suspect_detail">Son spectre s’arrête là où s’arrêterait celui d’un encodage avec perte, mais un master à bande limitée peut aussi s’arrêter là.</string>
     <string name="analysis_verdict_fake">Pas vraiment sans perte</string>
     <string name="analysis_verdict_fake_detail">Ce n’est pas le maître sans perte qu’il prétend être.</string>
     <string name="analysis_verdict_lossy">Perte par son codec</string>

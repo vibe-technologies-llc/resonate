@@ -319,22 +319,36 @@ could change (stored studies and kept analyses are weighed against it).
   from lossy, clipping splatter fills the average above the lowpass while the wall stays in every
   unclipped window. `Spectrum::typical` = each band's `TYPICAL_QUANTILE` off a per-band histogram;
   `judged` runs `wall_in` on both, `lower_of` takes the lower
-  (`a_transcode_splattered_above_its_wall_by_clipping_is_still_fake`).
-- **Position = meaning.** At/under `LOSSY_CEILING_HZ`: lossy cut → `Fake` + `LossyGuess` (LAME's
-  lowpass table). Up to `SUSPECT_CEILING_HZ`: `Suspect` (high-bitrate encode ≈ low anti-alias
-  filter). Above: anti-alias filter. Above 48 kHz, weigh against rates it could be upsampled from
-  (at most half its own): wall within `UPSAMPLE_SLACK_HZ` of one's Nyquist = `Upsampled` = `Fake`.
-  Under 44.1 kHz the ceilings are unreachable: wall at/above `ANTI_ALIAS_EDGE` of Nyquist = the
-  converter's (`Genuine`, no guess); lower → lossy rule; no wall: content reaching the edge
-  `Genuine`, else `NotJudged`
-  (`a_lossless_file_at_a_low_rate_is_judged_against_its_own_anti_alias_edge`).
+  (`a_wall_splattered_above_by_clipping_is_still_found`).
+- **A lone wall is a doubt; `Fake` takes a lossy signature.** An FM air-check, a 32 kHz DAT master
+  carried at 44.1 kHz or a lathe-filtered needle-drop walls its spectrum where an encoder would, so
+  a wall alone answers `Suspect`, its verdict worded as a doubt, wherever it stands. `Fake` is
+  answered only by what a codec or a padding leaves: quantiser steps or intensity-stereo coupling
+  (below) and padding (`lone_walls_at_cd_rate_are_suspect_and_the_same_walls_on_aacs_steps_are_fake`
+  and its 48 and 96 kHz twins pair a wall at 18, 19, 19.5 and 20.5 kHz with the same wall on AAC's
+  steps, synthesised in the test).
+- **Position = how the wall is worded** (`WallReading`, from the cutoff and the file's own rate):
+  at/under `LOSSY_CEILING_HZ` `LossyEncode` with a `LossyGuess` (LAME's lowpass table); up to
+  `SUSPECT_CEILING_HZ` `HighBitrateEncode` (≈ a low anti-alias filter); above, `AntiAliasFilter`.
+  Both encode readings answer `Suspect`. Above 48 kHz, weigh against rates it could be upsampled
+  from (at most half its own): a wall at or under one's Nyquist plus `UPSAMPLE_SLACK_HZ` adds
+  `Upsampled`, worded as a likeness, and answers `Suspect`. Under 44.1 kHz the ceilings are
+  unreachable: a wall at/above `ANTI_ALIAS_EDGE` of Nyquist is `AntiAliasFilterOf` the rate, worded
+  by it (*the anti-alias filter of 32 kHz audio*), `Genuine` and no guess; lower is read as an
+  encode; no wall: content reaching the edge `Genuine`, else `NotJudged`
+  (`a_lossless_file_at_a_low_rate_is_judged_against_its_own_anti_alias_edge`,
+  `a_wall_is_worded_by_what_stands_there_at_the_files_own_rate`,
+  `the_wall_of_a_32_khz_file_is_worded_as_its_own_rates_anti_alias_filter`). The window ranks an
+  encode reading and `Upsampled` a caution, a codec's steps and padding a fault.
 - **No wall is not a pass.** Content past `SUSPECT_CEILING_HZ` (hi-res: past where the highest
   possible source rate would end) within `CONTENT_WITHIN_DB` of the 1-4 kHz level: `Genuine`; fading
   below that: `NotJudged` (old/band-limited masters fade like transcodes).
 - **Unjudgeable stays unjudged.** Lossy codec: `Lossy` whatever the spectrum, wall still reported.
-  DSD: `NotJudged` (decimator draws its own wall). Under `HEARD_AT_LEAST` (5 s) of loud audio:
-  nothing judged. Padding judged without the spectrum → `Fake`. Identical channels, clipped runs, DC
-  offset: findings only.
+  DSD: `NotJudged` (decimator draws its own wall). A codec's steps answer `Fake` behind their own
+  counts. Under `HEARD_AT_LEAST` (5 s) of loud audio nothing else is judged, padding included: it
+  is still reported, since a short clip's few samples prove too little
+  (`a_short_clip_padded_into_twenty_four_bits_is_not_judged_on_its_padding`). Past it, padding
+  answers `Fake` without the spectrum. Identical channels, clipped runs, DC offset: findings only.
 - **A decode of a lossy codec lands on that codec's quantiser steps** (`steps.rs`, `granules.rs`,
   `weighing.rs`; `Finding::QuantiserSteps { coding, resampled_from, lattice }` → `Fake`). AAC and
   MP3 store each transform coefficient as `sign · q^(4/3) · 2^(k/4)` (AAC's scale factor, MP3's
@@ -578,7 +592,7 @@ could change (stored studies and kept analyses are weighed against it).
   and the kept analysis (`WRITTEN_AS` 7, each `Steps`' `Tell` named after its coding; 6: the peaks without what came together; 5: the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
   rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
   stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
-  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7, and its clipped samples taken out, its spreads and its 1 000 frames to 8. Cost: about 3 s of one core a 44.1 kHz FLAC (a study less `band_figures`, pinned to one core), fixed
+  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7, its clipped samples taken out, its spreads and its 1 000 frames to 8, and a lone wall answered `Suspect` and padding judged only where enough was heard to 9 (`a_lone_wall_kept_as_fake_under_the_last_heuristic_is_studied_again_and_reads_as_suspect`). Cost: about 3 s of one core a 44.1 kHz FLAC (a study less `band_figures`, pinned to one core), fixed
   whatever its length, since every grid is done within its first 20 s and the coupling within its first 30 (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
   `lines_on_the_quantiser_steps_are_found_through_the_hybrid_filterbank_at_any_offset`,
   `residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not`, and in

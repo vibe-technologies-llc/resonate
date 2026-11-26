@@ -560,7 +560,7 @@
     <string name="analysis_verdict_genuine">Consistent with lossless</string>
     <string name="analysis_verdict_genuine_detail">Nothing in the audio suggests a lossy source.</string>
     <string name="analysis_verdict_suspect">Suspect</string>
-    <string name="analysis_verdict_suspect_detail">It may be a high-bitrate lossy encode.</string>
+    <string name="analysis_verdict_suspect_detail">Its spectrum stops where a lossy encode\'s would, though a band-limited master can stop there too.</string>
     <string name="analysis_verdict_fake">Not truly lossless</string>
     <string name="analysis_verdict_fake_detail">It is not the lossless master it claims to be.</string>
     <string name="analysis_verdict_lossy">Lossy by its codec</string>

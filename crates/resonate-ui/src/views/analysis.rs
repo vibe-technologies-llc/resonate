@@ -5,7 +5,9 @@ use gpui::{
     Pixels, Point, SharedString, Stateful, canvas, div, fill, img, point, prelude::*, px, relative,
     rgb,
 };
-use resonate_engine::{Analysis, Finding, Judgement, Levels, Loudness, Reach, Spectrum, Verdict};
+use resonate_engine::{
+    Analysis, Finding, Judgement, Levels, Loudness, Reach, Spectrum, Verdict, WallReading,
+};
 use resonate_library::{Agreement, HeardAs};
 
 use crate::{
@@ -408,15 +410,21 @@ enum Severity {
 impl Severity {
     const fn of(finding: &Finding) -> Self {
         match finding {
-            Finding::Wall { lossy: Some(_), .. }
-            | Finding::Upsampled { .. }
-            | Finding::Padded { .. }
+            Finding::Padded { .. }
             | Finding::QuantiserSteps { .. }
             | Finding::IntensityStereo { .. } => Self::Fault,
-            Finding::Clipped { .. } | Finding::DcOffset { .. } | Finding::MonoAsStereo => {
-                Self::Caution
+            Finding::Wall {
+                reading: WallReading::LossyEncode(_) | WallReading::HighBitrateEncode,
+                ..
             }
-            Finding::Wall { lossy: None, .. }
+            | Finding::Upsampled { .. }
+            | Finding::Clipped { .. }
+            | Finding::DcOffset { .. }
+            | Finding::MonoAsStereo => Self::Caution,
+            Finding::Wall {
+                reading: WallReading::AntiAliasFilter | WallReading::AntiAliasFilterOf(_),
+                ..
+            }
             | Finding::Rolloff { .. }
             | Finding::TooLittleHeard
             | Finding::FromDsd => Self::Aside,

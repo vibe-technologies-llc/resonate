@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    f64::consts::PI,
+    fs,
     num::NonZeroUsize,
     path::PathBuf,
     process,
@@ -7,13 +9,14 @@ use std::{
         Arc,
         atomic::{AtomicU32, Ordering},
     },
+    thread,
     time::Duration,
 };
 
 use resonate_analysis::{
-    Applied, BAND_PEAKS_BYTES_BEFORE_TOGETHER, BandGains, BandLevels, BandPeaks, Cut, Error,
-    Finding, LossyGuess, Ramp, Study, Verdict, Watch, Watching, analyse, band_figures,
-    loudest_through, peak_through, print, span_of_band, study,
+    Applied, BAND_PEAKS_BYTES_BEFORE_TOGETHER, BandGains, BandLevels, BandPeaks, Coding, Cut,
+    Error, Finding, LossyGuess, Ramp, Study, Verdict, WallReading, Watch, Watching, analyse,
+    band_figures, loudest_through, peak_through, print, span_of_band, study,
 };
 use resonate_codec::Sources;
 use resonate_core::{
@@ -302,14 +305,14 @@ fn a_stream_that_declares_no_length_is_printed_as_long_as_it_plays() {
 }
 
 #[test]
-fn a_flac_that_was_once_a_128_kbps_mp3_is_fake() {
+fn a_lone_wall_where_a_128_kbps_mp3_cuts_is_suspect() {
     let tree = Tree::new();
-    let location = tree.wave("transcoded.wav", RATE, 16, &music(RATE, 16_000.0, 32_767.0));
+    let location = tree.wave("walled.wav", RATE, 16, &music(RATE, 16_000.0, 32_767.0));
     let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
 
     assert_eq!(
         study.judgement.verdict,
-        Verdict::Fake,
+        Verdict::Suspect,
         "{:?}",
         study.judgement
     );
@@ -321,7 +324,7 @@ fn a_flac_that_was_once_a_128_kbps_mp3_is_fake() {
 }
 
 #[test]
-fn a_transcode_splattered_above_its_wall_by_clipping_is_still_fake() {
+fn a_wall_splattered_above_by_clipping_is_still_found() {
     const SPLATTERED_EVERY_THIRD_WINDOW: usize = 3;
     const WINDOW: usize = 4_096;
     const SPLATTER: f32 = 900.0;
@@ -357,7 +360,7 @@ fn a_transcode_splattered_above_its_wall_by_clipping_is_still_fake() {
 
     assert_eq!(
         study.judgement.verdict,
-        Verdict::Fake,
+        Verdict::Suspect,
         "{:?}",
         study.judgement
     );
@@ -384,6 +387,277 @@ fn sixteen_bit_audio_padded_into_twenty_four_bits_is_fake() {
         effective: 16,
         declared: 24
     }));
+}
+
+#[test]
+fn a_short_clip_padded_into_twenty_four_bits_is_not_judged_on_its_padding() {
+    const CLIP_FRAMES: usize = 3 * RATE as usize;
+
+    let tree = Tree::new();
+    let padded: Vec<i32> = music(RATE, 21_700.0, 32_767.0)
+        .into_iter()
+        .take(2 * CLIP_FRAMES)
+        .map(|sample| sample << 8)
+        .collect();
+
+    let location = tree.wave("clip.wav", RATE, 24, &padded);
+    let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
+
+    assert_eq!(
+        study.judgement.verdict,
+        Verdict::NotJudged,
+        "{:?}",
+        study.judgement
+    );
+    assert!(study.judgement.findings.contains(&Finding::TooLittleHeard));
+    assert!(study.judgement.findings.contains(&Finding::Padded {
+        effective: 16,
+        declared: 24
+    }));
+}
+
+#[test]
+fn the_wall_of_a_32_khz_file_is_worded_as_its_own_rates_anti_alias_filter() {
+    const DAT_RATE: u32 = 32_000;
+
+    let tree = Tree::new();
+    let location = tree.wave(
+        "dat.wav",
+        DAT_RATE,
+        16,
+        &music(DAT_RATE, 15_000.0, 32_767.0),
+    );
+    let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
+
+    assert_eq!(
+        study.judgement.verdict,
+        Verdict::Genuine,
+        "{:?}",
+        study.judgement
+    );
+
+    let wall = study
+        .judgement
+        .findings
+        .iter()
+        .find(|finding| matches!(finding, Finding::Wall { .. }))
+        .expect("a wall");
+
+    assert!(
+        matches!(
+            wall,
+            Finding::Wall {
+                reading: WallReading::AntiAliasFilterOf(rate),
+                ..
+            } if rate.hz() == DAT_RATE
+        ),
+        "{wall:?}"
+    );
+    assert!(
+        wall.told()
+            .ends_with("where the anti-alias filter of 32 kHz audio stands"),
+        "{}",
+        wall.told()
+    );
+}
+
+const AAC_HOP: usize = 1_024;
+const AAC_STEP: f64 = 384.0;
+const AAC_STEPS_REPEAT_EVERY: usize = 8;
+const AAC_LINES_A_STEP: usize = 32;
+const LAPLACIAN_SCALE: f64 = 1.2;
+const WALLS_HZ: [u32; 4] = [18_000, 19_000, 19_500, 20_500];
+const WALL_FOUND_WITHIN_HZ: u32 = 300;
+const STUDIES_AT_ONCE: usize = 4;
+
+struct Wandering(u64);
+
+impl Wandering {
+    fn next(&mut self) -> f64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        (self.0 >> 11) as f64 / (1_u64 << 53) as f64
+    }
+
+    fn laplacian(&mut self) -> f64 {
+        let drawn = self.next() - 0.5;
+        -LAPLACIAN_SCALE * drawn.signum() * (1.0 - 2.0 * drawn.abs()).max(f64::MIN_POSITIVE).ln()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Coded {
+    Losslessly,
+    OnAacSteps,
+}
+
+impl Coded {
+    fn coefficient(self, wandering: &mut Wandering, line: usize) -> f64 {
+        let quarter_steps = (line / AAC_LINES_A_STEP % AAC_STEPS_REPEAT_EVERY) as f64;
+        let step = (quarter_steps / 4.0).exp2() * AAC_STEP;
+        match self {
+            Self::Losslessly => wandering.laplacian() * step,
+            Self::OnAacSteps => {
+                let level = wandering.laplacian().round();
+                level.signum() * level.abs().powf(4.0 / 3.0) * step
+            }
+        }
+    }
+}
+
+fn aac_lane(rate: u32, wall_hz: u32, coded: Coded, seed: u64) -> Vec<f64> {
+    let span = 2 * AAC_HOP;
+    let line_hz = f64::from(rate) / 2.0 / AAC_HOP as f64;
+    let lines = ((f64::from(wall_hz) / line_hz) as usize).min(AAC_HOP);
+    let frames = (rate * SECONDS) as usize / AAC_HOP;
+    let shift = AAC_HOP as f64 / 2.0 + 0.5;
+    let scale = (2.0 / AAC_HOP as f64).sqrt();
+    let inverse = FftPlanner::<f64>::new().plan_fft_inverse(span);
+
+    let window: Vec<f64> = (0..span)
+        .map(|nth| (PI * (nth as f64 + 0.5) / span as f64).sin())
+        .collect();
+    let turned_in: Vec<Complex<f64>> = (0..AAC_HOP)
+        .map(|line| Complex::from_polar(1.0, PI * shift * line as f64 / AAC_HOP as f64))
+        .collect();
+    let turned_out: Vec<Complex<f64>> = (0..span)
+        .map(|nth| Complex::from_polar(1.0, PI * (nth as f64 + shift) / span as f64))
+        .collect();
+
+    let mut wandering = Wandering(seed);
+    let mut lane = vec![0.0; (frames + 1) * AAC_HOP];
+    let mut held = vec![Complex::<f64>::default(); span];
+
+    for frame in 0..frames {
+        held.fill(Complex::default());
+        for (line, turn) in turned_in.iter().enumerate().take(lines) {
+            held[line] = turn * coded.coefficient(&mut wandering, line);
+        }
+        inverse.process(&mut held);
+        for (nth, sample) in lane[frame * AAC_HOP..frame * AAC_HOP + span]
+            .iter_mut()
+            .enumerate()
+        {
+            *sample += (turned_out[nth] * held[nth]).re * scale * window[nth];
+        }
+    }
+    lane
+}
+
+fn aac_decoded(rate: u32, wall_hz: u32, coded: Coded) -> Vec<i32> {
+    let left = aac_lane(rate, wall_hz, coded, 11);
+    let right = aac_lane(rate, wall_hz, coded, 23);
+    left.iter()
+        .zip(&right)
+        .flat_map(|(left, right)| [left.round() as i32, right.round() as i32])
+        .collect()
+}
+
+fn studied_together(locations: &[MediaLocation]) -> Vec<Study> {
+    locations
+        .chunks(STUDIES_AT_ONCE)
+        .flat_map(|together| {
+            thread::scope(|scope| {
+                let studying: Vec<_> = together
+                    .iter()
+                    .map(|location| {
+                        scope.spawn(move || {
+                            study(&Sources::local(), location, None, &Watch::default())
+                                .expect("a study")
+                        })
+                    })
+                    .collect();
+                studying
+                    .into_iter()
+                    .map(|study| study.join().expect("a study that finished"))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect()
+}
+
+fn on_aac_steps(study: &Study) -> bool {
+    study.judgement.findings.iter().any(|finding| {
+        matches!(
+            finding,
+            Finding::QuantiserSteps {
+                coding: Coding::Aac,
+                resampled_from: None,
+                ..
+            }
+        )
+    })
+}
+
+fn lone_walls_are_suspect_and_walls_on_a_codecs_steps_are_fake_at(rate: u32) {
+    let tree = Tree::new();
+    let pairs: Vec<(u32, Coded)> = WALLS_HZ
+        .into_iter()
+        .flat_map(|wall_hz| [(wall_hz, Coded::Losslessly), (wall_hz, Coded::OnAacSteps)])
+        .collect();
+
+    let locations: Vec<MediaLocation> = pairs
+        .iter()
+        .map(|(wall_hz, coded)| {
+            tree.wave(
+                &format!("{rate}-{wall_hz}-{coded:?}.wav"),
+                rate,
+                16,
+                &aac_decoded(rate, *wall_hz, *coded),
+            )
+        })
+        .collect();
+    let studies = studied_together(&locations);
+
+    for ((wall_hz, coded), study) in pairs.iter().zip(&studies) {
+        let judgement = &study.judgement;
+        let cutoff = judgement.cutoff.expect("a wall");
+
+        assert!(
+            cutoff.hz.abs_diff(*wall_hz) <= WALL_FOUND_WITHIN_HZ,
+            "{rate} Hz, walled at {wall_hz} Hz {coded:?}: {judgement:?}"
+        );
+        match coded {
+            Coded::Losslessly => {
+                assert_eq!(
+                    judgement.verdict,
+                    Verdict::Suspect,
+                    "{rate} Hz, walled at {wall_hz} Hz {coded:?}: {judgement:?}"
+                );
+                assert!(
+                    !on_aac_steps(study),
+                    "{rate} Hz, {wall_hz} Hz: {judgement:?}"
+                );
+            }
+            Coded::OnAacSteps => {
+                assert_eq!(
+                    judgement.verdict,
+                    Verdict::Fake,
+                    "{rate} Hz, walled at {wall_hz} Hz {coded:?}: {judgement:?}"
+                );
+                assert!(
+                    on_aac_steps(study),
+                    "{rate} Hz, {wall_hz} Hz: {judgement:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn lone_walls_at_cd_rate_are_suspect_and_the_same_walls_on_aacs_steps_are_fake() {
+    lone_walls_are_suspect_and_walls_on_a_codecs_steps_are_fake_at(44_100);
+}
+
+#[test]
+fn lone_walls_at_48_khz_are_suspect_and_the_same_walls_on_aacs_steps_are_fake() {
+    lone_walls_are_suspect_and_walls_on_a_codecs_steps_are_fake_at(48_000);
+}
+
+#[test]
+fn lone_walls_at_96_khz_are_suspect_and_the_same_walls_on_aacs_steps_are_fake() {
+    lone_walls_are_suspect_and_walls_on_a_codecs_steps_are_fake_at(96_000);
 }
 
 #[test]

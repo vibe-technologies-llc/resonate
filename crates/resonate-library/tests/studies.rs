@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use resonate_analysis::JUDGED_UNDER;
 use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
     Agreement, AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings,
@@ -22,6 +23,8 @@ use resonate_library::{
     StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
+
+use crate::support::beside;
 
 const RATE: u32 = 44_100;
 const SECONDS: u32 = 8;
@@ -581,7 +584,7 @@ fn a_silent_track_studied_leaves_its_album_the_gain_the_others_ask_for() -> Resu
 }
 
 #[test]
-fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Result<()> {
+fn every_track_is_studied_as_the_pass_runs_and_a_padded_file_is_found_fake() -> Result<()> {
     let tree = Tree::new();
 
     tree.write(
@@ -590,8 +593,13 @@ fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Re
     );
 
     let fake = tree.write(
-        "transcoded.wav",
-        &song(16_000.0, 2, &[(TITLE, "Transcoded"), (ARTIST, "Ada")]),
+        "padded.wav",
+        &song_in(
+            Sampled::Float,
+            16_000.0,
+            2,
+            &[(TITLE, "Padded"), (ARTIST, "Ada")],
+        ),
     );
     let library = scanned(&tree)?;
 
@@ -607,7 +615,7 @@ fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Re
     })?;
 
     assert_eq!(fakes.len(), 1);
-    assert_eq!(fakes[0].title, "Transcoded");
+    assert_eq!(fakes[0].title, "Padded");
 
     let cutoff = fakes[0].studied.cutoff.expect("a wall");
 
@@ -641,7 +649,7 @@ fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Re
         TrackHints::default()
     );
 
-    assert_eq!(matched(&library, "is:fake")?, vec!["Transcoded"]);
+    assert_eq!(matched(&library, "is:fake")?, vec!["Padded"]);
     assert_eq!(matched(&library, "-is:fake")?, vec!["Genuine"]);
 
     let again = enriched(&library, Silent::new(), Fingerprinters::none())?;
@@ -1152,8 +1160,46 @@ fn a_file_that_changed_forgets_its_study_and_is_studied_again() -> Result<()> {
         library
             .study_of(&location, None)?
             .map(|(_, held)| held.verdict),
-        Some(Verdict::Fake)
+        Some(Verdict::Suspect)
     );
+    Ok(())
+}
+
+#[test]
+fn a_lone_wall_kept_as_fake_under_the_last_heuristic_is_studied_again_and_reads_as_suspect()
+-> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let database = held.path().join("library.db");
+    let path = tree.write(
+        "walled.wav",
+        &song(16_000.0, 9, &[(TITLE, "Walled"), (ARTIST, "Ada")]),
+    );
+    let library = Library::open(&database)?;
+
+    rescanned(&library, &tree)?;
+    enriched(&library, Silent::new(), Fingerprinters::none())?;
+    beside(&database)
+        .execute(
+            "UPDATE track_studies SET verdict = ?1, studied_under = ?2",
+            rusqlite::params![Verdict::Fake.as_str(), i64::from(JUDGED_UNDER - 1)],
+        )
+        .expect("the study reads as the last heuristic kept it");
+
+    assert_eq!(matched(&library, "is:fake")?, vec!["Walled"]);
+
+    let summary = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
+    assert_eq!(summary.stats.studied, 1);
+    assert_eq!(summary.stats.fakes, 0);
+    assert_eq!(
+        library
+            .study_of(&MediaLocation::local(&path), None)?
+            .map(|(_, studied)| studied.verdict),
+        Some(Verdict::Suspect)
+    );
+    assert_eq!(matched(&library, "is:suspect")?, vec!["Walled"]);
+    assert!(matched(&library, "is:fake")?.is_empty());
     Ok(())
 }
 

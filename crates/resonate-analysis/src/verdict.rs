@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use resonate_codec::Codec;
+use resonate_core::SampleRate;
 
 use crate::{Coding, Levels, Spectrum, Steps, Tell, spectrum::BAND_HZ, words};
 
-pub const JUDGED_UNDER: u32 = 8;
+pub const JUDGED_UNDER: u32 = 9;
 
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;
@@ -160,10 +161,52 @@ pub struct Cutoff {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WallReading {
+    LossyEncode(LossyGuess),
+    HighBitrateEncode,
+    AntiAliasFilter,
+    AntiAliasFilterOf(SampleRate),
+}
+
+impl WallReading {
+    fn of(cutoff: Cutoff, rate: u32) -> Self {
+        match anti_aliased_from(rate) {
+            Some(edge) if cutoff.hz >= edge => {
+                SampleRate::new(rate).map_or(Self::AntiAliasFilter, Self::AntiAliasFilterOf)
+            }
+            _ if cutoff.hz <= LOSSY_CEILING_HZ => Self::LossyEncode(LossyGuess::of(cutoff.hz)),
+            _ if cutoff.hz <= SUSPECT_CEILING_HZ => Self::HighBitrateEncode,
+            _ => Self::AntiAliasFilter,
+        }
+    }
+
+    fn told(self, cutoff: Cutoff) -> String {
+        let decibels = format!("{:.0}", cutoff.drop_db);
+        let kilohertz = format!("{:.1}", kilohertz(cutoff.hz));
+        match self {
+            Self::LossyEncode(guess) => {
+                words::verdict::wall_of_a_lossy_encode(decibels, guess.kbps(), kilohertz)
+            }
+            Self::HighBitrateEncode => {
+                words::verdict::wall_of_a_high_bitrate_encode(decibels, kilohertz)
+            }
+            Self::AntiAliasFilter => {
+                words::verdict::wall_of_an_anti_alias_filter(decibels, kilohertz)
+            }
+            Self::AntiAliasFilterOf(rate) => words::verdict::wall_of_the_rates_anti_alias_filter(
+                decibels,
+                kilohertz,
+                rate.kilohertz(),
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Finding {
     Wall {
         cutoff: Cutoff,
-        lossy: Option<LossyGuess>,
+        reading: WallReading,
     },
     Rolloff {
         extent_hz: u32,
@@ -206,28 +249,7 @@ fn kilohertz(hz: u32) -> f32 {
 impl Finding {
     pub fn told(&self) -> String {
         match self {
-            Self::Wall {
-                cutoff,
-                lossy: Some(guess),
-            } => words::verdict::wall_of_a_lossy_encode(
-                format!("{:.0}", cutoff.drop_db),
-                guess.kbps(),
-                format!("{:.1}", kilohertz(cutoff.hz)),
-            ),
-            Self::Wall {
-                cutoff,
-                lossy: None,
-            } if cutoff.hz <= SUSPECT_CEILING_HZ => words::verdict::wall_of_a_high_bitrate_encode(
-                format!("{:.0}", cutoff.drop_db),
-                format!("{:.1}", kilohertz(cutoff.hz)),
-            ),
-            Self::Wall {
-                cutoff,
-                lossy: None,
-            } => words::verdict::wall_of_an_anti_alias_filter(
-                format!("{:.0}", cutoff.drop_db),
-                format!("{:.1}", kilohertz(cutoff.hz)),
-            ),
+            Self::Wall { cutoff, reading } => reading.told(*cutoff),
             Self::Rolloff { extent_hz } => {
                 words::verdict::rolloff(format!("{:.1}", kilohertz(*extent_hz)))
             }
@@ -292,7 +314,10 @@ pub struct Judgement {
 impl Judgement {
     pub fn lossy_guess(&self) -> Option<LossyGuess> {
         self.findings.iter().find_map(|finding| match finding {
-            Finding::Wall { lossy, .. } => *lossy,
+            Finding::Wall {
+                reading: WallReading::LossyEncode(guess),
+                ..
+            } => Some(*guess),
             _ => None,
         })
     }
@@ -337,19 +362,14 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     let extent_hz = extent_of(spectrum, &bands);
     let mut findings = Vec::new();
 
-    let anti_aliased = anti_aliased_from(weighed.rate);
-    let lossy_wall = cutoff
-        .filter(|cutoff| cutoff.hz <= LOSSY_CEILING_HZ)
-        .filter(|cutoff| anti_aliased.is_none_or(|edge| cutoff.hz < edge))
-        .map(|cutoff| LossyGuess::of(cutoff.hz));
+    let wall = cutoff.map(|cutoff| (cutoff, WallReading::of(cutoff, weighed.rate)));
 
-    match cutoff {
-        Some(cutoff) => findings.push(Finding::Wall {
-            cutoff,
-            lossy: lossy_wall,
-        }),
+    match wall {
+        Some((cutoff, reading)) => findings.push(Finding::Wall { cutoff, reading }),
         None => findings.extend(extent_hz.map(|extent_hz| Finding::Rolloff { extent_hz })),
     }
+
+    let walled_where_a_lossy_encode_cuts = matches!(wall, Some((_, WallReading::LossyEncode(_))));
 
     let upsampled = cutoff.and_then(|cutoff| upsampled_from(cutoff.hz, weighed.rate));
 
@@ -401,13 +421,14 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
         Verdict::NotJudged
     } else if !weighed.codec.is_lossless() {
         Verdict::Lossy
-    } else if padded.is_some()
-        || on_steps
-        || (heard_enough && (lossy_wall.is_some() || upsampled.is_some()))
-    {
+    } else if on_steps {
         Verdict::Fake
     } else if !heard_enough {
         Verdict::NotJudged
+    } else if padded.is_some() {
+        Verdict::Fake
+    } else if walled_where_a_lossy_encode_cuts || upsampled.is_some() {
+        Verdict::Suspect
     } else {
         spectral_verdict(weighed.rate, cutoff, extent_hz)
     };
@@ -685,11 +706,11 @@ mod tests {
     }
 
     #[test]
-    fn a_wall_at_sixteen_kilohertz_in_a_flac_is_a_128_kbps_transcode() {
+    fn a_lone_wall_at_sixteen_kilohertz_in_a_flac_is_suspect_where_a_128_kbps_encode_cuts() {
         let spectrum = spectrum_of(44_100, music_up_to(16_000.0));
         let judgement = judged_as(Codec::Flac, 44_100, &spectrum, &QUIET);
 
-        assert_eq!(judgement.verdict, Verdict::Fake);
+        assert_eq!(judgement.verdict, Verdict::Suspect);
 
         let cutoff = judgement.cutoff.expect("a wall");
 
@@ -739,11 +760,11 @@ mod tests {
     }
 
     #[test]
-    fn a_hi_res_stream_walled_where_cd_audio_ends_was_upsampled() {
+    fn a_hi_res_stream_walled_where_cd_audio_ends_is_suspected_of_being_upsampled() {
         let spectrum = spectrum_of(96_000, music_up_to(21_800.0));
         let judgement = judged_as(Codec::Flac, 96_000, &spectrum, &QUIET);
 
-        assert_eq!(judgement.verdict, Verdict::Fake);
+        assert_eq!(judgement.verdict, Verdict::Suspect);
         assert_eq!(judgement.upsampled_from(), Some(44_100));
 
         let from_48 = spectrum_of(192_000, music_up_to(23_900.0));
@@ -789,6 +810,69 @@ mod tests {
 
         assert_eq!(judgement.verdict, Verdict::Fake);
         assert_eq!(judgement.padded(), Some((16, 24)));
+    }
+
+    #[test]
+    fn padding_in_a_clip_too_short_to_judge_is_noted_and_not_judged() {
+        let points = crate::spectrum::points_for(96_000);
+        let bin_hz = 96_000.0 / points as f32;
+
+        let levels = (0..=points / 2)
+            .map(|bin| music_up_to(40_000.0)(bin as f32 * bin_hz))
+            .collect();
+        let spectrum = Spectrum::new(bin_hz, levels, Duration::from_secs(2));
+        let padded = Levels {
+            bits_in_use: Some(16),
+            ..QUIET
+        };
+
+        let judgement = judged(Weighed {
+            codec: Codec::Flac,
+            rate: 96_000,
+            declared_bits: Some(24),
+            float: false,
+            spectrum: &spectrum,
+            levels: &padded,
+            steps: &[],
+        });
+
+        assert_eq!(judgement.verdict, Verdict::NotJudged);
+        assert_eq!(judgement.padded(), Some((16, 24)));
+        assert!(judgement.findings.contains(&Finding::TooLittleHeard));
+    }
+
+    #[test]
+    fn a_wall_is_worded_by_what_stands_there_at_the_files_own_rate() {
+        let reading_at = |rate: u32, wall_hz: f32| {
+            let spectrum = spectrum_of(rate, music_up_to(wall_hz));
+            judged_as(Codec::Flac, rate, &spectrum, &QUIET)
+                .findings
+                .into_iter()
+                .find_map(|finding| match finding {
+                    Finding::Wall { reading, .. } => Some(reading),
+                    _ => None,
+                })
+                .expect("a wall")
+        };
+
+        assert_eq!(
+            reading_at(32_000, 15_000.0),
+            WallReading::AntiAliasFilterOf(SampleRate::new(32_000).expect("a rate"))
+        );
+        assert_eq!(
+            reading_at(22_050, 10_500.0),
+            WallReading::AntiAliasFilterOf(SampleRate::new(22_050).expect("a rate"))
+        );
+        assert!(matches!(
+            reading_at(32_000, 9_000.0),
+            WallReading::LossyEncode(_)
+        ));
+        assert!(matches!(
+            reading_at(44_100, 18_000.0),
+            WallReading::LossyEncode(_)
+        ));
+        assert_eq!(reading_at(44_100, 20_300.0), WallReading::HighBitrateEncode);
+        assert_eq!(reading_at(44_100, 21_600.0), WallReading::AntiAliasFilter);
     }
 
     #[test]
@@ -977,11 +1061,22 @@ mod tests {
         let findings = [
             Finding::Wall {
                 cutoff,
-                lossy: Some(LossyGuess::Near128),
+                reading: WallReading::LossyEncode(LossyGuess::Near128),
             },
             Finding::Wall {
                 cutoff,
-                lossy: None,
+                reading: WallReading::HighBitrateEncode,
+            },
+            Finding::Wall {
+                cutoff,
+                reading: WallReading::AntiAliasFilter,
+            },
+            Finding::Wall {
+                cutoff: Cutoff {
+                    hz: 15_000,
+                    drop_db: 60.0,
+                },
+                reading: WallReading::AntiAliasFilterOf(SampleRate::new(32_000).expect("a rate")),
             },
             Finding::Rolloff { extent_hz: 15_000 },
             Finding::Upsampled { from_hz: 44_100 },
@@ -1012,11 +1107,15 @@ mod tests {
         assert!(findings.iter().all(|finding| !finding.told().is_empty()));
         assert_eq!(
             Finding::Upsampled { from_hz: 44_100 }.told(),
-            "Nothing stands above 22.05 kHz, where 44.1 kHz audio ends, so it was upsampled from it"
+            "Nothing stands above 22.05 kHz, where 44.1 kHz audio ends, as if it had been upsampled from it"
         );
         assert!(findings[0].told().contains("16.1 kHz"));
         assert!(findings[0].told().contains("128 kbps"));
-        assert!(findings[3].told().contains("44.1 kHz"));
+        assert_eq!(
+            findings[3].told(),
+            "The spectrum ends at 15.0 kHz, 60 dB deep, where the anti-alias filter of 32 kHz audio stands"
+        );
+        assert!(findings[5].told().contains("44.1 kHz"));
         assert!(
             Verdict::ALL
                 .iter()

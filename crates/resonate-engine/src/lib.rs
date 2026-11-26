@@ -28,7 +28,7 @@ pub use resonate_analysis::{
     Analysis, AnalysisOp, Applied, BandGains, CUTS_AT_MOST, Cut, Cutoff, ENVELOPE_LANES, Envelope,
     Error as AnalysisError, Examined, FLOOR_DB, Finding, Judgement, KeptAnalyses, Levels,
     LossyGuess, Loudest, Loudness, LoudnessMeter, Ramp, Reach, SPECTROGRAM_ROWS, Spectrogram,
-    Spectrum, Stereo, Study, Verdict, Watch, Watching, analyse, study,
+    Spectrum, Stereo, Study, Verdict, WallReading, Watch, Watching, analyse, study,
 };
 pub use resonate_audio::{
     AudioSource, Backend, CAST_NODES, CardProfile, DeviceTime, Error as SinkError, GraphTime,
