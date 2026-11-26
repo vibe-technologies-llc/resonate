@@ -12,7 +12,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
-
 ## Catalog
 - [S · 0.18.1] Correct `forget_folder`'s description. **Low, builder.** MCP says listens and
   playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
