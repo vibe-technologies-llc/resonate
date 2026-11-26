@@ -161,7 +161,10 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   by an opaque `u64` it hands back. **`KeptListens` is the seam a catalog fills** (`kept_listens.rs`):
   `history_from` and `bring_in`, which `Library` and the phones' document catalog both answer
   (`mobile.md`), so `history_lines` (each listen one `line_of`, `LISTENS_READ_AT_ONCE` a page),
-  `bring_in_lines` (a file, as `LINES_READ_AS`) and `bring_in_history` (a service's pages until it
+  `bring_in_lines` (a file's bytes, as `LINES_READ_AS`), `bring_in_file` (the same read from a path
+  a line at a time, so a file of any size holds at most a page of listens:
+  `a_file_read_as_it_is_brought_in_holds_no_more_than_a_page_of_listens_at_once`; both check every
+  line before landing any, `a_file_with_a_bad_line_past_the_first_page_brings_nothing_in`) and `bring_in_history` (a service's pages until it
   names no next page or the same one again) are written once for the binary and the phones
   (`listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already_heard_here_is_not_counted_again`,
   `the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_where_they_were`).

@@ -165,7 +165,7 @@ pub use crate::{
     },
     kept_listens::{
         HistoryLines, HistoryPages, KeptListens, LINES_READ_AS, LISTENS_READ_AT_ONCE, Unpinned,
-        bring_in_history, bring_in_lines, history_lines,
+        bring_in_file, bring_in_history, bring_in_lines, history_lines,
     },
     learning::Learning,
     linked::{

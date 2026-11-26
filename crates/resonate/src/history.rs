@@ -1,11 +1,15 @@
 use std::{
-    fs::{self, File},
-    io::{self, BufWriter, Write as _},
-    path::Path,
+    fs,
+    io::{BufWriter, Write as _},
+    path::{Path, PathBuf},
+    process,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
+use resonate_core::{file_facts, naming, writer::Held};
 use resonate_library::{
-    BroughtIn, Library, ListeningService, bring_in_history, bring_in_lines, history_lines,
+    BroughtIn, KeptListens, Library, ListeningService, bring_in_file, bring_in_history,
+    history_lines,
 };
 
 use crate::{
@@ -16,6 +20,10 @@ use crate::{
     vocabulary::Meaning as _,
     words,
 };
+
+const STAGED_SUFFIX: &str = "staged";
+
+static STAGED: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn history(library: &Library, config: &Config, asked: &HistoryArgs) -> Result<()> {
     if let Some(file) = &asked.export {
@@ -31,31 +39,65 @@ pub(crate) fn history(library: &Library, config: &Config, asked: &HistoryArgs) -
     brought_in(library, config, service.meaning(), asked.user.as_deref())
 }
 
-fn exported(library: &Library, file: &Path) -> Result<()> {
-    let failed = |source: io::Error| Error::WriteHistory {
-        path: file.to_path_buf(),
-        source,
-    };
-    let mut written = BufWriter::new(File::create(file).map_err(failed)?);
+fn exported(kept: &dyn KeptListens, file: &Path) -> Result<()> {
+    let target = fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let staged = staged_beside(&target);
 
-    let mut listens = 0_u64;
+    let placed = written_and_placed(kept, &target, &staged);
 
-    for line in history_lines(library) {
-        writeln!(written, "{}", line?).map_err(failed)?;
-        listens += 1;
+    if placed.is_err() {
+        let _ = fs::remove_file(&staged);
     }
 
-    let file_written = written
-        .into_inner()
-        .map_err(|error| failed(error.into_error()))?;
-
-    file_written.sync_all().map_err(failed)?;
+    let listens = placed?;
 
     said!(
         "{}",
         words::history::exported(listens, file.display().to_string())
     );
     Ok(())
+}
+
+fn written_and_placed(kept: &dyn KeptListens, target: &Path, staged: &Path) -> Result<u64> {
+    let staging = |source| Error::WriteHistory {
+        path: staged.to_path_buf(),
+        source,
+    };
+    let held = Held::made(staged).map_err(staging)?;
+    let mut written = BufWriter::new(held.file());
+
+    let mut listens = 0_u64;
+
+    for line in history_lines(kept) {
+        writeln!(written, "{}", line?).map_err(staging)?;
+        listens += 1;
+    }
+
+    written.flush().map_err(staging)?;
+    drop(written);
+    held.file().sync_all().map_err(staging)?;
+    file_facts::replace(staged, target)
+        .map_err(|source| Error::WriteHistory {
+            path: target.to_path_buf(),
+            source,
+        })?
+        .noted(target);
+    drop(held);
+    Ok(listens)
+}
+
+fn staged_beside(target: &Path) -> PathBuf {
+    let stamp = format!(
+        ".{}-{}.{STAGED_SUFFIX}",
+        process::id(),
+        STAGED.fetch_add(1, Ordering::Relaxed)
+    );
+
+    target.with_file_name(naming::named_within(
+        ".",
+        target.file_name().unwrap_or_default(),
+        stamp,
+    ))
 }
 
 fn brought_in(
@@ -81,12 +123,7 @@ fn brought_in(
 }
 
 fn brought_in_from_file(library: &Library, file: &Path) -> Result<()> {
-    let bytes = fs::read(file).map_err(|source| resonate_library::Error::Io {
-        path: file.to_path_buf(),
-        source,
-    })?;
-
-    let brought = bring_in_lines(library, &bytes, &mut said_so_far)?;
+    let brought = bring_in_file(library, file, &mut said_so_far)?;
 
     said!(
         "{}",
@@ -116,7 +153,9 @@ mod tests {
 
     use clap::Parser as _;
     use resonate_core::Recording;
-    use resonate_library::{Billed, HeardElsewhere, HeardOnce, HistoryFrom, Library, line_of};
+    use resonate_library::{
+        Billed, HeardElsewhere, HeardOnce, HistoryFrom, HistoryRead, Library, line_of,
+    };
 
     use super::*;
     use crate::{
@@ -231,6 +270,87 @@ mod tests {
 
         fs::remove_dir_all(source_root).expect("cleaned");
         fs::remove_dir_all(target_root).expect("cleaned");
+    }
+
+    struct FailingPartWay;
+
+    impl KeptListens for FailingPartWay {
+        fn history_from(
+            &self,
+            from: HistoryFrom,
+            _: usize,
+        ) -> resonate_library::Result<HistoryRead> {
+            match from {
+                HistoryFrom::START => Ok(HistoryRead {
+                    heard: vec![HeardOnce {
+                        began: UNIX_EPOCH + Duration::from_secs(MOMENTS[0]),
+                        heard: Duration::from_secs(1),
+                        elsewhere: false,
+                        billed: None,
+                        location: "file:///heard.wav".to_owned(),
+                    }],
+                    next: Some(HistoryFrom::Held(1)),
+                }),
+                _ => Err(resonate_library::Error::NoVault),
+            }
+        }
+
+        fn bring_in(
+            &self,
+            _: ListeningService,
+            _: &[HeardElsewhere],
+        ) -> resonate_library::Result<BroughtIn> {
+            Ok(BroughtIn::default())
+        }
+    }
+
+    #[test]
+    fn an_export_failing_part_way_leaves_the_file_it_would_replace_as_it_was_and_no_stage() {
+        let root = scratch("history-export-failing");
+        let file = root.join("history.jsonl");
+        let before = b"what an earlier export wrote\n";
+
+        fs::write(&file, before).expect("an earlier export");
+
+        let failed = exported(&FailingPartWay, &file);
+
+        assert!(matches!(
+            failed,
+            Err(Error::Library(resonate_library::Error::NoVault))
+        ));
+        assert_eq!(fs::read(&file).expect("the earlier export"), before);
+        assert_eq!(
+            fs::read_dir(&root).expect("the folder").count(),
+            1,
+            "a stage was left beside the export"
+        );
+
+        fs::remove_dir_all(root).expect("cleaned");
+    }
+
+    #[test]
+    fn an_export_replaces_the_file_it_names_whole_and_leaves_no_stage() {
+        let (root, library) = catalog_of_songs("history-export-replaces");
+        let file = root.join("history.jsonl");
+
+        fs::write(
+            &file,
+            "an earlier export that ran far longer than this one\n".repeat(64),
+        )
+        .expect("an earlier export");
+        library
+            .bring_in(ListeningService::LastFm, &[heard_at(0, MOMENTS[0])])
+            .expect("a listen to export");
+
+        exported(&library, &file).expect("exported");
+
+        let written = fs::read_to_string(&file).expect("the export");
+
+        assert_eq!(written.lines().count(), 1);
+        assert!(written.starts_with(&format!("{{\"listened_at\":{},", MOMENTS[0])));
+        assert_eq!(fs::read_dir(&root).expect("the folder").count(), 3);
+
+        fs::remove_dir_all(root).expect("cleaned");
     }
 
     #[test]

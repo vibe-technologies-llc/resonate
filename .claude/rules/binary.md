@@ -160,7 +160,11 @@ paths:
 - **`history --export FILE` and `history --import listenbrainz|lastfm [--user NAME]` carry the
   listening history out and in** (`history.rs`, `library.md`'s *The history taken out and brought
   in*). The export pages `Library::history_from` to the end and writes one ListenBrainz listen a
-  line, by hand since the headless build has no `serde_json` (`line_of`): `listened_at` the second
+  line into a stage beside the file (`staged_beside`, held under `writer::Held` and named through
+  `named_within`), synced and renamed over the file only once every line is written, so an export
+  failing part way leaves whatever the file held byte for byte and takes its stage away
+  (`an_export_failing_part_way_leaves_the_file_it_would_replace_as_it_was_and_no_stage`,
+  `an_export_replaces_the_file_it_names_whole_and_leaves_no_stage`); each line is written by hand since the headless build has no `serde_json` (`line_of`): `listened_at` the second
   it began, `track_metadata` the billed names and an `additional_info` of the MusicBrainz ids, ISRC,
   track number, `duration_ms`, `listened_ms` (time heard), `heard_elsewhere`, `origin_url` (the
   location, so a song no longer held is still named) and this build as `media_player` and
@@ -172,9 +176,10 @@ paths:
   **`history --import-file FILE` brings in a file of those lines** with no `online` and no
   account (`brought_in_from_file`): a flag of its own beside `--import`, never the same one taking
   a service or a path, so a file named `listenbrainz` is never mistaken for a service (the two
-  conflict, and `--user` belongs to `--import`). The whole file is read by
-  `resonate_library::heard_in_lines` first and landed in pages of `READ_AT_ONCE` as
-  `ListeningService::ListenBrainz` after, so a line that is no listen is
+  conflict, and `--user` belongs to `--import`). `resonate_library::bring_in_file` reads the file
+  twice, a line at a time: once checking every line, then landing it in pages of
+  `LISTENS_READ_AT_ONCE` as `ListeningService::ListenBrainz`, so no more than a page of listens is
+  held whatever the file's size, a line that is no listen is
   `resonate_library::Error::ListenLine` naming it and nothing has landed; an unreadable file is
   the library's `Io`. What it reads is in `library.md`'s *The history taken out and brought in*
   (`a_history_exported_to_a_file_is_imported_into_a_fresh_catalog_and_a_second_import_adds_nothing`,

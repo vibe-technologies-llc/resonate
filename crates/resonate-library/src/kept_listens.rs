@@ -1,8 +1,8 @@
-use std::vec;
+use std::{fs::File, io::BufReader, path::Path, vec};
 
 use crate::{
-    BroughtIn, HeardElsewhere, HeardOnce, History, HistoryFrom, HistoryRead, Library,
-    ListeningService, Result, heard_in_lines, line_of,
+    BroughtIn, Error, HeardElsewhere, HeardOnce, History, HistoryFrom, HistoryRead, Library,
+    ListeningService, Result, line_of, listen_lines,
 };
 
 pub const LISTENS_READ_AT_ONCE: usize = 1_000;
@@ -97,13 +97,57 @@ pub fn bring_in_lines(
     bytes: &[u8],
     so_far: &mut dyn FnMut(BroughtIn),
 ) -> Result<BroughtIn> {
-    let heard = heard_in_lines(bytes)?;
+    brought_in_pages(
+        kept,
+        |each| listen_lines::each_listen_in_bytes(bytes, each),
+        so_far,
+    )
+}
+
+pub fn bring_in_file(
+    kept: &dyn KeptListens,
+    path: &Path,
+    so_far: &mut dyn FnMut(BroughtIn),
+) -> Result<BroughtIn> {
+    let unread = |source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    brought_in_pages(
+        kept,
+        |each| {
+            let file = File::open(path).map_err(unread)?;
+            listen_lines::each_listen_read(BufReader::new(file), &unread, each)
+        },
+        so_far,
+    )
+}
+
+fn brought_in_pages(
+    kept: &dyn KeptListens,
+    mut read: impl FnMut(&mut dyn FnMut(HeardElsewhere) -> Result<()>) -> Result<()>,
+    so_far: &mut dyn FnMut(BroughtIn),
+) -> Result<BroughtIn> {
+    read(&mut |_| Ok(()))?;
 
     let mut brought = BroughtIn::default();
-
-    for page in heard.chunks(LISTENS_READ_AT_ONCE) {
+    let mut page = Vec::with_capacity(LISTENS_READ_AT_ONCE);
+    let mut landed = |page: &mut Vec<HeardElsewhere>| -> Result<()> {
         brought = brought.and(kept.bring_in(LINES_READ_AS, page)?);
+        page.clear();
         so_far(brought);
+        Ok(())
+    };
+
+    read(&mut |heard| {
+        page.push(heard);
+        match page.len() {
+            LISTENS_READ_AT_ONCE => landed(&mut page),
+            _ => Ok(()),
+        }
+    })?;
+    if !page.is_empty() {
+        landed(&mut page)?;
     }
     Ok(brought)
 }
@@ -132,7 +176,9 @@ pub fn bring_in_history(
 #[cfg(test)]
 mod tests {
     use std::{
-        cell::RefCell,
+        cell::{Cell, RefCell},
+        io::{self, BufRead, Read},
+        rc::Rc,
         time::{Duration, UNIX_EPOCH},
     };
 
@@ -282,5 +328,131 @@ mod tests {
             *kept.brought.borrow(),
             [(LINES_READ_AS, LISTENS_READ_AT_ONCE), (LINES_READ_AS, 500)]
         );
+    }
+
+    const LISTENED: &str =
+        r#"{"listened_at":1700000000,"track_metadata":{"artist_name":"Low","track_name":"Words"}}"#;
+
+    struct OneLineAtATime {
+        lines: usize,
+        handed: Rc<Cell<usize>>,
+        line: Vec<u8>,
+        at: usize,
+    }
+
+    impl OneLineAtATime {
+        fn new(lines: usize, handed: &Rc<Cell<usize>>) -> Self {
+            handed.set(0);
+            Self {
+                lines,
+                handed: Rc::clone(handed),
+                line: Vec::new(),
+                at: 0,
+            }
+        }
+    }
+
+    impl Read for OneLineAtATime {
+        fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+            let held = self.fill_buf()?;
+            let length = held.len().min(into.len());
+
+            into[..length].copy_from_slice(&held[..length]);
+            self.consume(length);
+            Ok(length)
+        }
+    }
+
+    impl BufRead for OneLineAtATime {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            if self.at == self.line.len() && self.handed.get() < self.lines {
+                self.line = format!("{LISTENED}\n").into_bytes();
+                self.at = 0;
+                self.handed.set(self.handed.get() + 1);
+            }
+            Ok(&self.line[self.at..])
+        }
+
+        fn consume(&mut self, amount: usize) {
+            self.at += amount;
+        }
+    }
+
+    struct Watched<'a> {
+        handed: &'a Cell<usize>,
+        brought: Cell<usize>,
+        ahead: RefCell<Vec<usize>>,
+    }
+
+    impl KeptListens for Watched<'_> {
+        fn history_from(&self, _: HistoryFrom, _: usize) -> Result<HistoryRead> {
+            Ok(HistoryRead {
+                heard: Vec::new(),
+                next: None,
+            })
+        }
+
+        fn bring_in(&self, _: ListeningService, heard: &[HeardElsewhere]) -> Result<BroughtIn> {
+            self.ahead
+                .borrow_mut()
+                .push(self.handed.get() - self.brought.get());
+            self.brought.set(self.brought.get() + heard.len());
+            Ok(BroughtIn {
+                credited: heard.len() as u64,
+                held_already: 0,
+                unmatched: 0,
+            })
+        }
+    }
+
+    #[test]
+    fn a_file_read_as_it_is_brought_in_holds_no_more_than_a_page_of_listens_at_once() {
+        const LINES: usize = 2_500;
+
+        let handed = Rc::new(Cell::new(0));
+        let kept = Watched {
+            handed: &handed,
+            brought: Cell::new(0),
+            ahead: RefCell::new(Vec::new()),
+        };
+        let unread = |source| Error::Io {
+            path: "listens.jsonl".into(),
+            source,
+        };
+        let mut opened = 0;
+
+        let brought = brought_in_pages(
+            &kept,
+            |each| {
+                opened += 1;
+                listen_lines::each_listen_read(OneLineAtATime::new(LINES, &handed), &unread, each)
+            },
+            &mut |_| {},
+        )
+        .expect("brought in");
+
+        assert_eq!(opened, 2);
+        assert_eq!(brought.credited, LINES as u64);
+        assert_eq!(kept.brought.get(), LINES);
+        assert_eq!(
+            *kept.ahead.borrow(),
+            [LISTENS_READ_AT_ONCE, LISTENS_READ_AT_ONCE, 500]
+        );
+    }
+
+    #[test]
+    fn a_file_with_a_bad_line_past_the_first_page_brings_nothing_in() {
+        let kept = Kept::default();
+        let mut lines = vec![LISTENED; LISTENS_READ_AT_ONCE * 2].join("\n");
+
+        lines.push_str("\nnot a listen\n");
+
+        let refused = bring_in_lines(&kept, lines.as_bytes(), &mut |_| {});
+
+        assert!(matches!(
+            refused,
+            Err(Error::ListenLine { line, .. }) if line == LISTENS_READ_AT_ONCE * 2 + 1
+        ));
+        assert!(kept.brought.borrow().is_empty());
     }
 }

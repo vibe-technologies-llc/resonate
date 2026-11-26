@@ -1,4 +1,5 @@
 use std::{
+    io::{self, BufRead},
     str,
     time::{Duration, UNIX_EPOCH},
 };
@@ -21,25 +22,68 @@ pub enum ListenFault {
 }
 
 pub fn heard_in_lines(bytes: &[u8]) -> Result<Vec<HeardElsewhere>> {
-    let bytes = bytes.strip_prefix(BYTE_ORDER_MARK).unwrap_or(bytes);
     let mut heard = Vec::new();
 
-    for (index, raw) in bytes.split(|byte| *byte == b'\n').enumerate() {
-        let refused = |fault| Error::ListenLine {
-            line: index + 1,
-            fault,
-        };
-        let text = str::from_utf8(raw).map_err(|_| refused(ListenFault::NotUtf8))?;
-
-        if text.trim().is_empty() {
-            continue;
-        }
-
-        let json = Json::read(text).ok_or(refused(ListenFault::NotJson))?;
-
-        heard.extend(listen_in(&json).map_err(refused)?);
-    }
+    each_listen_in_bytes(bytes, &mut |listen| {
+        heard.push(listen);
+        Ok(())
+    })?;
     Ok(heard)
+}
+
+pub(crate) fn each_listen_in_bytes(
+    bytes: &[u8],
+    each: &mut dyn FnMut(HeardElsewhere) -> Result<()>,
+) -> Result<()> {
+    for (index, raw) in bytes.split(|byte| *byte == b'\n').enumerate() {
+        if let Some(heard) = listen_on(index + 1, raw)? {
+            each(heard)?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn each_listen_read(
+    mut read: impl BufRead,
+    unread: &dyn Fn(io::Error) -> Error,
+    each: &mut dyn FnMut(HeardElsewhere) -> Result<()>,
+) -> Result<()> {
+    let mut raw = Vec::new();
+    let mut number = 0;
+    loop {
+        raw.clear();
+        if read.read_until(b'\n', &mut raw).map_err(unread)? == 0 {
+            return Ok(());
+        }
+        number += 1;
+
+        let line = raw.strip_suffix(b"\n").unwrap_or(&raw);
+
+        if let Some(heard) = listen_on(number, line)? {
+            each(heard)?;
+        }
+    }
+}
+
+fn listen_on(number: usize, raw: &[u8]) -> Result<Option<HeardElsewhere>> {
+    let raw = match number {
+        1 => raw.strip_prefix(BYTE_ORDER_MARK).unwrap_or(raw),
+        _ => raw,
+    };
+    let refused = |fault| Error::ListenLine {
+        line: number,
+        fault,
+    };
+
+    let text = str::from_utf8(raw).map_err(|_| refused(ListenFault::NotUtf8))?;
+
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let json = Json::read(text).ok_or(refused(ListenFault::NotJson))?;
+
+    listen_in(&json).map_err(refused)
 }
 
 fn listen_in(json: &Json) -> std::result::Result<Option<HeardElsewhere>, ListenFault> {
