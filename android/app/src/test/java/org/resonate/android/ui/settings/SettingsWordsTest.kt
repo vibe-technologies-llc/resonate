@@ -256,7 +256,7 @@ class SettingsWordsTest {
         assertEquals("new", edited.valueOf(ProviderField.PASSWORD))
         assertEquals("https://a", edited.trimmed().server)
         assertEquals("me", edited.trimmed().user)
-        assertEquals("SUBSONIC::", accountIdentity(account))
+        assertEquals("SUBSONIC:::", accountIdentity(account))
     }
 
     @Test

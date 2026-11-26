@@ -80,6 +80,7 @@ band-gain = Band { $band } may boost or cut at most { $most } dB, not { $decibel
 band-q = Band { $band }'s Q must lie between { $least } and { $most }, not { $q }
 band-channels = Band { $band } is played on no channel
 preamp-range = The preamp may lift or lower at most { $most } dB, not { $decibels } dB
+profile-too-loud = This profile lifts the sound by up to { $peak } dB, past the { $most } dB a profile may reach
 listening-test-trials = A listening test holds from 1 to { $most } trials, not { $trials }
 listening-test-nothing-to-test = The curve has no bands and no preamp, so there is nothing to compare with its bypass
 listening-test-levels = The curve cannot be level-matched to its bypass, { $millibels ->

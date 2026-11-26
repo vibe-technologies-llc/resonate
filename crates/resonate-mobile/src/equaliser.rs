@@ -480,6 +480,12 @@ pub fn equaliser_text(curve: EqualiserCurve) -> Result<String> {
 #[uniffi::export]
 pub fn parse_eq_profile(bytes: Vec<u8>, name: String) -> Result<EqualiserImport> {
     let reading = resonate_eq::reading(&resonate_core::text::decoded(&bytes).0)?;
+    let peak_db = resonate_eq::loudest_lift_db(&reading.profile);
+
+    if peak_db > f64::from(BOOST_AT_MOST_DB) {
+        return Err(Error::ProfileTooLoud { peak_db });
+    }
+
     let mut import = imported(&reading.profile, name);
 
     import.passed_over += counted(reading.passed_over);
@@ -953,6 +959,38 @@ mod tests {
         assert_eq!(import.passed_over, 0);
         assert_eq!(import.curve.bands[2].channels, 0b1);
         assert!(import.curve.profile().is_ok());
+    }
+
+    #[test]
+    fn stacked_boosts_past_the_bound_are_refused_with_the_catalogs_words() {
+        let bells: String = (1..=4)
+            .map(|at| format!("Filter {at}: ON PK Fc 1000 Hz Gain 24 dB Q 1\n"))
+            .collect();
+
+        let refused = parse_eq_profile(bells.into_bytes(), "Stacked".into());
+
+        assert!(matches!(
+            refused,
+            Err(Error::ProfileTooLoud { peak_db }) if peak_db > f64::from(BOOST_AT_MOST_DB)
+        ));
+        assert_eq!(
+            refused.err().map(|error| error.to_string()).as_deref(),
+            Some(
+                "This profile lifts the sound by up to 96.0 dB, past the 24 dB a profile may reach"
+            )
+        );
+    }
+
+    #[test]
+    fn stacked_boosts_the_preamp_takes_back_are_imported() {
+        let bells: String = (1..=4)
+            .map(|at| format!("Filter {at}: ON PK Fc 1000 Hz Gain 6 dB Q 1\n"))
+            .collect();
+        let text = format!("Preamp: -24 dB\n{bells}");
+
+        let import = parse_eq_profile(text.into_bytes(), "Taken back".into());
+
+        assert!(import.is_ok());
     }
 
     #[test]

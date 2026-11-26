@@ -24,7 +24,16 @@ public struct ProviderAccounts: Equatable, Sendable {
 
     public mutating func keep(_ account: DownloadAccount) {
         guard let index = accounts.firstIndex(where: { $0.provider == account.provider }) else { return }
-        accounts[index] = account
+        accounts[index] = account.keepingTheInstallDevice(of: accounts[index])
+    }
+
+    @discardableResult
+    public mutating func keep(minted: [MintedJellyfinDevice]) -> Bool {
+        guard let index = accounts.firstIndex(where: { $0.provider == .jellyfin }),
+            let device = minted.first(where: accounts[index].awaitsADevice(from:))?.device
+        else { return false }
+        accounts[index].device = device
+        return true
     }
 
     public mutating func turn(_ provider: MusicProvider, on: Bool) {
@@ -37,6 +46,23 @@ public struct ProviderAccounts: Equatable, Sendable {
 }
 
 extension DownloadAccount {
+    var holdsAnInstallDevice: Bool {
+        provider == .jellyfin && token.isEmpty && !device.isEmpty
+    }
+
+    func keepingTheInstallDevice(of stored: DownloadAccount) -> DownloadAccount {
+        guard provider == .jellyfin, token.isEmpty, device.isEmpty, stored.holdsAnInstallDevice else { return self }
+        var kept = self
+        kept.device = stored.device
+        return kept
+    }
+
+    func awaitsADevice(from minted: MintedJellyfinDevice) -> Bool {
+        provider == .jellyfin && token.isEmpty && device.isEmpty
+            && server.trimmingCharacters(in: .whitespacesAndNewlines) == minted.server
+            && user.trimmingCharacters(in: .whitespacesAndNewlines) == minted.user
+    }
+
     public static func empty(for provider: MusicProvider) -> DownloadAccount {
         DownloadAccount(provider: provider, server: "", user: "", password: "", clientId: "", clientSecret: "", refreshToken: "")
     }

@@ -1,6 +1,9 @@
 use std::{fmt, io, path::PathBuf, result};
 
-use resonate_core::{abx::TRIALS_AT_MOST, eq::MAX_BANDS};
+use resonate_core::{
+    abx::TRIALS_AT_MOST,
+    eq::{BOOST_AT_MOST_DB, MAX_BANDS},
+};
 use thiserror::Error;
 
 use crate::{
@@ -347,6 +350,8 @@ pub enum Error {
     BandChannels { band: u32 },
     #[error("{}", words::errors::preamp_range(decibels.to_string(), PREAMP_AT_MOST_DB.to_string()))]
     PreampRange { decibels: f32 },
+    #[error("{}", words::errors::profile_too_loud(BOOST_AT_MOST_DB.to_string(), format!("{peak_db:.1}")))]
+    ProfileTooLoud { peak_db: f64 },
     #[error("{}", words::errors::listening_test_trials(TRIALS_AT_MOST, *trials))]
     ListeningTestTrials { trials: u32 },
     #[error("{}", words::errors::listening_test_nothing_to_test())]

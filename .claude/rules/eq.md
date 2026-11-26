@@ -1104,7 +1104,7 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   imported only if what it lifts stays within `BOOST_AT_MOST_DB`** (24 dB, core's, the bound the
   phones hold a band and the preamp to): `Store::read_in` weighs the preamp and `peak_db` and refuses
   with `Error::PeakTooHigh` rather than cut, since a cut preamp could not reach below the deepest for
-  stacked boosts (`a_file_of_stacked_boosts_is_refused_rather_than_imported_past_the_bound`). **A
+  stacked boosts (`a_file_of_stacked_boosts_is_refused_rather_than_imported_past_the_bound`); the phones' `parse_eq_profile` weighs the same `loudest_lift_db` and refuses with `ProfileTooLoud`, said through the mobile catalog (`stacked_boosts_past_the_bound_are_refused_with_the_catalogs_words`). **A
   file correcting several devices is read as the first it names** (`Device: all` or none reaches;
   lines under another device are never summed in:
   `a_file_correcting_two_devices_is_read_as_the_first_of_them`). `read_number` is exported so the

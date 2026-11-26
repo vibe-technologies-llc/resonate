@@ -510,7 +510,7 @@ impl Store {
     }
 }
 
-fn loudest_lift_db(profile: &Profile) -> f64 {
+pub fn loudest_lift_db(profile: &Profile) -> f64 {
     profile.preamp().decibels() + profile.peak_db(FITTED_AT)
 }
 

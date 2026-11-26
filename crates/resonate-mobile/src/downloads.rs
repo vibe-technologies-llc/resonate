@@ -3,6 +3,7 @@ use std::{
     fmt,
     fs::File,
     io::{self, Read, Write},
+    mem,
     os::fd::FromRawFd,
     path::Path,
     sync::{
@@ -60,9 +61,41 @@ pub(crate) struct Downloads {
     quick_connecting: Mutex<Option<QuickConnecting>>,
     quick_connects: AtomicU64,
     refreshed: Arc<Mutex<Option<String>>>,
+    minted: Mutex<MintedDevices>,
     hosted_services_declined: AtomicBool,
     stalling: Mutex<Gate>,
     waiting: AtomicUsize,
+}
+
+#[derive(Default)]
+struct MintedDevices {
+    remembered: BTreeMap<(String, String), String>,
+    unreported: Vec<MintedJellyfinDevice>,
+}
+
+impl MintedDevices {
+    fn remembered(&self, server: &str, user: &str) -> Option<String> {
+        self.remembered
+            .get(&(server.to_owned(), user.to_owned()))
+            .cloned()
+    }
+
+    fn minted(&mut self, server: &str, user: &str, device: &str) {
+        self.remembered
+            .insert((server.to_owned(), user.to_owned()), device.to_owned());
+        self.unreported.push(MintedJellyfinDevice {
+            server: server.to_owned(),
+            user: user.to_owned(),
+            device: device.to_owned(),
+        });
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MintedJellyfinDevice {
+    pub server: String,
+    pub user: String,
+    pub device: String,
 }
 
 struct QuickConnecting {
@@ -692,22 +725,30 @@ impl Downloads {
                     password: login.password.clone(),
                 }))
             }
-            Reachable::Jellyfin(login) => Reached::Jellyfin(
-                resonate_jellyfin::Jellyfin::at(resonate_jellyfin::Server {
-                    url: login.url.clone(),
-                    user: login.user.clone(),
-                    password: login.password.clone(),
-                    kept: login
-                        .session
-                        .as_ref()
-                        .map(|session| resonate_jellyfin::KeptSession {
-                            token: session.token.clone(),
-                            user: session.user.clone(),
-                            device: session.device.clone(),
+            Reachable::Jellyfin(login) => {
+                let stored = login
+                    .install_device
+                    .clone()
+                    .or_else(|| self.minted.lock().remembered(&login.url, &login.user));
+
+                Reached::Jellyfin(
+                    resonate_jellyfin::Jellyfin::at(resonate_jellyfin::Server {
+                        url: login.url.clone(),
+                        user: login.user.clone(),
+                        password: login.password.clone(),
+                        kept: login.session.as_ref().map(|session| {
+                            resonate_jellyfin::KeptSession {
+                                token: session.token.clone(),
+                                user: session.user.clone(),
+                                device: session.device.clone(),
+                            }
                         }),
-                })
-                .keeping_device(login.install_device.as_deref(), |_| {}),
-            ),
+                    })
+                    .keeping_device(stored.as_deref(), |device| {
+                        self.minted.lock().minted(&login.url, &login.user, device);
+                    }),
+                )
+            }
             Reachable::Tidal(login) => {
                 let refreshed = Arc::clone(&self.refreshed);
                 Reached::Tidal(
@@ -1314,6 +1355,10 @@ impl MobilePlayer {
 
     pub fn refreshed_tidal_token(&self) -> Option<String> {
         self.downloads.refreshed.lock().take()
+    }
+
+    pub fn minted_jellyfin_devices(&self) -> Vec<MintedJellyfinDevice> {
+        mem::take(&mut self.downloads.minted.lock().unreported)
     }
 
     pub fn begin_jellyfin_quick_connect(&self, server: String) -> Result<JellyfinQuickConnect> {

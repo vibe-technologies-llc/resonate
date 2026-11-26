@@ -20,6 +20,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.DownloadAccount
+import org.resonate.android.nativecore.MintedJellyfinDevice
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.nativecore.ServedService
@@ -65,6 +66,7 @@ class Served(
     online: StateFlow<Boolean>,
     book: StateFlow<ProviderAccountBook?>,
     hostedServices: StateFlow<Boolean>,
+    private val deviceMinted: (List<MintedJellyfinDevice>) -> Unit,
 ) {
     val accounts: StateFlow<List<DownloadAccount>> =
         combine(online, book, hostedServices) { on, kept, hosted -> kept.servedAccounts(on, hosted) }
@@ -98,6 +100,7 @@ class Served(
                     given.value =
                         withContext(Dispatchers.IO) {
                             native.serveFrom(asked)
+                            keepMintedDevices(native)
                             native.servedServices()
                         }
                 }
@@ -105,7 +108,15 @@ class Served(
     }
 
     suspend fun bind(native: MobilePlayer) =
-        withContext(Dispatchers.IO) { native.serveFrom(accounts.value) }
+        withContext(Dispatchers.IO) {
+            native.serveFrom(accounts.value)
+            keepMintedDevices(native)
+        }
+
+    private fun keepMintedDevices(native: MobilePlayer) {
+        val minted = native.mintedJellyfinDevices()
+        if (minted.isNotEmpty()) deviceMinted(minted)
+    }
 
     fun cached(uri: String, edge: Int): Bitmap? = pictures.get(coverKey(uri, edge))
 

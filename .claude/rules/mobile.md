@@ -1181,7 +1181,7 @@ then `resonate_library::planned` under the hosted switch, each service tagged wi
 from, `providers.md`'s *Writing one*: readiness, a hifi-api key as the `resonate` service beside the
 `hifi-api` the account names, one fixed order, the first account of a scheme kept), and
 `Downloads::in_place_of` builds each service as a download would (`Downloads::reached`, one
-construction for both; a TIDAL account hands a rotated token to `refreshed_tidal_token`). Jellyfin is
+construction for both; a TIDAL account hands a rotated token to `refreshed_tidal_token`, a Jellyfin password account the device id it minted to `minted_jellyfin_devices`, which the front end keeps as the account's `device`). Jellyfin is
 in-place only: `Reachable::fetches_for_wants` leaves it out of `find`, so a want is never asked of it (`a_jellyfin_server_is_browsed_and_its_song_is_queued_and_played_and_is_never_asked_for_a_want`).
 The plan is compared with the one held, so a call with the same accounts builds nothing and every
 read may bind first; a service whose account stands keeps its `Arc` (one TIDAL session). One slot

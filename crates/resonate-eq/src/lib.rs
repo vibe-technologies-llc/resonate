@@ -25,7 +25,7 @@ pub use crate::{
         read_response,
     },
     provider::{Corrected, Corrections, Fetched, Uncorrected},
-    store::{Binding, Kept, Measured, OWN_FOLDER, ProfileName, Store},
+    store::{Binding, Kept, Measured, OWN_FOLDER, ProfileName, Store, loudest_lift_db},
     targets::BuiltIn,
 };
 

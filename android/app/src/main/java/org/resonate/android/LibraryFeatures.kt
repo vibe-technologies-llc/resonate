@@ -238,7 +238,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val enrichOnMetered = MutableStateFlow(settings.getBoolean("enrich-on-metered", false))
     val downloadOnMetered = MutableStateFlow(StoredChoices.downloadOnMetered(settings::storedFlag))
     val downloadsWaitOnTheMeter = MutableStateFlow(false)
-    val served = Served(library, scope, online, providerAccounts, hostedServices)
+    val served =
+        Served(library, scope, online, providerAccounts, hostedServices) { minted ->
+            changeAccounts { it.deviceMinted(minted) }
+        }
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
     val organising = FolderOrganising(context, library, settings, scope, ::rereadSongs)
     val statistics = MutableStateFlow<LibraryStatistics?>(null)

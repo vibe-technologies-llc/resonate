@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.nativecore.DownloadAccount
+import org.resonate.android.nativecore.MintedJellyfinDevice
 import org.resonate.android.nativecore.MusicProvider
 
 class ProviderAccountBookTest {
@@ -98,5 +99,71 @@ class ProviderAccountBookTest {
 
         assertEquals("fresh", renewed.account(2)?.account?.refreshToken)
         assertEquals(book.account(1), renewed.account(1))
+    }
+
+    private fun jellyfin(
+        server: String,
+        user: String = "me",
+        token: String = "",
+        userId: String = "",
+        device: String = "",
+    ) = DownloadAccount(MusicProvider.JELLYFIN, server, user, "pw", "", "", "", token, userId, device)
+
+    @Test
+    fun aMintedDeviceIsKeptOnTheJellyfinAccountThatSignedInUnderIt() {
+        val book =
+            ProviderAccountBook()
+                .saved(1, jellyfin("https://a"))
+                .saved(2, jellyfin("https://b", user = "you"))
+                .saved(3, subsonic("https://a"))
+        val kept = book.deviceMinted(listOf(MintedJellyfinDevice("https://a", "me", "install-1")))
+
+        assertEquals("install-1", kept.account(1)?.account?.device)
+        assertEquals(book.account(2), kept.account(2))
+        assertEquals(book.account(3), kept.account(3))
+        assertEquals(kept, kept.deviceMinted(listOf(MintedJellyfinDevice("https://a", "me", "install-2"))))
+    }
+
+    @Test
+    fun aSecondSignInIsSentUnderTheDeviceTheFirstWasKept() {
+        val kept =
+            ProviderAccountBook()
+                .saved(1, jellyfin("https://a"))
+                .deviceMinted(listOf(MintedJellyfinDevice("https://a", "me", "install-1")))
+        val sent = kept.asked.map { it.device }
+        val typedAgain = kept.saved(1, jellyfin("https://a", user = "me"))
+
+        assertEquals(listOf("install-1"), sent)
+        assertEquals("install-1", typedAgain.account(1)?.account?.device)
+        assertEquals(listOf("install-1"), typedAgain.asked.map { it.device })
+        assertFalse(typedAgain.account(1)!!.account.holdsAQuickConnectSession())
+    }
+
+    @Test
+    fun aQuickConnectSessionLetGoTakesItsDeviceWithIt() {
+        val session = jellyfin("https://a", token = "t", userId = "u", device = "issued")
+        val book = ProviderAccountBook().saved(1, session)
+        val letGo = book.saved(1, session.withoutTheQuickConnectSession())
+
+        assertEquals("", letGo.account(1)?.account?.device)
+        assertEquals(
+            "install-1",
+            letGo
+                .deviceMinted(listOf(MintedJellyfinDevice("https://a", "me", "install-1")))
+                .account(1)
+                ?.account
+                ?.device,
+        )
+    }
+
+    @Test
+    fun aSessionKeepsTheDeviceItWasIssuedTo() {
+        val session = jellyfin("https://a", token = "t", userId = "u", device = "issued")
+        val book = ProviderAccountBook().saved(1, session)
+
+        assertEquals(
+            book,
+            book.deviceMinted(listOf(MintedJellyfinDevice("https://a", "me", "install-1"))),
+        )
     }
 }

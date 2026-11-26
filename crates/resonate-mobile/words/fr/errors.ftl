@@ -80,6 +80,7 @@ band-gain = La bande { $band } peut booster ou couper au plus { $most } dB, et n
 band-q = La Q de la bande { $band } doit être comprise entre { $least } et { $most }, et non entre { $q }
 band-channels = Bande { $band } est jouée sur aucun canal
 preamp-range = Le préampli peut soulever ou descendre au maximum { $most } dB, et non { $decibels } dB
+profile-too-loud = Ce profil soulève le son jusqu’à { $peak } dB, au-delà des { $most } dB qu’un profil peut atteindre
 listening-test-trials = Un test d’écoute tient de 1 à { $most } essais, et non { $trials }
 listening-test-nothing-to-test = La courbe n’a pas de bandes et pas de préampli, donc il n’y a rien à comparer avec son contournement
 listening-test-levels = La courbe ne peut être appariée au niveau de sa dérivation, { $millibels ->

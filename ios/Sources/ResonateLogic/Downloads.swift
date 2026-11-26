@@ -177,9 +177,10 @@ extension DownloadAccount {
     }
 
     public mutating func letGoOfTheQuickConnectSession() {
+        let installed = holdsAnInstallDevice
         token = ""
         userId = ""
-        device = ""
+        if !installed { device = "" }
     }
 
     public var usesItsOwnServer: Bool {

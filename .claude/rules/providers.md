@@ -664,8 +664,11 @@ catalog is the server's, browsed through its API and never copied into `resonate
   the caller, which keeps it; a kept session and a Quick Connect attempt are left as they were. The
   binary keeps it as `jellyfin-device` (`Renewed::keep_device`, a settings file that lacks it is
   given one on first use, so older files load); a forgotten session clears it with the rest and the next sign-in mints another. The phones
-  pass the account's `device` through and mint a fresh id per client where none is stored (a
-  platform persisting the minted id is not wired yet); it is never a name, host or setting, and the User-Agent stays
+  pass the account's `device` through; `Downloads::reached` remembers the id it mints per server and
+  user and hands each new one to `minted_jellyfin_devices` (a `MintedJellyfinDevice`), which Android
+  (`ProviderAccountBook`) and iOS (`ProviderAccounts`) store as the
+  account's `device` beside no token, so a phone signs in under one id for as long as the account
+  stands (`a_phone_signing_in_twice_to_jellyfin_sends_one_device_id`); it is never a name, host or setting, and the User-Agent stays
   bare. A kept session names the device it was issued to
   (`a_password_sign_in_names_the_device_this_install_keeps_on_every_launch`,
   `two_installs_signing_in_as_one_user_name_devices_of_their_own`,

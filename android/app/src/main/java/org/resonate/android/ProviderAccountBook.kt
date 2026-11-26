@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import org.resonate.android.nativecore.DownloadAccount
+import org.resonate.android.nativecore.MintedJellyfinDevice
 import org.resonate.android.nativecore.MusicProvider
 
 enum class Readiness {
@@ -44,6 +45,29 @@ fun DownloadAccount.holdsAQuickConnectSession(): Boolean =
 fun DownloadAccount.withoutTheQuickConnectSession(): DownloadAccount =
     copy(token = "", userId = "", device = "")
 
+fun DownloadAccount.holdsAnInstallDevice(): Boolean =
+    provider == MusicProvider.JELLYFIN && token.isBlank() && device.isNotBlank()
+
+fun DownloadAccount.keepingTheInstallDeviceOf(stored: DownloadAccount?): DownloadAccount =
+    if (
+        provider == MusicProvider.JELLYFIN &&
+            token.isBlank() &&
+            device.isBlank() &&
+            stored != null &&
+            stored.holdsAnInstallDevice()
+    ) {
+        copy(device = stored.device)
+    } else {
+        this
+    }
+
+private fun DownloadAccount.awaitsADeviceFrom(minted: MintedJellyfinDevice): Boolean =
+    provider == MusicProvider.JELLYFIN &&
+        token.isBlank() &&
+        device.isBlank() &&
+        server.trim() == minted.server &&
+        user.trim() == minted.user
+
 data class KeptAccount(val id: Long, val on: Boolean, val account: DownloadAccount) {
     val asked: Boolean
         get() = on && account.readiness() == Readiness.READY
@@ -66,7 +90,16 @@ data class ProviderAccountBook(val kept: List<KeptAccount> = emptyList()) {
     fun saved(id: Long, account: DownloadAccount): ProviderAccountBook =
         when {
             account(id) != null ->
-                copy(kept = kept.map { if (it.id == id) it.copy(account = account) else it })
+                copy(
+                    kept =
+                        kept.map {
+                            if (it.id == id) {
+                                it.copy(account = account.keepingTheInstallDeviceOf(it.account))
+                            } else {
+                                it
+                            }
+                        }
+                )
             accepts(account.provider) -> copy(kept = kept + KeptAccount(id, true, account))
             else -> this
         }
@@ -84,6 +117,20 @@ data class ProviderAccountBook(val kept: List<KeptAccount> = emptyList()) {
                         it.copy(account = it.account.copy(refreshToken = token))
                     } else {
                         it
+                    }
+                }
+        )
+
+    fun deviceMinted(minted: List<MintedJellyfinDevice>): ProviderAccountBook =
+        copy(
+            kept =
+                kept.map { keptAccount ->
+                    val device =
+                        minted.firstOrNull { keptAccount.account.awaitsADeviceFrom(it) }?.device
+                    if (device == null) {
+                        keptAccount
+                    } else {
+                        keptAccount.copy(account = keptAccount.account.copy(device = device))
                     }
                 }
         )

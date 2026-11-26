@@ -267,11 +267,13 @@ final class Features {
         let generation = servedGeneration
         Task { [weak self] in
             guard let native = try? await self?.library.player() else { return }
-            guard let services = try? await Work.aside({ () -> [ServedService] in
+            guard let (services, minted) = try? await Work.aside({ () -> ([ServedService], [MintedJellyfinDevice]) in
                 native.serveFrom(accounts: accounts)
-                return native.servedServices()
+                return (native.servedServices(), native.mintedJellyfinDevices())
             }) else { return }
-            guard let self, generation == servedGeneration else { return }
+            guard let self else { return }
+            keepMintedJellyfinDevices(minted)
+            guard generation == servedGeneration else { return }
             served.offer(services)
         }
     }
@@ -2198,6 +2200,19 @@ final class Features {
         Task {
             do {
                 try await keepProviderAccount(renewed)
+            } catch {
+                library.report(error)
+            }
+        }
+    }
+
+    func keepMintedJellyfinDevices(_ minted: [MintedJellyfinDevice]) {
+        var kept = providers
+        guard kept.keep(minted: minted) else { return }
+        let account = kept.account(.jellyfin)
+        Task {
+            do {
+                try await keepProviderAccount(account)
             } catch {
                 library.report(error)
             }

@@ -799,6 +799,7 @@ mod tests {
         }
 
         let mut body_bytes = 0;
+        let mut authorization = String::new();
 
         loop {
             let mut header = String::new();
@@ -810,6 +811,10 @@ mod tests {
                         && name.eq_ignore_ascii_case("content-length")
                     {
                         body_bytes = value.trim().parse().unwrap_or(0);
+                    } else if let Some((name, value)) = header.split_once(':')
+                        && name.eq_ignore_ascii_case("authorization")
+                    {
+                        authorization = value.trim().to_owned();
                     }
                 }
             }
@@ -817,7 +822,9 @@ mod tests {
         if io::copy(&mut (&mut reader).take(body_bytes), &mut io::sink()).is_err() {
             return;
         }
-        asked_log.lock().push(asked.clone());
+        asked_log
+            .lock()
+            .push(format!("{} {authorization}", asked.trim_end()));
 
         let (kind, body): (&str, Vec<u8>) = if asked.contains("/Users/AuthenticateByName") {
             ("application/json", JELLYFIN_SIGNED_IN.into())
@@ -1083,6 +1090,67 @@ mod tests {
         assert_eq!(found.songs[0].title, "A Pillow of Winds");
         assert_eq!(picture, PICTURE);
         assert_eq!(expanded.len(), 2);
+    }
+
+    fn device_ids_signed_in_under(asked: &Mutex<Vec<String>>) -> Vec<String> {
+        asked
+            .lock()
+            .iter()
+            .filter(|line| line.contains("/Users/AuthenticateByName"))
+            .filter_map(|line| line.split("DeviceId=\"").nth(1))
+            .filter_map(|rest| rest.split('"').next())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn a_phone_signing_in_twice_to_jellyfin_sends_one_device_id() {
+        let harness = online();
+        let (server, asked) = fake_asked();
+        let account = of(MusicProvider::Jellyfin, server.clone());
+
+        harness.player.serve_from(vec![account.clone()]);
+        harness
+            .player
+            .served_first_page("jellyfin".to_owned())
+            .expect("the first sign-in browses");
+
+        let minted = harness.player.minted_jellyfin_devices();
+
+        assert_eq!(minted.len(), 1);
+        assert_eq!(minted[0].server, server);
+        assert_eq!(minted[0].user, "listener");
+        assert!(harness.player.minted_jellyfin_devices().is_empty());
+
+        let unstored = DownloadAccount {
+            password: "another".to_owned(),
+            ..account.clone()
+        };
+
+        harness.player.serve_from(vec![unstored]);
+        harness
+            .player
+            .served_first_page("jellyfin".to_owned())
+            .expect("the second sign-in browses");
+
+        assert!(harness.player.minted_jellyfin_devices().is_empty());
+
+        let stored = DownloadAccount {
+            device: minted[0].device.clone(),
+            ..account
+        };
+
+        harness.player.serve_from(vec![stored]);
+        harness
+            .player
+            .served_first_page("jellyfin".to_owned())
+            .expect("the third sign-in browses");
+
+        assert!(harness.player.minted_jellyfin_devices().is_empty());
+        assert_eq!(
+            device_ids_signed_in_under(&asked),
+            vec![minted[0].device.clone(); 3]
+        );
     }
 
     #[test]
