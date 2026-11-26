@@ -369,3 +369,98 @@ fn rows_of<T>(
         .and_then(|mut query| query.query_map([], read).and_then(Iterator::collect))
         .expect("the rows")
 }
+
+#[test]
+fn keys_received_and_deleted_under_the_earlier_fold_are_refolded_and_one_song_keeps_one_row() {
+    let folder = env::temp_dir().join(format!("resonate-mobile-refolded-{}", process::id()));
+    let _ = fs::remove_dir_all(&folder);
+
+    fs::create_dir_all(&folder).expect("a folder");
+
+    let path = folder.join("documents.sqlite");
+    let before = MIGRATIONS
+        .iter()
+        .position(|step| *step == super::RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES)
+        .expect("the refold step");
+    let quoted = "named:guns n' roses\u{1f}paradise city\u{1f}appetite for destruction";
+    let plain = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction!";
+    let refolded = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction";
+    let identified = "mbid:83d91898-7763-47d7-b03b-b92132375c47";
+
+    let laid = Connection::open(&path).expect("a catalog");
+
+    laid.create_scalar_function(
+        "folded",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+    )
+    .expect("the fold");
+    for step in &MIGRATIONS[..before] {
+        laid.execute_batch(step).expect("an earlier step");
+    }
+    laid.execute_batch(
+        "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec, favourite, size, modified)
+         VALUES (7, 'content://tree/a.flac', 'a.flac', 'Paradise City', 'Guns N'' Roses', 'Appetite for Destruction', 406000, 44100, 'FLAC', 0, 1000, NULL),
+                (8, 'content://tree/b.flac', 'b.flac', 'Paradise City', 'Guns N Roses', 'Appetite For Destruction!', 406000, 44100, 'FLAC', 0, 1000, NULL);
+         INSERT INTO received (id, path, extension, title, artist, album)
+         VALUES (4, '/received/4.flac', 'flac', 'Paradise City', 'Guns N Roses', ''),
+                (5, '/received/5.flac', 'flac', 'Paradise City', 'Guns N'' Roses', '');",
+    )
+    .expect("songs held and waiting");
+    laid.execute(
+        "INSERT INTO songs_received (recording, track) VALUES (?1, 7), (?2, 8), (?3, 7)",
+        [quoted, plain, identified],
+    )
+    .expect("songs received the old way");
+    laid.execute(
+        "INSERT INTO received_also (received, recording) VALUES (4, ?1), (4, ?2), (5, ?1)",
+        [quoted, plain],
+    )
+    .expect("spellings folded into a waiting song the old way");
+    laid.execute(
+        "INSERT INTO songs_deleted (recording, deleted) VALUES (?1, 9), (?2, 5), (?3, 7)",
+        [quoted, plain, identified],
+    )
+    .expect("songs deleted the old way");
+    laid.pragma_update(
+        None,
+        "user_version",
+        u32::try_from(before).expect("a count"),
+    )
+    .expect("the stamp");
+    drop(laid);
+
+    drop(Catalog::open(&path).expect("the catalog is carried forward"));
+
+    let opened = Connection::open(&path).expect("the catalog again");
+    let received: Vec<(String, i64)> = rows_of(
+        &opened,
+        "SELECT recording, track FROM songs_received ORDER BY recording",
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    );
+    let also: Vec<(i64, String)> = rows_of(
+        &opened,
+        "SELECT received, recording FROM received_also ORDER BY received",
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    );
+    let deleted: Vec<(String, i64)> = rows_of(
+        &opened,
+        "SELECT recording, deleted FROM songs_deleted ORDER BY recording",
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    );
+
+    drop(opened);
+
+    let _ = fs::remove_dir_all(&folder);
+
+    assert_eq!(
+        received,
+        [(identified.to_owned(), 7), (refolded.to_owned(), 8)]
+    );
+    assert_eq!(also, [(4, refolded.to_owned()), (5, refolded.to_owned())]);
+    assert_eq!(
+        deleted,
+        [(identified.to_owned(), 7), (refolded.to_owned(), 9)]
+    );
+}

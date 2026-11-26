@@ -411,6 +411,15 @@ tracks (`sync/holding.rs`).
   then unlink (`NotFound` counting as done), and only then delete the leftover row
   (`holding::let_go`). A failed unlink keeps that row for the sweep and is not the caller's failure
   (`a_failed_unlink_keeps_a_row_the_next_sweep_removes_with_its_file`).
+- **The keys a phone kept are refolded once to the words of their names** (step 44,
+  `RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES`, `sync.md`'s *A song's names key it by their
+  words*): `Catalog::open` registers `refolded_key` beside `folded` before the steps run, and every
+  `named:` key in `songs_received`, `received_also` and `songs_deleted` is refolded, one row kept
+  where two now share a key (the later receipt, the later spelling folded into one waiting song, the
+  latest deletion)
+  (`keys_received_and_deleted_under_the_earlier_fold_are_refolded_and_one_song_keeps_one_row`). The
+  in-memory `Index` a recording is resolved through keys its documents by the `title_words` of the
+  artist and the album, as `named_key` does.
 - **The sweep runs as the sync starts** (`holding::swept`, in `started`), in one `IMMEDIATE`
   transaction: each leftover's file is unlinked and its row dropped, and a file no `received` or
   leftover row names is removed once `writer_of` says its writer is gone (the pid in its name, or

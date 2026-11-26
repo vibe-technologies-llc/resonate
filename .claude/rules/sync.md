@@ -203,7 +203,9 @@ the stamps bullet below; `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART`: `state.held_
 `ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART`: `state.answers_after`, below;
 `CHANGES_UNREAD_ARE_CARRIED_FORWARD`: the `unread` table, a change this build could not read, kept
 to carry into a snapshot, below; `A_SPACE_IS_KNOWN_BY_ITS_INCARNATION`: `state.incarnation`, the
-server space's incarnation last told, NULL until a server tells one, below); `user_version` counts the steps laid, a change appends a
+server space's incarnation last told, NULL until a server tells one, below;
+`RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES`: data only, every stored `named:` key refolded,
+*A song's names key it by their words* below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`); the steps a release
 shipped are pinned by their text's hash in `ledger/released.rs`'s `STEPS_RELEASED` (`release.md`). All merging lives here, once for both
@@ -345,6 +347,37 @@ platforms; the catalog seam stays thin.
   lead `owed` and the snapshot, are owed again with everything, and are forgotten with the space.
   Queries fold alike through `query_folds` (`fold_queries`, `query_namesake_made_apart`), the
   survivor's body standing; a body the catalog cannot write folds nothing until it can.
+- **A song's names key it by their words.** `Recording::named_key` is `named:` and the
+  `title_words` of the artist, the title and the album, so `Guns N' Roses` and `Guns N Roses`, or
+  `AC/DC` and `AC DC`, key one song
+  (`a_recording_is_keyed_alike_whatever_punctuation_and_spacing_its_names_carry`), and
+  `surely_names` and both catalogs' holdings match (the library's `named_alike`, the phones'
+  `Index`) weigh the artist and album as words too. **No key travels**: every change carries the
+  `Recording` itself and each device keys it as it arrives, so the fold needs no wire change.
+  **A key stored under the earlier fold** (artist and album as `folded_letters`, punctuation and
+  spacing kept) **is refolded once, in every database that keeps one**: `RecordingKey::refolded`
+  reads a stored key's three parts and folds each to its words, which is the key the names make now
+  since the words of folded letters are the words of the letters
+  (`a_key_kept_under_the_earlier_fold_is_refolded_to_the_key_its_names_make_now`); a key of another
+  shape (`mbid:`, a `named:` key not of three parts) is kept as it was
+  (`a_key_that_names_no_song_by_its_names_is_left_as_it_was_kept`). Each database registers it as
+  the SQL function `refolded_key` before its steps run, so the step is plain SQL over the stored
+  text and needs no recording decoded. The ledger's step
+  `RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES` refolds `favourites`, `answers` (and their
+  `named`), `deletions` (and their `named`) and `refusals`; where rows of one table now share a key
+  (and kind and file, for an answer) the newest stamp stays, the latest `refused` for a refusal,
+  and a favourite keeps `here` if any of them had it, so the newest word on the song stands as
+  `WeighedFavourites` already weighed it and a look does not take the catalog's favourite for a new
+  one (`keys_kept_under_the_earlier_fold_are_refolded_and_one_song_keeps_its_newest_word`). A word
+  a peer then tells under the other spelling meets the refolded row and is weighed against it
+  (`a_word_a_peer_tells_under_another_spelling_meets_the_row_kept_under_the_earlier_fold`). The
+  library's and the phones' steps of the same name refold their `songs_received`, `songs_deleted`
+  and their own key tables (`library.md`, `mobile.md`). **A device on an earlier build keeps the
+  earlier fold**: it reads the same recordings and keys them its way, so the two spellings stay two
+  songs there as they always were (a favourite or a deletion told under one spelling does not reach
+  a copy held under the other, and such a deletion never takes it), while a device on this build
+  takes them as one; nothing is refused or lost either way, and the older device joins the new fold
+  when it updates and its step runs.
 - **A tombstone never takes a favourite the ledger had not met**: the first word of a favourite on
   a device is its own.
 - **A favourite is one song however each device names it.** Rows are keyed by `Recording::key()`
@@ -531,7 +564,7 @@ platforms; the catalog seam stays thin.
   (`a_song_added_by_hand_after_a_deletion_stamped_ahead_arrived_stays_and_answers_it_everywhere`). **A deletion takes only a copy the tombstone surely names**
   (`Recording::surely_names`, in core, the one rule both catalogs ask of each copy the permissive
   holdings match found): where the tombstone and the copy both carry a recording MBID they must be
-  the same, so a namesake under another MBID always stays; otherwise the folded title words, artist
+  the same, so a namesake under another MBID always stays; otherwise the words of the title, artist
   and album must all agree (an empty album agreeing only with an empty one), lengths known on both
   sides within 2 s, and the tombstone must tell the song apart by a non-empty album or a length the
   copy confirms, so one naming no MBID, no album and no length deletes nothing. The wire carries

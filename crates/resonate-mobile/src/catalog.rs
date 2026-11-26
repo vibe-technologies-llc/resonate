@@ -9,7 +9,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{Span, ZoneId, titles::Rating};
+use resonate_core::{RecordingKey, Span, ZoneId, titles::Rating};
 use resonate_library::{ExploreStore, NamedByTheFile};
 use resonate_providers::{Id, Song};
 use rusqlite::{
@@ -422,7 +422,53 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     A_VERSION_IS_KEPT_BESIDE_ITS_SONG,
     EXPLORE_SEARCHES_ARE_KEPT,
     A_RECEIVED_FILE_IS_FORGOTTEN_ONLY_ONCE_REMOVED,
+    RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES,
 ];
+
+const REFOLDED_KEY: &str = "refolded_key";
+
+pub(crate) const RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES: &str = "
+CREATE TEMP TABLE refolded AS
+    SELECT rowid AS id, recording AS was, refolded_key(recording) AS recording
+      FROM songs_received WHERE recording LIKE 'named:%';
+DELETE FROM songs_received WHERE rowid IN (
+    SELECT older.id FROM temp.refolded older
+      JOIN temp.refolded newer ON newer.recording = older.recording AND newer.id > older.id);
+UPDATE songs_received SET recording = '#' || rowid
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+UPDATE songs_received
+   SET recording = (SELECT r.recording FROM temp.refolded r WHERE r.id = songs_received.rowid)
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+DROP TABLE temp.refolded;
+
+CREATE TEMP TABLE refolded AS
+    SELECT rowid AS id, received, recording AS was, refolded_key(recording) AS recording
+      FROM received_also WHERE recording LIKE 'named:%';
+DELETE FROM received_also WHERE rowid IN (
+    SELECT older.id FROM temp.refolded older
+      JOIN temp.refolded newer ON newer.received = older.received
+       AND newer.recording = older.recording AND newer.id > older.id);
+UPDATE received_also SET recording = '#' || rowid
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+UPDATE received_also
+   SET recording = (SELECT r.recording FROM temp.refolded r WHERE r.id = received_also.rowid)
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+DROP TABLE temp.refolded;
+
+CREATE TEMP TABLE refolded AS
+    SELECT rowid AS id, recording AS was, refolded_key(recording) AS recording, deleted
+      FROM songs_deleted WHERE recording LIKE 'named:%';
+DELETE FROM songs_deleted WHERE rowid IN (
+    SELECT older.id FROM temp.refolded older
+      JOIN temp.refolded newer ON newer.recording = older.recording
+       AND (newer.deleted, newer.id) > (older.deleted, older.id));
+UPDATE songs_deleted SET recording = '#' || rowid
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+UPDATE songs_deleted
+   SET recording = (SELECT r.recording FROM temp.refolded r WHERE r.id = songs_deleted.rowid)
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+DROP TABLE temp.refolded;
+";
 
 pub(crate) const A_RECEIVED_FILE_IS_FORGOTTEN_ONLY_ONCE_REMOVED: &str = "
 CREATE TABLE received_leftovers (
@@ -757,6 +803,17 @@ impl Catalog {
                 1,
                 FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        connection
+            .create_scalar_function(
+                REFOLDED_KEY,
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| {
+                    let kept: Option<String> = context.get(0)?;
+                    Ok(kept.map(|kept| RecordingKey::refolded(&kept).as_str().to_owned()))
+                },
             )
             .map_err(|source| Error::store(StoreOp::Open, source))?;
 

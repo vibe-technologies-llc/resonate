@@ -16,7 +16,7 @@ use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{
     AUDIO_EXTENSIONS, Answer, Answered as Learnt, AnswersMark, Frames, Mbid, MediaLocation,
     Recording, Resumable, Resumption, SampleRate, SharedPrint, TrackId, WholeFile, ZoneId,
-    folded_letters, naming::named_within, title_words,
+    naming::named_within, title_words,
 };
 use resonate_engine::Command;
 use resonate_library::Layout;
@@ -1885,12 +1885,12 @@ impl Indexed {
                 index.recordings.entry(recording).or_default().push(id);
             }
 
-            let artist = folded_letters(row.get::<_, String>(3)?.trim());
+            let artist = title_words(&row.get::<_, String>(3)?);
 
             index.artists.entry(artist).or_default().push(Entry {
                 id,
                 words: title_words(&row.get::<_, String>(2)?),
-                album: folded_letters(row.get::<_, String>(4)?.trim()),
+                album: title_words(&row.get::<_, String>(4)?),
                 length: length_of(row.get(5)?),
             });
         }
@@ -1912,10 +1912,10 @@ impl Index {
             return found;
         }
 
-        let album = folded_letters(recording.album.trim());
+        let album = title_words(&recording.album);
         let named = self
             .artists
-            .get(&folded_letters(recording.artist.trim()))
+            .get(&title_words(&recording.artist))
             .into_iter()
             .flatten()
             .filter(|held| {

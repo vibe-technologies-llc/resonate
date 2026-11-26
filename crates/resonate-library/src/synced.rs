@@ -11,7 +11,7 @@ use resonate_codec::{
     FileTags, Picturing, Sources, TagEdit, TagField, TagSet, TagSink as _, TagSource as _, Writing,
 };
 use resonate_core::{
-    FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, WholeFile, folded_letters,
+    FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, WholeFile, title_words,
 };
 use resonate_providers::Extension;
 use resonate_vault::{Keeping, Kept, Offered, Vault};
@@ -809,7 +809,7 @@ fn named_alike(
     recording: &Recording,
     among: Among,
 ) -> Result<Vec<(Cut, Option<String>)>> {
-    let words = resonate_core::title_words(&recording.title);
+    let words = title_words(&recording.title);
 
     if words.is_empty() {
         return Ok(Vec::new());
@@ -835,14 +835,14 @@ fn named_alike(
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
-    let artist = folded_letters(recording.artist.trim());
-    let album = folded_letters(recording.album.trim());
+    let artist = title_words(&recording.artist);
+    let album = title_words(&recording.album);
     Ok(candidates
         .into_iter()
         .filter(|(_, _, held)| {
             held.as_ref().is_some_and(|held| {
-                folded_letters(held.artist.trim()) == artist
-                    && (album.is_empty() || folded_letters(held.album.trim()) == album)
+                title_words(&held.artist) == artist
+                    && (album.is_empty() || title_words(&held.album) == album)
                     && lasts_alike(held.length, recording.length)
             })
         })

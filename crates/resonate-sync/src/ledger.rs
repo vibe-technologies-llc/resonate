@@ -8,6 +8,7 @@ use self::{
     answered::ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART,
     deletions::SONGS_DELETED_EVERYWHERE,
     incarnation::A_SPACE_IS_KNOWN_BY_ITS_INCARNATION,
+    refolded::{RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES, refolding_on},
     set_back::kept_or_set_back,
     unheld::{
         HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART, UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
@@ -40,6 +41,7 @@ use crate::{
 mod answered;
 mod deletions;
 mod incarnation;
+mod refolded;
 #[cfg(test)]
 mod released;
 mod set_back;
@@ -234,6 +236,7 @@ const MIGRATIONS: &[&str] = &[
     ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART,
     CHANGES_UNREAD_ARE_CARRIED_FORWARD,
     A_SPACE_IS_KNOWN_BY_ITS_INCARNATION,
+    RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES,
 ];
 
 const STAMPS_PAST_THE_BOUND_ARE_RESTAMPED: &str = "
@@ -507,6 +510,7 @@ impl Ledger {
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(|source| Error::store(StoreOp::Open, source))?;
+        refolding_on(&connection)?;
 
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)

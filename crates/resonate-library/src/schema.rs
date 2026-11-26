@@ -1,8 +1,59 @@
+use resonate_core::RecordingKey;
 use rusqlite::{Connection, Transaction, TransactionBehavior, functions::FunctionFlags};
 
 use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
 
 const UNSTAMPED: u32 = 0;
+
+const REFOLDED_KEY: &str = "refolded_key";
+
+const RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES: &str = "
+CREATE TEMP TABLE refolded AS
+    SELECT rowid AS id, recording AS was, refolded_key(recording) AS recording
+      FROM songs_received WHERE recording LIKE 'named:%';
+DELETE FROM songs_received WHERE rowid IN (
+    SELECT older.id FROM temp.refolded older
+      JOIN temp.refolded newer ON newer.recording = older.recording AND newer.id > older.id);
+UPDATE songs_received SET recording = '#' || rowid
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+UPDATE songs_received
+   SET recording = (SELECT r.recording FROM temp.refolded r WHERE r.id = songs_received.rowid)
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+DROP TABLE temp.refolded;
+
+CREATE TEMP TABLE refolded AS
+    SELECT rowid AS id, recording AS was, refolded_key(recording) AS recording, deleted
+      FROM songs_deleted WHERE recording LIKE 'named:%';
+DELETE FROM songs_deleted WHERE rowid IN (
+    SELECT older.id FROM temp.refolded older
+      JOIN temp.refolded newer ON newer.recording = older.recording
+       AND (newer.deleted, newer.id) > (older.deleted, older.id));
+UPDATE songs_deleted SET recording = '#' || rowid
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+UPDATE songs_deleted
+   SET recording = (SELECT r.recording FROM temp.refolded r WHERE r.id = songs_deleted.rowid)
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+DROP TABLE temp.refolded;
+
+CREATE TEMP TABLE refolded AS
+    SELECT rowid AS id, path, recording AS was, refolded_key(recording) AS recording, anew
+      FROM removal_marks WHERE recording LIKE 'named:%';
+DELETE FROM removal_marks WHERE rowid IN (
+    SELECT older.id FROM temp.refolded older
+      JOIN temp.refolded newer ON newer.path = older.path AND newer.recording = older.recording
+       AND (older.anew, newer.id) > (newer.anew, older.id));
+UPDATE removal_marks SET recording = '#' || rowid
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+UPDATE removal_marks
+   SET recording = (SELECT r.recording FROM temp.refolded r WHERE r.id = removal_marks.rowid)
+ WHERE rowid IN (SELECT id FROM temp.refolded WHERE recording <> was);
+DROP TABLE temp.refolded;
+UPDATE removal_marks SET anew = 0
+ WHERE anew = 1 AND EXISTS (
+    SELECT 1 FROM removal_marks earlier
+     WHERE earlier.recording = removal_marks.recording AND earlier.anew = 1
+       AND earlier.rowid < removal_marks.rowid);
+";
 
 const A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE: &str = "
 CREATE TABLE playlist_shares (
@@ -77,6 +128,7 @@ const MIGRATIONS: &[&str] = &[
     AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED,
     A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED,
     RELEASES_ARE_READ_IN_THE_ORDER_THEY_WERE_ANSWERED,
+    RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES,
 ];
 
 const A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED: &str = "
@@ -1680,6 +1732,7 @@ pub fn lay_out(connection: &Connection) -> Result<()> {
         }
     };
 
+    refolding_on(&transaction)?;
     for step in &MIGRATIONS[laid..] {
         transaction
             .execute_batch(step)
@@ -1691,6 +1744,20 @@ pub fn lay_out(connection: &Connection) -> Result<()> {
     transaction
         .commit()
         .map_err(|source| Error::store(StoreOp::Transaction, source))
+}
+
+fn refolding_on(connection: &Connection) -> Result<()> {
+    connection
+        .create_scalar_function(
+            REFOLDED_KEY,
+            1,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            |context| {
+                let kept: Option<String> = context.get(0)?;
+                Ok(kept.map(|kept| RecordingKey::refolded(&kept).as_str().to_owned()))
+            },
+        )
+        .map_err(|source| Error::store(StoreOp::LayOut, source))
 }
 
 fn stamped(connection: &Connection) -> Result<Option<SchemaFingerprint>> {
@@ -3360,6 +3427,90 @@ mod tests {
         assert_eq!(count("songs_deleted"), 1);
         assert_eq!(count("removals_pending"), 0);
         assert_eq!(count("removal_marks"), 0);
+    }
+
+    #[test]
+    fn keys_kept_under_the_earlier_fold_are_refolded_and_one_song_keeps_one_row() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES)
+            .expect("the refold step");
+        let quoted = "named:guns n' roses\u{1f}paradise city\u{1f}appetite for destruction";
+        let plain = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction!";
+        let refolded = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction";
+        let identified = "mbid:83d91898-7763-47d7-b03b-b92132375c47";
+
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .execute(
+                "INSERT INTO songs_received (recording, path, title, artist, album) VALUES
+                     (?1, '/music/quoted.flac', 'Paradise City', 'Guns N'' Roses', NULL),
+                     (?2, '/music/plain.flac', 'Paradise City', 'Guns N Roses', NULL),
+                     (?3, '/music/quoted.flac', NULL, NULL, NULL)",
+                params![quoted, plain, identified],
+            )
+            .expect("songs received the old way");
+        connection
+            .execute(
+                "INSERT INTO songs_deleted (recording, deleted) VALUES (?1, 9), (?2, 5), (?3, 7)",
+                params![quoted, plain, identified],
+            )
+            .expect("songs deleted the old way");
+        connection
+            .execute(
+                "INSERT INTO removal_marks (path, recording, anew) VALUES
+                     ('/music/a.flac', ?1, 1), ('/music/a.flac', ?2, 0),
+                     ('/music/b.flac', ?1, 1), ('/music/c.flac', ?3, 1)",
+                params![quoted, plain, identified],
+            )
+            .expect("removals marked the old way");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let rows = |query: &str| -> Vec<(String, String)> {
+            connection
+                .prepare(query)
+                .and_then(|mut statement| {
+                    statement
+                        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                })
+                .expect("the rows read back")
+        };
+
+        assert_eq!(
+            rows("SELECT recording, path FROM songs_received ORDER BY recording"),
+            [
+                (identified.to_owned(), "/music/quoted.flac".to_owned()),
+                (refolded.to_owned(), "/music/plain.flac".to_owned())
+            ]
+        );
+        assert_eq!(
+            rows("SELECT recording, CAST(deleted AS TEXT) FROM songs_deleted ORDER BY recording"),
+            [
+                (identified.to_owned(), "7".to_owned()),
+                (refolded.to_owned(), "9".to_owned())
+            ]
+        );
+        assert_eq!(
+            rows(
+                "SELECT path || ' ' || recording, CAST(anew AS TEXT) FROM removal_marks ORDER BY path, recording"
+            ),
+            [
+                (format!("/music/a.flac {refolded}"), "0".to_owned()),
+                (format!("/music/b.flac {refolded}"), "1".to_owned()),
+                (format!("/music/c.flac {identified}"), "1".to_owned())
+            ]
+        );
     }
 }
 
