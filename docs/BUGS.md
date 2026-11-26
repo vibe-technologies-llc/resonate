@@ -100,18 +100,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
   listens and playlist entries survive. Say what is kept. Done when the description matches the
   tool's test.
-- [S · 0.18.1] Key the analysis cache by the bytes decoded. **Low, builder.** `KeptAnalyses::keep`
-  stats the file again after the decode (`crates/resonate-analysis/src/kept.rs:82-122`,
-  `crates/resonate-engine/src/player.rs:303-313`), so a file changed mid-decode keeps the old bytes'
-  analysis under the new key; and `recalled` deletes any entry it cannot read, another version's
-  included (`kept.rs:62-80`), so a dev build and the release erase each other's cache. Take the key
-  before the decode and pass another version's entry over. Done when tests show both.
-- [S · 0.18.1] Keep the analysis crew's lane from hanging on a panic. **Low, builder.**
-  `Lane::drain` leaves `draining` set when `note` unwinds
-  (`crates/resonate-analysis/src/crew.rs:182-218`) and `wait_for_room` checks no stop, so a checked
-  build's pass hangs; and `loudest_through` maps a worker's panic to `Stopped` while the others run
-  on (`headroom.rs:247`). Clear the flag on unwind and stop the others. Done when a test worker that
-  panics ends the pass with an error.
 - [S · 0.18.1] Let a staged write's own failures decide its outcome. **Low, builder.**
   `write_atomically` answers `Unwritten { Place }` when the folder sync after a rename fails, though
   the target was replaced (`crates/resonate-core/src/file_facts.rs:171-174`, `:224-241`), as the
