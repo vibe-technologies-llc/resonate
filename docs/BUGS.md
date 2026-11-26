@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.18.1] Keep a phone's Jellyfin device id once minted. **Low, builder.** A password sign-in now
-  reuses the install's `jellyfin-device` on the desktop (`Jellyfin::keeping_device`), but the phones
-  store no id the boundary mints (`crates/resonate-mobile/src/downloads.rs` passes the account's
-  stored `device`, and Kotlin and Swift have no hook to save a new one, as `refreshedTidalToken` has
-  for TIDAL), so each phone client signs in under a fresh id and leaves a live token behind. Hand the
-  minted id back across the boundary and store it on both platforms. Done when a phone signing in
-  twice sends one device id, in a boundary test and each platform's unit test.
 - [S · 0.18.1] Serve a cue sheet's cut only from a regular file. **Low, builder.** The media server's
   `bytes_of` now opens only a regular file without following a link
   (`crates/resonate/src/offering.rs`, `regular_file`), but a cut of a cue sheet opens its file through
@@ -27,12 +20,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Playback and output
-- [S · 0.18.1] Bound a profile the phones import by its whole peak. **Low, builder.** The desktop's
-  `Store::read_in` now refuses a profile whose preamp and stacked bands pass `BOOST_AT_MOST_DB`
-  (`Error::PeakTooHigh`), but the phones' `parse_eq_profile` (`crates/resonate-mobile/src/equaliser.rs`)
-  clamps each value to 24 dB alone, so stacked bells still sum past it. Weigh the whole peak there
-  too and refuse through the mobile catalog. Done when a phone import of stacked +24 dB bells is
-  refused, in a test.
 - [S · 0.18.1] Correct the equaliser's rule about bands past Nyquist. **Low, builder.** `angle_at`'s
   clamp to π never fires, since `design` passes a band over below `applies_at`
   (`crates/resonate-core/src/eq.rs:61-63`, `:543-558`), and `.claude/rules/eq.md:74-75` says every
