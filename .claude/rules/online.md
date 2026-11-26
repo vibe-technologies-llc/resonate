@@ -457,7 +457,13 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   (`a_full_page_all_of_one_second_moves_on_past_it_rather_than_asking_it_again`). Each listen's recording MBID is
   `additional_info.recording_mbid`, else `mbid_mapping.recording_mbid`, its length `duration_ms`; a
   listen naming no title or artist is passed over. Public: no token is sent, the user being named
-  (`a_page_of_listenbrainz_listens_names_each_song_and_where_the_next_page_starts`).
+  (`a_page_of_listenbrainz_listens_names_each_song_and_where_the_next_page_starts`). **A stamp the
+  clock cannot hold is passed over, never a panic**: a listen or a Last.fm scrobble whose seconds
+  overflow `SystemTime` is left out and the rest of the page read, and the next page's `max_ts`
+  saturates rather than overflowing
+  (`a_listen_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read`,
+  `a_full_page_stamped_past_the_clock_moves_on_rather_than_overflowing`,
+  `a_scrobble_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read`).
 
 ## Last.fm
 

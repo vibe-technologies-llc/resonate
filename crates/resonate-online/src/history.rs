@@ -35,7 +35,7 @@ impl Edge {
         second: u64,
         heard: &HeardElsewhere,
     ) -> bool {
-        if asked_before != Some(self.second + 1) || second != self.second {
+        if asked_before != self.second.checked_add(1) || second != self.second {
             return false;
         }
 
@@ -207,7 +207,7 @@ impl ListensAnswer {
             })
             .filter(|(second, heard)| !edge.passes_over(asked_before, *second, heard))
             .collect::<Vec<_>>();
-        let including_the_earliest = earliest + 1;
+        let including_the_earliest = earliest.saturating_add(1);
         let next = if asked_before == Some(including_the_earliest) {
             earliest
         } else {
@@ -339,10 +339,8 @@ impl Scrobbled {
 
 fn named(at: u64, recording: Recording) -> Option<HeardElsewhere> {
     let named = !recording.title.trim().is_empty() && !recording.artist.trim().is_empty();
-    named.then(|| HeardElsewhere {
-        at: UNIX_EPOCH + Duration::from_secs(at),
-        recording,
-    })
+    let at = UNIX_EPOCH.checked_add(Duration::from_secs(at))?;
+    named.then_some(HeardElsewhere { at, recording })
 }
 
 #[cfg(test)]
@@ -445,6 +443,65 @@ mod tests {
 
         assert_eq!(page.heard.len(), LISTENS_A_PAGE);
         assert_eq!(page.next, Some(EDGE));
+    }
+
+    #[test]
+    fn a_listen_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read() {
+        const HEARD: u64 = 1_700_000_000;
+
+        let mut edge = Edge::default();
+        let mixed = answered(vec![
+            listen(u64::MAX, "Stamped past the clock"),
+            listen(HEARD, "Words"),
+        ]);
+        let mut beyond = (0..LISTENS_A_PAGE)
+            .map(|_| listen(u64::MAX, "Stamped past the clock"))
+            .collect::<Vec<_>>();
+
+        beyond.push(listen(HEARD, "Lullaby"));
+
+        let read = mixed.page(None, &mut edge);
+        let all_beyond = answered(beyond).page(None, &mut Edge::default());
+        let past_the_edge = answered(vec![listen(HEARD, "Sunflower")]).page(
+            Some(u64::MAX),
+            &mut Edge {
+                second: u64::MAX,
+                heard: Vec::new(),
+            },
+        );
+
+        assert_eq!(titles(&read), ["Words"]);
+        assert_eq!(read.heard[0].at, UNIX_EPOCH + Duration::from_secs(HEARD));
+        assert_eq!(titles(&all_beyond), ["Lullaby"]);
+        assert_eq!(titles(&past_the_edge), ["Sunflower"]);
+    }
+
+    #[test]
+    fn a_full_page_stamped_past_the_clock_moves_on_rather_than_overflowing() {
+        let all_beyond = (0..LISTENS_A_PAGE)
+            .map(|_| listen(u64::MAX, "Stamped past the clock"))
+            .collect::<Vec<_>>();
+
+        let page = answered(all_beyond).page(None, &mut Edge::default());
+
+        assert!(page.heard.is_empty());
+        assert_eq!(page.next, Some(u64::MAX));
+    }
+
+    #[test]
+    fn a_scrobble_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read() {
+        let answer: RecentAnswer = serde_json::from_str(
+            r##"{"recenttracks":{"track":[
+                {"name":"Time","artist":{"#text":"Pink Floyd"},"date":{"uts":"18446744073709551615"}},
+                {"name":"Money","artist":{"#text":"Pink Floyd"},"date":{"uts":"1699999000"}}
+            ],"@attr":{"totalPages":"1"}}}"##,
+        )
+        .expect("the scrobbles read");
+
+        let page = answer.recenttracks.expect("a page").page(1);
+
+        assert_eq!(titles(&page), ["Money"]);
+        assert_eq!(page.next, None);
     }
 
     #[test]
