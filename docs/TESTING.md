@@ -111,13 +111,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Device sync
 
 ## Providers and network
-- [M · 0.18.1] Hold the providers' server-driven limits in tests. **Medium, builder.** No fake keeps
-  answering full pages or claims a huge total, so `PAGES_AT_MOST`
-  (`crates/providers/subsonic/src/lib.rs:35`) and Jellyfin's caps
-  (`crates/providers/jellyfin/src/lib.rs:38-41`) are unproved; every `Retry-After` is `0` or `1`, so
-  the four `LONGEST_RETRY_AFTER` clamps never act; and Jellyfin's fake cannot cut or stall a body.
-  Add an endless-pages fake, make the retry ceiling a field a test can lower, and give Jellyfin's
-  fake the `Sent` modes. Done when removing each cap fails a test.
 - [S · 0.18.1] Fuzz the media server's Host reader. **Low, builder.** `offered::addressed` reads the
   `Host` header the media server now answers only when it names the address a request arrived at
   (`crates/resonate-upnp/src/offered.rs`), and the `upnp` fuzz target never reaches it. Feed it the
