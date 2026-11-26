@@ -20,18 +20,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Playback and output
-- [S · 0.18.1] Correct the equaliser's rule about bands past Nyquist. **Low, builder.** `angle_at`'s
-  clamp to π never fires, since `design` passes a band over below `applies_at`
-  (`crates/resonate-core/src/eq.rs:61-63`, `:543-558`), and `.claude/rules/eq.md:74-75` says every
-  kind is identity at π, which is false for high-pass and band-pass (silence) and low-shelf (a flat
-  gain). Drop the clamp and say a band at or past Nyquist is passed over. Done when the rule matches
-  `design` and the dead clamp is gone.
-- [S · 0.18.1] Clamp a fitted band to the gain range instead of flattening it. **Low, builder.**
-  `third_octave_bank` turns a gain past ±40 dB into `FLAT`
-  (`crates/resonate-core/src/eq.rs:1330-1342`), and `Target::fitted` keeps updating it unclamped
-  (`:1234-1286`), so a deep null in a measured target silently loses its band while its neighbours
-  are fitted around it. Clamp in the bank and the update. Done when fitting alternating ±40 dB
-  targets keeps every band at its bound.
 
 ## Catalog
 - [M · 0.18.1] Stop calling a band-limited lossless file Fake on a lone wall. **Medium, architect.**
