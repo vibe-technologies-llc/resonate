@@ -15,6 +15,14 @@ are in [ROADMAP.md](ROADMAP.md).
   the phones' `Shelves` (`crates/resonate-mobile/src/offering.rs`) has none of it. Bring the same
   guarantees there. Done when the desktop's paging, 500-playlist and concurrent-search tests have
   phone twins that pass.
+- [S · 0.18.1] Stream a history file the phones import. **Low, builder.** The desktop now reads an
+  import a page at a time (`resonate_library::bring_in_file`), but the phones'
+  `import_history_file` reads the whole file into memory (`crates/resonate-mobile`). Read it through
+  the same pages. Done when a phone import holds a bounded number of listens at once, in a test.
+- [S · 0.18.1] Stop a study's walk once its crew has panicked. **Low, builder.** A crew's panic now
+  ends the pass with `CrewPanicked`, but the walk decodes to the end of the file first, since `feed`
+  cannot tell it to stop (`crates/resonate-analysis/src/crew.rs`). Let `feed` answer a stop. Done
+  when a test's panicking stage ends the walk within a slab.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

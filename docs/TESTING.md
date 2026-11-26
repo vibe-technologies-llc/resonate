@@ -218,6 +218,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
   (`crates/resonate-words-build/src/comments.rs:26-38`). Add them and update `rust-style.md`'s list.
   Done when `# x` in `android/gradle.properties` fails the test.
+- [S · 0.18.1] Refuse a lone lowercase word in the catalog walks. **Low, builder.** `prose_in` reads a
+  literal as words only when it is capitalised or holds a space (`resonate-words-build`), so a
+  shown `none` or `faststart` passed the binary's catalog test until moved by hand. Weigh a lone
+  lowercase word where it reaches a listener (a `println!`/`said` argument, a table cell) without
+  flagging keys and identifiers. Done when a printed literal `none` fails the binary's catalog
+  test.
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
