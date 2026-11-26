@@ -9,7 +9,8 @@ use resonate_core::{
 };
 
 use crate::{
-    Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted, model::MOST_LINES,
+    Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted,
+    lyricsfile::MOST_WORDS, model::MOST_LINES,
 };
 
 pub(crate) const LARGEST_SHEET: usize = 512 * 1024;
@@ -266,6 +267,7 @@ struct Reading {
     credits: Credits,
     shift: i64,
     held: usize,
+    words: usize,
 }
 
 impl Reading {
@@ -278,15 +280,17 @@ impl Reading {
             credits: Credits::default(),
             shift: 0,
             held: 0,
+            words: 0,
         }
     }
 
-    fn hold(&mut self, text: &str) -> Result<()> {
+    fn hold(&mut self, text: &str, words: usize) -> Result<()> {
         self.held = self.held.saturating_add(text.len());
+        self.words = self.words.saturating_add(words);
 
         let lines = self.timed.len() + self.plain.len();
 
-        if self.held > LARGEST_SET || lines >= MOST_LINES {
+        if self.held > LARGEST_SET || lines >= MOST_LINES || self.words > MOST_WORDS {
             return Err(beyond_what_a_sheet_holds(self.source.clone()));
         }
 
@@ -298,6 +302,7 @@ impl Reading {
         let mut moments = Vec::new();
         let mut identified = false;
         let mut heading: Vec<&str> = Vec::new();
+        let mut heads_a_timed_line_from_here = None;
 
         while let Some((inside, tail)) = brackets(rest) {
             match Bracket::read(inside) {
@@ -306,7 +311,11 @@ impl Reading {
                     self.identify(tag, value);
                     identified = true;
                 }
-                Bracket::Text if moments.is_empty() && heads_a_timed_line(tail) => {
+                Bracket::Text
+                    if moments.is_empty()
+                        && *heads_a_timed_line_from_here
+                            .get_or_insert_with(|| heads_a_timed_line(tail)) =>
+                {
                     heading.push(&rest[..rest.len() - tail.len()]);
                 }
                 Bracket::Text => break,
@@ -341,8 +350,10 @@ impl Reading {
                 .as_ref()
                 .map_or(text, |stamped| stamped.text.as_str());
 
+            let words_in_text = stamped.as_ref().map_or(0, |stamped| stamped.words.len());
+
             for at in moments {
-                self.hold(text)?;
+                self.hold(text, words_in_text)?;
 
                 let (words, ends) = match &stamped {
                     Some(stamped) => (
@@ -370,7 +381,7 @@ impl Reading {
         let text = unescaped(rest.trim());
 
         if !identified && !text.is_empty() {
-            self.hold(text)?;
+            self.hold(text, 0)?;
             self.plain.push((self.timed.len(), text.to_owned()));
         }
 
@@ -413,6 +424,7 @@ impl Reading {
             credits,
             shift,
             held: _,
+            words: _,
         } = self;
 
         if timed.is_empty() {
@@ -514,6 +526,80 @@ mod tests {
             started.elapsed()
         );
         assert_eq!(read.map(|stamped| stamped.text.len()), Some(opened.len()));
+    }
+
+    #[test]
+    fn a_line_of_empty_brackets_ahead_of_a_stamp_is_read_in_one_pass() {
+        let markers = "[]".repeat(262_000);
+        let started = std::time::Instant::now();
+
+        let read = read(source(), &format!("{markers}[00:01.00]sung"));
+
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(read.expect("within the bounds").lyrics.is_some());
+    }
+
+    #[test]
+    fn a_line_of_markers_with_no_stamp_after_them_is_read_in_one_pass() {
+        let markers = "[]".repeat(262_000);
+        let started = std::time::Instant::now();
+
+        let read = read(source(), &format!("{markers}sung"));
+
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(read.expect("within the bounds").lyrics.is_some());
+    }
+
+    #[test]
+    fn a_line_of_a_thousand_stamps_and_a_thousand_word_stamps_is_refused_quickly() {
+        let line = format!(
+            "{}{}",
+            "[00:01.00]".repeat(1_000),
+            "<00:01.00>w".repeat(1_000)
+        );
+        let started = std::time::Instant::now();
+
+        let refused = refused(&line);
+
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(refused);
+    }
+
+    #[test]
+    fn the_words_of_a_sheet_stop_at_the_most_a_lyricsfile_holds() {
+        const WORDS_A_LINE: usize = 1_000;
+
+        let words = "<0:01>w".repeat(WORDS_A_LINE);
+        let moments = MOST_WORDS / WORDS_A_LINE;
+
+        let at_the_most = format!("{}{words}", "[0:01]".repeat(moments));
+        let past_it = format!("{}{words}", "[0:01]".repeat(moments + 1));
+
+        let sheet = sheet(&at_the_most);
+
+        assert_eq!(
+            sheet
+                .lyrics
+                .expect("lines")
+                .lines()
+                .iter()
+                .map(|line| line.words.len())
+                .sum::<usize>(),
+            MOST_WORDS
+        );
+        assert!(refused(&past_it));
     }
 
     #[test]

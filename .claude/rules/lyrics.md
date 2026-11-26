@@ -265,7 +265,13 @@ dependency (tested without a window).
 - **A line repeats once per timestamp on it**, hence `LARGEST_SHEET`, `LARGEST_SET`, `MOST_LINES`;
   past any: `Error::Unreadable { op: Parse }`. In the reader because `Embedded` is handed a tag from
   an untrusted file. `model::MOST_LINES` is the one count: a Lyricsfile's `lines` past it are
-  refused, and `Lyrics::plain` keeps no more than it of any plain text.
+  refused, and `Lyrics::plain` keeps no more than it of any plain text. The words repeat too: `Reading::hold` counts each repeated
+  line's words against `lyricsfile::MOST_WORDS`, as the Lyricsfile and TTML readers do, before the
+  words are cloned. A line's leading brackets are scanned once: `absorb` asks
+  `heads_a_timed_line` at the first text bracket only and keeps the answer for the rest of the
+  run, so a line of `[]` ahead of a stamp costs its length
+  (`a_line_of_empty_brackets_ahead_of_a_stamp_is_read_in_one_pass`,
+  `the_words_of_a_sheet_stop_at_the_most_a_lyricsfile_holds`).
 - **A stamp inside a line times the word after it (enhanced LRC).** `Stamped::read` splits a line on
   every `<…>` that reads as a moment; others (`I <3 you`, `<b>`) stay text. A `>` is looked for only
   within `LONGEST_WORD_STAMP` bytes of its `<`, so a line of unclosed brackets is one pass
