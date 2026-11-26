@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::{
     Client, Error, Host, Result,
     client::LARGEST_DOCUMENT,
+    deezer::PLAYLIST_SONGS_AT_MOST,
     shared::{stated, unescaped},
     youtube::clock,
 };
@@ -124,6 +125,7 @@ fn embedded(page: &str) -> Option<Embed> {
         .split(AN_ITEM)
         .skip(1)
         .filter_map(|item| item.split(AN_ITEM_CLOSES).next().and_then(listed))
+        .take(PLAYLIST_SONGS_AT_MOST)
         .collect();
 
     Some(Embed { name, songs })
@@ -294,6 +296,21 @@ mod tests {
             embedded("<h1 class=\"media-album\"><a href=\"x\"> </a></h1>"),
             None
         );
+    }
+
+    #[test]
+    fn a_page_of_fifty_thousand_items_stops_at_the_most_a_playlist_is_read_to() {
+        let page = include_str!("../tests/fixtures/tidal_playlist_embed.html");
+        let from = page.find(AN_ITEM).expect("an item");
+
+        let item = &page[from..from
+            + page[from..].find(AN_ITEM_CLOSES).expect("its end")
+            + AN_ITEM_CLOSES.len()];
+        let crowded = page.replacen(item, &item.repeat(50_000), 1);
+
+        let embed = embedded(&crowded).expect("a playlist read off the embed page");
+
+        assert_eq!(embed.songs.len(), PLAYLIST_SONGS_AT_MOST);
     }
 
     #[test]

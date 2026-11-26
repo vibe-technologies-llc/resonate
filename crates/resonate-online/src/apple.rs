@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::{
     Client, Host, Result,
     client::{LARGEST_DOCUMENT, LARGEST_PICTURE, passed_over_when_refused},
+    deezer::PLAYLIST_SONGS_AT_MOST,
     shared::{on_host, shared_picture, stated},
 };
 
@@ -68,6 +69,7 @@ fn served(page: &str) -> Option<LinkedPlaylist> {
             .filter(|section| section.item_kind == TRACK_LIST)
             .flat_map(|section| section.items)
             .filter_map(Item::named)
+            .take(PLAYLIST_SONGS_AT_MOST)
             .map(ListedSong::Named)
             .collect(),
     })
@@ -254,6 +256,28 @@ mod tests {
             }))
         );
         assert_eq!(served("<html>no page data</html>"), None);
+    }
+
+    #[test]
+    fn a_page_of_fifty_thousand_items_stops_at_the_most_a_playlist_is_read_to() {
+        let page = include_str!("../tests/fixtures/apple_music_playlist.html");
+        let from = page.find(SERVER_DATA_OPENS).expect("page data") + SERVER_DATA_OPENS.len();
+
+        let to = from + page[from..].find(SERVER_DATA_CLOSES).expect("its end");
+        let mut data: serde_json::Value = serde_json::from_str(&page[from..to]).expect("page data");
+
+        let items = data["data"][0]["data"]["sections"][1]["items"]
+            .as_array_mut()
+            .expect("a track list");
+        let song = items[0].clone();
+
+        *items = vec![song; 50_000];
+
+        let crowded = format!("{}{data}{}", &page[..from], &page[to..]);
+
+        let linked = served(&crowded).expect("a playlist read off the page");
+
+        assert_eq!(linked.songs.len(), PLAYLIST_SONGS_AT_MOST);
     }
 
     #[test]

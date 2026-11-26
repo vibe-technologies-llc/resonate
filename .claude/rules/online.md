@@ -176,7 +176,8 @@ pin each byte.
   `ALBUMS_FOUND_AT_MOST`), reading `primary-type`, `secondary-types`, `first-release-date` into an
   `AlbumMatch`; the library decides which are albums.
 - **A search answer is read for where each recording sits.** The index spells a medium's track list
-  `track` (lookup: `tracks`) with no `position`, so `placed` falls back to `track-offset` + 1;
+  `track` (lookup: `tracks`) with no `position`, so `placed` falls back to `track-offset` + 1 (checked: an offset a position cannot hold passes its
+  medium over, `a_track_offset_past_what_a_position_holds_passes_its_medium_over`);
   `isrcs` pass the same filter, so a search-identified track learns its code with no second request.
 - **A recording is placed, a release group counted; neither answer is the other's.**
   `/recording?inc=media` answers only the medium the recording is *on*; its `track-count` is
@@ -316,7 +317,10 @@ before a source joined is asked again by `look_again_for_portraits`.
     `each_song_of_the_embed_page_keeps_the_track_it_is`,
     `a_tidal_playlist_names_its_title_and_each_song_by_its_title_artists_and_length`,
     `a_link_to_a_tidal_playlist_names_its_songs_off_the_public_embed_page`, live, which asks that
-    most songs name a code).
+    most songs name a code). **Every scraped page (Spotify's embed, TIDAL's, Apple's) reads at most
+    `PLAYLIST_SONGS_AT_MOST` songs**, so a page of fifty thousand items asks TIDAL for a thousand
+    song pages and no more
+    (`a_page_of_fifty_thousand_items_stops_at_the_most_a_playlist_is_read_to`).
   - Apple Music: the public `/<storefront>/playlist/<id>` page (`apple::playlist_named`), whose
     `serialized-server-data` script holds sections by `itemKind`: `containerDetailHeaderLockup`
     `title` is the name, each `trackLockup` a song (a `contentDescriptor` kind other than `song`

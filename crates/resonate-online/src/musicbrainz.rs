@@ -1314,11 +1314,15 @@ fn placed(media: &[TrackedMediumDoc]) -> Placing {
         .iter()
         .find_map(|medium| {
             let track = medium.tracks.first()?;
+            let position = match (track.position, medium.track_offset) {
+                (Some(position), _) => Some(position),
+                (None, Some(before)) => Some(before.checked_add(1)?),
+                (None, None) => None,
+            };
+
             Some(Placing {
                 disc: medium.position,
-                position: track
-                    .position
-                    .or_else(|| medium.track_offset.map(|before| before + 1)),
+                position,
             })
         })
         .unwrap_or_default()
@@ -1618,6 +1622,34 @@ mod tests {
             .expect("the fixture parses")
             .into_release(LookupOp::Release)
             .expect("the fixture maps")
+    }
+
+    fn media_of(text: &str) -> Vec<TrackedMediumDoc> {
+        serde_json::from_str(text).expect("media parse")
+    }
+
+    #[test]
+    fn a_track_offset_past_what_a_position_holds_passes_its_medium_over() {
+        let media = media_of(
+            r#"[
+                {"position": 1, "track-offset": 4294967295, "tracks": [{}]},
+                {"position": 2, "track-offset": 3, "tracks": [{}]}
+            ]"#,
+        );
+        let placing = placed(&media);
+
+        assert_eq!(placing.disc, Some(2));
+        assert_eq!(placing.position, Some(4));
+
+        let lone = media_of(r#"[{"position": 1, "track-offset": 4294967295, "tracks": [{}]}]"#);
+        let placing = placed(&lone);
+
+        assert_eq!(placing.disc, None);
+        assert_eq!(placing.position, None);
+
+        let last = media_of(r#"[{"position": 1, "track-offset": 4294967294, "tracks": [{}]}]"#);
+
+        assert_eq!(placed(&last).position, Some(u32::MAX));
     }
 
     #[test]

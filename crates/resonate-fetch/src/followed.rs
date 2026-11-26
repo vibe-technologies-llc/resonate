@@ -239,6 +239,24 @@ mod tests {
     }
 
     #[test]
+    fn the_most_redirects_followed_are_all_followed_and_the_answer_after_them_is_handed_back() {
+        let redirects = REDIRECTS_FOLLOWED_AT_MOST as usize;
+        let (url, heads) = serving(
+            (0..redirects)
+                .map(|_| -> crate::testing::Answer { Box::new(|_| redirecting_to("again")) })
+                .chain([Box::new(|_: &str| whole()) as crate::testing::Answer])
+                .collect(),
+        );
+
+        let mut response = asked_with_a_range(&agent(), &url).expect("every redirect is followed");
+
+        let body = response.body_mut().read_to_vec().expect("the body reads");
+
+        assert_eq!(body, WHOLE_BODY);
+        assert_eq!(heads.lock().len(), redirects + 1);
+    }
+
+    #[test]
     fn a_redirect_naming_no_place_is_refused() {
         let (url, _) = serving(vec![Box::new(|_| {
             answering("307 Temporary Redirect", &[], b"", 0)
