@@ -22,19 +22,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`:804`). Cap the media server's concurrent reads below the pool, bound the checkout and ask for
   two letters at least. Done when a test of 16 concurrent root searches leaves a window read
   answered within its deadline.
-- [S · 0.18.1] Unpack an amended MusicBrainz document at its own size. **Low, builder.** An amended
-  read unpacks into a 16 MiB `MOST_UNPACKED_BLOCK` buffer
-  (`crates/resonate-musicbrainz/src/mirror/mod.rs:695`, `:767-770`), up to 64 times a search. Store
-  the unpacked length or read it from the frame. Done when an amended read allocates its document's
-  size.
-- [S · 0.18.1] Tell MCP's now-playing subscribers only when the song or state changes. **Low,
-  builder.** The compared reading includes `position_seconds`
-  (`crates/resonate-mcp/src/transport.rs:152`), so every 500 ms tick notifies. Leave the position
-  out of the comparison. Done when a playing song notifies once in a test over five seconds.
-- [S · 0.18.1] Read each thing once at start and in studies. **Low, builder.** `engine_config` is
-  evaluated twice, parsing the impulse twice (`crates/resonate/src/window.rs:82`, `:109`), and
-  `studies` reads the catalog twice (`studies.rs:14`, `:42-46`). Reuse the first reading. Done when
-  each is read once.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
