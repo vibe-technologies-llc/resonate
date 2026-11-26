@@ -86,6 +86,11 @@ workspace crate and is reached by `resonate-coreaudio`, `resonate-listen`, `reso
   over `trait Render` and `trait Hear` that abort on a panic (`realtime.md`).
 - **The HAL is macOS's alone**: `Device`, `Stream`, `PhysicalFormat`, `Hog`, `Volume`, `Mute`,
   `Listening`, each an owned value over one `AudioObject` property call.
+- **A hog is let go of, never kept by a failure.** `Hog` is `Held<Device>`, written over the
+  `Holds` seam (`holder`, `toggle`) so its tests run on every host against a fake: a take whose
+  verifying read fails toggles the hog straight back (a refusal logged, the read's error the
+  answer), and a drop releases only where the read says this process still holds it, logging a read
+  or a release the system refused.
 - **`NowPlaying`** is the system's Now Playing and remote commands (below).
 - **`PathMonitor`** is the Network framework's path monitor, its C calls declared by hand (no
   `objc2` crate covers Network); the monitor is cancelled and released on drop and the handler
@@ -131,9 +136,12 @@ for them.
   waits on the engine. Every request is a `PlayerInterface` method (`play`, `pause`, `play_pause`,
   `stop`, `next`, `previous`, a place asked for to `set_position`), so `mpris.md`'s *A method does
   what the spec says* holds for a media key here too.
-- **A handler never lets a panic into Objective-C.** Each MediaPlayer block and the notification
-  delegate's `did_receive` run the listener's closure through `buffers::guarded` (a press that
-  panics answers `Failed`, a notice's button answers nothing), as `listening.rs` guards its nudge.
+- **A handler never lets a panic into Objective-C or libdispatch.** Each MediaPlayer block and the
+  notification delegate's `did_receive` run the listener's closure through `buffers::guarded` (a
+  press that panics answers `Failed`, a notice's button answers nothing), as `listening.rs` guards
+  its nudge; so does the path monitor's update handler (a panic is a missed update) and the
+  artwork's request handler (which has no answer to give for a panic and aborts, as `render`
+  does).
 - **A `NowPlaying` removes only the targets it added.** `addTargetWithHandler` returns a token;
   each is kept with its command in a main-thread table (`targets::Targets`, keyed by the
   `NowPlaying`'s own number), and the drop, posted after the registration on the same serial queue,
@@ -197,6 +205,20 @@ Windows, while an older system keeps the microphone alone and a file's `listen-f
 there still meets `DesktopUnheard`. The system asks the listener once (*System Audio Recording*, the bundle's
 `NSAudioCaptureUsageDescription`); a refusal reads as silence, which the sitting answers as
 `NothingHeard`. Dropping the tap destroys the aggregate, then the tap. Nothing here has run on a Mac.
+
+**The capture asks the unit for the channels the clip keeps, and counts what it could not take.**
+`coreaudio_carry.rs` holds the portable half (`Capture`, `Heard`, the `Opened` seam, tested on
+every host against a fake unit): `Heard::kept_of` asks the HAL input unit for at most two channels
+(`HEARD_IN_CHANNELS`, a mono microphone keeping its one), so a 32-channel interface at 192 kHz
+sizes a raw buffer of the clip's shape, never the device's. **A `Capture` joins its thread on
+drop**, as `wasapi_capture.rs`'s does, so a lost capture's last `carry` is in the recording before
+`Sitting::until_full` reopens and calls `Recording::silence_for` (a load, then a store). **A slice
+the callback could not take is counted, not silent**: `heard` calls `Hear::dropped(frames)` for a
+slice over `FRAMES_A_SLICE_AT_MOST`, one whose bytes overflow a buffer list's size and a pull the
+unit refused, `Raw` notes it on the raw `Recorder`, the capture thread's `carry` forwards the
+count to the sitting's `Recording::dropped_frames`, and `finished` answers a sitting that heard
+nothing but drops as `Error::OnlyDropsHeard` (a clip that heard something is kept and the drops
+warned), where silence stays `NothingHeard`.
 
 ## Not on macOS yet
 

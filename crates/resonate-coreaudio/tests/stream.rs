@@ -243,6 +243,8 @@ impl Hear for Captured {
             words.push((left * TWENTY_FOUR_BITS).round() as i32);
         }
     }
+
+    fn dropped(&mut self, _: u32) {}
 }
 
 fn loopback_device() -> Option<Device> {

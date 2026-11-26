@@ -106,10 +106,10 @@ pub enum Error {
     },
     #[error("this system has no {component} audio unit")]
     NoComponent { component: Component },
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", test))]
     #[error("the device is held by process {by}")]
     Hogged { by: crate::hog::Pid },
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", test))]
     #[error("the device stayed free though it was asked for")]
     HogUntaken,
     #[cfg(target_os = "macos")]

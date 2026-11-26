@@ -12,6 +12,8 @@ mod session;
 #[cfg(target_os = "macos")]
 mod coreaudio_capture;
 #[cfg(any(target_os = "macos", test))]
+mod coreaudio_carry;
+#[cfg(any(target_os = "macos", test))]
 mod coreaudio_conform;
 #[cfg(target_os = "macos")]
 mod coreaudio_listener;

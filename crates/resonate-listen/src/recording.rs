@@ -8,7 +8,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
 };
 
 #[cfg(target_os = "linux")]
@@ -19,6 +19,7 @@ use crate::session::BYTES_PER_SAMPLE;
 pub struct Recording {
     samples: Box<[AtomicU32]>,
     filled: AtomicUsize,
+    dropped: AtomicU64,
 }
 
 impl Recording {
@@ -26,11 +27,16 @@ impl Recording {
         Arc::new(Self {
             samples: (0..samples).map(|_| AtomicU32::new(0)).collect(),
             filled: AtomicUsize::new(0),
+            dropped: AtomicU64::new(0),
         })
     }
 
     pub fn filled(&self) -> usize {
         self.filled.load(Ordering::Acquire)
+    }
+
+    pub fn dropped_frames(&self) -> u64 {
+        self.dropped.load(Ordering::Acquire)
     }
 
     pub fn is_full(&self) -> bool {
@@ -50,7 +56,7 @@ impl Recording {
             .collect()
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn heard_since(&self, taken: usize) -> Vec<f32> {
         let filled = self.filled();
         self.samples
@@ -73,6 +79,11 @@ impl Recording {
             .min(self.samples.len());
 
         self.filled.store(to, Ordering::Release);
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn lose(&self, frames: u64) {
+        self.dropped.fetch_add(frames, Ordering::AcqRel);
     }
 
     fn keep(&self, bytes: &[u8]) {
@@ -114,9 +125,16 @@ impl Recorder {
 }
 
 impl Recorder {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn room(&self) -> usize {
         self.recording.capacity()
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn note_dropped(&mut self, frames: u64) {
+        if self.admitting.load(Ordering::Acquire) {
+            self.recording.lose(frames);
+        }
     }
 
     pub(crate) fn admit(&mut self, bytes: &[u8]) {
@@ -201,6 +219,23 @@ mod tests {
         recorder.pad(1, 2);
 
         assert_eq!(recording.filled(), 2);
+    }
+
+    #[test]
+    fn frames_a_recorder_dropped_are_counted_only_while_it_is_admitted() {
+        let recording = Recording::holding(4);
+        let (mut recorder, admitting) = Recorder::held_back(Arc::clone(&recording));
+
+        recorder.note_dropped(16_384);
+
+        assert_eq!(recording.dropped_frames(), 0);
+
+        admitting.store(true, Ordering::Release);
+        recorder.note_dropped(16_384);
+        recorder.note_dropped(8);
+
+        assert_eq!(recording.dropped_frames(), 16_392);
+        assert_eq!(recording.filled(), 0);
     }
 
     #[test]

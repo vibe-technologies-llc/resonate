@@ -26,6 +26,7 @@ pub trait Render: Send {
 
 pub trait Hear: Send {
     fn hear(&mut self, bytes: &[u8]);
+    fn dropped(&mut self, frames: u32);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -411,6 +412,8 @@ mod tests {
         fn hear(&mut self, _: &[u8]) {
             self.given.store(true, Ordering::Release);
         }
+
+        fn dropped(&mut self, _: u32) {}
     }
 
     impl Drop for Supply {

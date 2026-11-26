@@ -141,7 +141,8 @@ fn stage_after(error: &ListenError) -> Stage {
         ListenError::Capture { .. }
         | ListenError::Output { .. }
         | ListenError::NoSuchSink { .. }
-        | ListenError::NoOutput => Stage::CaptureFailed,
+        | ListenError::NoOutput
+        | ListenError::OnlyDropsHeard { .. } => Stage::CaptureFailed,
         #[cfg(any(windows, target_os = "macos"))]
         ListenError::NoSuchMicrophone { .. } => Stage::CaptureFailed,
         #[cfg(target_os = "macos")]
@@ -493,7 +494,8 @@ fn noted(error: &ListenError) {
         ListenError::Capture { .. }
         | ListenError::Output { .. }
         | ListenError::NoSuchSink { .. }
-        | ListenError::NoOutput => {
+        | ListenError::NoOutput
+        | ListenError::OnlyDropsHeard { .. } => {
             tracing::warn!(%error, "nothing could be listened to");
         }
         #[cfg(any(windows, target_os = "macos"))]

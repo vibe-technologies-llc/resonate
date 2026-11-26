@@ -99,11 +99,13 @@ objc2-user-notifications = {
     ]
 }
 parking_lot.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 objc2-core-audio-types.workspace = true
 parking_lot.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [lints.rust]
 unsafe_code = "allow"

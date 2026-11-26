@@ -5,7 +5,8 @@ use resonate_audio::{Error as AudioError, NodeName, Operation};
 
 use crate::{
     CaptureOp, Clip, Error, Hearing, Listening, Result,
-    coreaudio_capture::{Capture, backend_error, hears, microphone_of},
+    coreaudio_capture::{backend_error, hears, microphone_of},
+    coreaudio_carry::Capture,
     coreaudio_names::{Source, capture_node_of, output_of, source_of},
     coreaudio_playback::Playback,
     microphone::Microphone,
@@ -133,6 +134,7 @@ impl Listener {
             stopped,
             hearing.stopped(),
             sitting.recording.taken(),
+            sitting.recording.dropped_frames(),
             sitting.spec,
         )
     }

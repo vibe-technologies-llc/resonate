@@ -20,7 +20,7 @@ use objc2_core_audio_types::{AudioStreamBasicDescription, AudioValueRange};
 
 use crate::{
     error::{Error, Op, Result},
-    hog::Pid,
+    hog::{Holds, Pid},
     physical::PhysicalFormat,
     property::{self, Address, Direction},
 };
@@ -266,6 +266,16 @@ impl Device {
     pub(crate) fn toggle_the_hog(self) -> Result<()> {
         let hog = Address::global(kAudioDevicePropertyHogMode);
         property::write(self.0, hog, &Pid::of_this_process().get(), Op::TakeHog)
+    }
+}
+
+impl Holds for Device {
+    fn holder(&self) -> Result<Option<Pid>> {
+        Self::hogged_by(*self)
+    }
+
+    fn toggle(&self) -> Result<()> {
+        Self::toggle_the_hog(*self)
     }
 }
 

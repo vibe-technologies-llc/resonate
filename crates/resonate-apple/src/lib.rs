@@ -10,7 +10,7 @@ mod cloning;
 mod device;
 #[cfg(any(target_vendor = "apple", test))]
 mod error;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 mod hog;
 #[cfg(target_os = "macos")]
 mod listening;

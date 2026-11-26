@@ -96,7 +96,8 @@ rest on this discipline alone):
 - `resonate-listen/src/recording.rs`: the recording's `AudioSink`: preallocated `AtomicU32` run of
   f32 bits + atomic count, `Relaxed` stores, one `Release` publish, `Acquire` reads. On macOS the
   HAL input unit's callback (`resonate_apple::Hear`) admits the device's own frames through the
-  same `Recorder::admit` into a recording at the device's rate and channel count; bringing them to
+  same `Recorder::admit` into a recording at the device's rate and at most two channels (it counts a slice
+  it could not take through `Hear::dropped`, one atomic add); bringing them to
   the clip's shape (`coreaudio_conform`, a resampler) is the capture thread's, never the callback's.
 
 **Every callback stamps what it fills, from the device's own timestamp.**

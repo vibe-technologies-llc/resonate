@@ -1787,7 +1787,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   ("<name> (exclusive)", from the crate's catalog) takes the device in hog mode, moves its nominal
   rate and then its physical format to the song's (each read back within 1.5 s, else
   `FormatRefused`) and puts the mixing, the format, the rate and the hog back, in that order, once
-  the unit is disposed. **A hogged device's mixing is turned off** (`Device::set_mixing`, the
+  the unit is disposed (`restoring::Prior::put_back` tries each and answers the ones the device
+  refused, which `Restoring`'s drop logs; the hog is released even when its verifying read failed). **A hogged device's mixing is turned off** (`Device::set_mixing`, the
   hand-declared `mix?` property), so its virtual format is the integer physical format and the HAL
   unit's converter carries the client's integer words through without a Float32 stage; a device
   that will not stop mixing still plays S16 and S24 (24 bits survive Float32) and refuses S32

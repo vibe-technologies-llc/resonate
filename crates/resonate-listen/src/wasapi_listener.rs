@@ -93,6 +93,7 @@ impl Listener {
             stopped,
             hearing.stopped(),
             sitting.recording.taken(),
+            sitting.recording.dropped_frames(),
             sitting.spec,
         )
     }

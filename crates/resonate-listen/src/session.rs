@@ -143,6 +143,7 @@ pub(crate) fn finished(
     stopped: Result<Option<()>>,
     asked_to_stop: bool,
     samples: Vec<f32>,
+    dropped_frames: u64,
     spec: StreamSpec,
 ) -> Result<Clip> {
     if asked_to_stop {
@@ -150,7 +151,18 @@ pub(crate) fn finished(
     }
     if samples.is_empty() {
         stopped?;
+        if dropped_frames > 0 {
+            return Err(Error::OnlyDropsHeard {
+                frames: dropped_frames,
+            });
+        }
         return Err(Error::NothingHeard);
+    }
+    if dropped_frames > 0 {
+        tracing::warn!(
+            dropped_frames,
+            "the capture dropped frames; the clip heard is kept"
+        );
     }
     if let Err(error) = stopped {
         tracing::warn!(%error, "the capture would not stop cleanly; the clip heard is kept");
@@ -189,8 +201,8 @@ mod tests {
 
     #[test]
     fn a_clip_survives_a_stop_that_failed() {
-        let clip =
-            finished(stop_failed(), false, vec![0.5, -0.5], heard_spec()).expect("the clip heard");
+        let clip = finished(stop_failed(), false, vec![0.5, -0.5], 0, heard_spec())
+            .expect("the clip heard");
 
         assert_eq!(clip.samples, vec![0.5, -0.5]);
         assert_eq!(clip.channels, 2);
@@ -199,22 +211,38 @@ mod tests {
     #[test]
     fn a_stop_that_failed_with_nothing_heard_is_the_error_it_was() {
         assert!(matches!(
-            finished(stop_failed(), false, Vec::new(), heard_spec()),
+            finished(stop_failed(), false, Vec::new(), 0, heard_spec()),
             Err(Error::Capture {
                 op: CaptureOp::Stop,
                 ..
             })
         ));
         assert!(matches!(
-            finished(Ok(Some(())), false, Vec::new(), heard_spec()),
+            finished(Ok(Some(())), false, Vec::new(), 0, heard_spec()),
             Err(Error::NothingHeard)
         ));
     }
 
     #[test]
+    fn a_sitting_that_heard_only_drops_says_so_and_is_not_taken_for_silence() {
+        assert!(matches!(
+            finished(Ok(Some(())), false, Vec::new(), 49_152, heard_spec()),
+            Err(Error::OnlyDropsHeard { frames: 49_152 })
+        ));
+    }
+
+    #[test]
+    fn a_sitting_that_heard_something_keeps_its_clip_though_frames_were_dropped() {
+        let clip = finished(Ok(Some(())), false, vec![0.5, -0.5], 49_152, heard_spec())
+            .expect("the clip heard");
+
+        assert_eq!(clip.samples, vec![0.5, -0.5]);
+    }
+
+    #[test]
     fn a_listener_who_stopped_it_hears_no_clip() {
         assert!(matches!(
-            finished(Ok(Some(())), true, vec![0.5, 0.5], heard_spec()),
+            finished(Ok(Some(())), true, vec![0.5, 0.5], 0, heard_spec()),
             Err(Error::Stopped)
         ));
     }

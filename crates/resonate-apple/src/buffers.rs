@@ -64,14 +64,15 @@ pub(crate) unsafe fn heard<I: Copy>(
     pull: impl FnOnce(I, NonNull<AudioBufferList>) -> i32,
 ) -> i32 {
     let hearing = unsafe { hearing.cast::<Hearing<I>>().as_mut() };
-    let Some(wanted) = (frames as usize).checked_mul(hearing.frame.get()) else {
-        return ANSWERED;
-    };
+    let wanted = (frames as usize).checked_mul(hearing.frame.get());
+    let declared = wanted.and_then(|wanted| u32::try_from(wanted).ok());
 
-    let Some(window) = hearing.scratch.get_mut(..wanted) else {
+    let (Some(wanted), Some(declared)) = (wanted, declared) else {
+        hearing.hear.dropped(frames);
         return ANSWERED;
     };
-    let Ok(declared) = u32::try_from(wanted) else {
+    let Some(window) = hearing.scratch.get_mut(..wanted) else {
+        hearing.hear.dropped(frames);
         return ANSWERED;
     };
 
@@ -85,6 +86,7 @@ pub(crate) unsafe fn heard<I: Copy>(
     };
 
     if pull(hearing.unit, NonNull::from(&mut list)) != ANSWERED {
+        hearing.hear.dropped(frames);
         return ANSWERED;
     }
 
@@ -122,6 +124,7 @@ mod tests {
         renders: AtomicUsize,
         host: Mutex<Option<HostTime>>,
         heard: Mutex<Vec<u8>>,
+        dropped: Mutex<Vec<u32>>,
     }
 
     struct Marking(Arc<Seen>);
@@ -137,6 +140,10 @@ mod tests {
     impl Hear for Marking {
         fn hear(&mut self, bytes: &[u8]) {
             self.0.heard.lock().extend_from_slice(bytes);
+        }
+
+        fn dropped(&mut self, frames: u32) {
+            self.0.dropped.lock().push(frames);
         }
     }
 
@@ -327,17 +334,18 @@ mod tests {
     }
 
     #[test]
-    fn a_pull_the_unit_refused_hands_on_nothing() {
+    fn a_pull_the_unit_refused_hands_on_nothing_and_is_counted_as_dropped() {
         let (mut hearing, seen) = hearing(64);
 
         let answer = unsafe { heard(handed(&mut hearing), 4, |_: u8, _| -10_863) };
 
         assert_eq!(answer, ANSWERED);
         assert!(seen.heard.lock().is_empty());
+        assert_eq!(*seen.dropped.lock(), [4]);
     }
 
     #[test]
-    fn a_slice_longer_than_the_scratch_is_never_pulled() {
+    fn a_slice_longer_than_the_scratch_is_never_pulled_and_is_counted_as_dropped() {
         let (mut hearing, seen) = hearing(16);
         let pulled = AtomicUsize::new(0);
 
@@ -350,6 +358,42 @@ mod tests {
 
         assert_eq!(pulled.load(Ordering::Acquire), 0);
         assert!(seen.heard.lock().is_empty());
+        assert_eq!(*seen.dropped.lock(), [4]);
+    }
+
+    #[test]
+    fn slices_of_sixteen_thousand_frames_over_a_scratch_of_eight_thousand_are_all_dropped() {
+        const SLICE: u32 = 16_384;
+        const SCRATCH_FRAMES: usize = 8_192;
+
+        let (mut hearing, seen) = hearing(SCRATCH_FRAMES * 8);
+
+        for _ in 0..3 {
+            unsafe { heard(handed(&mut hearing), SLICE, filling(0x5A)) };
+        }
+
+        assert_eq!(*seen.dropped.lock(), [SLICE; 3]);
+        assert!(seen.heard.lock().is_empty());
+    }
+
+    #[test]
+    fn a_slice_whose_bytes_overflow_what_a_list_declares_is_dropped() {
+        let (mut hearing, seen) = hearing(64);
+
+        let answer = unsafe { heard(handed(&mut hearing), u32::MAX, filling(0x5A)) };
+
+        assert_eq!(answer, ANSWERED);
+        assert_eq!(*seen.dropped.lock(), [u32::MAX]);
+        assert!(seen.heard.lock().is_empty());
+    }
+
+    #[test]
+    fn a_slice_that_fits_is_never_counted_as_dropped() {
+        let (mut hearing, seen) = hearing(64);
+
+        unsafe { heard(handed(&mut hearing), 4, filling(0x5A)) };
+
+        assert!(seen.dropped.lock().is_empty());
     }
 
     #[test]

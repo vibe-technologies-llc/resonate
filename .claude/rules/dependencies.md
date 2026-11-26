@@ -44,13 +44,15 @@ reaches no workspace crate, and every `unsafe` block is one call whose precondit
 true (a unit is owned by `Unit`, which stops, uninitialises and disposes it on drop and frees what
 its callback was handed exactly once; the raw `AudioUnit` never leaves the crate, so no caller can
 hand a call a dangling one; a property is read into a `Plain` value of exactly its size; a hog is
-an owned `Hog` released on drop only while this process still holds it; a listener is a `Listening`
+an owned `Hog` released on drop only while this process still holds it, and logged where the
+system refuses; a listener is a `Listening`
 whose callback is handed a number, never a pointer, looked up in a registry, so one firing after
 its guard dropped finds nothing). It takes `objc2-audio-toolbox` and `objc2-core-audio-types` on Apple
 targets and `thiserror`; on macOS alone `objc2-core-audio` 0.3.2 (`AudioHardware`, the device,
 stream and property calls, with `objc2-core-audio-types` for the ranged format), `objc2-core-foundation`
 0.3.2 (`CFString`, a device's name and UID; `CFRunLoop`, the main loop `resonate play` runs for Now Playing; the version gpui's tree already holds) and
-`parking_lot` (the listeners' registry), and for `NowPlaying` (the system's Now Playing and its
+`parking_lot` (the listeners' registry) and `tracing` (a hog or a restore the system refused; also a
+dev-dependency, since the hog's tests run on every host), and for `NowPlaying` (the system's Now Playing and its
 remote commands, `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`) `objc2-media-player` 0.3.2
 (the info center, the commands, their events and the artwork alone), `objc2`, `objc2-foundation`
 (strings, numbers, data, the dictionary), `objc2-app-kit` (`NSImage` alone, the cover),

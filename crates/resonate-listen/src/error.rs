@@ -48,6 +48,10 @@ pub enum Error {
     NothingHeard,
 
     #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
+    #[error("the capture dropped {frames} frames and heard nothing else")]
+    OnlyDropsHeard { frames: u64 },
+
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[error("the listening was stopped")]
     Stopped,
 

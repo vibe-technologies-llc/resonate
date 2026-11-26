@@ -32,6 +32,7 @@ resonate-dsp.workspace = true
 resonate-words-build.workspace = true
 
 [dev-dependencies]
+parking_lot.workspace = true
 resonate-coreaudio.workspace = true
 resonate-dsp.workspace = true
 resonate-wasapi.workspace = true

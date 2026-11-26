@@ -7006,6 +7006,7 @@ dependencies = [
  "objc2-user-notifications",
  "parking_lot 0.13.0",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -7283,6 +7284,7 @@ name = "resonate-listen"
 version = "0.18.0"
 dependencies = [
  "crossbeam-channel",
+ "parking_lot 0.13.0",
  "resonate-apple",
  "resonate-audio",
  "resonate-core",

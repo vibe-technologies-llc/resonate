@@ -21,6 +21,7 @@ use crate::{
     fill::Rendering,
     formats::{ClientWord, physical_for},
     remembered::Remembered,
+    restoring::{Prior, Restorable, Unrestored},
     serving::{Hardware, Looks, Standing, launch},
     ways::{Way, device_of},
 };
@@ -118,24 +119,39 @@ fn runs_at(device: Device, hz: f64) -> bool {
         .is_ok_and(|rate| (rate - hz).abs() < RATES_AGREE_WITHIN_HZ)
 }
 
-struct Restoring {
+#[derive(Clone, Copy)]
+struct Output {
     device: Device,
     stream: Stream,
-    rate: Option<f64>,
-    format: Option<PhysicalFormat>,
-    mixed: Option<bool>,
 }
+
+impl Restorable for Output {
+    type Format = PhysicalFormat;
+    type Error = resonate_apple::Error;
+
+    fn set_mixing(&self, mixes: bool) -> Result<(), Self::Error> {
+        self.device.set_mixing(mixes)
+    }
+
+    fn set_physical_format(&self, format: &PhysicalFormat) -> Result<(), Self::Error> {
+        self.stream.set_physical_format(format)
+    }
+
+    fn runs_at(&self, hz: f64) -> bool {
+        runs_at(self.device, hz)
+    }
+
+    fn set_nominal_rate(&self, hz: f64) -> Result<(), Self::Error> {
+        self.device.set_nominal_rate(hz)
+    }
+}
+
+struct Restoring(Prior<Output>);
 
 impl Drop for Restoring {
     fn drop(&mut self) {
-        if let Some(mixed) = self.mixed {
-            let _ = self.device.set_mixing(mixed);
-        }
-        if let Some(format) = &self.format {
-            let _ = self.stream.set_physical_format(format);
-        }
-        if let Some(rate) = self.rate.filter(|rate| !runs_at(self.device, *rate)) {
-            let _ = self.device.set_nominal_rate(rate);
+        for Unrestored { setting, error } in self.0.put_back() {
+            tracing::warn!(?setting, %error, "the device was not put back as it was");
         }
     }
 }
@@ -149,13 +165,12 @@ impl Hogged {
     fn taken(device: Device, spec: StreamSpec) -> SinkResult<Self> {
         let hog = Hog::taken(device).map_err(unopened)?;
         let stream = output_stream_of(device).ok_or(Error::FormatRefused)?;
-        let mut restoring = Restoring {
-            device,
-            stream,
+        let mut restoring = Restoring(Prior {
+            output: Output { device, stream },
             rate: device.nominal_rate().ok(),
             format: stream.physical_format().ok(),
             mixed: None,
-        };
+        });
         let offered = stream.physical_formats().map_err(unformatted)?;
         let carried: Vec<_> = offered
             .iter()
@@ -174,7 +189,7 @@ impl Hogged {
 
         match device.mixes() {
             Some(true) => match device.set_mixing(false) {
-                Ok(()) => restoring.mixed = Some(true),
+                Ok(()) => restoring.0.mixed = Some(true),
                 Err(error) if needs_the_mixer_off(spec.format) => {
                     return Err(unformatted(error));
                 }

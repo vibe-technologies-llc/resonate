@@ -4,7 +4,10 @@ use block2::{Block, RcBlock};
 use dispatch2::{DispatchQueue, DispatchRetained};
 use objc2::encode::{Encoding, RefEncode};
 
-use crate::error::{Error, Result};
+use crate::{
+    buffers::guarded,
+    error::{Error, Result},
+};
 
 const THE_QUEUE_IS_CALLED: &str = "dev.resonate.metered";
 const SATISFIED: i32 = 1;
@@ -66,7 +69,9 @@ impl PathMonitor {
         let monitor =
             NonNull::new(unsafe { nw_path_monitor_create() }).ok_or(Error::NoPathMonitor)?;
         let queue = DispatchQueue::new(THE_QUEUE_IS_CALLED, None);
-        let handler = RcBlock::new(move |path: NonNull<NwPath>| told(Route::of(path)));
+        let handler = RcBlock::new(move |path: NonNull<NwPath>| {
+            guarded(|| told(Route::of(path)), || ());
+        });
 
         unsafe {
             nw_path_monitor_set_queue(monitor, DispatchRetained::as_ptr(&queue));

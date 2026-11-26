@@ -9,6 +9,8 @@ mod formats;
 #[cfg(target_os = "macos")]
 mod opening;
 mod remembered;
+#[cfg(any(target_os = "macos", test))]
+mod restoring;
 mod serving;
 mod survey;
 mod ways;

@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    process,
     ptr::NonNull,
     sync::{
         Arc,
@@ -201,7 +202,8 @@ fn position_asked(event: NonNull<MPRemoteCommandEvent>) -> Option<Duration> {
 fn artwork_of(cover: &[u8]) -> Option<Retained<MPMediaItemArtwork>> {
     let image = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(cover))?;
     let bounds = image.size();
-    let handler = RcBlock::new(move |_: CGSize| NonNull::from(&*image));
+    let handler =
+        RcBlock::new(move |_: CGSize| guarded(|| NonNull::from(&*image), || process::abort()));
     Some(unsafe {
         MPMediaItemArtwork::initWithBoundsSize_requestHandler(
             MPMediaItemArtwork::alloc(),
