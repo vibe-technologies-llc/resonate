@@ -2806,6 +2806,7 @@ dependencies = [
  "objc2-user-notifications",
  "parking_lot 0.13.0",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -3068,6 +3069,7 @@ dependencies = [
  "resonate-words",
  "resonate-words-build",
  "rustix",
+ "sha2",
  "thiserror",
  "tracing",
  "wasapi",
