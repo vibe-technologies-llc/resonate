@@ -108,7 +108,7 @@ pub(crate) fn queue_items_served(arguments: &[OsString], served: &Served) -> Vec
             });
             continue;
         }
-        if let Some(songs) = served.songs_at(&location, &ended_by_the_interrupt) {
+        if let Some(songs) = served.songs_at(&location, &a_command_line_queue_is_never_cancelled) {
             items.extend(
                 songs
                     .into_iter()
@@ -121,7 +121,7 @@ pub(crate) fn queue_items_served(arguments: &[OsString], served: &Served) -> Vec
     items
 }
 
-fn ended_by_the_interrupt() -> bool {
+fn a_command_line_queue_is_never_cancelled() -> bool {
     false
 }
 
