@@ -57,11 +57,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`crates/resonate-mpris/src/art.rs:149-243`, `:356-389`), and names it by a 64-bit fixed-key
   digest that `already_laid` accepts on length alone (`:256-261`, `:370-372`). Refuse a cover above
   a few MiB and name it by a content hash. Done when a 100 MB cover is not laid, in a test.
-- [S · 0.18.1] Cap the songs a scraped playlist page asks after. **Low, builder.** TIDAL's scraper
-  makes one paced request per `<list-item>` with no cap
-  (`crates/resonate-online/src/tidal.rs:79-98`, `:121-130`), as do Apple's and Spotify's
-  (`apple.rs:64-73`, `spotify.rs:89-103`). Cap the items. Done when a page of 50 000 items stops at
-  the cap.
 - [S · 0.18.1] Unpack an amended MusicBrainz document at its own size. **Low, builder.** An amended
   read unpacks into a 16 MiB `MOST_UNPACKED_BLOCK` buffer
   (`crates/resonate-musicbrainz/src/mirror/mod.rs:695`, `:767-770`), up to 64 times a search. Store

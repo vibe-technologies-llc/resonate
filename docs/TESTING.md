@@ -175,11 +175,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   referenced by no test. Give `Profile` a fault on a named action, an answer that never comes, an
   oversized body and a long name. Done when each ends the stream cleanly or drops the sink in a
   test.
-- [S · 0.18.1] Fix MusicBrainz's manual redirect count and test it. **Low, builder.** The loop
-  errors on exactly ten hops and a hop skips `reachable` and the pacing
-  (`crates/resonate-online/src/client.rs:962-986`), and no test sends a relative `Location`, a
-  downgrade or the limit. Count hops right, pace each and test the three. Done when those tests
-  pass.
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,
   `RESONATE_YTMUSIC_TESTS`, with `RESONATE_YTMUSIC_COOKIES`, `RESONATE_YTMUSIC_SONG`,
   `RESONATE_YTMUSIC_PLAYLIST`) has never been run: it lists an album song, reads the head of its best

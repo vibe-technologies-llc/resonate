@@ -40,10 +40,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-online/src/history.rs:340-346` adds a service's `u64` seconds to `UNIX_EPOCH`
   unchecked, and `:210`'s `earliest + 1` overflows, so one bad stamp aborts the import. Check both
   and pass the listen over. Done when a page with `u64::MAX` imports the rest.
-- [S · 0.18.1] Check MusicBrainz's track offset. **Low, builder.**
-  `crates/resonate-online/src/musicbrainz.rs:1321` adds one to a server's `track_offset` unchecked.
-  Use a checked add and pass the medium over. Done when an answer with `u32::MAX` is read without a
-  panic.
 - [S · 0.18.1] Correct `forget_folder`'s description. **Low, builder.** MCP says listens and
   playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
   listens and playlist entries survive. Say what is kept. Done when the description matches the
