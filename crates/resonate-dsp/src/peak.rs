@@ -724,6 +724,9 @@ impl Processor for TruePeak {
             }
         }
         self.silence = silence;
+        if produced == owed {
+            self.reset();
+        }
         produced
     }
 }

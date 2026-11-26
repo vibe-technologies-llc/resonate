@@ -29,6 +29,8 @@ struct Fed {
     frames_in: usize,
     frames_out_before_the_flush: usize,
     flushed: usize,
+    held_after_the_flush: usize,
+    flushed_again: usize,
 }
 
 fn feed(stage: &mut dyn Processor, input: &[f64], from: usize, to: usize) -> Fed {
@@ -67,12 +69,17 @@ fn feed(stage: &mut dyn Processor, input: &[f64], from: usize, to: usize) -> Fed
 
     heard.extend_from_slice(&tail[..flushed * to]);
 
+    let held_after_the_flush = stage.frames_held();
+    let flushed_again = stage.flush(&mut tail);
+
     Fed {
         heard,
         tallies,
         frames_in,
         frames_out_before_the_flush,
         flushed,
+        held_after_the_flush,
+        flushed_again,
     }
 }
 
@@ -220,6 +227,16 @@ fn check_counts(
             fed.flushed,
             stage.max_flush_frames()
         )
+    });
+
+    verdicts.expect(fed.held_after_the_flush == 0, || {
+        format!(
+            "it reports holding {} frames after a flush",
+            fed.held_after_the_flush
+        )
+    });
+    verdicts.expect(fed.flushed_again == 0, || {
+        format!("a second flush gave {} frames", fed.flushed_again)
     });
 
     let counted = if rings {

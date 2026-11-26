@@ -13,13 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 
-## Playback and output
-- [S · 0.18.1] Hold a true-peak stage's flush to once. **Low, builder.** After `TruePeak::flush`,
-  `frames_held` still reports its `delay` and a second flush emits `delay` frames more
-  (`crates/resonate-dsp/src/`), so the contract test (`crates/resonate-dsp/tests/contract.rs`)
-  cannot ask every stage to hold nothing after a flush, as `Restore` does. Empty the delay line on
-  flush. Done when the contract test asserts nothing held after a flush for every stage.
-
 ## Catalog
 - [S · 0.18.1] Correct `forget_folder`'s description. **Low, builder.** MCP says listens and
   playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
