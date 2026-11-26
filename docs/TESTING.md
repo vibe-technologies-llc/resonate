@@ -72,13 +72,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   processor is an arm64 Mach-O
 
 ## Identification
-- [M · 0.18.1] Check the Chromaprint print against a committed one. **Medium, builder.** The one
-  correctness test compares with `fpcalc` and skips without it
-  (`crates/resonate-analysis/tests/references.rs:389-435`), which CI does not install
-  (`.github/workflows/ci.yml:21-24`); the others are self-consistency or `starts_with("AQA")`
-  (`crates/resonate-analysis/src/print.rs:168-169`), and only an 11 025 Hz input is compared. Commit
-  a golden print of a seeded signal at 44.1, 48 and 96 kHz and install `chromaprint` where the tests
-  run. Done when a change to the filterbank fails without `fpcalc`.
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
   the documentation and `tests/live.rs` has no AcoustID test
 
