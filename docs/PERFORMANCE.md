@@ -33,17 +33,6 @@ are in [ROADMAP.md](ROADMAP.md).
   added, reuse `taken_while_free`'s cache otherwise, refresh only volume, mute, mix format and
   default on a nudge, and leave the first survey to the engine. Done when the serving fakes count no
   probe on a volume nudge and one survey before the first answer.
-- [S · 0.18.1] Keep the two resampler plan caches for more than one rate pair. **Low, builder.**
-  `LAST_TABULATED` and `LAST_PLANNED` hold one entry each
-  (`crates/resonate-dsp/src/resample.rs:497-498`, `spectral.rs:356-383`), so two zones at different
-  rate pairs design again on every track change on the engine thread, as does a first Very high
-  minimum-phase design (a 2²¹-point transform). Keep a few entries by pair. Done when alternating
-  two pairs designs each once in a test.
-- [S · 0.18.1] Cap the covers MPRIS lays in the runtime folder. **Low, builder.** `laid_down` writes
-  each cover with no size cap into `$XDG_RUNTIME_DIR` (tmpfs), up to 8 playing and 32 queued
-  (`crates/resonate-mpris/src/art.rs:149-243`, `:356-389`), and names it by a 64-bit fixed-key
-  digest that `already_laid` accepts on length alone (`:256-261`, `:370-372`). Refuse a cover above
-  a few MiB and name it by a content hash. Done when a 100 MB cover is not laid, in a test.
 - [S · 0.18.1] Unpack an amended MusicBrainz document at its own size. **Low, builder.** An amended
   read unpacks into a 16 MiB `MOST_UNPACKED_BLOCK` buffer
   (`crates/resonate-musicbrainz/src/mirror/mod.rs:695`, `:767-770`), up to 64 times a search. Store
