@@ -110,10 +110,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-codec/src/sylt.rs` writes timed words as LRC without `escaped_for_lrc`, so a
   line opening on `[offset:…]` or a stamp reads back as a tag, as Better Lyrics' did. Escape it the
   same way. Done when such a line round-trips, in a test.
-- [S · 0.18.1] Refuse `..` in a sheet's file URI on Unix. **Low, builder.** `sheet::local_file`
-  still normalises `file:///a/../b` lexically (`crates/resonate-library/src/sheet.rs`), though
-  `MediaLocation::from_uri` now refuses dot segments. Read such a row as missing. Done when a sheet
-  row naming `file:///music/../etc/a.flac` reads as missing, in a test.
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
