@@ -1,4 +1,4 @@
-use std::{fmt, io, path::PathBuf, result};
+use std::{fmt, io, path::PathBuf, result, time::Duration};
 
 use resonate_core::{
     abx::TRIALS_AT_MOST,
@@ -214,6 +214,8 @@ pub enum Error {
         #[source]
         source: Box<resonate_cast::Error>,
     },
+    #[error("{}", words::errors::no_turn_to_read(waited.as_secs()))]
+    NoTurnToRead { waited: Duration },
     #[error("{}", words::errors::catalog_not_offered())]
     CatalogNotOffered {
         #[source]

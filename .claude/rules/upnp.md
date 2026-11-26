@@ -889,10 +889,25 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   `Arc`, with the boundary's own reads), so the tree is the phone's own grouping: Artists by name
   (an artist, then the albums holding them, newest first as the phone's artist page orders them),
   Albums by title, an album's songs in album order, Songs by title, Playlists by name and a
-  playlist's songs in its order (a saved search's as its search finds them, `Searching::saved`; a
-  playlist's served rows read once a view, at most 32 kept). Only a song whose URI is a granted
-  document (`location`) and whose name, else URI, names an `AudioKind` is offered, in every shelf
+  playlist's songs in its order (a saved search's as its search finds them, `Searching::saved`).
+  Only a song whose URI is a granted
+  document (`location`) and whose name, else URI, names an `AudioKind` is offered
+  (`served_as`, also the catalog connection's `served(uri, name)` SQL function), in every shelf
   and count; an album or artist holding none is left off, and so is an artist with no name.
+  **A playlist is counted and paged in SQL, never loaded**: the Playlists shelf reads a page of
+  names (`Shelves::playlists_paged`), every playlist's count is one `GROUP BY` over the rows whose
+  document is served (`Shelves::counts_in_sql`, kept in the `View`, so per catalog revision), a
+  saved search's counted from its search once and kept beside them, and a page of a playlist's
+  songs is the served rows at that offset in position order (`Shelves::playlist_songs`), so a
+  playlist naming a song twice pages every row it counts and `TotalMatches`, `childCount` and the
+  rows a page returns agree
+  (`a_catalog_holding_rows_it_cannot_serve_pages_what_it_serves_and_counts_the_same`,
+  `a_playlist_that_names_a_song_twice_pages_every_row_it_counts`,
+  `five_hundred_playlists_of_a_thousand_rows_are_browsed_without_loading_an_entry`: the `View`'s
+  loaded lists stay empty). Artists, albums and Songs page the `View`'s sorted rows by slice, the
+  index being built once a catalog revision for the boundary's own reads too, so no browse reads
+  the whole table; a search narrowed by text under a playlist reads its rows through
+  `Shelves::listed` (at most 32 kept a view).
   **A song's bytes come through the same `Sources` the engine reads**, so a granted document is
   opened by the descriptor the front end hands over (`mobile.md`'s *Granted documents*), never a
   path; one that will not open is 404. Its `res@size` is the size the scan recorded
@@ -904,7 +919,15 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   (`Wanted`): `=` a whole folded name, `contains` each word beginning a word of the field, `!=` and
   `doesNotContain` their denials (an album's and an artist's read against their own title and
   artist, so a denial is answered there too), `exists` whether the field holds anything; a song's
-  artist is its artist or its album artist; a text with no letter or digit is unanswered. A search
+  artist is its artist or its album artist; a text with no letter or digit is unanswered, and so is
+  a word a `contains` or `doesNotContain` begins of fewer than `LETTERS_BEGUN_AT_LEAST` (2) letters
+  (`begins_with_enough_letters`), a whole name (`=`) of one letter still being read
+  (`a_search_word_of_one_letter_is_unanswered_and_one_of_two_is_read`). **Every `Catalog` call but
+  `revision` takes a `Turn` of the `Shelves`' own `ReaderShare`** (the phone's catalog is one
+  connection, so it holds `READERS_SHARED_AT_MOST` (4) turns, not the library's half pool), awaited
+  at most `A_TURN_IS_AWAITED_AT_MOST` (5 s) and failed past it (`Error::NoTurnToRead`), so a burst
+  of searches queues at the share and leaves the boundary's reads their own
+  (`sixteen_root_searches_at_once_leave_a_window_read_answered_within_its_deadline`). A search
   under a container narrows it to what that container's shelf holds before the text is weighed
   (`songs_within`): under an artist the albums their shelf lists and their songs (`songs_by`, the
   rows of their artist group on those albums in that order, then the rest of theirs by title),

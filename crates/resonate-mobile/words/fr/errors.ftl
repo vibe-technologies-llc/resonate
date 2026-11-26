@@ -22,6 +22,10 @@ renderer-address = Cette adresse n’est pas un rendu peut être atteint à
 receiver-search = Le réseau n’a pas pu être consulté pour les récepteurs Cast
 receiver-address = Il ne s’agit pas d’une adresse ou d’un nom qu’un récepteur Cast peut atteindre à
 receiver-unreached = Ce récepteur Cast n’a pas pu être atteint
+no-turn-to-read = Le catalogue était trop occupé pour répondre en { $seconds ->
+    [one] { $seconds } seconde
+   *[other] { $seconds } secondes
+}
 catalog-not-offered = Le catalogue ne pouvait pas être offert sur le réseau
 unknown-renderer = Ce rendeur n’est plus sur le réseau
 renderer-in-use = Ce rendu est en train de jouer ; arrêtez-le avant d’essayer ce qu’il joue

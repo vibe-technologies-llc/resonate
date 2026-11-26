@@ -807,6 +807,20 @@ impl Catalog {
             .map_err(|source| Error::store(StoreOp::Open, source))?;
         connection
             .create_scalar_function(
+                "served",
+                2,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| {
+                    Ok(crate::offering::served_as(
+                        &context.get::<String>(0)?,
+                        &context.get::<String>(1)?,
+                    )
+                    .is_some())
+                },
+            )
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+        connection
+            .create_scalar_function(
                 REFOLDED_KEY,
                 1,
                 FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,

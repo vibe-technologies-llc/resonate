@@ -15,7 +15,7 @@ use resonate_upnp::{
     AudioKind, Content, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture,
     Query, Searched, ServerName, Shelf, Shelved, Song, Test, Udn, Within,
 };
-use rusqlite::OptionalExtension as _;
+use rusqlite::{OptionalExtension as _, params};
 
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
@@ -23,17 +23,35 @@ use crate::{
     documents::location,
     saved_searches::saved_query,
     search::{CollectionOrder, Index, Row, Searching, album_order, artist_order},
+    turns::ReaderShare,
 };
 
 const UDN_KEPT_IN: &str = "media-server-udn";
 
 const LISTS_KEPT_AT_MOST: usize = 32;
 
+const READERS_SHARED_AT_MOST: usize = 4;
+
+const A_TURN_IS_AWAITED_AT_MOST: Duration = Duration::from_secs(5);
+
+const LETTERS_BEGUN_AT_LEAST: usize = 2;
+
 const NAMED_FROM: u64 = 0xcbf2_9ce4_8422_2325;
 
 const NAMED_BY: u64 = 0x0000_0100_0000_01b3;
 
 const PLAYLISTS_BY_NAME: &str = "SELECT id, name FROM playlists ORDER BY folded, id";
+
+const PLAYLISTS_HELD: &str = "SELECT COUNT(*) FROM playlists";
+
+const PLAYLISTS_PAGED: &str =
+    "SELECT id, name FROM playlists ORDER BY folded, id LIMIT ?1 OFFSET ?2";
+
+const PLAYLIST_ROWS_COUNTED: &str = "SELECT r.playlist, COUNT(*) FROM playlist_rows r JOIN documents d ON d.id = r.track WHERE d.missing = 0 AND served(d.uri, d.name) GROUP BY r.playlist";
+
+const SAVED_PLAYLISTS: &str = "SELECT playlist FROM playlist_queries";
+
+const A_PLAYLISTS_PAGE: &str = "SELECT r.track FROM playlist_rows r JOIN documents d ON d.id = r.track WHERE r.playlist = ?1 AND d.missing = 0 AND served(d.uri, d.name) ORDER BY r.position LIMIT ?2 OFFSET ?3";
 
 const A_PLAYLISTS_NAME: &str = "SELECT name FROM playlists WHERE id = ?1";
 
@@ -48,6 +66,7 @@ pub(crate) struct Shelves {
     searching: Arc<Searching>,
     sources: Arc<Sources>,
     view: Mutex<Option<Arc<View>>>,
+    readers: ReaderShare,
 }
 
 struct View {
@@ -64,6 +83,13 @@ struct View {
     artist_at: HashMap<ArtistId, usize>,
     sizes: HashMap<u64, u64>,
     lists: Mutex<HashMap<u64, Arc<Vec<usize>>>>,
+    counts: Mutex<Option<Arc<Counts>>>,
+}
+
+struct Counts {
+    rows: HashMap<u64, u32>,
+    saved: HashSet<u64>,
+    searched: Mutex<HashMap<u64, u32>>,
 }
 
 struct Album {
@@ -113,6 +139,7 @@ impl Shelves {
             searching,
             sources,
             view: Mutex::new(None),
+            readers: ReaderShare::of(READERS_SHARED_AT_MOST, A_TURN_IS_AWAITED_AT_MOST),
         }
     }
 
@@ -172,6 +199,135 @@ impl Shelves {
                     .map(|id| Playlist { id, name })
             })
             .collect())
+    }
+
+    fn playlists_paged(&self, page: Page) -> Result<(Vec<Playlist>, u32)> {
+        let connection = self.catalog.0.lock();
+        let total: i64 = connection
+            .query_row(PLAYLISTS_HELD, [], |row| row.get(0))
+            .map_err(read_error)?;
+        let mut query = connection
+            .prepare_cached(PLAYLISTS_PAGED)
+            .map_err(read_error)?;
+
+        let listed = query
+            .query_map(params![i64::from(page.most), i64::from(page.from)], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)?;
+        Ok((
+            listed
+                .into_iter()
+                .filter_map(|(id, name)| {
+                    PlaylistId::new(id as u64)
+                        .ok()
+                        .map(|id| Playlist { id, name })
+                })
+                .collect(),
+            counted(usize::try_from(total).unwrap_or_default()),
+        ))
+    }
+
+    fn counts_in_sql(&self) -> Result<Counts> {
+        let connection = self.catalog.0.lock();
+
+        let rows = connection
+            .prepare_cached(PLAYLIST_ROWS_COUNTED)
+            .map_err(read_error)?
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as u64,
+                    u32::try_from(row.get::<_, i64>(1)?).unwrap_or(u32::MAX),
+                ))
+            })
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(read_error)?;
+        let saved = connection
+            .prepare_cached(SAVED_PLAYLISTS)
+            .map_err(read_error)?
+            .query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(read_error)?;
+        Ok(Counts {
+            rows,
+            saved,
+            searched: Mutex::new(HashMap::new()),
+        })
+    }
+
+    fn counts(&self, view: &View) -> Result<Arc<Counts>> {
+        if let Some(counts) = view.counts.lock().as_ref() {
+            return Ok(Arc::clone(counts));
+        }
+
+        let counts = Arc::new(self.counts_in_sql()?);
+
+        *view.counts.lock() = Some(Arc::clone(&counts));
+        Ok(counts)
+    }
+
+    fn count_of(&self, view: &View, id: PlaylistId) -> Result<u32> {
+        let counts = self.counts(view)?;
+
+        if !counts.saved.contains(&id.get()) {
+            return Ok(counts.rows.get(&id.get()).copied().unwrap_or_default());
+        }
+        if let Some(kept) = counts.searched.lock().get(&id.get()) {
+            return Ok(*kept);
+        }
+
+        let counted = counted(self.listed(view, id)?.len());
+
+        counts.searched.lock().insert(id.get(), counted);
+        Ok(counted)
+    }
+
+    fn playlist_tracks(&self, id: PlaylistId, page: Page) -> Result<Vec<u64>> {
+        let connection = self.catalog.0.lock();
+        let mut query = connection
+            .prepare_cached(A_PLAYLISTS_PAGE)
+            .map_err(read_error)?;
+
+        query
+            .query_map(
+                params![id.get() as i64, i64::from(page.most), i64::from(page.from)],
+                |row| row.get::<_, i64>(0).map(|id| id as u64),
+            )
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(read_error)
+    }
+
+    fn playlist_songs(&self, view: &View, id: PlaylistId, page: Page) -> Result<Option<Shelved>> {
+        if self.playlist(id)?.is_none() {
+            return Ok(None);
+        }
+        if self.counts(view)?.saved.contains(&id.get()) {
+            return Ok(Some(view.songs_paged(&self.listed(view, id)?, page)));
+        }
+
+        let total = self.count_of(view, id)?;
+
+        if page.most == 0 || page.from >= total {
+            return Ok(Some(Shelved {
+                held: Vec::new(),
+                total,
+            }));
+        }
+
+        let rows: Vec<usize> = self
+            .playlist_tracks(id, page)?
+            .into_iter()
+            .filter_map(|song| view.song_at.get(&song).copied())
+            .collect();
+        Ok(Some(Shelved {
+            held: view.songs_of(&rows),
+            total,
+        }))
     }
 
     fn playlist(&self, id: PlaylistId) -> Result<Option<Playlist>> {
@@ -256,7 +412,7 @@ impl Shelves {
     fn playlist_held(&self, view: &View, playlist: Playlist) -> Result<Held> {
         Ok(Held {
             shelf: Shelf::Playlist(playlist.id),
-            children: counted(self.listed(view, playlist.id)?.len()),
+            children: self.count_of(view, playlist.id)?,
             title: playlist.name,
             artist: None,
             cover: None,
@@ -413,6 +569,7 @@ impl View {
             artist_at,
             sizes,
             lists: Mutex::new(HashMap::new()),
+            counts: Mutex::new(None),
         }
     }
 
@@ -545,9 +702,16 @@ impl resonate_upnp::Catalog for Shelves {
         let Some(wanted) = Wanted::of(query) else {
             return Ok(Searched::Unanswered);
         };
+        let _turn = self.readers.turn()?;
         let view = self.view()?;
 
         let shelved = match (kind, within) {
+            (Kind::Song, Within::Playlist(id)) if matches!(query, Query::Everything) => {
+                self.playlist_songs(&view, id, page)?.unwrap_or(Shelved {
+                    held: Vec::new(),
+                    total: 0,
+                })
+            }
             (Kind::Song, _) => {
                 let found: Vec<usize> = self
                     .songs_within(&view, within)?
@@ -619,6 +783,7 @@ impl resonate_upnp::Catalog for Shelves {
     }
 
     fn shelved(&self, shelf: Shelf, page: Page) -> Result<Option<Shelved>> {
+        let _turn = self.readers.turn()?;
         let view = self.view()?;
 
         Ok(Some(match shelf {
@@ -656,17 +821,22 @@ impl resonate_upnp::Catalog for Shelves {
                 view.songs_paged(&view.albums[*at].songs, page)
             }
             Shelf::Songs => view.songs_paged(&view.songs, page),
-            Shelf::Playlists => self.playlists_held(&view, self.playlists()?, page)?,
-            Shelf::Playlist(id) => {
-                if self.playlist(id)?.is_none() {
-                    return Ok(None);
+            Shelf::Playlists => {
+                let (names, total) = self.playlists_paged(page)?;
+                Shelved {
+                    held: names
+                        .into_iter()
+                        .map(|playlist| self.playlist_held(&view, playlist).map(Entry::Shelf))
+                        .collect::<Result<_>>()?,
+                    total,
                 }
-                view.songs_paged(&self.listed(&view, id)?, page)
             }
+            Shelf::Playlist(id) => return self.playlist_songs(&view, id, page),
         }))
     }
 
     fn shelf(&self, shelf: Shelf) -> Result<Option<Held>> {
+        let _turn = self.readers.turn()?;
         let view = self.view()?;
 
         match shelf {
@@ -681,12 +851,14 @@ impl resonate_upnp::Catalog for Shelves {
     }
 
     fn song(&self, id: TrackId) -> Result<Option<Song>> {
+        let _turn = self.readers.turn()?;
         let view = self.view()?;
 
         Ok(view.song_at.get(&id.get()).and_then(|at| view.song_of(*at)))
     }
 
     fn bytes_of(&self, id: TrackId) -> Result<Option<Opened>> {
+        let _turn = self.readers.turn()?;
         let view = self.view()?;
         let Some(at) = view.song_at.get(&id.get()) else {
             return Ok(None);
@@ -711,6 +883,7 @@ impl resonate_upnp::Catalog for Shelves {
     }
 
     fn cover(&self, album: AlbumId) -> Result<Option<Picture>> {
+        let _turn = self.readers.turn()?;
         let view = self.view()?;
         let Some(at) = view.album_at.get(&album) else {
             return Ok(None);
@@ -765,7 +938,9 @@ impl Wanted {
                         .map(str::to_owned)
                         .collect::<Vec<_>>();
 
-                    if words.is_empty() {
+                    if words.is_empty()
+                        || !words.iter().all(|word| begins_with_enough_letters(word))
+                    {
                         return None;
                     }
                     Self::Begun {
@@ -811,6 +986,10 @@ impl Wanted {
     }
 }
 
+fn begins_with_enough_letters(word: &str) -> bool {
+    word.chars().filter(|letter| is_lettered(*letter)).count() >= LETTERS_BEGUN_AT_LEAST
+}
+
 fn pieces_of(text: &str) -> impl Iterator<Item = &str> {
     text.split(|letter: char| !is_lettered(letter))
         .filter(|piece| !piece.is_empty())
@@ -825,10 +1004,12 @@ fn in_title_order(one: &Row, other: &Row) -> Ordering {
 }
 
 fn kind_of(track: &Track) -> Option<AudioKind> {
-    let at = location(&track.uri).ok()?;
-    track
-        .name
-        .rsplit_once('.')
+    served_as(&track.uri, &track.name)
+}
+
+pub(crate) fn served_as(uri: &str, name: &str) -> Option<AudioKind> {
+    let at = location(uri).ok()?;
+    name.rsplit_once('.')
         .and_then(|(_, extension)| AudioKind::of_extension(extension))
         .or_else(|| at.extension().and_then(AudioKind::of_extension))
 }
@@ -1018,16 +1199,16 @@ mod tests {
     use std::{
         io::{Read as _, Write as _},
         net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
+        thread,
         time::Instant,
     };
 
     use resonate_upnp::Catalog as _;
-    use rusqlite::params;
 
     use super::*;
     use crate::{
         SavedSearch,
-        harness::{Harness, SETTLED_WITHIN},
+        harness::{Harness, SETTLED_WITHIN, SONGS},
         saved_searches::SearchOrder,
     };
 
@@ -1911,5 +2092,447 @@ mod tests {
         assert_eq!(unnamed, ("Resonate".to_owned(), "Resonate".to_owned()));
         assert_eq!(resting, "Den");
         assert!(!harness.player.catalog_shared_on_network());
+    }
+
+    fn paged_by(shelves: &Shelves, shelf: Shelf, size: u32) -> (Vec<String>, u32) {
+        let mut titles = Vec::new();
+        let mut from = 0;
+
+        loop {
+            let page = shelved(shelves, shelf, from, size);
+            let returned = u32::try_from(page.held.len()).expect("a page");
+
+            titles.extend(titled(&page));
+            from += returned;
+            if returned == 0 || from >= page.total {
+                return (titles, page.total);
+            }
+        }
+    }
+
+    fn titles_found(searched: Searched) -> (Vec<String>, u32) {
+        match searched {
+            Searched::Found(shelved) => (titled(&shelved), shelved.total),
+            Searched::Unanswered => panic!("an answered search"),
+        }
+    }
+
+    fn document(
+        harness: &Harness,
+        uri: &str,
+        name: &str,
+        song: (&str, &str, &str),
+        missing: bool,
+    ) -> u64 {
+        let connection = harness.player.catalog.0.lock();
+
+        connection
+            .execute(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, missing)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 300000, 44100, 'FLAC', ?6)",
+                params![uri, name, song.0, song.1, song.2, missing],
+            )
+            .expect("a document");
+        connection.last_insert_rowid() as u64
+    }
+
+    #[test]
+    fn the_shelves_page_every_song_by_ones_and_by_twos_to_the_same_rows() {
+        let harness = Harness::new();
+
+        filed(&harness);
+
+        let shelves = shelves(&harness);
+
+        let (by_ones, total) = paged_by(&shelves, Shelf::Songs, 1);
+        let (by_twos, _) = paged_by(&shelves, Shelf::Songs, 2);
+        let (by_fives, _) = paged_by(&shelves, Shelf::Songs, 5);
+        let whole = titled(&shelved(&shelves, Shelf::Songs, 0, 100));
+        let jumped = titled(&shelved(&shelves, Shelf::Songs, 5, 2));
+        let past_the_end = shelved(&shelves, Shelf::Songs, 50, 2);
+
+        assert_eq!(total, 8);
+        assert_eq!(by_ones, whole);
+        assert_eq!(by_twos, whole);
+        assert_eq!(by_fives, whole);
+        assert_eq!(whole.len(), 8);
+        assert_eq!(jumped, whole[5..7]);
+        assert!(!whole.contains(&"Liner Notes".to_owned()));
+        assert!(past_the_end.held.is_empty());
+        assert_eq!(past_the_end.total, 8);
+    }
+
+    #[test]
+    fn a_catalog_holding_rows_it_cannot_serve_pages_what_it_serves_and_counts_the_same() {
+        let harness = Harness::new();
+        let ids = filed(&harness);
+
+        let elsewhere = document(
+            &harness,
+            "file:///elsewhere/elsewhere.flac",
+            "elsewhere.flac",
+            ("Elsewhere", "Miles Davis", "Kind of Blue"),
+            false,
+        );
+        let gone = document(
+            &harness,
+            &format!("{}gone.flac", crate::harness::FOLDER),
+            "gone.flac",
+            ("Gone", "John Coltrane", "Blue Train"),
+            false,
+        );
+
+        let everything = harness
+            .player
+            .make_playlist(
+                "Everything".to_owned(),
+                vec![
+                    ids["So What"],
+                    ids["Liner Notes"],
+                    elsewhere,
+                    gone,
+                    ids["Blue Train"],
+                    ids["Freddie Freeloader"],
+                ],
+            )
+            .expect("a playlist");
+        let miles = harness
+            .player
+            .save_search(
+                "Miles".to_owned(),
+                SavedSearch {
+                    text: "artist:miles".to_owned(),
+                    order: SearchOrder::Title,
+                    descending: false,
+                    rows: None,
+                },
+            )
+            .expect("a saved search");
+
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET missing = 1 WHERE id = ?1",
+                [gone as i64],
+            )
+            .expect("a song gone");
+
+        let shelves = shelves(&harness);
+        let everything = Shelf::Playlist(PlaylistId::new(everything).expect("an id"));
+        let miles = Shelf::Playlist(PlaylistId::new(miles).expect("an id"));
+        let albums = shelved(&shelves, Shelf::Albums, 0, 10);
+
+        let children = |shelf: Shelf| {
+            shelves
+                .shelf(shelf)
+                .expect("read")
+                .expect("a shelf")
+                .children
+        };
+        let every_song = found(&shelves, Kind::Song, &Query::Everything, 0, 100);
+        let (songs, songs_total) = paged_by(&shelves, Shelf::Songs, 1);
+        let (everything_by_ones, everything_total) = paged_by(&shelves, everything, 1);
+        let (miles_by_twos, miles_total) = paged_by(&shelves, miles, 2);
+        let in_everything = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Playlist(match everything {
+                Shelf::Playlist(id) => id,
+                _ => panic!("not a playlist"),
+            }),
+            &Query::Everything,
+            1,
+            1,
+        );
+
+        assert_eq!(songs_total, 8);
+        assert_eq!(songs.len(), 8);
+        assert_eq!(every_song.total, 8);
+        assert!(!songs.contains(&"Elsewhere".to_owned()));
+        assert!(!songs.contains(&"Gone".to_owned()));
+        assert_eq!(titled(&albums), ["Blue Train (2)", "Kind of Blue (2)"]);
+        assert_eq!(
+            everything_by_ones,
+            ["So What", "Blue Train", "Freddie Freeloader"]
+        );
+        assert_eq!(everything_total, 3);
+        assert_eq!(children(everything), 3);
+        assert_eq!(titled(&in_everything), ["Blue Train"]);
+        assert_eq!(in_everything.total, 3);
+        assert_eq!(miles_by_twos, ["Freddie Freeloader", "So What"]);
+        assert_eq!(miles_total, 2);
+        assert_eq!(children(miles), 2);
+        assert_eq!(
+            titled(&shelved(&shelves, Shelf::Playlists, 0, 10)),
+            ["Everything (3)", "Miles (2)"]
+        );
+    }
+
+    #[test]
+    fn a_playlist_that_names_a_song_twice_pages_every_row_it_counts() {
+        let harness = Harness::new();
+        let ids = filed(&harness);
+
+        let twice = harness
+            .player
+            .make_playlist(
+                "Twice".to_owned(),
+                vec![ids["Blue Train"], ids["So What"], ids["Blue Train"]],
+            )
+            .expect("a playlist");
+        let twice = Shelf::Playlist(PlaylistId::new(twice).expect("an id"));
+        let shelves = shelves(&harness);
+
+        let whole = shelved(&shelves, twice, 0, 10);
+        let first_page = shelved(&shelves, twice, 0, 2);
+        let second_page = shelved(&shelves, twice, 2, 2);
+
+        assert_eq!(titled(&whole), ["Blue Train", "So What", "Blue Train"]);
+        assert_eq!(whole.total, 3);
+        assert_eq!(titled(&first_page), ["Blue Train", "So What"]);
+        assert_eq!(first_page.total, 3);
+        assert_eq!(titled(&second_page), ["Blue Train"]);
+        assert_eq!(second_page.total, 3);
+        assert_eq!(
+            shelves
+                .shelf(twice)
+                .expect("read")
+                .map(|held| held.children),
+            Some(3)
+        );
+    }
+
+    const PLAYLISTS: i64 = 500;
+
+    const ROWS_A_PLAYLIST: usize = 1_000;
+
+    fn listed_in_many_playlists(harness: &Harness) {
+        let connection = harness.player.catalog.0.lock();
+        let songs: Vec<i64> = connection
+            .prepare("SELECT id FROM documents ORDER BY id")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get(0))
+                    .and_then(Iterator::collect)
+            })
+            .expect("the songs");
+        let filling = connection.unchecked_transaction().expect("a transaction");
+
+        {
+            let mut playlist = filling
+                .prepare("INSERT INTO playlists (id, name, folded) VALUES (?1, ?2, ?3)")
+                .expect("playlists are written");
+            let mut entry = filling
+                .prepare(
+                    "INSERT INTO playlist_rows (playlist, position, track) VALUES (?1, ?2, ?3)",
+                )
+                .expect("entries are written");
+
+            for list in 1..=PLAYLISTS {
+                playlist
+                    .execute(params![
+                        list,
+                        format!("List {list:03}"),
+                        format!("list {list:03}")
+                    ])
+                    .expect("a playlist");
+                for position in 0..ROWS_A_PLAYLIST {
+                    entry
+                        .execute(params![
+                            list,
+                            position as i64,
+                            songs[position % songs.len()]
+                        ])
+                        .expect("an entry");
+                }
+            }
+        }
+        filling.commit().expect("the playlists are kept");
+    }
+
+    #[test]
+    fn five_hundred_playlists_of_a_thousand_rows_are_browsed_without_loading_an_entry() {
+        let harness = Harness::new();
+
+        listed_in_many_playlists(&harness);
+
+        let shelves = shelves(&harness);
+
+        let top: Vec<u32> = Shelf::TOP
+            .into_iter()
+            .map(|shelf| shelved(&shelves, shelf, 0, 0).total)
+            .collect();
+        let listed = shelved(&shelves, Shelf::Playlists, 0, PLAYLISTS as u32);
+        let tail = shelved(&shelves, Shelf::Playlists, PLAYLISTS as u32 - 2, 10);
+        let first = first_shelf(&listed);
+        let one = shelves.shelf(first).expect("read").expect("a playlist");
+        let near_the_end = shelved(&shelves, first, ROWS_A_PLAYLIST as u32 - 5, 10);
+        let loaded = shelves.view().expect("a view").lists.lock().len();
+
+        let children: Vec<u32> = listed
+            .held
+            .iter()
+            .map(|entry| match entry {
+                Entry::Shelf(held) => held.children,
+                Entry::Song(_) => panic!("a playlist, not a song"),
+            })
+            .collect();
+
+        assert_eq!(top[2], SONGS.len() as u32);
+        assert_eq!(top[3], PLAYLISTS as u32);
+        assert_eq!(listed.total, PLAYLISTS as u32);
+        assert_eq!(children.len(), PLAYLISTS as usize);
+        assert!(
+            children
+                .iter()
+                .all(|counted| *counted == ROWS_A_PLAYLIST as u32)
+        );
+        assert_eq!(titled(&tail), ["List 499 (1000)", "List 500 (1000)"]);
+        assert_eq!(tail.total, PLAYLISTS as u32);
+        assert_eq!(one.children, ROWS_A_PLAYLIST as u32);
+        assert_eq!(near_the_end.held.len(), 5);
+        assert_eq!(near_the_end.total, ROWS_A_PLAYLIST as u32);
+        assert_eq!(loaded, 0);
+    }
+
+    const SEARCHES_AT_ONCE: usize = 16;
+
+    const SONGS_SEARCHED: usize = 8_000;
+
+    const A_WINDOW_READ_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(250);
+
+    fn filled_with_songs(harness: &Harness) -> u64 {
+        let connection = harness.player.catalog.0.lock();
+        let filling = connection.unchecked_transaction().expect("a transaction");
+
+        {
+            let mut song = filling
+                .prepare(
+                    "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, size)
+                     VALUES (?1, ?2, ?3, 'Soloist', 'Sonata', 300000, 44100, 'FLAC', 1)",
+                )
+                .expect("songs are written");
+
+            for at in 0..SONGS_SEARCHED {
+                song.execute(params![
+                    format!("{}{at}.flac", crate::harness::FOLDER),
+                    format!("{at}.flac"),
+                    format!("Song {at}")
+                ])
+                .expect("a song");
+            }
+        }
+        filling.commit().expect("the songs are kept");
+        connection.last_insert_rowid() as u64
+    }
+
+    #[test]
+    fn sixteen_root_searches_at_once_leave_a_window_read_answered_within_its_deadline() {
+        let harness = Harness::new();
+        let shown = filled_with_songs(&harness);
+
+        harness
+            .player
+            .make_playlist("Songs".to_owned(), vec![shown])
+            .expect("a playlist");
+
+        let shelves = shelves(&harness);
+        let asked = text(Field::Title, Test::Contains, "so");
+
+        let (slowest, searched) = thread::scope(|scope| {
+            let searchers: Vec<_> = (0..SEARCHES_AT_ONCE)
+                .map(|_| {
+                    scope.spawn(|| {
+                        [Kind::Artist, Kind::Album, Kind::Playlist, Kind::Song]
+                            .map(|kind| {
+                                shelves.searched(kind, Within::Catalog, &asked, Page::first(50))
+                            })
+                            .into_iter()
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            let mut slowest = Duration::ZERO;
+
+            while searchers.iter().any(|searcher| !searcher.is_finished()) {
+                let since = Instant::now();
+
+                harness.player.catalog.track(shown).expect("a window read");
+                slowest = slowest.max(since.elapsed());
+                thread::sleep(Duration::from_millis(5));
+            }
+
+            let searched: Vec<_> = searchers
+                .into_iter()
+                .flat_map(|searcher| searcher.join().expect("a searcher"))
+                .collect();
+            (slowest, searched)
+        });
+
+        let found = searched
+            .iter()
+            .filter(|outcome| matches!(outcome, Ok(Searched::Found(_))))
+            .count();
+        let unexpected: Vec<_> = searched
+            .iter()
+            .filter(|outcome| {
+                !matches!(
+                    outcome,
+                    Ok(Searched::Found(_)) | Err(Error::NoTurnToRead { .. })
+                )
+            })
+            .collect();
+
+        assert!(
+            slowest < A_WINDOW_READ_IS_ANSWERED_WITHIN,
+            "a window read waited {slowest:?}"
+        );
+        assert!(found > 0);
+        assert!(unexpected.is_empty(), "{unexpected:?}");
+    }
+
+    #[test]
+    fn a_search_word_of_one_letter_is_unanswered_and_one_of_two_is_read() {
+        let harness = Harness::new();
+
+        filed(&harness);
+
+        let shelves = shelves(&harness);
+        let every = Page::first(10);
+
+        let searched = |kind: Kind, query: &Query| {
+            shelves
+                .searched(kind, Within::Catalog, query, every)
+                .expect("searched")
+        };
+
+        let one_letter = [Kind::Song, Kind::Album, Kind::Artist, Kind::Playlist]
+            .map(|kind| searched(kind, &text(Field::Title, Test::Contains, "s")));
+        let one_beside_two = searched(Kind::Song, &text(Field::Title, Test::Contains, "so w"));
+        let denied_one = searched(Kind::Song, &text(Field::Title, Test::Lacks, "x"));
+        let two_letters = titles_found(searched(
+            Kind::Song,
+            &text(Field::Title, Test::Contains, "so"),
+        ));
+        let one_whole = titles_found(searched(
+            Kind::Song,
+            &text(Field::Title, Test::Is, "so what"),
+        ));
+        let one_letter_whole =
+            titles_found(searched(Kind::Song, &text(Field::Title, Test::Is, "a")));
+
+        assert!(
+            one_letter
+                .iter()
+                .all(|searched| *searched == Searched::Unanswered)
+        );
+        assert_eq!(one_beside_two, Searched::Unanswered);
+        assert_eq!(denied_one, Searched::Unanswered);
+        assert_eq!(two_letters, (vec!["So What".to_owned()], 1));
+        assert_eq!(one_whole, (vec!["So What".to_owned()], 1));
+        assert_eq!(one_letter_whole, (vec!["a".to_owned()], 1));
     }
 }

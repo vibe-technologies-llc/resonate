@@ -393,7 +393,8 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   below it at compile time) at once, a turn awaited at most the share's own wait and refused as
   `Error::NoTurnToRead` past it, so the rest of the pool stays the window's
   (`a_share_of_the_readers_hands_out_half_the_pool_and_wakes_a_waiter_as_one_comes_back`). The
-  media server is the one such caller (`upnp.md`). A call holding a turn reads one reader at a
+  binary's media server is the one such caller (`upnp.md`; a phone's holds a share of its own, its
+  catalog being one connection). A call holding a turn reads one reader at a
   time, so the share bounds the readers it holds.
 - **Every write begins `IMMEDIATE`.** `Inner::write`, `reconcile_artists`,
   `settle_the_credits_if_owed` take the write lock as the transaction opens, so a second process
