@@ -36,7 +36,7 @@ pub(crate) fn wanted_sink(cli: &Cli, config: &Config) -> Option<NodeName> {
 
 pub(crate) fn rates(rates: &[SampleRate]) -> String {
     if rates.is_empty() {
-        return "none".to_owned();
+        return words::main::none().to_owned();
     }
     rates
         .iter()

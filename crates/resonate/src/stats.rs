@@ -52,7 +52,7 @@ fn section<Id>(heading: &str, named: &'static str, rows: &[Listened<Id>]) {
     for row in rows {
         table.push(vec![
             row.name.clone(),
-            row.plays.to_string(),
+            resonate_words::grouped(row.plays),
             heard_for(row.listened),
         ]);
     }

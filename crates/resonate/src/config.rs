@@ -362,7 +362,6 @@ impl fmt::Debug for Config {
             .field("renderers_at", renderers_at)
             .field("cast_at", cast_at)
             .field("offer_name", offer_name)
-            .field("offer_name", offer_name)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
             .field("update_dismissed", update_dismissed)

@@ -564,6 +564,9 @@ tested.
   quits. Saying which X was moves to the next trial on the spot and prints the verdict with the
   running score (no X is ever named); the last trial, `q`, end of input or a signal ends the run with
   the score, the chance by guessing and the p-value, and the real `Equalisation` is sent back.
+  A verdict (`heard_it` or `luck`) is said only for a finished test: one left early says the tally
+  and how far it got, since a verdict read off the answered prefix is optional stopping
+  (`stopping_after_five_right_answers_of_many_prints_only_the_tally`).
   `Test` is the pure half and holds the tests (`hearing_x_is_the_arm_the_session_drew_for_this_trial`,
   `answering_every_trial_rightly_ends_on_a_significant_score`).
 - **Restoration, the resampler and dither are tested by an audition: two chains run side by side

@@ -71,3 +71,7 @@ gibibytes = { $value } GIB
 yes = oui
 no = Non.
 unknown = inconnu
+faststart = démarrage rapide
+replay-gain-off = désactivé
+replay-gain-track = piste
+replay-gain-album = album

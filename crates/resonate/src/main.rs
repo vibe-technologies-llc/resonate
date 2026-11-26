@@ -177,7 +177,10 @@ const HTTP_CLIENT_TARGET: &str = "ureq";
 fn main() -> ExitCode {
     gaming::watch();
 
-    let ran = run();
+    let ran = run().and_then(|()| match said::the_write_that_failed() {
+        Some(error) => Err(Error::WriteStandardOutput(error)),
+        None => Ok(()),
+    });
 
     providers::stop_the_tools();
     match ran {

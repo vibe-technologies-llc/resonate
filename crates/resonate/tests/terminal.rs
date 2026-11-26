@@ -204,6 +204,11 @@ fn told_to_leave_by(signal: &str) {
         "{signal} killed play with nothing caught"
     );
     assert_eq!(
+        status.code(),
+        Some(0),
+        "play did not leave cleanly on {signal}"
+    );
+    assert_eq!(
         after & KEPT_BY_A_LINE_AT_A_TIME,
         before & KEPT_BY_A_LINE_AT_A_TIME,
         "play left on {signal} with the terminal still a key at a time"
@@ -223,4 +228,58 @@ fn a_termination_leaves_play_with_the_terminal_as_it_found_it() {
 #[test]
 fn a_hang_up_leaves_play_with_the_terminal_as_it_found_it() {
     told_to_leave_by("HUP");
+}
+
+#[test]
+fn a_quit_leaves_play_with_the_terminal_as_it_found_it() {
+    told_to_leave_by("QUIT");
+}
+
+fn listing_playlists(home: &Home) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_resonate"));
+
+    command
+        .arg("playlists")
+        .env("HOME", &home.0)
+        .env("XDG_CONFIG_HOME", home.0.join("config"))
+        .env("XDG_DATA_HOME", home.0.join("data"))
+        .env("XDG_CACHE_HOME", home.0.join("cache"))
+        .env("XDG_STATE_HOME", home.0.join("state"))
+        .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent")
+        .stdin(Stdio::null())
+        .stderr(Stdio::piped());
+    command
+}
+
+#[test]
+fn a_listing_written_to_a_full_disk_fails() {
+    let Ok(full) = OpenOptions::new().write(true).open("/dev/full") else {
+        eprintln!("skipped: no /dev/full to write to");
+        return;
+    };
+    let home = Home::new("terminal-full");
+
+    let output = listing_playlists(&home)
+        .stdout(Stdio::from(full))
+        .output()
+        .expect("the binary to run");
+
+    assert_eq!(output.status.code(), Some(1), "{:?}", output.status);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("cannot write to the standard output"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn a_listing_written_to_a_pipe_succeeds() {
+    let home = Home::new("terminal-piped");
+
+    let output = listing_playlists(&home)
+        .stdout(Stdio::piped())
+        .output()
+        .expect("the binary to run");
+
+    assert!(output.status.success(), "{:?}", output.status);
 }

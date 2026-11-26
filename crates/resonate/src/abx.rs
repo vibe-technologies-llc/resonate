@@ -246,6 +246,7 @@ impl Test {
                 score.answered,
                 self.session.planned(),
             ));
+            return lines;
         }
         lines.push(
             if score.is_significant() {
@@ -570,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn a_test_left_early_says_how_far_it_got_and_that_a_guess_shows_nothing() {
+    fn a_test_left_early_says_how_far_it_got_and_gives_no_verdict() {
         let mut test = begun(16);
 
         let x = test.session.x().expect("a trial is due");
@@ -580,11 +581,33 @@ mod tests {
         let lines = test.conclusion();
 
         assert!(lines[0].starts_with("0 of 1 right"));
+        assert_eq!(lines.len(), 2);
         assert_eq!(lines[1], "stopped after 1 of 16 trials");
-        assert!(lines[2].contains("no difference was shown"));
         assert_eq!(
             begun(16).conclusion(),
             vec!["no trial was answered".to_owned()]
+        );
+    }
+
+    #[test]
+    fn stopping_after_five_right_answers_of_many_prints_only_the_tally() {
+        let mut test = begun(16);
+
+        for _ in 0..5 {
+            let x = test.session.x().expect("a trial is due");
+
+            assert_eq!(test.answered(x), Some(Verdict::Right));
+        }
+
+        let lines = test.conclusion();
+
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].starts_with("5 of 5 right"));
+        assert_eq!(lines[1], "stopped after 5 of 16 trials");
+        assert!(
+            lines
+                .iter()
+                .all(|line| !line.contains("you can hear this") && !line.contains("luck"))
         );
     }
 

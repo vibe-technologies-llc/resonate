@@ -6,6 +6,7 @@ use resonate_codec::{
     the_file_a_cue_names,
 };
 use resonate_core::{AppliedGain, Decibels, Frames, MediaLocation, SampleRate};
+use resonate_dsp::ReplayGainMode;
 use resonate_engine::{EngineConfig, resolve_replay_gain};
 use unicode_width::UnicodeWidthStr as _;
 
@@ -77,7 +78,7 @@ pub(crate) fn pairs(rows: Vec<(&str, String)>) {
     for (name, value) in rows {
         let padding = " ".repeat(width - name.width());
 
-        said!("  {name}{padding}  {value}");
+        said!("  {name}{padding}  {}", table::on_one_line(&value));
     }
 }
 
@@ -115,7 +116,9 @@ fn sheet(path: &Path) -> Result<()> {
     ]);
 
     for cut in &held.files {
-        heading(&words::info::file_named(cut.named.as_str()));
+        heading(&table::on_one_line(&words::info::file_named(
+            cut.named.as_str(),
+        )));
 
         let beside = path
             .parent()
@@ -196,12 +199,23 @@ fn stream(report: &StreamReport) {
     ]);
 }
 
+fn replay_gain_mode(mode: ReplayGainMode) -> &'static str {
+    match mode {
+        ReplayGainMode::Off => words::info::replay_gain_off(),
+        ReplayGainMode::Track => words::info::replay_gain_track(),
+        ReplayGainMode::Album => words::info::replay_gain_album(),
+    }
+}
+
 fn replay_gain(report: &StreamReport, config: &EngineConfig) {
     let gain = &report.info.tags.heard_gain();
     let applied = resolve_replay_gain(config.replay_gain, config.levelling, gain);
 
     let rows = vec![
-        (words::info::mode(), format!("{:?}", config.replay_gain)),
+        (
+            words::info::mode(),
+            replay_gain_mode(config.replay_gain).to_owned(),
+        ),
         (words::info::pre_amp(), config.levelling.pre_amp.to_string()),
         (
             words::info::untagged(),
@@ -258,7 +272,7 @@ fn boxes(layout: &resonate_codec::BoxLayout) {
         },
     );
 
-    pairs(vec![("faststart", verdict)]);
+    pairs(vec![(words::info::faststart(), verdict)]);
 
     let mut table = Table::new(vec![
         "",

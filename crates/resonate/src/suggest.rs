@@ -48,7 +48,7 @@ fn list(suggested: &[Suggestion]) {
         table.push(vec![
             suggestion.name.clone(),
             suggestion.reason.says(),
-            suggestion.rows.to_string(),
+            resonate_words::grouped(suggestion.rows),
             fills_from(suggestion),
         ]);
     }

@@ -71,3 +71,7 @@ gibibytes = { $value } GiB
 yes = yes
 no = no
 unknown = unknown
+faststart = faststart
+replay-gain-off = off
+replay-gain-track = track
+replay-gain-album = album

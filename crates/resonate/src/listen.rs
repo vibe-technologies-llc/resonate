@@ -11,7 +11,7 @@ use resonate_listen::{Heard, PictureFormat};
 #[cfg(feature = "ui")]
 use resonate_mpris::{Teller, Told};
 
-use crate::{Error, Result, config::Config, info::pairs, online, words};
+use crate::{Error, Result, config::Config, info::pairs, online, table, words};
 
 const APP_NAME: &str = "Resonate";
 
@@ -27,7 +27,11 @@ pub fn run(
         for found in listener.microphones()? {
             let marked = if found.is_default { "*" } else { " " };
 
-            said!("{marked} {}  {}", found.name, found.description);
+            said!(
+                "{marked} {}  {}",
+                table::on_one_line(found.name.as_str()),
+                table::on_one_line(&found.description)
+            );
         }
         return Ok(());
     }
@@ -50,7 +54,7 @@ pub fn run(
     let heard_from = match &from {
         Listening::Desktop => words::listen::what_the_desktop_plays().to_owned(),
         Listening::Microphone(None) => words::listen::the_default_microphone().to_owned(),
-        Listening::Microphone(Some(name)) => name.to_string(),
+        Listening::Microphone(Some(name)) => table::on_one_line(&name.to_string()),
     };
 
     told!("{}", words::listen::listening(heard_from, length.as_secs()));

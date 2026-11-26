@@ -8,13 +8,13 @@ use std::{
 use crossbeam_channel::{Sender, TrySendError};
 use resonate_engine::{Command, Player};
 use signal_hook::{
-    consts::{SIGHUP, SIGINT, SIGTERM},
+    consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM},
     iterator::{Handle, Signals},
 };
 
 const TERMINATED_BY: i32 = 128;
 
-const ASKING_TO_LEAVE: [i32; 3] = [SIGINT, SIGTERM, SIGHUP];
+const ASKING_TO_LEAVE: [i32; 4] = [SIGINT, SIGTERM, SIGHUP, SIGQUIT];
 
 const DRAINS_WITHIN: Duration = Duration::from_secs(5);
 

@@ -121,6 +121,9 @@ pub enum Error {
         source: Box<toml_edit::TomlError>,
     },
 
+    #[error("cannot write to the standard output")]
+    WriteStandardOutput(#[source] io::Error),
+
     #[error("cannot write {path}", path = path.display())]
     WriteConfig {
         path: PathBuf,

@@ -296,7 +296,8 @@ them no type). Decoders: `audio.md`.
 On Windows the interrupts, the key reader and the settings folders are other modules (`windows.md`);
 what follows describes Unix, where `signals.rs` and termios are used.
 
-- **Hang-up leaves, like an interrupt.** `signals::ASKING_TO_LEAVE` = `SIGINT`, `SIGTERM`, `SIGHUP`,
+- **Hang-up and quit leave, like an interrupt.** `signals::ASKING_TO_LEAVE` = `SIGINT`, `SIGTERM`,
+  `SIGHUP`, `SIGQUIT` (Ctrl-\, which `ISIG` delivers to a terminal taken a key at a time),
   watched by `quit_when_told` and `cancel_when_told`; a hang-up also tells `said` nobody reads where
   stdout is a terminal (`tests/signals.rs`).
 - **A headless pass's watch is `signals::cancelling_on`**, which takes the signals and what to do
@@ -318,7 +319,15 @@ what follows describes Unix, where `signals.rs` and termios are used.
   overrides in `table::TURNS_THE_READING`, become spaces so titles and service answers cannot steer
   the terminal; the readout's line clear is the one deliberate sequence, via `said::raw`. On a
   broken pipe `said` notes nobody reads and writes no more, without exiting (`tag --apply` finishes
-  the files in hand).
+  the files in hand); any other write error is kept, later writes are skipped, and `main` ends in
+  `Error::WriteStandardOutput` through `said::the_write_that_failed` (`resonate playlists >
+  /dev/full` exits 1: `a_listing_written_to_a_full_disk_fails`).
+- **A name drawn on one line is folded first**: `readout::billing`, the readout's typed line,
+  `info::pairs`, a cue file's heading and `listen`'s microphones pass a title or name through
+  `table::on_one_line`, so a newline in a tag cannot scroll the readout on every redraw
+  (`a_title_holding_a_newline_or_a_tab_draws_on_one_line`). An engine enum a listener reads
+  (`readout::output_mode`, `info::replay_gain_mode`) is said by catalog messages, never its `Debug`,
+  and a count in a table goes through `resonate_words::grouped`.
 - **What the terminal says comes out of the binary's catalog** (`language.md`): a file that says
   words has `crates/resonate/words/en/<file>.ftl` and says them through `words::<file>::…`;
   `columns.ftl` holds the table headings every listing shares (`words::columns`). A count is a
@@ -358,7 +367,8 @@ what follows describes Unix, where `signals.rs` and termios are used.
   `signals::leave`, and the first `KeyAtATime` installs a panic hook restoring the modes (via
   `try_lock`). `tests/terminal.rs` drives `play` on a pseudo-terminal of its own (`setsid --ctty`;
   `unsafe_code` rules out a `pre_exec`) against a PipeWire runtime folder with no daemon, sends
-  `SIGINT`, `SIGTERM` or `SIGHUP`, and requires it to leave with canonical mode and echo back.
+  `SIGINT`, `SIGTERM`, `SIGHUP` or `SIGQUIT`, and requires it to leave with exit code 0 and canonical
+  mode and echo back.
   `input::keys` reads byte by byte with the escape state kept across reads (`Keyed::escaping`): an
   Escape cancels the typed line; `ESC [` reads a whole control sequence to its final byte (Ctrl or
   Shift with an arrow is the arrow; F5 to F12, Delete and the rest are nothing), `ESC O` one byte

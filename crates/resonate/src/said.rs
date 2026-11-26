@@ -4,11 +4,15 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use parking_lot::Mutex;
+
 use crate::table::TURNS_THE_READING;
 
 const LINES_AND_COLUMNS: [char; 2] = ['\n', '\t'];
 
 static NOBODY_IS_READING: AtomicBool = AtomicBool::new(false);
+
+static FAILED_TO_WRITE: Mutex<Option<io::Error>> = Mutex::new(None);
 
 macro_rules! said {
     () => {
@@ -66,18 +70,33 @@ pub fn the_terminal_hung_up() {
 }
 
 pub fn raw(text: &str) {
-    if NOBODY_IS_READING.load(Ordering::Relaxed) {
+    if NOBODY_IS_READING.load(Ordering::Relaxed) || FAILED_TO_WRITE.lock().is_some() {
         return;
     }
 
     let wrote = io::stdout().lock().write_all(text.as_bytes());
     if let Err(error) = wrote {
-        if error.kind() == io::ErrorKind::BrokenPipe {
-            NOBODY_IS_READING.store(true, Ordering::Relaxed);
-        } else {
-            tracing::debug!(%error, "a line could not be written to the standard output");
-        }
+        refused(error);
     }
+}
+
+fn refused(error: io::Error) {
+    if error.kind() == io::ErrorKind::BrokenPipe {
+        NOBODY_IS_READING.store(true, Ordering::Relaxed);
+        return;
+    }
+
+    tracing::debug!(%error, "a line could not be written to the standard output");
+
+    let mut failed = FAILED_TO_WRITE.lock();
+    if failed.is_none() {
+        *failed = Some(error);
+    }
+}
+
+pub fn the_write_that_failed() -> Option<io::Error> {
+    flushed();
+    FAILED_TO_WRITE.lock().take()
 }
 
 fn plain(text: &str) -> String {
@@ -97,10 +116,8 @@ pub fn flushed() {
     if NOBODY_IS_READING.load(Ordering::Relaxed) {
         return;
     }
-    if let Err(error) = io::stdout().flush()
-        && error.kind() == io::ErrorKind::BrokenPipe
-    {
-        NOBODY_IS_READING.store(true, Ordering::Relaxed);
+    if let Err(error) = io::stdout().flush() {
+        refused(error);
     }
 }
 

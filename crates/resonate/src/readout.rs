@@ -2,10 +2,12 @@
 use std::io;
 
 use resonate_core::{TrackId, elapsed};
-use resonate_engine::{Asleep, PlaybackState, Player, PlayerState, RepeatMode, TrackState, Until};
+use resonate_engine::{
+    Asleep, OutputMode, PlaybackState, Player, PlayerState, RepeatMode, TrackState, Until,
+};
 use unicode_width::UnicodeWidthChar as _;
 
-use crate::words;
+use crate::{table::on_one_line, words};
 
 const CLEAR_THE_LINE: &str = "\r\x1b[K";
 const WHOLE: f32 = 100.0;
@@ -65,6 +67,19 @@ impl Readout {
 }
 
 pub fn billing(player: &Player, track: TrackId) -> String {
+    on_one_line(&billed(player, track))
+}
+
+pub fn output_mode(mode: OutputMode) -> &'static str {
+    match mode {
+        OutputMode::BitPerfect => words::main::output_bit_perfect(),
+        OutputMode::Repacked => words::main::output_repacked(),
+        OutputMode::Dithered => words::main::output_dithered(),
+        OutputMode::Converted => words::main::output_converted(),
+    }
+}
+
+fn billed(player: &Player, track: TrackId) -> String {
     if let Some(digest) = player.digest().filter(|digest| digest.track == track) {
         let tags = &digest.info.tags;
         match (tags.title.as_deref(), tags.artist.as_deref()) {
@@ -115,11 +130,11 @@ pub fn line_of(state: &PlayerState, billed: &str, typing: &str) -> String {
     }
     if !billed.is_empty() {
         line.push_str("  ");
-        line.push_str(billed);
+        line.push_str(&on_one_line(billed));
     }
     if !typing.is_empty() {
         line.push_str("  > ");
-        line.push_str(typing);
+        line.push_str(&on_one_line(typing));
     }
     line
 }
@@ -257,6 +272,14 @@ mod tests {
             line_of(&state, "", ":z tr"),
             "▶ 0:00 / 1:00  vol 80%  shuffle  repeat queue  sleep in 12:34  > :z tr"
         );
+    }
+
+    #[test]
+    fn a_title_holding_a_newline_or_a_tab_draws_on_one_line() {
+        let line = line_of(&playing(0, 60), "Pink\nFloyd\tEchoes", "a\nb");
+
+        assert_eq!(line, "▶ 0:00 / 1:00  vol 80%  Pink Floyd Echoes  > a b");
+        assert!(!line.contains(['\n', '\t']));
     }
 
     #[test]

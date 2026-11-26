@@ -282,7 +282,7 @@ pub(crate) fn players() -> Result<()> {
             player
                 .playback
                 .map_or_else(String::new, |status| status.as_str().to_owned()),
-            player.queued.to_string(),
+            resonate_words::grouped(player.queued as u64),
             player.title.clone().unwrap_or_default(),
             player.artist.clone().unwrap_or_default(),
         ]);
@@ -623,7 +623,7 @@ fn announce(event: Event, player: &Player) -> bool {
         Event::OutputChanged(status) => said!(
             "{}",
             words::main::output(
-                format!("{:?}", status.mode),
+                readout::output_mode(status.mode),
                 status.sink.to_string(),
                 status.negotiated.to_string(),
             )

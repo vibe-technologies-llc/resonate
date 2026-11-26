@@ -269,3 +269,7 @@ waits = { $track } waits for a device
 rejected = { $command } rejected
 untuned = the window already open did not take the settings given for this run
 handed = handed to the window already open as { $window }
+output-bit-perfect = bit-perfect
+output-repacked = repacked
+output-dithered = dithered
+output-converted = converted

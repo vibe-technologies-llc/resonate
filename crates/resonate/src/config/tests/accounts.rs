@@ -14,6 +14,23 @@ fn a_cookie_setting_is_withheld_from_the_configs_debug() {
 }
 
 #[test]
+fn the_configs_debug_names_each_field_once() {
+    let config = read("").expect("a well formed document");
+
+    let printed = format!("{config:#?}");
+    let named: Vec<&str> = printed
+        .lines()
+        .filter_map(|line| line.strip_prefix("    "))
+        .filter(|line| !line.starts_with(' '))
+        .filter_map(|line| line.split_once(": ").map(|(name, _)| name))
+        .collect();
+    let distinct: std::collections::BTreeSet<&str> = named.iter().copied().collect();
+
+    assert!(named.len() > 50);
+    assert_eq!(named.len(), distinct.len(), "{named:?}");
+}
+
+#[test]
 fn no_key_holding_a_secret_is_printed_by_debug() {
     let config = read(
         "subsonic = \"https://music.home.arpa\"\nsubsonic-user = \"listener\"\n\

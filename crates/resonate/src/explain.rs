@@ -38,7 +38,10 @@ pub(crate) fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
     );
     said!(
         "{}",
-        words::main::explain_output(format!("{:?}", plan.mode), plan.stream.to_string())
+        words::main::explain_output(
+            crate::readout::output_mode(plan.mode),
+            plan.stream.to_string()
+        )
     );
     if let Some(framing) = sink.words_for(plan.stream.format)
         && framing != Words::Whole
