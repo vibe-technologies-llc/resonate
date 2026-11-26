@@ -14,7 +14,6 @@ use crate::catalog::picture_at;
 const ASKED_APART: Duration = Duration::from_millis(250);
 const RETRIES_AT_MOST: u32 = 3;
 const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
-const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
 const MEDIA_ANSWERED_WITHIN: Duration = Duration::from_secs(30);
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 const TOO_MANY_REQUESTS: u16 = 429;
@@ -35,6 +34,7 @@ pub(crate) struct Asker {
     pub(crate) source: SourceId,
     pub(crate) agent: Agent,
     pacing: Arc<Pacing>,
+    longest_retry_after: Duration,
 }
 
 pub(crate) fn api_agent() -> Agent {
@@ -58,6 +58,14 @@ impl Asker {
             source,
             agent: api_agent(),
             pacing: Arc::new(Pacing::new(ASKED_APART)),
+            longest_retry_after: Patience::default().longest_retry_after,
+        }
+    }
+
+    pub(crate) fn retrying_after_at_most(self, longest_retry_after: Duration) -> Self {
+        Self {
+            longest_retry_after,
+            ..self
         }
     }
 
@@ -102,7 +110,7 @@ impl Asker {
             if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
                 let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
-                    .min(LONGEST_RETRY_AFTER);
+                    .min(self.longest_retry_after);
 
                 tracing::debug!(status, ?wait, ?op, provider = %self.source, "a provider's server asked to be asked later");
                 self.pacing.cool_for(wait);

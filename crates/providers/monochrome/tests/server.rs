@@ -1,7 +1,7 @@
 use std::{
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::{TcpListener, TcpStream},
-    sync::Arc,
+    sync::{Arc, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -20,6 +20,8 @@ const AUDIO: &[u8] = b"fLaC and the rest of a long and lossless file";
 const STALLED_FOR: Duration = Duration::from_secs(10);
 const IMPATIENT: Duration = Duration::from_millis(400);
 const GIVEN_UP_WELL_BEFORE: Duration = Duration::from_secs(5);
+const LOWERED_CEILING: Duration = Duration::from_millis(30);
+const FAR_PAST_ANY_CEILING: &str = "3600";
 
 enum Sent {
     Whole,
@@ -78,6 +80,13 @@ impl Canned {
         }
     }
 
+    fn status_for(status: u16, seconds: &str) -> Self {
+        Self {
+            headers: vec![("Retry-After", seconds.to_owned())],
+            ..Self::status(status)
+        }
+    }
+
     fn redirecting_to(location: &str) -> Self {
         Self {
             status: 302,
@@ -97,6 +106,17 @@ enum Asked {
     Search(String),
     Track { id: String, from: Option<usize> },
     Elsewhere(String),
+}
+
+fn within<T: Send + 'static>(limit: Duration, work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = mpsc::channel();
+
+    thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(limit)
+        .expect("the work was done within its limit")
 }
 
 fn decoded(query: &str) -> String {
@@ -185,6 +205,14 @@ impl Fake {
             answered_within: IMPATIENT,
             broken_off_after: IMPATIENT,
             resumed_after: IMPATIENT / 8,
+            ..Patience::default()
+        })
+    }
+
+    fn ceilinged(&self) -> Monochrome {
+        self.monochrome().waiting(Patience {
+            longest_retry_after: LOWERED_CEILING,
+            ..Patience::default()
         })
     }
 
@@ -496,6 +524,25 @@ fn a_server_asking_to_be_asked_later_is_asked_again_and_then_answers() {
 
     assert!(delivered.is_some());
     assert_eq!(fake.heard().len(), 3);
+}
+
+#[test]
+fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling() {
+    let fake = Fake::serving(|asked, nth| match (asked, nth) {
+        (_, 0) => Canned::status_for(429, FAR_PAST_ANY_CEILING),
+        (Asked::Search(_), _) => echoes_found(),
+        _ => Canned::audio(),
+    });
+    let monochrome = fake.ceilinged();
+    let started = Instant::now();
+
+    let delivered = within(GIVEN_UP_WELL_BEFORE, move || {
+        matches!(monochrome.find(&echoes()), Ok(Obtained::Found(_)))
+    });
+
+    assert!(delivered);
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert_eq!(fake.heard().len(), 2);
 }
 
 #[test]

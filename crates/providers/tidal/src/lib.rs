@@ -162,6 +162,14 @@ impl Tidal {
     }
 
     #[must_use]
+    pub fn retrying_after_at_most(self, longest: Duration) -> Self {
+        Self {
+            asker: self.asker.retrying_after_at_most(longest),
+            ..self
+        }
+    }
+
+    #[must_use]
     pub fn telling(self, renewed: impl Fn(RefreshToken) + Send + Sync + 'static) -> Self {
         Self {
             renewed: Some(Box::new(renewed)),

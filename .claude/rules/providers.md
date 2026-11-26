@@ -362,7 +362,7 @@ time) is weighed against `Library::last_tried` (`landed_since`).
 `resonate-fetch` (on core, the seam and `ureq` alone; the layering job holds it) is the HTTP
 plumbing, so a `ureq` bump is made once:
 
-- **Agents**: `USER_AGENT`, `Patience` (`answered_within`, `broken_off_after`, `resumed_after`),
+- **Agents**: `USER_AGENT`, `Patience` (`answered_within`, `broken_off_after`, `resumed_after`, and `longest_retry_after`, the 8 s ceiling a `Retry-After` is clamped to, which a test lowers through `waiting`, as TIDAL's `Asker` through `retrying_after_at_most`),
   `Trusted` (`BuiltInRoots`, or `SystemStoreToo` for a listener's own server: `trust.rs` builds the
   policy from the built-in roots beside the system's through `built_in_beside`, so a test holds a
   private root as the system's own and reaches a TLS server signed by it,
@@ -556,7 +556,7 @@ given and `online` is on.
   API answers a failed download with its error document and a 200, so a download whose
   `Content-Type` names text, JSON or XML is read as that document, never streamed.
 - **Paces itself**: requests `ASKED_APART`; 429/503 asked again after `Retry-After` (capped
-  `LONGEST_RETRY_AFTER`) up to `RETRIES_AT_MOST`, then the `Refused` it was. The seam's `Pacing`
+  `Patience::longest_retry_after`) up to `RETRIES_AT_MOST`, then the `Refused` it was. The seam's `Pacing`
   reserves a turn under its lock and sleeps towards it outside; a server-requested wait is
   `Pacing::cool_for`, held by every later caller
   (`turns_are_reserved_apart_and_nobody_waits_on_the_lock_while_another_sleeps`,
@@ -732,7 +732,11 @@ catalog is the server's, browsed through its API and never copied into `resonate
   at most `ARTIST_PAGES_AT_MOST` pages), `artist` (`Users/<user>/Items/<id>` and the
   `MusicAlbum`s with `ArtistIds`), `album` (the item and the `Audio` items with `ParentId`, in
   disc, track and name order), `song`, `search` (`Artists?SearchTerm`, then `MusicAlbum` and
-  `Audio` items by `SearchTerm`, `BROWSED_AT_MOST` each). **An id reaches a path or query only
+  `Audio` items by `SearchTerm`, `BROWSED_AT_MOST` each). **Each cap is held by a fake that never
+  ends** (`a_server_answering_a_full_page_of_artists_for_ever_is_asked_for_the_most_pages_and_no_more`,
+  `an_artist_claiming_endless_albums_is_asked_for_the_most_albums_in_one_request`): the page cap
+  stops the loop, the others are the `Limit` asked, which the client does not enforce on an answer
+  (`TooManyAlbums` and `TooManySongs` are the seam's refusals past it). **An id reaches a path or query only
   where it is letters, digits, dashes and underscores** (`item_id`; `Unreadable` otherwise, no
   request: `an_id_that_would_leave_its_path_is_never_asked`). A song's `suffix` is `Container`
   (`mov,mp4,m4a,...` read as the most trusted name in it), its length `RunTimeTicks` (100 ns), its

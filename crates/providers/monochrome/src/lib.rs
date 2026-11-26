@@ -22,7 +22,6 @@ const LISTED_AT_MOST: usize = 25;
 const ASKED_APART: Duration = Duration::from_millis(250);
 const RETRIES_AT_MOST: u32 = 3;
 const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
-const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
 const GONE_FROM_THE_SERVER: [u16; 2] = [404, 410];
 const NOT_AS_HELD: [u16; 2] = [412, 416];
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
@@ -199,7 +198,7 @@ impl Monochrome {
             if retried < RETRIES_AT_MOST && ASKED_LATER.contains(&status) {
                 let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
-                    .min(LONGEST_RETRY_AFTER);
+                    .min(self.patience.longest_retry_after);
 
                 tracing::debug!(
                     status,

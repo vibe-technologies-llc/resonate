@@ -36,7 +36,6 @@ const PAGES_AT_MOST: usize = 5;
 const ASKED_APART: Duration = Duration::from_millis(250);
 const RETRIES_AT_MOST: u32 = 3;
 const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
-const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
 const TOO_MANY_REQUESTS: u16 = 429;
 const UNAVAILABLE: u16 = 503;
 const NOT_AS_HELD: [u16; 2] = [412, 416];
@@ -290,7 +289,7 @@ impl Subsonic {
             if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
                 let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
-                    .min(LONGEST_RETRY_AFTER);
+                    .min(self.patience.longest_retry_after);
 
                 tracing::debug!(
                     status,

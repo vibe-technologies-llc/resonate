@@ -6,6 +6,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
+        mpsc,
     },
     thread,
     time::{Duration, Instant},
@@ -29,6 +30,9 @@ const TRACK: u64 = 55_391_743;
 const BEARER: &str = "Bearer fresh-access";
 
 const QUEUED: &str = "f1b5c0de";
+const LOWERED_CEILING: Duration = Duration::from_millis(30);
+const FAR_PAST_ANY_CEILING: &str = "3600";
+const GIVEN_UP_WELL_BEFORE: Duration = Duration::from_secs(5);
 
 struct Canned {
     status: u16,
@@ -51,6 +55,13 @@ impl Canned {
         Self {
             status,
             ..Self::json(body)
+        }
+    }
+
+    fn unavailable_for(seconds: &str) -> Self {
+        Self {
+            headers: vec![("Retry-After", seconds.to_owned())],
+            ..Self::refused(503, "")
         }
     }
 
@@ -317,6 +328,17 @@ fn playback(presentation: &str, manifest: &str) -> Canned {
     Canned::json(&format!(
         r#"{{"trackId":{TRACK},"assetPresentation":"{presentation}","audioMode":"STEREO","audioQuality":"LOSSLESS","manifestMimeType":"application/dash+xml","manifest":"{manifest}"}}"#
     ))
+}
+
+fn within<T: Send + 'static>(limit: Duration, work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = mpsc::channel();
+
+    thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(limit)
+        .expect("the work was done within its limit")
 }
 
 fn granted() -> Canned {
@@ -2231,4 +2253,55 @@ fn a_want_with_no_artist_and_no_code_is_not_searched_at_all() {
 
     assert!(matches!(found, Obtained::Nothing));
     assert!(fake.heard().is_empty());
+}
+
+#[test]
+fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling_by_the_account() {
+    let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
+        "/auth/token" if before.is_empty() => Canned::unavailable_for(FAR_PAST_ANY_CEILING),
+        "/auth/token" => granted(),
+        "/openapi/tracks" => listed(ECHOES_ISRC),
+        _ => Canned::refused(404, "{}"),
+    });
+    let tidal = fake.tidal().retrying_after_at_most(LOWERED_CEILING);
+    let started = Instant::now();
+
+    within(GIVEN_UP_WELL_BEFORE, move || {
+        let _ = tidal.find(&by_isrc());
+    });
+
+    let signed_in = fake
+        .heard
+        .lock()
+        .iter()
+        .filter(|asked| asked.path == "/auth/token")
+        .count();
+
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert_eq!(signed_in, 2);
+}
+
+#[test]
+fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling_by_a_hifi_api() {
+    let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
+        "/search/" if before.is_empty() => Canned::unavailable_for(FAR_PAST_ANY_CEILING),
+        "/search/" => hifi_listed(ECHOES_ISRC),
+        _ => Canned::refused(404, "{}"),
+    });
+    let hifi = fake.hifi().retrying_after_at_most(LOWERED_CEILING);
+    let started = Instant::now();
+
+    within(GIVEN_UP_WELL_BEFORE, move || {
+        let _ = hifi.find(&by_isrc());
+    });
+
+    let searched = fake
+        .heard
+        .lock()
+        .iter()
+        .filter(|asked| asked.path == "/search/")
+        .count();
+
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert_eq!(searched, 2);
 }

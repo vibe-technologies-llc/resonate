@@ -479,6 +479,14 @@ impl HifiApi {
         Self { patience, ..self }
     }
 
+    #[must_use]
+    pub fn retrying_after_at_most(self, longest: Duration) -> Self {
+        Self {
+            asker: self.asker.retrying_after_at_most(longest),
+            ..self
+        }
+    }
+
     pub(crate) fn refusal(&self, op: ProviderOp, status: u16) -> Error {
         let provider = self.asker.source.clone();
         if status == UNAUTHORISED {

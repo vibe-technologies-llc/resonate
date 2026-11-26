@@ -1,7 +1,7 @@
 use std::{
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::{TcpListener, TcpStream},
-    sync::Arc,
+    sync::{Arc, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -17,6 +17,9 @@ const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const ECHOES_ISRC: &str = "GBN9Y1100089";
 const AUDIO: &[u8] = b"fLaC and the rest of the file";
 const A_PAGE: usize = 40;
+const PAGES_AT_MOST: usize = 5;
+const LOWERED_CEILING: Duration = Duration::from_millis(30);
+const FAR_PAST_ANY_CEILING: &str = "3600";
 const STALLED_FOR: Duration = Duration::from_secs(10);
 const IMPATIENT: Duration = Duration::from_millis(400);
 const GIVEN_UP_WELL_BEFORE: Duration = Duration::from_secs(5);
@@ -75,6 +78,13 @@ impl Canned {
             headers: vec![("Retry-After", "0".to_owned())],
             body: Vec::new(),
             sent: Sent::Whole,
+        }
+    }
+
+    fn unavailable_for(seconds: &str) -> Self {
+        Self {
+            headers: vec![("Retry-After", seconds.to_owned())],
+            ..Self::unavailable()
         }
     }
 
@@ -164,6 +174,14 @@ impl Fake {
             answered_within: IMPATIENT,
             broken_off_after: IMPATIENT,
             resumed_after: IMPATIENT / 8,
+            ..Patience::default()
+        })
+    }
+
+    fn ceilinged(&self) -> Subsonic {
+        self.subsonic().waiting(Patience {
+            longest_retry_after: LOWERED_CEILING,
+            ..Patience::default()
         })
     }
 
@@ -245,6 +263,17 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
             }
         }
     }
+}
+
+fn within<T: Send + 'static>(limit: Duration, work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = mpsc::channel();
+
+    thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(limit)
+        .expect("the work was done within its limit")
 }
 
 fn song(id: &str, recording: &str, isrc: &str) -> String {
@@ -445,6 +474,49 @@ fn a_server_that_stays_unavailable_is_a_refusal_after_a_few_tries() {
         })
     ));
     assert_eq!(fake.heard().len(), 4);
+}
+
+#[test]
+fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling() {
+    let fake = Fake::serving(|asked, nth| match (asked.method.as_str(), nth) {
+        (_, 0) => Canned::unavailable_for(FAR_PAST_ANY_CEILING),
+        ("search3", _) => found(&[song("floyd", ECHOES, "")]),
+        _ => Canned::audio(),
+    });
+    let subsonic = fake.ceilinged();
+    let started = Instant::now();
+
+    let found_again = within(GIVEN_UP_WELL_BEFORE, move || {
+        matches!(subsonic.find(&echoes()), Ok(Obtained::Found(_)))
+    });
+
+    assert!(found_again);
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert_eq!(fake.heard().len(), 2);
+}
+
+#[test]
+fn a_server_answering_a_full_page_for_ever_is_asked_for_the_most_pages_and_no_more() {
+    let fake = Fake::serving(|_, _| found(&tributes(A_PAGE)));
+    let subsonic = fake.subsonic();
+    let by_isrc = Identity {
+        isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
+        ..Identity::named("Echoes")
+    };
+
+    let obtained =
+        within(Duration::from_secs(30), move || subsonic.find(&by_isrc)).expect("an answer");
+
+    assert!(matches!(obtained, Obtained::Nothing));
+    assert_eq!(
+        fake.heard()
+            .into_iter()
+            .map(|(_, _, offset)| offset)
+            .collect::<Vec<_>>(),
+        (0..PAGES_AT_MOST)
+            .map(|page| Some(page * A_PAGE))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

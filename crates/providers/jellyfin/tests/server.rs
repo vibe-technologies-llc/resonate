@@ -1,9 +1,9 @@
 use std::{
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::{TcpListener, TcpStream},
-    sync::Arc,
+    sync::{Arc, mpsc},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use flate2::{Compression, write::GzEncoder};
@@ -17,11 +17,29 @@ const AUDIO: &[u8] = b"fLaC and the rest of the file";
 const TOKEN: &str = "token-1";
 const USER_ID: &str = "0a1b2c3d";
 const IMPATIENT: Duration = Duration::from_millis(400);
+const STALLED_FOR: Duration = Duration::from_secs(10);
+const GIVEN_UP_WELL_BEFORE: Duration = Duration::from_secs(5);
+const LOWERED_CEILING: Duration = Duration::from_millis(30);
+const FAR_PAST_ANY_CEILING: &str = "3600";
+const ARTISTS_A_PAGE: usize = 500;
+const ARTIST_PAGES_AT_MOST: usize = 40;
+const BROWSED_AT_MOST: usize = 20;
+const ALBUMS_OF_AN_ARTIST_AT_MOST: usize = 1000;
+const SONGS_OF_AN_ALBUM_AT_MOST: usize = 2000;
+const CLAIMED_TOTAL: usize = 4_000_000_000;
+
+enum Sent {
+    Whole,
+    CutAfter(usize),
+    StallingAfter(usize),
+    Dripping { bytes: usize, apart: Duration },
+}
 
 struct Canned {
     status: u16,
     headers: Vec<(&'static str, String)>,
     body: Vec<u8>,
+    sent: Sent,
 }
 
 impl Canned {
@@ -30,6 +48,7 @@ impl Canned {
             status: 200,
             headers: vec![("Content-Type", "application/json".to_owned())],
             body: body.as_bytes().to_vec(),
+            sent: Sent::Whole,
         }
     }
 
@@ -38,6 +57,7 @@ impl Canned {
             status,
             headers: Vec::new(),
             body: Vec::new(),
+            sent: Sent::Whole,
         }
     }
 
@@ -46,6 +66,7 @@ impl Canned {
             status: 200,
             headers: vec![("Content-Type", "audio/flac".to_owned())],
             body: AUDIO.to_vec(),
+            sent: Sent::Whole,
         }
     }
 
@@ -60,6 +81,7 @@ impl Canned {
                 ),
             ],
             body: AUDIO[from..].to_vec(),
+            sent: Sent::Whole,
         }
     }
 
@@ -68,6 +90,19 @@ impl Canned {
             status: 302,
             headers: vec![("Location", location.to_owned())],
             body: Vec::new(),
+            sent: Sent::Whole,
+        }
+    }
+
+    fn sent(self, sent: Sent) -> Self {
+        Self { sent, ..self }
+    }
+
+    fn unavailable_for(seconds: &str) -> Self {
+        Self {
+            status: 503,
+            headers: vec![("Retry-After", seconds.to_owned())],
+            ..Self::status(503)
         }
     }
 
@@ -76,6 +111,7 @@ impl Canned {
             status: 200,
             headers: vec![("Content-Type", "image/jpeg".to_owned())],
             body: b"\xff\xd8 a cover".to_vec(),
+            sent: Sent::Whole,
         }
     }
 }
@@ -203,6 +239,14 @@ impl Fake {
             answered_within: IMPATIENT,
             broken_off_after: IMPATIENT,
             resumed_after: IMPATIENT / 8,
+            ..Patience::default()
+        })
+    }
+
+    fn ceilinged(&self) -> Jellyfin {
+        self.jellyfin().waiting(Patience {
+            longest_retry_after: LOWERED_CEILING,
+            ..Patience::default()
         })
     }
 
@@ -304,7 +348,39 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     let mut stream = reader.into_inner();
 
     let _ = stream.write_all(written.as_bytes());
-    let _ = stream.write_all(&canned.body);
+    match canned.sent {
+        Sent::Whole => {
+            let _ = stream.write_all(&canned.body);
+        }
+        Sent::CutAfter(bytes) => {
+            let _ = stream.write_all(&canned.body[..bytes]);
+        }
+        Sent::StallingAfter(bytes) => {
+            let _ = stream.write_all(&canned.body[..bytes]);
+            let _ = stream.flush();
+
+            thread::sleep(STALLED_FOR);
+        }
+        Sent::Dripping { bytes, apart } => {
+            for drop in canned.body.chunks(bytes) {
+                let _ = stream.write_all(drop);
+                let _ = stream.flush();
+
+                thread::sleep(apart);
+            }
+        }
+    }
+}
+
+fn within<T: Send + 'static>(limit: Duration, work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = mpsc::channel();
+
+    thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(limit)
+        .expect("the work was done within its limit")
 }
 
 fn signed_in() -> Canned {
@@ -838,6 +914,7 @@ fn a_page_where_the_servers_document_was_asked_is_not_the_service() {
         status: 200,
         headers: vec![("Content-Type", "text/html".to_owned())],
         body: b"<!DOCTYPE html><html>a router</html>".to_vec(),
+        sent: Sent::Whole,
     });
 
     assert!(matches!(
@@ -860,6 +937,7 @@ fn a_server_asking_to_be_asked_later_is_asked_again_and_then_answers() {
                 status: 503,
                 headers: vec![("Retry-After", "0".to_owned())],
                 body: Vec::new(),
+                sent: Sent::Whole,
             };
         }
         library(asked, nth)
@@ -890,6 +968,7 @@ fn a_server_that_never_answers_is_given_up_within_the_patience() {
         answered_within: IMPATIENT,
         broken_off_after: IMPATIENT,
         resumed_after: IMPATIENT / 8,
+        ..Patience::default()
     });
     let started = std::time::Instant::now();
 
@@ -1201,6 +1280,7 @@ fn coded_as_asked(asked: &Asked) -> Canned {
         status: if from > 0 { 206 } else { 200 },
         headers,
         body: coded[from..].to_vec(),
+        sent: Sent::Whole,
     }
 }
 
@@ -1534,4 +1614,242 @@ fn a_code_refused_by_the_server_is_denied_and_the_secret_never_reaches_debug() {
 
     assert!(!shown.contains(SECRET), "{shown}");
     assert!(shown.contains(CODE), "{shown}");
+}
+
+fn a_vast_library(asked: &Asked, _: usize) -> Canned {
+    if asked.is("POST", "/Users/AuthenticateByName") {
+        return signed_in();
+    }
+    if !asked.carries_the_token() {
+        return Canned::status(401);
+    }
+
+    let user = format!("/Users/{USER_ID}/Items");
+    let limit: usize = asked
+        .parameter("Limit")
+        .and_then(|limit| limit.parse().ok())
+        .unwrap_or_default();
+    let entries = |kind: &str| {
+        (0..limit)
+            .map(|each| {
+                format!(r#"{{"Id":"{kind}-{each}","Name":"{kind} {each}","Type":"{kind}"}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+
+    match (asked.method.as_str(), asked.path.as_str()) {
+        ("GET", "/Artists/AlbumArtists" | "/Artists") => {
+            items(&entries("MusicArtist"), CLAIMED_TOTAL)
+        }
+        ("GET", path) if path == format!("{user}/ar-1") => {
+            Canned::json(r#"{"Id":"ar-1","Name":"Pink Floyd","Type":"MusicArtist"}"#)
+        }
+        ("GET", path) if path == format!("{user}/al-1") => {
+            Canned::json(r#"{"Id":"al-1","Name":"Meddle","Type":"MusicAlbum"}"#)
+        }
+        ("GET", path) if path == user => match asked.parameter("IncludeItemTypes") {
+            Some("MusicAlbum") => items(&entries("MusicAlbum"), CLAIMED_TOTAL),
+            Some("Audio") => items(&entries("Audio"), CLAIMED_TOTAL),
+            _ => Canned::status(400),
+        },
+        _ => Canned::status(404),
+    }
+}
+
+fn limits_asked(fake: &Fake, kind: &str) -> Vec<Option<String>> {
+    fake.heard()
+        .iter()
+        .filter(|asked| asked.parameter("IncludeItemTypes") == Some(kind))
+        .map(|asked| asked.parameter("Limit").map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn a_server_answering_a_full_page_of_artists_for_ever_is_asked_for_the_most_pages_and_no_more() {
+    let fake = Fake::serving(a_vast_library);
+    let jellyfin = fake.jellyfin();
+
+    let artists = within(Duration::from_secs(60), move || jellyfin.artists()).expect("the artists");
+    let starts: Vec<_> = fake
+        .heard_at("/Artists/AlbumArtists")
+        .iter()
+        .map(|asked| asked.parameter("StartIndex").map(str::to_owned))
+        .collect();
+
+    assert_eq!(artists.len(), ARTIST_PAGES_AT_MOST * ARTISTS_A_PAGE);
+    assert_eq!(
+        starts,
+        (0..ARTIST_PAGES_AT_MOST)
+            .map(|page| Some((page * ARTISTS_A_PAGE).to_string()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn an_artist_claiming_endless_albums_is_asked_for_the_most_albums_in_one_request() {
+    let fake = Fake::serving(a_vast_library);
+
+    let discography = fake.jellyfin().artist(&id("ar-1")).expect("an artist");
+
+    assert_eq!(discography.albums.len(), ALBUMS_OF_AN_ARTIST_AT_MOST);
+    assert_eq!(
+        limits_asked(&fake, "MusicAlbum"),
+        [Some(ALBUMS_OF_AN_ARTIST_AT_MOST.to_string())]
+    );
+}
+
+#[test]
+fn an_album_claiming_endless_songs_is_asked_for_the_most_songs_in_one_request() {
+    let fake = Fake::serving(a_vast_library);
+
+    let album = fake.jellyfin().album(&id("al-1")).expect("an album");
+
+    assert_eq!(album.songs.len(), SONGS_OF_AN_ALBUM_AT_MOST);
+    assert_eq!(
+        limits_asked(&fake, "Audio"),
+        [Some(SONGS_OF_AN_ALBUM_AT_MOST.to_string())]
+    );
+}
+
+#[test]
+fn a_search_over_a_vast_library_asks_for_the_most_of_each_kind_and_gets_no_more() {
+    let fake = Fake::serving(a_vast_library);
+
+    let found = fake.jellyfin().search("echoes").expect("a search");
+    let limits: Vec<_> = fake
+        .heard()
+        .iter()
+        .filter(|asked| asked.parameter("SearchTerm").is_some())
+        .map(|asked| asked.parameter("Limit").map(str::to_owned))
+        .collect();
+
+    assert_eq!(found.artists.len(), BROWSED_AT_MOST);
+    assert_eq!(found.albums.len(), BROWSED_AT_MOST);
+    assert_eq!(found.songs.len(), BROWSED_AT_MOST);
+    assert_eq!(limits, vec![Some(BROWSED_AT_MOST.to_string()); 3]);
+}
+
+#[test]
+fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling() {
+    let fake = Fake::serving(|asked, nth| {
+        if nth == 1 {
+            return Canned::unavailable_for(FAR_PAST_ANY_CEILING);
+        }
+        library(asked, nth)
+    });
+    let jellyfin = fake.ceilinged();
+    let started = Instant::now();
+
+    let artists = within(GIVEN_UP_WELL_BEFORE, move || jellyfin.artists()).expect("the artists");
+
+    assert_eq!(artists.len(), 1);
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert_eq!(fake.heard_at("/Artists/AlbumArtists").len(), 2);
+}
+
+#[test]
+fn an_answer_that_stalls_part_way_is_given_up_within_its_deadline() {
+    let fake = Fake::serving(|asked, nth| {
+        if asked.path == "/Artists/AlbumArtists" {
+            return library(asked, nth).sent(Sent::StallingAfter(8));
+        }
+        library(asked, nth)
+    });
+    let started = Instant::now();
+
+    let refused = fake.impatient().artists();
+
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert!(matches!(
+        refused,
+        Err(Error::Io {
+            op: ProviderOp::Browse,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn an_answer_cut_off_part_way_is_an_error_and_never_a_shorter_list() {
+    let fake = Fake::serving(|asked, nth| {
+        if asked.path == "/Artists/AlbumArtists" {
+            return library(asked, nth).sent(Sent::CutAfter(8));
+        }
+        library(asked, nth)
+    });
+
+    let refused = fake.impatient().artists();
+
+    assert!(matches!(
+        refused,
+        Err(Error::Io {
+            op: ProviderOp::Browse,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_stream_that_stalls_part_way_is_broken_off_rather_than_held() {
+    let half = AUDIO.len() / 2;
+    let fake = Fake::serving(move |asked, nth| {
+        if asked.is_a_stream() {
+            return Canned::audio().sent(Sent::StallingAfter(half));
+        }
+        library(asked, nth)
+    });
+    let started = Instant::now();
+    let mut streamed = fake.impatient().streamed(&id("so-1")).expect("a stream");
+    let mut bytes = Vec::new();
+
+    let broken_off = streamed.read_to_end(&mut bytes);
+
+    assert!(broken_off.is_err());
+    assert_eq!(bytes, AUDIO[..half]);
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+}
+
+#[test]
+fn a_stream_cut_off_part_way_is_asked_for_again_from_where_it_stopped() {
+    let half = AUDIO.len() / 2;
+    let fake = Fake::serving(move |asked, nth| match (asked.is_a_stream(), asked.range) {
+        (true, Some(from)) => Canned::audio_from(from),
+        (true, None) => Canned::audio().sent(Sent::CutAfter(half)),
+        _ => library(asked, nth),
+    });
+    let mut streamed = fake.impatient().streamed(&id("so-1")).expect("a stream");
+    let mut bytes = Vec::new();
+
+    streamed.read_to_end(&mut bytes).expect("the whole file");
+
+    let ranges: Vec<_> = fake
+        .heard_at("/Audio/so-1/stream")
+        .iter()
+        .map(|asked| asked.range)
+        .collect();
+
+    assert_eq!(bytes, AUDIO);
+    assert_eq!(ranges, [None, Some(half)]);
+}
+
+#[test]
+fn a_stream_that_keeps_coming_is_read_however_long_it_takes_in_all() {
+    let fake = Fake::serving(|asked, nth| {
+        if asked.is_a_stream() {
+            return Canned::audio().sent(Sent::Dripping {
+                bytes: 4,
+                apart: IMPATIENT / 4,
+            });
+        }
+        library(asked, nth)
+    });
+    let started = Instant::now();
+    let mut streamed = fake.impatient().streamed(&id("so-1")).expect("a stream");
+    let mut bytes = Vec::new();
+
+    streamed.read_to_end(&mut bytes).expect("the whole file");
+
+    assert!(started.elapsed() > IMPATIENT);
+    assert_eq!(bytes, AUDIO);
 }

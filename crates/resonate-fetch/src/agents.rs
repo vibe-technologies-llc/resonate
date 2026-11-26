@@ -26,12 +26,14 @@ const RESOLVED_WITHIN: Duration = Duration::from_secs(10);
 const ANSWERED_WITHIN: Duration = Duration::from_secs(20);
 const BROKEN_OFF_AFTER: Duration = Duration::from_secs(30);
 const RESUMED_AFTER: Duration = Duration::from_secs(1);
+const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Patience {
     pub answered_within: Duration,
     pub broken_off_after: Duration,
     pub resumed_after: Duration,
+    pub longest_retry_after: Duration,
 }
 
 impl Default for Patience {
@@ -40,6 +42,7 @@ impl Default for Patience {
             answered_within: ANSWERED_WITHIN,
             broken_off_after: BROKEN_OFF_AFTER,
             resumed_after: RESUMED_AFTER,
+            longest_retry_after: LONGEST_RETRY_AFTER,
         }
     }
 }
