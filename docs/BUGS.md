@@ -13,10 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Catalog
-- [S · 0.18.1] Correct `forget_folder`'s description. **Low, builder.** MCP says listens and
-  playlist rows go (`crates/resonate-mcp/src/tools.rs:401-402`), but `forgetting.rs:30` keeps
-  listens and playlist entries survive. Say what is kept. Done when the description matches the
-  tool's test.
 - [S · 0.18.1] Let a queued artist's expansion be cancelled. **Low, builder.** Subsonic and Jellyfin
   now check a cancel between albums through `PlaysInPlace::songs_until`, but every caller still asks
   `songs_of` with none (`crates/resonate/src/served.rs`, `crates/resonate-ui/src/serving.rs`,

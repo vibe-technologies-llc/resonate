@@ -414,10 +414,11 @@ impl Tool {
                                 scan runs to its end (lookup_after says so). Needs no player."
                 .to_owned(),
             Self::ForgetFolder => "Take a folder out of the library's roots, and every track \
-                                   the catalog holds under it, including the plays and \
-                                   playlist rows kept for them. The files stay where they \
-                                   are. Refused while a scan is walking the library. Needs \
-                                   no player."
+                                   the catalog holds under it. The plays heard of those \
+                                   tracks stay in the listening statistics and the playlist \
+                                   rows that named them stay in their playlists. The files \
+                                   stay where they are. Refused while a scan is walking the \
+                                   library. Needs no player."
                 .to_owned(),
             Self::StartLookup => "Start asking MusicBrainz and the other services this build \
                                   reaches about the albums, tracks and artists not asked about \

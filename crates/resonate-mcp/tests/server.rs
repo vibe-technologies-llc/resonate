@@ -2281,6 +2281,57 @@ fn a_folder_forgotten_takes_its_tracks_with_it_and_one_never_kept_is_refused() {
 }
 
 #[test]
+fn a_folder_forgotten_keeps_what_was_heard_of_its_songs_and_the_playlist_rows_naming_them() {
+    let tree = Tree::new();
+
+    let path = tree.wav("01.wav", "Signal", "Hours", "1");
+
+    let library = scanned(&tree);
+    let id = library
+        .create_playlist("Late Night")
+        .expect("a playlist to be made");
+    let track = library
+        .tracks(&Default::default())
+        .expect("the catalog to be read")
+        .remove(0);
+
+    library
+        .add_to_playlist(id, &[Cut::of(&track)])
+        .expect("a row to be added");
+    library
+        .track_played(&MediaLocation::local(path), None, Duration::from_secs(30))
+        .expect("a play to be counted");
+
+    let server = server(library, Fake::default());
+    let folder = tree.root.display().to_string();
+
+    let before = called(
+        &server,
+        "listening_statistics",
+        json!({ "window": "everything" }),
+    );
+
+    called(&server, "forget_folder", json!({ "folder": folder }));
+
+    let after = called(
+        &server,
+        "listening_statistics",
+        json!({ "window": "everything" }),
+    );
+    let found = called(&server, "search_library", json!({ "query": "signal" }));
+    let playlists = called(&server, "list_playlists", json!({}));
+
+    assert_eq!(before["plays"], 1, "{before}");
+    assert_eq!(after["plays"], before["plays"], "{after}");
+    assert_eq!(
+        after["listened_seconds"], before["listened_seconds"],
+        "{after}"
+    );
+    assert_eq!(found["tracks"].as_array().map(Vec::len), Some(0), "{found}");
+    assert_eq!(playlists["playlists"][0]["tracks"], 1, "{playlists}");
+}
+
+#[test]
 fn a_lookup_asked_of_a_build_that_reaches_nothing_is_that_tool_failing_alone() {
     let server = nothing_running();
 
