@@ -176,6 +176,19 @@ explain-crossfeed = aliments croisés: { $crossfeed }
 explain-guard = garde: véritables pics maintenus sous -0.1 dBTP
 explain-dither = Dither: à { $depth } [{ $shaping }]
 explain-dop = Dop: { $reading }
+quality-low-latency = faible latence
+quality-balanced = équilibrée
+quality-high = élevée
+quality-very-high = très élevée
+phase-linear = linéaire
+phase-intermediate = intermédiaire
+phase-minimum = minimale
+tuning-mp3 = MP3
+tuning-aac = AAC
+tuning-vorbis = Vorbis
+shaping-flat = plat
+shaping-lipshitz = lipshitz
+shaping-threshold = seuil
 above-nyquist = { $bands ->
     [one] { $bands } bande est au-dessus du Nyquist de la sortie et n’est pas appliquée
    *[other] { $bands } bandes sont au-dessus du Nyquist de la sortie et ne sont pas appliquées

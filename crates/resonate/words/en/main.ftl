@@ -171,11 +171,24 @@ explain-eq-unbound = eq:      on, but nothing this device is bound to shapes the
 explain-room = room:     { $taps } taps a channel over { $channels } channels, measured at { $rate }
 found-as-it-plays = found as it plays
 studied-at = studied at { $kilohertz } kHz
-explain-restore = restore: { $restoration } a { $tuning } source, its wall { $wall }
+explain-restore = restore: { $restoration }, encoded as { $tuning }, its wall { $wall }
 explain-crossfeed = crossfeed: { $crossfeed }
 explain-guard = guard:   true peaks held under -0.1 dBTP
 explain-dither = dither:  to { $depth } [{ $shaping }]
 explain-dop = dop:     { $reading }
+quality-low-latency = low latency
+quality-balanced = balanced
+quality-high = high
+quality-very-high = very high
+phase-linear = linear
+phase-intermediate = intermediate
+phase-minimum = minimum
+tuning-mp3 = MP3
+tuning-aac = AAC
+tuning-vorbis = Vorbis
+shaping-flat = flat
+shaping-lipshitz = lipshitz
+shaping-threshold = threshold
 above-nyquist = { $bands ->
     [one] { $bands } band is above the output's Nyquist and is not applied
    *[other] { $bands } bands are above the output's Nyquist and are not applied

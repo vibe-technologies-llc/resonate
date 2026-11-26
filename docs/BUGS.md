@@ -38,7 +38,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Windows
 
 ## Command line
-- [S · 0.18.1] Say `explain`'s settings through the catalog. **Low, builder.** `explain.rs` still
-  prints the `Debug` of the filter phase, quality, tuning and shaping, as `info` and `readout` did
-  before their words moved to the catalog. Give each its words. Done when `explain` prints no
-  `Debug` spelling, in a test.
