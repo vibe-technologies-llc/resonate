@@ -21,6 +21,9 @@ const ALBUM_KEY: &str = "album/";
 const ARTIST_KEY: &str = "artist/";
 const MIX_KEY: &str = "mix/";
 
+pub const ALBUMS_OF_AN_ARTIST_EXPANDED_AT_MOST: usize = 300;
+pub const SONGS_OF_AN_ARTIST_EXPANDED_AT_MOST: usize = 10_000;
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(Box<str>);
 
@@ -374,6 +377,14 @@ pub trait PlaysInPlace: Send + Sync {
         }
     }
 
+    fn songs_until(
+        &self,
+        named: &Named,
+        _cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Vec<Song>> {
+        self.songs_of(named)
+    }
+
     fn named_by(&self, location: &MediaLocation) -> Option<Named> {
         Named::read(location, self.scheme())
     }
@@ -381,6 +392,44 @@ pub trait PlaysInPlace: Send + Sync {
     fn location_of(&self, named: &Named) -> MediaLocation {
         named.location(self.scheme())
     }
+}
+
+pub fn songs_of_an_artist(
+    provider: &SourceId,
+    albums: Vec<Album>,
+    cancelled: &(dyn Fn() -> bool + Sync),
+    mut album: impl FnMut(&Id) -> Result<AlbumSongs>,
+) -> Result<Vec<Song>> {
+    let op = ProviderOp::Browse;
+
+    if albums.len() > ALBUMS_OF_AN_ARTIST_EXPANDED_AT_MOST {
+        return Err(Error::TooManyAlbums {
+            provider: provider.clone(),
+            op,
+            albums: albums.len(),
+            at_most: ALBUMS_OF_AN_ARTIST_EXPANDED_AT_MOST,
+        });
+    }
+
+    let mut songs = Vec::new();
+
+    for held in albums {
+        if cancelled() {
+            return Err(Error::Cancelled {
+                provider: provider.clone(),
+                op,
+            });
+        }
+        songs.extend(album(&held.id)?.songs);
+        if songs.len() > SONGS_OF_AN_ARTIST_EXPANDED_AT_MOST {
+            return Err(Error::TooManySongs {
+                provider: provider.clone(),
+                op,
+                at_most: SONGS_OF_AN_ARTIST_EXPANDED_AT_MOST,
+            });
+        }
+    }
+    Ok(songs)
 }
 
 pub fn not_offered(provider: &SourceId, op: ProviderOp) -> Error {

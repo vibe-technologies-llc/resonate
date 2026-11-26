@@ -73,6 +73,9 @@ fn turned_away(error: &Error) -> &'static str {
         | Error::NotOffered { .. }
         | Error::ToolFailed { .. }
         | Error::ToolNotRun { .. }
+        | Error::TooManyAlbums { .. }
+        | Error::TooManySongs { .. }
+        | Error::Cancelled { .. }
         | Error::NotAnExtension => {
             words::settings_tidal::tidal_answered_something_this_build_cannot()
         }

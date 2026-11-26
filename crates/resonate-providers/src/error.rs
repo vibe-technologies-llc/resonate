@@ -124,6 +124,28 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error(
+        "{op:?} would ask the {provider} provider's server about {albums} albums, past the {at_most} it expands"
+    )]
+    TooManyAlbums {
+        provider: SourceId,
+        op: ProviderOp,
+        albums: usize,
+        at_most: usize,
+    },
+
+    #[error(
+        "{op:?} gathered more songs from the {provider} provider's server than the {at_most} it expands"
+    )]
+    TooManySongs {
+        provider: SourceId,
+        op: ProviderOp,
+        at_most: usize,
+    },
+
+    #[error("{op:?} was cancelled while the {provider} provider's server was being asked")]
+    Cancelled { provider: SourceId, op: ProviderOp },
+
     #[error("a delivery's extension is one to eight ASCII letters and digits")]
     NotAnExtension,
 }
@@ -185,6 +207,9 @@ impl Error {
             | Self::AuthorizationLapsed { .. }
             | Self::AuthorizationDenied { .. }
             | Self::ToolFailed { .. }
+            | Self::TooManyAlbums { .. }
+            | Self::TooManySongs { .. }
+            | Self::Cancelled { .. }
             | Self::NotAnExtension => WhyAway::NotAnswering,
         }
     }
@@ -211,6 +236,9 @@ impl Error {
             | Self::NotOffered { .. }
             | Self::AuthorizationLapsed { .. }
             | Self::AuthorizationDenied { .. }
+            | Self::TooManyAlbums { .. }
+            | Self::TooManySongs { .. }
+            | Self::Cancelled { .. }
             | Self::NotAnExtension => false,
         }
     }

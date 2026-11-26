@@ -445,10 +445,13 @@ pub(crate) fn failure_of(provider: MusicProvider, error: &resonate_providers::Er
         | Refusal::StillArriving { .. }
         | Refusal::Busy { .. }
         | Refusal::ToolFailed { .. }
-        | Refusal::ToolNotRun { .. } => Error::ProviderAway { provider },
+        | Refusal::ToolNotRun { .. }
+        | Refusal::Cancelled { .. } => Error::ProviderAway { provider },
         Refusal::Unreadable { .. }
         | Refusal::OffItsHosts { .. }
         | Refusal::NotOffered { .. }
+        | Refusal::TooManyAlbums { .. }
+        | Refusal::TooManySongs { .. }
         | Refusal::NotAnExtension => Error::ProviderUnreadable { provider },
         Refusal::AuthorizationLapsed { .. } => Error::SignInLapsed { provider },
         Refusal::AuthorizationDenied { .. } => Error::SignInDenied { provider },

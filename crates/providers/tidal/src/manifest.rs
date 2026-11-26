@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use roxmltree::{Document, Node};
 use serde::Deserialize;
@@ -56,6 +58,7 @@ pub(crate) enum Unread {
     NumberedPastTheEnd,
     PaddedTooWide,
     UrlTooLong,
+    RepeatedSegment,
     OffItsHosts,
 }
 
@@ -120,11 +123,27 @@ fn bts(bytes: &[u8]) -> Result<Manifest, Unread> {
     if bts.urls.is_empty() {
         return Err(Unread::NoMedia);
     }
+    if bts.urls.len() as u64 > SEGMENTS_AT_MOST {
+        return Err(Unread::TooManySegments);
+    }
+    if bts.urls.iter().any(|url| url.len() > URL_BYTES_AT_MOST) {
+        return Err(Unread::UrlTooLong);
+    }
+    distinct(&bts.urls)?;
     Ok(Manifest::Media(Media {
         container,
         urls: bts.urls,
         timeline: None,
     }))
+}
+
+fn distinct(urls: &[String]) -> Result<(), Unread> {
+    let mut seen = HashSet::with_capacity(urls.len());
+
+    urls.iter()
+        .all(|url| seen.insert(url.as_str()))
+        .then_some(())
+        .ok_or(Unread::RepeatedSegment)
 }
 
 fn first<'a, 'input>(document: &'a Document<'input>, name: &str) -> Option<Node<'a, 'input>> {
@@ -367,6 +386,8 @@ fn dash(bytes: &[u8], hosts: &MediaHosts) -> Result<Manifest, Unread> {
             hosts,
         )?);
     }
+
+    distinct(&urls)?;
 
     Ok(Manifest::Media(Media {
         container: Container::Mp4,
@@ -727,6 +748,70 @@ mod tests {
         assert_eq!(
             read_document(DASH, past.as_bytes()),
             Err(Unread::TooManySegments)
+        );
+    }
+
+    #[test]
+    fn a_template_naming_no_number_repeats_one_url_and_is_refused() {
+        let manifest = manifest_with(
+            "https://cdn.audio.tidal.com/the-one-object.mp4",
+            r#"<S d="10" r="9999"/>"#,
+        );
+
+        assert_eq!(
+            read_document(DASH, manifest.as_bytes()),
+            Err(Unread::RepeatedSegment)
+        );
+    }
+
+    #[test]
+    fn a_bts_manifest_of_too_many_urls_is_refused_unread() {
+        let urls = (0..100_000)
+            .map(|number| format!(r#""https://a.audio.tidal.com/{number}""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let manifest = format!(
+            r#"{{"mimeType":"audio/flac","codecs":"flac","encryptionType":"NONE","urls":[{urls}]}}"#
+        );
+
+        assert_eq!(
+            read_document(BTS, manifest.as_bytes()),
+            Err(Unread::TooManySegments)
+        );
+    }
+
+    #[test]
+    fn a_bts_manifest_of_the_most_urls_is_read() {
+        let urls = (0..SEGMENTS_AT_MOST)
+            .map(|number| format!(r#""https://a.audio.tidal.com/{number}""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let manifest = format!(
+            r#"{{"mimeType":"audio/flac","codecs":"flac","encryptionType":"NONE","urls":[{urls}]}}"#
+        );
+
+        let Ok(Manifest::Media(media)) = read_document(BTS, manifest.as_bytes()) else {
+            panic!("a manifest of the most urls was not read");
+        };
+
+        assert_eq!(media.urls.len() as u64, SEGMENTS_AT_MOST);
+    }
+
+    #[test]
+    fn a_bts_manifest_repeating_a_url_or_naming_a_long_one_is_refused() {
+        let long = "a".repeat(URL_BYTES_AT_MOST);
+        let repeated = r#"{"mimeType":"audio/flac","codecs":"flac","encryptionType":"NONE","urls":["https://a.audio.tidal.com/x","https://a.audio.tidal.com/x"]}"#;
+        let lengthy = format!(
+            r#"{{"mimeType":"audio/flac","codecs":"flac","encryptionType":"NONE","urls":["https://a.audio.tidal.com/{long}"]}}"#
+        );
+
+        assert_eq!(
+            read_document(BTS, repeated.as_bytes()),
+            Err(Unread::RepeatedSegment)
+        );
+        assert_eq!(
+            read_document(BTS, lengthy.as_bytes()),
+            Err(Unread::UrlTooLong)
         );
     }
 }

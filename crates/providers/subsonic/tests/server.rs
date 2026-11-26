@@ -655,6 +655,96 @@ fn an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order() 
     );
 }
 
+fn a_crowded_artist(albums: usize, songs_in_each: usize) -> impl Fn(&Asked, usize) -> Canned {
+    move |asked, _| match (asked.method.as_str(), asked.id.as_deref()) {
+        ("getArtist", Some("ar-many")) => {
+            let listed: Vec<String> = (0..albums)
+                .map(|each| format!(r#"{{"id":"al-{each}","name":"Album {each}"}}"#))
+                .collect();
+            ok(&format!(
+                r#""artist":{{"id":"ar-many","name":"Various Artists","album":[{}]}}"#,
+                listed.join(",")
+            ))
+        }
+        ("getAlbum", Some(album)) => {
+            let listed: Vec<String> = (0..songs_in_each)
+                .map(|each| format!(r#"{{"id":"{album}-{each}","title":"Song {each}"}}"#))
+                .collect();
+            ok(&format!(
+                r#""album":{{"id":"{album}","name":"{album}","song":[{}]}}"#,
+                listed.join(",")
+            ))
+        }
+        _ => not_held(),
+    }
+}
+
+fn albums_asked(fake: &Fake) -> usize {
+    fake.heard
+        .lock()
+        .iter()
+        .filter(|asked| asked.method == "getAlbum")
+        .count()
+}
+
+#[test]
+fn an_artist_of_five_thousand_albums_is_refused_before_any_album_is_asked() {
+    let fake = Fake::serving(a_crowded_artist(5000, 1));
+
+    let refused = fake
+        .subsonic()
+        .songs_of(&Named::Artist(id("ar-many")))
+        .expect_err("an artist past the cap");
+
+    assert!(matches!(
+        refused,
+        Error::TooManyAlbums {
+            op: ProviderOp::Browse,
+            albums: 5000,
+            ..
+        }
+    ));
+    assert_eq!(albums_asked(&fake), 0);
+}
+
+#[test]
+fn an_artist_whose_albums_hold_past_the_most_songs_stops_at_the_album_that_passes_it() {
+    let fake = Fake::serving(a_crowded_artist(6, 4000));
+
+    let refused = fake
+        .subsonic()
+        .songs_of(&Named::Artist(id("ar-many")))
+        .expect_err("songs past the cap");
+
+    assert!(matches!(
+        refused,
+        Error::TooManySongs {
+            op: ProviderOp::Browse,
+            ..
+        }
+    ));
+    assert_eq!(albums_asked(&fake), 3);
+}
+
+#[test]
+fn a_cancel_between_albums_stops_an_artists_expansion() {
+    let fake = Fake::serving(a_crowded_artist(20, 2));
+
+    let refused = fake
+        .subsonic()
+        .songs_until(&Named::Artist(id("ar-many")), &|| albums_asked(&fake) >= 2)
+        .expect_err("a cancelled expansion");
+
+    assert!(matches!(
+        refused,
+        Error::Cancelled {
+            op: ProviderOp::Browse,
+            ..
+        }
+    ));
+    assert_eq!(albums_asked(&fake), 2);
+}
+
 #[test]
 fn an_album_the_server_does_not_hold_is_turned_away_by_its_code() {
     let fake = Fake::serving(|asked, _| a_served_library(asked));

@@ -587,7 +587,13 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
 - **Browsing is four calls**: `artists` (`getArtists`), `artist` (`getArtist`, its albums), `album`
   (`getAlbum`, its songs), `search` (`search3`, up to `BROWSED_AT_MOST` of each kind), with `song`
   (`getSong`); `songs_of` turns any `Named` into its songs in the server's order, an artist's
-  album by album. Each is one paced request under `Patience::answered_within`, `ProviderOp::Browse`,
+  album by album through `resonate_providers::songs_of_an_artist`, which refuses an artist of more
+  than `ALBUMS_OF_AN_ARTIST_EXPANDED_AT_MOST` albums before asking any (`Error::TooManyAlbums`),
+  stops once the songs pass `SONGS_OF_AN_ARTIST_EXPANDED_AT_MOST` (`Error::TooManySongs`) and
+  checks the cancel `songs_until` takes between albums (`Error::Cancelled`), the same for Jellyfin
+  (`an_artist_of_five_thousand_albums_is_refused_before_any_album_is_asked`,
+  `an_artist_whose_albums_hold_past_the_most_songs_stops_at_the_album_that_passes_it`,
+  `a_cancel_between_albums_stops_an_artists_expansion`). Each is one paced request under `Patience::answered_within`, `ProviderOp::Browse`,
   the answer read part by part (`part`) through the same `readable`/`id_spelt` tolerance as a search,
   a number written as text read too (`a_servers_artists_albums_and_songs_are_browsed_by_their_ids`,
   `an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order`). The seam's
@@ -941,7 +947,13 @@ fetched whole and lands as a track row.
   wider than `PADDING_DIGITS_AT_MOST` (20, a `u64`'s digits) is `Unread::PaddedTooWide`; a segment
   URL over `URL_BYTES_AT_MOST` (2048) is `Unread::UrlTooLong`; a timeline of more than
   `SEGMENTS_AT_MOST` (10 000, about 11 hours at TIDAL's 4 s segments) is `Unread::TooManySegments`,
-  refused before a URL is made (`a_padding_wider_than_any_number_is_refused_without_being_written`,
+  refused before a URL is made. A BTS manifest holds the same bounds (no more than `SEGMENTS_AT_MOST`
+  URLs, none over `URL_BYTES_AT_MOST`), and in both manifests a URL named twice is
+  `Unread::RepeatedSegment`, since a media template with no `$Number$` would make the client fetch
+  one object ten thousand times (`a_template_naming_no_number_repeats_one_url_and_is_refused`,
+  `a_bts_manifest_of_too_many_urls_is_refused_unread`,
+  `a_bts_manifest_repeating_a_url_or_naming_a_long_one_is_refused`;
+  `a_padding_wider_than_any_number_is_refused_without_being_written`,
   `a_segment_naming_a_foreign_host_is_refused_before_the_timeline_is_expanded`,
   `a_segment_url_past_any_real_one_is_refused`,
   `a_timeline_of_the_most_segments_is_read_and_one_more_is_refused`).

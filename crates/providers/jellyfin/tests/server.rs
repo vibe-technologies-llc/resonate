@@ -552,6 +552,119 @@ fn an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order() 
     );
 }
 
+fn a_crowded_artist(albums: usize, songs_in_each: usize) -> impl Fn(&Asked, usize) -> Canned {
+    let user = format!("/Users/{USER_ID}/Items");
+
+    move |asked, _| {
+        if asked.is("POST", "/Users/AuthenticateByName") {
+            return signed_in();
+        }
+        if !asked.carries_the_token() {
+            return Canned::status(401);
+        }
+        match (asked.method.as_str(), asked.path.as_str()) {
+            ("GET", path) if path == user => {
+                match asked.parameter("IncludeItemTypes") {
+                    Some("MusicAlbum") => {
+                        let listed: Vec<String> = (0..albums)
+                        .map(|each| {
+                            format!(r#"{{"Id":"al-{each}","Name":"Album {each}","Type":"MusicAlbum"}}"#)
+                        })
+                        .collect();
+                        items(&listed.join(","), albums)
+                    }
+                    Some("Audio") => {
+                        let parent = asked.parameter("ParentId").unwrap_or_default();
+                        let listed: Vec<String> = (0..songs_in_each)
+                        .map(|each| {
+                            format!(r#"{{"Id":"{parent}-{each}","Name":"Song {each}","Type":"Audio"}}"#)
+                        })
+                        .collect();
+                        items(&listed.join(","), songs_in_each)
+                    }
+                    _ => Canned::status(400),
+                }
+            }
+            ("GET", path) if path.starts_with(&format!("{user}/")) => {
+                let item = path.rsplit('/').next().unwrap_or_default();
+                let kind = if item == "ar-many" {
+                    "MusicArtist"
+                } else {
+                    "MusicAlbum"
+                };
+                Canned::json(&format!(
+                    r#"{{"Id":"{item}","Name":"{item}","Type":"{kind}"}}"#
+                ))
+            }
+            _ => Canned::status(404),
+        }
+    }
+}
+
+fn albums_asked(fake: &Fake) -> usize {
+    fake.heard()
+        .iter()
+        .filter(|asked| asked.parameter("IncludeItemTypes") == Some("Audio"))
+        .count()
+}
+
+#[test]
+fn an_artist_of_five_thousand_albums_is_refused_before_any_album_is_asked() {
+    let fake = Fake::serving(a_crowded_artist(5000, 1));
+
+    let refused = fake
+        .jellyfin()
+        .songs_of(&Named::Artist(id("ar-many")))
+        .expect_err("an artist past the cap");
+
+    assert!(matches!(
+        refused,
+        Error::TooManyAlbums {
+            op: ProviderOp::Browse,
+            ..
+        }
+    ));
+    assert_eq!(albums_asked(&fake), 0);
+}
+
+#[test]
+fn an_artist_whose_albums_hold_past_the_most_songs_stops_at_the_album_that_passes_it() {
+    let fake = Fake::serving(a_crowded_artist(8, 2000));
+
+    let refused = fake
+        .jellyfin()
+        .songs_of(&Named::Artist(id("ar-many")))
+        .expect_err("songs past the cap");
+
+    assert!(matches!(
+        refused,
+        Error::TooManySongs {
+            op: ProviderOp::Browse,
+            ..
+        }
+    ));
+    assert_eq!(albums_asked(&fake), 6);
+}
+
+#[test]
+fn a_cancel_between_albums_stops_an_artists_expansion() {
+    let fake = Fake::serving(a_crowded_artist(20, 2));
+
+    let refused = fake
+        .jellyfin()
+        .songs_until(&Named::Artist(id("ar-many")), &|| albums_asked(&fake) >= 2)
+        .expect_err("a cancelled expansion");
+
+    assert!(matches!(
+        refused,
+        Error::Cancelled {
+            op: ProviderOp::Browse,
+            ..
+        }
+    ));
+    assert_eq!(albums_asked(&fake), 2);
+}
+
 #[test]
 fn a_song_the_server_does_not_hold_is_the_refusal_it_carries() {
     let fake = Fake::serving(library);

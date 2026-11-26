@@ -17,7 +17,7 @@ pub use resonate_providers::{
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
-    Provider, ProviderOp, Reopened, Result, is_a_page, not_offered,
+    Provider, ProviderOp, Reopened, Result, is_a_page, not_offered, songs_of_an_artist,
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
@@ -480,16 +480,21 @@ impl Subsonic {
     }
 
     pub fn songs_of(&self, named: &Named) -> Result<Vec<Song>> {
+        self.songs_until(named, &|| false)
+    }
+
+    pub fn songs_until(
+        &self,
+        named: &Named,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Vec<Song>> {
         match named {
             Named::Song(id) => Ok(vec![self.song(id)?]),
             Named::Album(id) => Ok(self.album(id)?.songs),
             Named::Artist(id) => {
-                let mut songs = Vec::new();
+                let albums = self.artist(id)?.albums;
 
-                for album in self.artist(id)?.albums {
-                    songs.extend(self.album(&album.id)?.songs);
-                }
-                Ok(songs)
+                songs_of_an_artist(&self.source, albums, cancelled, |album| self.album(album))
             }
             Named::Mix(_) => Err(not_offered(&self.source, ProviderOp::Browse)),
         }
@@ -705,6 +710,14 @@ impl PlaysInPlace for Subsonic {
 
     fn songs_of(&self, named: &Named) -> Result<Vec<Song>> {
         Self::songs_of(self, named)
+    }
+
+    fn songs_until(
+        &self,
+        named: &Named,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Vec<Song>> {
+        Self::songs_until(self, named, cancelled)
     }
 
     fn keeps_favourites(&self) -> bool {

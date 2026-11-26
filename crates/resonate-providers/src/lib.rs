@@ -23,7 +23,7 @@ pub use crate::{
     identity::Identity,
     in_place::{
         Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Mix, MixSongs, Named, PlaysInPlace,
-        SeekingBytes, Song, Streamed, found_exactly, not_offered,
+        SeekingBytes, Song, Streamed, found_exactly, not_offered, songs_of_an_artist,
     },
     listing::{
         A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Choosing, LENGTHS_AGREE_WITHIN, Listed, Taken, led_by,
