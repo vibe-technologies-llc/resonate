@@ -69,12 +69,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`crates/resonate-online/src/tidal.rs:79-98`, `:121-130`), as do Apple's and Spotify's
   (`apple.rs:64-73`, `spotify.rs:89-103`). Cap the items. Done when a page of 50 000 items stops at
   the cap.
-- [S · 0.18.1] Ask a Mac's capture unit for the channels the clip keeps. **Low, builder.**
-  `raw_samples_for` sizes the raw buffer by the device's whole channel count and rate
-  (`crates/resonate-listen/src/coreaudio_capture.rs:87-95`, `:138`), filled eagerly
-  (`recording.rs:25-30`), so a minute from a 32-channel interface at 192 kHz holds about 1.5 GB
-  though only two channels are used. Ask the unit for two channels. Done when the buffer for that
-  device is the clip's shape.
 - [S · 0.18.1] Unpack an amended MusicBrainz document at its own size. **Low, builder.** An amended
   read unpacks into a 16 MiB `MOST_UNPACKED_BLOCK` buffer
   (`crates/resonate-musicbrainz/src/mirror/mod.rs:695`, `:767-770`), up to 64 times a search. Store

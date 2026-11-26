@@ -54,35 +54,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Formats
-- [S · 0.18.1] Keep a SYLT line led by a bracket text when it is written as LRC. **Low, builder.**
-  `crates/resonate-codec/src/sylt.rs` writes timed words as LRC without `escaped_for_lrc`, so a
-  line opening on `[offset:…]` or a stamp reads back as a tag, as Better Lyrics' did. Escape it the
-  same way. Done when such a line round-trips, in a test.
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
 
 ## macOS
-- [S · 0.18.1] Restore a Mac output's settings loudly, and let the hog go when verification fails.
-  **Low, builder.** `Restoring::drop` ignores every restore error with no log
-  (`crates/resonate-coreaudio/src/opening.rs:129-141`), and `Hog::taken` keeps the hog when the read
-  that verifies it fails after the toggle (`crates/resonate-apple/src/hog.rs:42-46`). Log each
-  failure and release on a failed verification. Done when the toolbox fakes show both.
-- [S · 0.18.1] Count a Mac capture slice that was dropped. **Low, builder.** A slice above
-  `FRAMES_A_SLICE_AT_MOST` (8192) or a failed pull is answered silently
-  (`crates/resonate-apple/src/buffers.rs:67-76`), so a recording is silence and reads
-  `NothingHeard`. Count drops and fail a sitting that heard only drops. Done when a fake capture of
-  16 384-frame slices records them.
-- [S · 0.18.1] Guard the path monitor and artwork handlers against a panic. **Low, builder.** The
-  path monitor's handler (`crates/resonate-apple/src/path_monitor.rs:69`) and the artwork handler
-  (`now_playing.rs:204`) are not run through `guarded`, so a checked build unwinds into libdispatch,
-  which `macos.md` says no handler does. Wrap both. Done when both handlers go through `guarded`.
-- [S · 0.18.1] Join a lost Mac capture's thread before reopening. **Low, builder.** The Mac
-  `Capture` has no `Drop` (`crates/resonate-listen/src/coreaudio_capture.rs:106-110`, `:183-192`),
-  so a lost capture's last `carry` races the reopened recorder's `silence_for` (`session.rs:79-105`,
-  `recording.rs:64-90`), whose `filled` is a load then a store. Join on drop as
-  `wasapi_capture.rs:115-122` does. Done when a test drops a capture and opens another on the same
-  recording.
 - [S · blocked: a Mac] The desktop capture reads the aggregate's first input stream, never checked
   to be the tap: `Heard::from` takes `streams(Direction::Input).next()`
   (`crates/resonate-listen/src/coreaudio_capture.rs:62-81`) of the aggregate over the default output
