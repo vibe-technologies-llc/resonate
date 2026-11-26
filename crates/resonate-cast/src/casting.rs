@@ -34,6 +34,8 @@ const BROWSE_WAKES_EVERY: Duration = Duration::from_millis(250);
 
 const ADDRESSES_TRIED_AGAIN_EVERY: Duration = Duration::from_secs(60);
 
+const TURNING_LINKS_KEPT_FOR: Duration = Duration::from_secs(30);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Finding {
     Bonjour,
@@ -159,6 +161,13 @@ impl Casting {
     }
 
     pub fn resting(searching: Searching) -> Result<Self> {
+        Self::resting_keeping_turning_links_for(searching, TURNING_LINKS_KEPT_FOR)
+    }
+
+    pub fn resting_keeping_turning_links_for(
+        searching: Searching,
+        kept_for: Duration,
+    ) -> Result<Self> {
         let (turns, turned) = unbounded();
         let shared = Arc::new(Shared {
             searching,
@@ -173,7 +182,7 @@ impl Casting {
 
         thread::Builder::new()
             .name("resonate-cast-turns".to_owned())
-            .spawn(move || turn_when_told(&turned))
+            .spawn(move || turn_when_told(&turned, kept_for))
             .map_err(spawn_failed)?;
 
         Ok(Self {
@@ -869,9 +878,29 @@ fn sink_of(id: SinkId, device: &Device) -> SinkInfo {
     }
 }
 
-fn turn_when_told(turned: &Receiver<Turn>) {
-    let mut links: BTreeMap<SocketAddr, Link> = BTreeMap::new();
-    while let Ok(first) = turned.recv() {
+struct Turning {
+    link: Link,
+    used_at: Instant,
+}
+
+fn turn_when_told(turned: &Receiver<Turn>, kept_for: Duration) {
+    let mut links: BTreeMap<SocketAddr, Turning> = BTreeMap::new();
+    loop {
+        let first = if links.is_empty() {
+            match turned.recv() {
+                Ok(first) => first,
+                Err(_) => return,
+            }
+        } else {
+            match turned.recv_timeout(kept_for) {
+                Ok(first) => first,
+                Err(RecvTimeoutError::Timeout) => {
+                    links.retain(|_, turning| turning.used_at.elapsed() < kept_for);
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        };
         let mut volumes: BTreeMap<SocketAddr, (Arc<Device>, Volume)> = BTreeMap::new();
         let mut mutes: BTreeMap<SocketAddr, (Arc<Device>, bool)> = BTreeMap::new();
 
@@ -892,31 +921,39 @@ fn turn_when_told(turned: &Receiver<Turn>) {
         for (device, muted) in mutes.into_values() {
             turned_on(&mut links, &device, |link| device::set_mute(link, muted));
         }
+        links.retain(|_, turning| turning.used_at.elapsed() < kept_for);
     }
 }
 
 fn turned_on(
-    links: &mut BTreeMap<SocketAddr, Link>,
+    links: &mut BTreeMap<SocketAddr, Turning>,
     device: &Device,
     turn: impl FnOnce(&Link) -> Result<()>,
 ) {
-    let stale = links.get(&device.at()).is_some_and(|link| !link.is_alive());
+    let stale = links
+        .get(&device.at())
+        .is_some_and(|turning| !turning.link.is_alive());
 
     if stale {
         links.remove(&device.at());
     }
 
-    let link = match links.entry(device.at()) {
+    let turning = match links.entry(device.at()) {
         Entry::Occupied(held) => held.into_mut(),
         Entry::Vacant(free) => match Link::connect(device.at()) {
-            Ok(link) => free.insert(link),
+            Ok(link) => free.insert(Turning {
+                link,
+                used_at: Instant::now(),
+            }),
             Err(error) => {
                 tracing::warn!(%error, receiver = %device.id(), "a Cast receiver's volume could not be turned");
                 return;
             }
         },
     };
-    if let Err(error) = turn(link) {
+
+    turning.used_at = Instant::now();
+    if let Err(error) = turn(&turning.link) {
         tracing::warn!(%error, receiver = %device.id(), "a Cast receiver's volume could not be turned");
         links.remove(&device.at());
     }

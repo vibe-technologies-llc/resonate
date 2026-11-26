@@ -110,6 +110,7 @@ struct Heard {
     profile: Profile,
     asked: Vec<Asked>,
     connections: usize,
+    open: usize,
     pongs: usize,
     launched: bool,
     level: f64,
@@ -375,6 +376,12 @@ fn unframed(body: &[u8]) -> Received {
 type Tls = StreamOwned<ServerConnection, TcpStream>;
 
 fn answer(stream: TcpStream, config: Arc<ServerConfig>, heard: &Arc<Mutex<Heard>>) {
+    heard.lock().open += 1;
+    answered(stream, config, heard);
+    heard.lock().open -= 1;
+}
+
+fn answered(stream: TcpStream, config: Arc<ServerConfig>, heard: &Arc<Mutex<Heard>>) {
     stream
         .set_read_timeout(Some(READS_WAKE_EVERY))
         .expect("a read timeout");
@@ -1072,6 +1079,36 @@ fn a_title_of_a_mebibyte_is_loaded_cut_on_a_letter() {
 
     assert!(title.len() >= 1 << 20);
     assert_eq!(loaded, "\"\u{e9}".repeat(256));
+}
+
+#[test]
+fn a_link_that_turned_a_receiver_is_closed_once_idle_and_opened_again_for_the_next_turn() {
+    let fake = Fake::start();
+    let kept_for = Duration::from_millis(300);
+
+    let casting =
+        Casting::resting_keeping_turning_links_for(fake.searching(), kept_for).expect("rests");
+
+    casting.look(FirstSearch::Awaited).expect("looks");
+
+    let sink = the_receiver(&casting).id;
+
+    fake.until("the reaching link to close", |heard| heard.open == 0);
+
+    for (level, turned) in [(0.5_f64, 1_usize), (0.6, 2)] {
+        Neighbours::turn_volume(
+            &casting,
+            sink,
+            Volume::new(level as f32).expect("a volume").to_gain(),
+        )
+        .expect("turns");
+        fake.until("the receiver to be turned", |heard| {
+            (heard.level - level).abs() < 1e-6 && heard.open == 1
+        });
+        fake.until("the idle link to close", |heard| heard.open == 0);
+
+        assert_eq!(fake.heard.lock().count("SET_VOLUME"), turned);
+    }
 }
 
 #[test]

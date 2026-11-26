@@ -31,7 +31,10 @@ engine is a dev-dependency, for the end-to-end test.
   `resonate-audio` defines both boundaries. `sink_id_of` keeps WASAPI and Core Audio's hashed
   ids below both ranges so that local outputs reach their own backend even while discovery rests
   (`windows_outputs_reach_the_local_graph_beside_network_renderers`). Sink changes from all
-  arrive on one channel (a `resonate-upnp-sinks` thread selecting over them). A
+  arrive on one channel (a `resonate-upnp-sinks` thread selecting over them, one a subscription,
+  each ended and joined when its `Beside` is dropped or shut down, or at the next change after its
+  receiver is dropped: `no_forwarder_outlives_the_backend_whose_sinks_it_told_of`,
+  `a_forwarder_whose_receiver_is_dropped_ends_with_the_next_change`). A
   survey failing in the wrapped backend fails whole, renderers and all: answering the renderers
   alone made a lost graph look like a list whose first sink was a renderer, which the engine then
   chose.

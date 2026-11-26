@@ -2505,3 +2505,113 @@ fn resting_and_stopping_multicast_do_not_wait_out_a_round_over_silent_renderers(
     );
     assert!(network.sinks().is_empty());
 }
+
+struct Watched {
+    listeners: Mutex<Vec<Sender<SinkChange>>>,
+}
+
+impl Watched {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            listeners: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn forwarders_alive(&self) -> usize {
+        self.listeners
+            .lock()
+            .iter()
+            .filter(|listener| listener.send(SinkChange::DefaultChanged).is_ok())
+            .count()
+    }
+}
+
+impl Neighbours for Watched {
+    fn owns(&self, _sink: SinkId) -> bool {
+        false
+    }
+
+    fn sinks(&self) -> Vec<SinkInfo> {
+        Vec::new()
+    }
+
+    fn subscribe(&self) -> Receiver<SinkChange> {
+        let (announce, changes) = unbounded();
+
+        self.listeners.lock().push(announce);
+        changes
+    }
+
+    fn open(
+        &self,
+        _request: &StreamRequest,
+        _source: Box<dyn AudioSource>,
+    ) -> SinkResult<SinkStream> {
+        Err(SinkError::NoSink)
+    }
+
+    fn turn_volume(&self, _sink: SinkId, _gain: Gain) -> SinkResult<()> {
+        Ok(())
+    }
+
+    fn turn_mute(&self, _sink: SinkId, _muted: bool) -> SinkResult<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn no_forwarder_outlives_the_backend_whose_sinks_it_told_of() {
+    let watched = Watched::new();
+    let backend = Beside::over(
+        Box::new(NoGraph::new()),
+        Arc::clone(&watched) as Arc<dyn Neighbours>,
+    );
+
+    let first = backend.subscribe_sinks();
+    let second = backend.subscribe_sinks();
+
+    assert_eq!(watched.forwarders_alive(), 2);
+
+    drop(backend);
+
+    assert_eq!(watched.forwarders_alive(), 0);
+
+    drop((first, second));
+}
+
+#[test]
+fn no_forwarder_outlives_a_backend_that_is_shut_down() {
+    let watched = Watched::new();
+    let backend = Beside::over(
+        Box::new(NoGraph::new()),
+        Arc::clone(&watched) as Arc<dyn Neighbours>,
+    );
+
+    let changes = backend.subscribe_sinks();
+
+    assert_eq!(watched.forwarders_alive(), 1);
+
+    Box::new(backend).shutdown().expect("shuts down");
+
+    assert_eq!(watched.forwarders_alive(), 0);
+
+    drop(changes);
+}
+
+#[test]
+fn a_forwarder_whose_receiver_is_dropped_ends_with_the_next_change() {
+    let watched = Watched::new();
+    let backend = Beside::over(
+        Box::new(NoGraph::new()),
+        Arc::clone(&watched) as Arc<dyn Neighbours>,
+    );
+
+    drop(backend.subscribe_sinks());
+
+    let since = Instant::now();
+    while watched.forwarders_alive() > 0 {
+        assert!(since.elapsed() < WAITED_AT_MOST, "the forwarder lived on");
+
+        thread::sleep(LOOKS_EVERY);
+    }
+}

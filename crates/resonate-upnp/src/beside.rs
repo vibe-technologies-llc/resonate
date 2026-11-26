@@ -1,6 +1,11 @@
-use std::{sync::Arc, thread, time::Duration};
+use std::{
+    sync::Arc,
+    thread::{self, JoinHandle},
+    time::Duration,
+};
 
-use crossbeam_channel::{Receiver, Select, Sender, unbounded};
+use crossbeam_channel::{Receiver, Select, Sender, bounded, unbounded};
+use parking_lot::Mutex;
 use resonate_audio::{
     AudioSource, Backend, Opener, SinkChange, SinkId, SinkInfo, SinkResult, SinkStream,
     StreamRequest, Surveyor,
@@ -27,6 +32,52 @@ type Neighbourhood = Vec<Arc<dyn Neighbours>>;
 pub struct Beside {
     inner: Box<dyn Backend>,
     neighbours: Arc<Neighbourhood>,
+    forwarding: Forwarding,
+}
+
+struct Forwarding {
+    stop: Option<Sender<()>>,
+    stopped: Receiver<()>,
+    threads: Mutex<Vec<JoinHandle<()>>>,
+}
+
+impl Forwarding {
+    fn new() -> Self {
+        let (stop, stopped) = bounded(0);
+
+        Self {
+            stop: Some(stop),
+            stopped,
+            threads: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn spawn(&self, sources: Vec<Receiver<SinkChange>>, announce: Sender<SinkChange>) {
+        let stopped = self.stopped.clone();
+        let spawned = thread::Builder::new()
+            .name("resonate-upnp-sinks".to_owned())
+            .spawn(move || forward(&sources, &stopped, &announce));
+
+        match spawned {
+            Ok(handle) => {
+                let mut threads = self.threads.lock();
+
+                threads.retain(|thread| !thread.is_finished());
+                threads.push(handle);
+            }
+            Err(error) => tracing::warn!(%error, "renderers coming and going will not be told"),
+        }
+    }
+}
+
+impl Drop for Forwarding {
+    fn drop(&mut self) {
+        drop(self.stop.take());
+
+        for thread in self.threads.get_mut().drain(..) {
+            let _ = thread.join();
+        }
+    }
 }
 
 impl Beside {
@@ -34,6 +85,7 @@ impl Beside {
         Self {
             inner,
             neighbours: Arc::new(vec![neighbours]),
+            forwarding: Forwarding::new(),
         }
     }
 
@@ -44,6 +96,7 @@ impl Beside {
         Self {
             inner: self.inner,
             neighbours: Arc::new(neighbours),
+            forwarding: self.forwarding,
         }
     }
 
@@ -67,13 +120,8 @@ impl Backend for Beside {
         );
 
         let (announce, changes) = unbounded();
-        let spawned = thread::Builder::new()
-            .name("resonate-upnp-sinks".to_owned())
-            .spawn(move || forward(&sources, &announce));
 
-        if let Err(error) = spawned {
-            tracing::warn!(%error, "renderers coming and going will not be told");
-        }
+        self.forwarding.spawn(sources, announce);
         changes
     }
 
@@ -110,17 +158,26 @@ impl Backend for Beside {
     }
 }
 
-fn forward(sources: &[Receiver<SinkChange>], announce: &Sender<SinkChange>) {
+fn forward(
+    sources: &[Receiver<SinkChange>],
+    stopped: &Receiver<()>,
+    announce: &Sender<SinkChange>,
+) {
     let mut open: Vec<&Receiver<SinkChange>> = sources.iter().collect();
     while !open.is_empty() {
         let mut select = Select::new();
 
+        select.recv(stopped);
         for source in &open {
             select.recv(source);
         }
 
         let ready = select.select();
-        let at = ready.index();
+        let Some(at) = ready.index().checked_sub(1) else {
+            let _ = ready.recv(stopped);
+
+            return;
+        };
         let Some(source) = open.get(at) else {
             return;
         };

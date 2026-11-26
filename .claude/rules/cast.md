@@ -228,7 +228,10 @@ codec are dev-dependencies, for the end-to-end tests.
 - **The volume is always the receiver's**: `SET_VOLUME` with `volume.level` (the `Volume` as is)
   or `volume.muted` on the `resonate-cast-turns` thread, which keeps a `Link` per receiver and
   sends only the last of the turns queued for each, so a dragged slider costs one round trip per
-  wake, not one per step.
+  wake, not one per step. A link unused for `TURNING_LINKS_KEPT_FOR` (30 s) is closed, its thread
+  ending with it, and the next turn opens one again
+  (`a_link_that_turned_a_receiver_is_closed_once_idle_and_opened_again_for_the_next_turn`,
+  `Casting::resting_keeping_turning_links_for`).
 
 ## In the binary
 
