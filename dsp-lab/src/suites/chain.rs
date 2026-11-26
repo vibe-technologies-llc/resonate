@@ -37,6 +37,13 @@ pub const THD_LOUD: Metric = Metric::new(
     "thd-1-dbfs-db",
     "THD at −1 dBFS (dB)",
     Better::Lower,
+    Tolerance::DECIBELS,
+    Shown::Decibels,
+);
+pub const THD_LOUD_DITHERED: Metric = Metric::new(
+    "thd-1-dbfs-db",
+    "THD at −1 dBFS (dB)",
+    Better::Lower,
     Tolerance::AMONG_DITHER,
     Shown::Decibels,
 );
@@ -62,6 +69,13 @@ pub const DYNAMIC_RANGE: Metric = Metric::new(
     Shown::Decibels,
 );
 pub const IMD: Metric = Metric::new(
+    "smpte-imd-db",
+    "SMPTE IMD (dB)",
+    Better::Lower,
+    Tolerance::DECIBELS,
+    Shown::Decibels,
+);
+pub const IMD_DITHERED: Metric = Metric::new(
     "smpte-imd-db",
     "SMPTE IMD (dB)",
     Better::Lower,
@@ -361,12 +375,18 @@ impl Suite for Chains {
         let asked = decibels(f64::from(played.plan().amplitude()) * remixed_gain(&played));
         let heard = middle.first().map_or(f64::NAN, |tone| tone.gain_db);
 
+        let (thd_loud, imd_metric) = if played.plan().dither_to.is_some() {
+            (&THD_LOUD_DITHERED, &IMD_DITHERED)
+        } else {
+            (&THD_LOUD, &IMD)
+        };
+
         Ok(Outcome::of(vec![
-            Reading::of(&THD_LOUD, read(&loud, |tone| tone.thd_db)),
+            Reading::of(thd_loud, read(&loud, |tone| tone.thd_db)),
             Reading::of(&THD_N_LOUD, read(&loud, |tone| tone.thd_n_db)),
             Reading::of(&THD_N_MIDDLE, read(&middle, |tone| tone.thd_n_db)),
             Reading::of(&DYNAMIC_RANGE, -read(&quiet, |tone| tone.noise_a_db)),
-            Reading::of(&IMD, imd),
+            Reading::of(imd_metric, imd),
             Reading::of(&SPREAD, spread),
             Reading::of(&ASKED, asked),
             Reading::of(&HEARD, heard),
@@ -487,6 +507,16 @@ mod tests {
 
         assert_eq!(played.plan().mode, OutputMode::BitPerfect);
         assert_eq!(heard.value(&NULL), f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn only_a_chain_that_dithers_is_held_to_the_dither_tolerance() {
+        let dithers = |name: &str| scenario(name).plan().dither_to.is_some();
+
+        assert!(!dithers("CD on a CD sink"));
+        assert!(!dithers("CD on 96 kHz float, minimum phase"));
+        assert!(dithers("CD on 48/16"));
+        assert!(dithers("192/24 on 44.1/24, low latency"));
     }
 
     #[test]

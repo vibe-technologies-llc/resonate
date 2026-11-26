@@ -70,6 +70,7 @@ fn listed() -> Result<()> {
 fn measured(measuring: &Measuring) -> Result<()> {
     let Chosen { suites, only } = &measuring.chosen;
     let mut everything: Vec<Measured> = Vec::new();
+    let mut ran: Vec<&str> = Vec::new();
 
     if let Some(directory) = &measuring.plots {
         fs::create_dir_all(directory).map_err(|source| Error::Write {
@@ -86,6 +87,7 @@ fn measured(measuring: &Measuring) -> Result<()> {
         if let Some(directory) = &measuring.plots {
             suite.plotted(directory, &measured)?;
         }
+        ran.push(suite.name());
         everything.extend(measured);
     }
 
@@ -98,12 +100,12 @@ fn measured(measuring: &Measuring) -> Result<()> {
         written(path, &lines)?;
     }
     if let Some(path) = &measuring.against {
-        held_to(path, &everything)?;
+        held_to(path, &everything, &ran, only.as_deref())?;
     }
     Ok(())
 }
 
-fn held_to(path: &Path, measured: &[Measured]) -> Result<()> {
+fn held_to(path: &Path, measured: &[Measured], ran: &[&str], only: Option<&str>) -> Result<()> {
     let text = fs::read_to_string(path).map_err(|source| Error::Read {
         path: path.to_owned(),
         source,
@@ -112,6 +114,7 @@ fn held_to(path: &Path, measured: &[Measured]) -> Result<()> {
         file: path.to_owned(),
         line: unreadable.line,
     })?;
+    let kept = readings::in_scope(kept, ran, only);
     let weighed = readings::weighed(measured, &kept);
 
     for gone in &weighed.gone {
@@ -137,13 +140,22 @@ fn held_to(path: &Path, measured: &[Measured]) -> Result<()> {
         path.display(),
         weighed.regressions.len()
     );
-    if weighed.regressions.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::Regressed {
+    if !weighed.regressions.is_empty() {
+        return Err(Error::Regressed {
             count: weighed.regressions.len(),
-        })
+        });
     }
+    if !weighed.gone.is_empty() {
+        return Err(Error::Unmeasured {
+            count: weighed.gone.len(),
+        });
+    }
+    if weighed.compared == 0 {
+        return Err(Error::NothingHeld {
+            file: path.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 fn timed_suites(chosen_ones: &Chosen) -> Result<()> {

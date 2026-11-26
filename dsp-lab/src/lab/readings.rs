@@ -107,6 +107,13 @@ pub fn read(text: &str) -> Result<Vec<Kept>, UnreadableLine> {
         .collect()
 }
 
+pub fn in_scope(kept: Vec<Kept>, suites: &[&str], only: Option<&str>) -> Vec<Kept> {
+    kept.into_iter()
+        .filter(|then| suites.contains(&then.suite.as_str()))
+        .filter(|then| only.is_none_or(|words| then.subject.0.contains(words)))
+        .collect()
+}
+
 pub struct Regression<'a> {
     pub case: &'a Measured,
     pub metric: &'static Metric,
@@ -131,6 +138,7 @@ pub fn weighed<'a>(measured: &'a [Measured], kept: &'a [Kept]) -> Weighed<'a> {
         let Some(case) = measured.iter().find(|case| {
             case.suite == then.suite && case.pair == then.pair && case.subject == then.subject
         }) else {
+            weighed.gone.push(then);
             continue;
         };
         let Some(reading) = case
@@ -192,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reading_worse_than_kept_is_a_regression_and_a_case_not_run_is_passed_over() {
+    fn a_reading_worse_than_kept_is_a_regression() {
         let kept = read(&written(&[case(-243.25)])).unwrap_or_default();
         let worse = [case(-200.0)];
 
@@ -200,7 +208,49 @@ mod tests {
 
         assert_eq!(weighed_worse.compared, 1);
         assert_eq!(weighed_worse.regressions.len(), 1);
-        assert_eq!(weighed(&[], &kept).compared, 0);
+        assert!(weighed_worse.gone.is_empty());
+    }
+
+    #[test]
+    fn a_case_no_longer_measured_is_gone_and_compares_nothing() {
+        let kept = read(&written(&[case(-243.25)])).unwrap_or_default();
+
+        let weighed_nothing = weighed(&[], &kept);
+
+        assert_eq!(weighed_nothing.compared, 0);
+        assert_eq!(weighed_nothing.gone.len(), 1);
+    }
+
+    #[test]
+    fn a_metric_no_longer_measured_in_a_case_that_still_is_gone() {
+        let kept = read(&written(&[case(-243.25)])).unwrap_or_default();
+        let mut bare = case(-243.25);
+
+        bare.readings.clear();
+
+        let measured = [bare];
+        let weighed_bare = weighed(&measured, &kept);
+
+        assert_eq!(weighed_bare.compared, 0);
+        assert_eq!(weighed_bare.gone.len(), 1);
+    }
+
+    #[test]
+    fn only_what_a_partial_run_could_have_measured_is_held() {
+        let mut other = case(-243.25);
+
+        other.suite = "other";
+        other.subject = SubjectName("Reference".to_owned());
+
+        let kept = read(&written(&[case(-243.25), other])).unwrap_or_default();
+
+        assert_eq!(in_scope(kept.clone(), &["test", "other"], None).len(), 2);
+        assert_eq!(in_scope(kept.clone(), &["test"], None).len(), 1);
+        assert_eq!(
+            in_scope(kept.clone(), &["test", "other"], Some("High")).len(),
+            1
+        );
+        assert!(in_scope(kept, &["test"], Some("Reference")).is_empty());
     }
 
     #[test]

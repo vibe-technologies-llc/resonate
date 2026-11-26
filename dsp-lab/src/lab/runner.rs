@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     cost::{self, Cost},
-    error::Result,
+    error::{Error, Result},
     lab::{
         pair::Pair,
         readings::Measured,
@@ -75,7 +75,11 @@ pub fn measured_everywhere(
             .collect();
         handles
             .into_iter()
-            .map(|handle| handle.join().unwrap_or_else(|_| Ok(Vec::new())))
+            .map(|handle| {
+                handle.join().unwrap_or(Err(Error::WorkerPanicked {
+                    suite: suite.name(),
+                }))
+            })
             .collect()
     });
 
@@ -118,4 +122,79 @@ pub fn cost_of(costs: &[Timed], subject: &SubjectName, pair: Pair) -> Option<Cos
         .iter()
         .find(|timed| &timed.subject == subject && timed.pair == pair)
         .map(|timed| timed.cost)
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_core::{ChannelLayout, SampleRate};
+
+    use super::*;
+    use crate::lab::{
+        metric::Metric,
+        subject::{Family, Running},
+        suite::Outcome,
+    };
+
+    struct Named;
+
+    impl Subject for Named {
+        fn name(&self) -> SubjectName {
+            SubjectName("Named".to_owned())
+        }
+
+        fn family(&self) -> Family {
+            Family::Ours
+        }
+
+        fn open(&self, _: Pair, _: ChannelLayout, _: usize) -> Result<Box<dyn Running>> {
+            Err(Error::ResponseRefused {
+                subject: self.name(),
+            })
+        }
+    }
+
+    struct Panics;
+
+    impl Suite for Panics {
+        fn name(&self) -> &'static str {
+            "panics"
+        }
+
+        fn title(&self) -> &'static str {
+            "Panics"
+        }
+
+        fn about(&self) -> &'static str {
+            "a suite whose measure panics"
+        }
+
+        fn subjects(&self) -> Result<Vec<Box<dyn Subject>>> {
+            Ok(vec![Box::new(Named)])
+        }
+
+        fn pairs(&self) -> Vec<Pair> {
+            vec![Pair::at(SampleRate::HZ_48000)]
+        }
+
+        fn metrics(&self) -> &'static [&'static Metric] {
+            &[]
+        }
+
+        fn measure(&self, _: &dyn Subject, _: Pair) -> Result<Outcome> {
+            panic!("a worker gave out")
+        }
+    }
+
+    #[test]
+    fn a_worker_that_panics_fails_the_run_rather_than_measuring_nothing() {
+        let panics = Panics;
+        let subjects = panics.subjects().unwrap_or_default();
+
+        let outcome = measured_everywhere(&panics, &subjects);
+
+        assert!(matches!(
+            outcome,
+            Err(Error::WorkerPanicked { suite: "panics" })
+        ));
+    }
 }

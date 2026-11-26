@@ -9,6 +9,7 @@ pub enum Better {
 pub struct Tolerance {
     pub absolute: f64,
     pub relative: f64,
+    pub relative_at_most: f64,
 }
 
 impl Tolerance {
@@ -19,23 +20,27 @@ impl Tolerance {
     pub const LEVEL: Self = Self {
         absolute: 0.5,
         relative: 0.02,
+        relative_at_most: 1.0,
     };
     pub const HERTZ: Self = Self::within(1.0);
     pub const SECONDS: Self = Self::within(1e-6);
     pub const SHARE: Self = Self {
         absolute: 0.0,
-        relative: 0.5,
+        relative: 0.1,
+        relative_at_most: f64::INFINITY,
     };
 
     pub const fn within(absolute: f64) -> Self {
         Self {
             absolute,
             relative: 0.0,
+            relative_at_most: 0.0,
         }
     }
 
     fn allows(self, base: f64) -> f64 {
-        self.absolute.max(self.relative * base.abs())
+        self.absolute
+            .max((self.relative * base.abs()).min(self.relative_at_most))
     }
 }
 
@@ -124,6 +129,27 @@ mod tests {
         Tolerance::SHARE,
         Shown::Scientific,
     );
+    const LEVELLED: Metric = Metric::new(
+        "levelled",
+        "Levelled",
+        Better::Lower,
+        Tolerance::LEVEL,
+        Shown::Decibels,
+    );
+    const DRY: Metric = Metric::new(
+        "dry",
+        "Dry",
+        Better::Lower,
+        Tolerance::DECIBELS,
+        Shown::Decibels,
+    );
+    const WET: Metric = Metric::new(
+        "dry",
+        "Dry",
+        Better::Lower,
+        Tolerance::AMONG_DITHER,
+        Shown::Decibels,
+    );
     const AT: Metric = Metric::new("at", "At", Better::Same, Tolerance::HERTZ, Shown::Kilohertz);
 
     #[test]
@@ -131,10 +157,25 @@ mod tests {
         assert!(!LEVEL.is_worse(-120.2, -120.5));
         assert!(LEVEL.is_worse(-119.0, -120.5));
         assert!(!LEVEL.is_worse(-140.0, -120.5));
-        assert!(!FLAT.is_worse(1.4e-9, 1.0e-9));
-        assert!(FLAT.is_worse(1.6e-9, 1.0e-9));
+        assert!(!FLAT.is_worse(1.09e-9, 1.0e-9));
+        assert!(FLAT.is_worse(1.2e-9, 1.0e-9));
         assert!(AT.is_worse(21_000.0, 21_002.0));
         assert!(!AT.is_worse(21_001.5, 21_002.0));
+    }
+
+    #[test]
+    fn a_relative_allowance_is_capped_far_below_the_floor() {
+        assert!(!LEVELLED.is_worse(-99.1, -100.0));
+        assert!(LEVELLED.is_worse(-98.9, -100.0));
+        assert!(LEVELLED.is_worse(-240.0, -245.0));
+        assert!(!LEVELLED.is_worse(-244.2, -245.0));
+    }
+
+    #[test]
+    fn a_dithered_reading_is_held_wider_than_a_float_one() {
+        assert!(DRY.is_worse(-170.0 + 5.0, -170.0));
+        assert!(!WET.is_worse(-170.0 + 5.0, -170.0));
+        assert!(WET.is_worse(-170.0 + 12.0, -170.0));
     }
 
     #[test]

@@ -87,6 +87,12 @@ pub enum Error {
     UnknownSuite { named: String },
     #[error("{count} readings are worse than the baseline holds")]
     Regressed { count: usize },
+    #[error("{count} readings the baseline holds are no longer measured")]
+    Unmeasured { count: usize },
+    #[error("nothing measured was held to {file}")]
+    NothingHeld { file: PathBuf },
+    #[error("a worker measuring {suite} panicked")]
+    WorkerPanicked { suite: &'static str },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
