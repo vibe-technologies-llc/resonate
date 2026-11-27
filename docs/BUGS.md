@@ -50,6 +50,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Windows
 
 ## Command line
-- [S · 0.18.1] A history import says *1 were held already*: its count of listens kept before is
-  not a Fluent selector (`crates/resonate/words/en/main.ftl`, the `history` messages). Select on
-  the count in every language. Done when one held listen is said in the singular, in a test.
