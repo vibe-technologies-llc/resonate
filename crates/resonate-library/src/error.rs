@@ -114,6 +114,14 @@ pub enum TrashOp {
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum RecompressOp {
+    Read,
+    Stage,
+    Encode,
+    Place,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StoreOp {
     Open,
     LayOut,
@@ -229,6 +237,29 @@ pub enum Error {
 
     #[error("no track with id {0}")]
     UnknownTrack(TrackId),
+
+    #[error("{op:?} while re-compressing {location} failed")]
+    Recompress {
+        location: MediaLocation,
+        op: RecompressOp,
+        #[source]
+        source: Box<resonate_vault::Error>,
+    },
+
+    #[error("reading {location} to re-compress it failed")]
+    RecompressRead {
+        location: MediaLocation,
+        #[source]
+        source: Box<resonate_codec::Error>,
+    },
+
+    #[error("{op:?} of the copy re-compressed beside {path} failed", path = path.display())]
+    RecompressStage {
+        op: RecompressOp,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 
     #[error("no album with id {0}")]
     UnknownAlbum(AlbumId),

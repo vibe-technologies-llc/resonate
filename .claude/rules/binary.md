@@ -284,6 +284,15 @@ that name. Every file argument goes through it.
   a cue sheet that cannot be read (`Error::Codec`, from `arguments::read_sheet_cuts`) or names no audio
   that probes (`SheetNamesNoAudio`). `playlist --export FILE` refuses an extension no format names
   (`Error::NoPlaylistFormatNamed` in the library's `sheet::write`), leaving the file as it was.
+- **`recompress [FILE…] [--all] [--to kept|96k|48k|cd] [--apply]` and `storage [--limit N]`**
+  (`recompressing.rs`, `library.md`'s *Re-compressing a FLAC* and *Files by size*): without
+  `--apply` `recompress` lists the FLAC files named (each found by `Library::track_at`, a file the
+  catalog lacks said and passed over) or, with `--all`, `Library::recompress_candidates`, as SIZE,
+  FORMAT and FILE with their total; with it each named file goes through `Library::recompress`
+  under `signals::cancel_when_told` and `--all` through `recompress_all` under `until_told`, each
+  file said as its size before and after or kept with its reason (`kept_because`), then the files
+  written smaller and the bytes saved. A file that fails ends the run `FilesFailed`, a halt
+  `Cancelled`. `storage` prints `Library::largest_files`' first page, `--limit` (25) files.
 - **`dedupe --apply` exits 1 when the trash refused a copy** (`Error::TrashRefused`, the count of
   `Deleted::kept`), after saying so; `organise --undo --apply` prints every move it refused and exits 1
   for each (`failed_to_apply`), and a cancelled walk back is `Cancelled`, never "no applied run is kept"

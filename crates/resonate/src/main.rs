@@ -61,6 +61,7 @@ mod playlist;
 mod playlists;
 mod providers;
 mod readout;
+mod recompressing;
 mod reloading;
 mod rendering;
 mod resuming;
@@ -158,6 +159,7 @@ use crate::{
     organising::{Organising, organise},
     playing::{play, players, queue_onto_a_running_player},
     playlist::{import, list_playlists, playlist},
+    recompressing::{Recompressing, recompress, storage},
     roots::{forget, roots},
     scanning::{enrich, scan},
     served::Served,
@@ -498,6 +500,21 @@ fn run() -> Result<()> {
             root, apply, undo, ..
         }) => tag(&open_library(&cli, &config)?, root, *apply, *undo),
         Some(Sub::Dedupe { apply }) => dedupe(&open_library(&cli, &config)?, *apply),
+        Some(Sub::Recompress {
+            files,
+            all,
+            to,
+            apply,
+        }) => recompress(
+            &open_library(&cli, &config)?,
+            Recompressing {
+                files,
+                all: *all,
+                to: *to,
+                apply: *apply,
+            },
+        ),
+        Some(Sub::Storage { limit }) => storage(&open_library(&cli, &config)?, limit.get()),
         Some(Sub::Vault(args)) => {
             let held = vault_asked_for(&cli, &config)?;
             vault::run(&open_library_with(&cli, &config, Some(&held))?, &held, args)

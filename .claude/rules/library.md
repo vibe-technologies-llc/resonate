@@ -22,7 +22,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
 **The integration tests are the one `suite` binary, a file a subject** under `crates/resonate-library/tests`
 (`scanning.rs`, `grouping.rs`, `lists.rs`, `sheets.rs`, `cues.rs`, `lossless.rs`, `history.rs`, `undo.rs`,
 `stored.rs`, `landing.rs`, `identify.rs`, `passes.rs`, `wants.rs`, `polls.rs`, `keeps.rs`, `organise.rs`,
-`retag.rs`, `vault.rs`, `links.rs`, `suggestions.rs`, `finding.rs`, `discography.rs`, beside `playlists.rs`,
+`retag.rs`, `recompress.rs`, `vault.rs`, `links.rs`, `suggestions.rs`, `finding.rs`, `discography.rs`, beside `playlists.rs`,
 `scanned.rs`, `search.rs`, `studies.rs` and `synced.rs`). A fixture two files need is written once under
 `tests/support/` (`files.rs`, `identities.rs`, `albums.rs`, `fakes.rs`, `setups.rs`), `pub(crate)` through
 `support`'s glob re-exports; a helper only one file uses stays beside its tests. A test is named by its
@@ -33,7 +33,7 @@ file's module (`keeps::…`), and a test that starts its own binary again asks i
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `vault_objects_by_origin` and `object_deliveries_by_origin` indexes that find a delivery by its `taken_from`: `providers.md`'s *Keeping a song from a service*; `kept_songs.cover`, the picture its service showed; the `tracks_by_format` index; `kept_songs.picture_asked`, stamping a landed keep once asked for its picture; the `tracks_hidden` index; letting go of every album and artist a blank tag had named (`A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST`: the tracks' and albums' ids to them cleared and the settle owed, so the open's orphan sweep takes them); `versions_chosen`, the version a listener picked for a song: *A song keeps its versions beside it* below; `artists_fold_wanted`, the marker owing the artists' fold once more: below; `unheld_listens` rebuilt under an `AUTOINCREMENT` `id`, each row keeping its rowid, beside `unheld_credited`: *The count is the catalog's* below; `wants_by_offered`, `retagged_sheets_by_file` and `offered_step_rows_by_path`, the indexes on the paths a removal or a move looks up once a path; `replacements`, the lossy songs waiting for a lossless copy (`A_LOSSY_SONG_WAITS_TO_BE_REPLACED`): *Finding higher quality versions* below; `larger_covers_wanted`, the marker owing every album a cover under `A_SMALL_COVER_BELOW` one ask for a larger one (`SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE`): *A cover says where it came from* below; `replacements_looked_for`, what the services answered when asked for a lossless copy and where it was offered, beside `replacements_kept`, the keep downloading one for a song matched nowhere (`WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT`): *Finding higher quality versions* below; `songs_deleted_everywhere`, the recordings of songs deleted from every device waiting for the sync to tell them (`A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD`): *Deleting* below; `track_studies_by_studied` and `lyrics_kept_by_taken`, the order a sync look reads answers in (`ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN`): `sync.md`; `discography_songs` rebuilt under an `id INTEGER PRIMARY KEY` beside `discography_songs_fts` and its triggers (`A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD`): *A piece of a word* below; `lyric_keys_let_go` and its triggers, seeded with every lyric key no track held (`A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY`): *A lyric fetched once is kept* below; `versions_held` and `versions_kept`, the versions a song keeps beside it and the downloads that will be (`A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT`): *A song keeps its versions beside it* below; `unsettled_arrivals`, the rows a scan wrote that no completed pass has yet weighed as a move's arrival (`AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED`, empty on a catalog it carries forward): *Moved files are followed* below; `removals_pending` and `removal_marks`, a listener's removal under way and the marks it made (`A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED`): *Deleting* below; `albums_by_answered`, the order a sync look reads releases in (`RELEASES_ARE_READ_IN_THE_ORDER_THEY_WERE_ANSWERED`): `sync.md`; every `named:` recording key `songs_received`, `songs_deleted` and `removal_marks` hold refolded to the words of its names through the `refolded_key` function `lay_out` registers before the steps, one row kept where two now share a key (the latest receipt, the latest deletion; for a path's marks, made anew only where each merged mark was, and a key left made anew by one path alone), `RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES`: `sync.md`'s *A song's names key it by their words*, `keys_kept_under_the_earlier_fold_are_refolded_and_one_song_keeps_one_row`, the latest). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `vault_objects_by_origin` and `object_deliveries_by_origin` indexes that find a delivery by its `taken_from`: `providers.md`'s *Keeping a song from a service*; `kept_songs.cover`, the picture its service showed; the `tracks_by_format` index; `kept_songs.picture_asked`, stamping a landed keep once asked for its picture; the `tracks_hidden` index; letting go of every album and artist a blank tag had named (`A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST`: the tracks' and albums' ids to them cleared and the settle owed, so the open's orphan sweep takes them); `versions_chosen`, the version a listener picked for a song: *A song keeps its versions beside it* below; `artists_fold_wanted`, the marker owing the artists' fold once more: below; `unheld_listens` rebuilt under an `AUTOINCREMENT` `id`, each row keeping its rowid, beside `unheld_credited`: *The count is the catalog's* below; `wants_by_offered`, `retagged_sheets_by_file` and `offered_step_rows_by_path`, the indexes on the paths a removal or a move looks up once a path; `replacements`, the lossy songs waiting for a lossless copy (`A_LOSSY_SONG_WAITS_TO_BE_REPLACED`): *Finding higher quality versions* below; `larger_covers_wanted`, the marker owing every album a cover under `A_SMALL_COVER_BELOW` one ask for a larger one (`SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE`): *A cover says where it came from* below; `replacements_looked_for`, what the services answered when asked for a lossless copy and where it was offered, beside `replacements_kept`, the keep downloading one for a song matched nowhere (`WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT`): *Finding higher quality versions* below; `songs_deleted_everywhere`, the recordings of songs deleted from every device waiting for the sync to tell them (`A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD`): *Deleting* below; `track_studies_by_studied` and `lyrics_kept_by_taken`, the order a sync look reads answers in (`ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN`): `sync.md`; `discography_songs` rebuilt under an `id INTEGER PRIMARY KEY` beside `discography_songs_fts` and its triggers (`A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD`): *A piece of a word* below; `lyric_keys_let_go` and its triggers, seeded with every lyric key no track held (`A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY`): *A lyric fetched once is kept* below; `versions_held` and `versions_kept`, the versions a song keeps beside it and the downloads that will be (`A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT`): *A song keeps its versions beside it* below; `unsettled_arrivals`, the rows a scan wrote that no completed pass has yet weighed as a move's arrival (`AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED`, empty on a catalog it carries forward): *Moved files are followed* below; `removals_pending` and `removal_marks`, a listener's removal under way and the marks it made (`A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED`): *Deleting* below; `albums_by_answered`, the order a sync look reads releases in (`RELEASES_ARE_READ_IN_THE_ORDER_THEY_WERE_ANSWERED`): `sync.md`; every `named:` recording key `songs_received`, `songs_deleted` and `removal_marks` hold refolded to the words of its names through the `refolded_key` function `lay_out` registers before the steps, one row kept where two now share a key (the latest receipt, the latest deletion; for a path's marks, made anew only where each merged mark was, and a key left made anew by one path alone), `RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES`: `sync.md`'s *A song's names key it by their words*, `keys_kept_under_the_earlier_fold_are_refolded_and_one_song_keeps_one_row`; the `tracks_by_file_size` index on `(file_size DESC, path)`, the order `largest_files` reads (`FILES_ARE_LISTED_LARGEST_FIRST_OFF_AN_INDEX`: *Files by size* below, `a_catalog_from_before_files_were_listed_by_size_keeps_its_rows_and_gains_the_index`), the latest). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -2240,6 +2240,78 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `files_of_one_size_holding_other_bytes_are_not_identical`). The window's
   *Identical songs* page (`ui.md`) calls the same two functions, so the terminal and the window
   fold the same copies.
+
+## Re-compressing a FLAC
+
+`recompress.rs` writes a FLAC again, smaller or under a lower ceiling, and keeps the original
+whenever the copy is not both verified and smaller. `recompressing.rs` is the pass over the
+library, `db/recompressing.rs` the rows it reads.
+
+- **`Ceiling` is the highest quality kept**: `Kept` (bit for bit), `Studio` (96 kHz, 24 bits),
+  `High` (48 kHz, 24 bits), `Cd` (44.1 kHz, 16 bits). `Ceiling::shape_for` takes the source's
+  `SoundShape` and answers the shape written: the depth is the lesser of the source's and the
+  ceiling's; a rate within the ceiling is kept, one above it takes the highest rate of its own
+  family that fits (44.1 kHz's: 44.1, 88.2, 176.4; 48 kHz's: 48, 96, 192), so 192 kHz under
+  `Studio` is 96 kHz and 176.4 kHz is 88.2 kHz, and `Cd` is always 44.1 kHz. A source the encoder
+  cannot write (above 96 kHz or 24 bits) under `Kept` is `KeptOriginal::BeyondTheEncoder`
+  (`a_ceiling_takes_the_highest_rate_of_the_sources_family_under_it_and_the_lesser_depth`).
+- **One seam, two callers**: `recompress_into(sources, location, RecompressStage, ceiling, halt)`
+  reads a location through `Sources` into a stage the caller made and holds, so the phones stage
+  outside the document (`mobile.md`); it answers `Recompressed::Smaller(Shrunk)` (bytes before and
+  after, the shapes from and to) or `Recompressed::Kept(KeptOriginal)`, and removes the stage
+  itself unless it answers `Smaller`. The desktop's `recompress_in_place` stages beside the file
+  (`.<name>.<pid>-<n>.resonate-recompress`, cut by `naming::named_within`, held under
+  `writer::Held` for its whole life, a dead writer's swept at the next run) and swaps it over the
+  file with `file_facts::replace` only where the file's size and modification stamp are as read
+  (`ChangedMeanwhile`), it has no other hard link (`HeldUnderOtherNames`, since the other names
+  would keep the old bytes) and the copy carries its owner, mode and attributes
+  (`carries_what_the_file_did`, else `AttributesNotCarried`).
+- **The header is carried, not rewritten**: `resonate_vault::FlacHead` reads every metadata block
+  (bounded at 64 MiB and 1024 blocks) and the copy carries each one byte for byte but the seek
+  table, which names places in the old frames, so every Vorbis comment and picture is kept as it
+  was. A block tied to the samples refuses a reshaped copy (`TiedToTheSamples`: a cue sheet under
+  a new rate, an application block under a new rate or depth), and a tag after the audio
+  (ID3v1, APE) or before the stream refuses any (`TagAfterTheAudio`, `HeadUnread`), since the
+  copy would drop it; carrying those is `docs/FEATURES.md`'s. A file that is no FLAC is
+  `NotAFlac`.
+- **Verified both ways before it is kept**: the source's decoded samples are hashed as FLAC hashes
+  them (`SampleDigest`) and must match the MD5 and frame count its STREAMINFO declares
+  (`DisagreesWithItsDigest`); kept bit for bit, the copy's digest must be the source's; and the
+  copy is decoded whole (`heard_at_depth`) and must hash to the digest and frames the encoder
+  wrote (`Unverified`). A resampled copy goes through `resonate-dsp`'s `Resampler` at
+  `Quality::VeryHigh`, linear phase, then triangular dither (`NoiseShaping::Threshold` at 16 bits
+  and below). The encoder (the vault's `FlacWriter`) stops writing once the copy reaches the
+  original's size (`NoSmaller`), so a file already tight costs one decode
+  (`a_flac_the_encoder_wrote_already_is_kept_byte_for_byte`). A halt is `KeptOriginal::Halted`,
+  never an error.
+- **`Library::recompress(track, ceiling, halt)`** refuses a cut of a cue sheet (`CutBySheet`), a
+  vaulted row (`Vaulted`, since the vault holds its own copy), a codec other than FLAC
+  (`NotAFlac`) and a row under no root (`OutsideTheLibrary`) before reading anything, takes the
+  `Walk` guard for the swap, and on `Smaller` reads the file back through
+  `scan::read_the_landed_while_walking` under the same guard, so the row keeps its id, plays,
+  favourite, playlists and listens and its size, format and stamp follow; the studies of a file
+  whose size moved are forgotten by `track_studies_forget_a_changed_file` and studied again.
+  **`Library::recompress_all(ceiling)`** is a `PassKind::Recompress` pass over
+  `recompress_candidates` (every whole FLAC row under a root, not vaulted, not cut), a
+  `RecompressHandle` whose `RecompressProgress` counts weighed, smaller, kept and failed files
+  and the bytes before and after (`RecompressStats::saved`), reading the files that shrank back
+  `LANDED_READ_AT_ONCE` (32) at a time; a file that fails is warned and counted, the pass goes on
+  (`a_flac_written_plainly_is_compressed_smaller_bit_for_bit_and_keeps_its_tags_picture_and_row`,
+  `a_96_khz_24_bit_flac_under_the_cd_ceiling_becomes_44_khz_16_bit`,
+  `a_copy_that_does_not_read_back_as_it_went_in_keeps_the_original`,
+  `a_cue_sheets_cut_and_a_vaulted_row_are_refused_and_their_files_left`,
+  `a_pass_over_the_library_shrinks_what_it_can_and_counts_what_it_saved`). A copy is spoiled for
+  the test of its verification through `faults::spoil_the_copies_of`.
+
+## Files by size
+
+`Library::largest_files(after, limit)` (`db/sized.rs`) lists the files the catalog holds, largest
+first, a page at a time: one `SizedFile` a file (path, bytes, codec, `StreamSpec`, `vaulted`, and
+every track id it holds in `span_start` order, so a file a sheet cuts is one entry), ordered by
+`file_size DESC, path` off `tracks_by_file_size` and paged from the last one's `SizedFile::key`
+(`SizedAfter`), never by offset. A vaulted row is listed by its own file's size and flagged, since
+the file is still the listener's; the vault's objects are not listed
+(`the_largest_files_are_listed_first_a_page_at_a_time_with_a_sheets_cuts_as_one_file`).
 
 ## Organising
 

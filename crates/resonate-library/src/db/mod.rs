@@ -13,11 +13,13 @@ mod lyrics;
 mod passes;
 mod pictures;
 mod playlists;
+mod recompressing;
 mod replacing;
 mod resuming;
 mod roots;
 mod rows;
 mod searched;
+mod sized;
 mod stamps;
 mod studied;
 mod syncing;
@@ -51,7 +53,6 @@ use rusqlite::{
     params, types::Value,
 };
 
-pub use self::turns::{ReaderShare, Turn};
 pub(crate) use self::{
     rows::{RawTrack, TrackToVault},
     searched::{
@@ -64,6 +65,10 @@ pub(crate) use self::{
 use self::{
     rows::{held_cover, rows},
     statements::{FILED_IN_ORDER, NOTE_WHERE_AN_OBJECT_WAS_DELIVERED_FROM},
+};
+pub use self::{
+    sized::{SizedAfter, SizedFile},
+    turns::{ReaderShare, Turn},
 };
 use crate::{
     Cancelling, CoverArt, Error, ListeningService, Measured, MusicFilters, PassKind, Playing,

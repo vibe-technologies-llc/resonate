@@ -34,6 +34,7 @@ mod organise;
 mod passes;
 mod playlists;
 mod polls;
+mod recompress;
 mod retag;
 mod scanned;
 mod scanning;

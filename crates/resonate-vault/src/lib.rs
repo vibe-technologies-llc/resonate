@@ -10,9 +10,11 @@ mod flac;
 mod form;
 #[cfg(fuzzing)]
 mod fuzzing;
+mod head;
 mod key;
 mod ogg;
 mod pcm;
+mod samples;
 mod standing;
 mod transcoded;
 mod unpacking;
@@ -29,8 +31,11 @@ pub use crate::{
     encoding::Encoding,
     error::{Error, FlacOp, PictureOp, Result, VaultOp},
     files::VaultFiles,
+    flac::{FlacWriter, FlacWritten},
     form::Form,
+    head::{BlockKind, FlacHead, HeadBlock, HeadFault, StreamInfo, TrailingTag},
     key::VaultKey,
+    samples::{HeardSamples, SampleDigest, heard_at_depth, narrowed_to_depth},
     vault::{
         Compacting, Halt, HeldFile, Holdings, Keeping, Kept, KeptCover, Offered, Reframing,
         Refusal, Replacing, Taking, Vault,

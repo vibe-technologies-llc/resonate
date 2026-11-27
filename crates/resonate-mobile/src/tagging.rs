@@ -159,6 +159,10 @@ pub(crate) struct Tagging {
 }
 
 impl Tagging {
+    pub(crate) fn folder(&self) -> &Path {
+        &self.folder
+    }
+
     pub(crate) fn under(folder: PathBuf) -> Self {
         Self {
             folder,

@@ -195,8 +195,12 @@ impl<'a> Halt<'a> {
         Self(Some(asked))
     }
 
+    pub fn is_asked(self) -> bool {
+        self.0.is_some_and(|asked| asked.load(Ordering::Relaxed))
+    }
+
     pub(crate) fn heard(self) -> Result<()> {
-        match self.0.is_some_and(|asked| asked.load(Ordering::Relaxed)) {
+        match self.is_asked() {
             true => Err(Error::Halted),
             false => Ok(()),
         }

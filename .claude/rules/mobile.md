@@ -352,6 +352,35 @@ its bytes (only what `ImageFormat::sniff` knows), no network
 `a_release_that_becomes_held_is_no_longer_asked_for_and_an_artist_without_an_id_is_never_asked`,
 `a_catalog_of_before_unheld_sleeves_were_kept_keeps_its_discography_and_gains_an_empty_table`).
 
+## Re-compressing a song and the songs by size
+
+`recompressing.rs` is the phones' half of `library.md`'s *Re-compressing a FLAC* and *Files by
+size*; Rust never writes a document, so a copy is staged where the front end can take it.
+
+- **`largest_songs(after, limit)`** answers `SizedSong`s (the `Track` and its bytes) of every
+  visible document, largest first, ties by id, paged from the last one's `SizedSongAfter`
+  (`bytes`, `id`). A document whose row holds no size (one indexed with no stamp: an open-with, a
+  download, a landing) is measured through the provider (`measured`) on each ask and never
+  stored, since writing `documents.size` would fire the triggers that forget a song's studies
+  when its stamp moves
+  (`the_largest_songs_are_listed_first_a_page_at_a_time_measured_where_unstamped`).
+- **`recompress_song(id, ceiling)`** (blocking, for the caller's worker) re-compresses the song
+  through `resonate_library::recompress_into` into a stage of the player folder's
+  `recompress-staging` (`<pid>-<n>.flac`, held under `writer::Held` from creation until the stage
+  is taken or forgotten; a stage whose writer is gone is swept as the next one is made). It answers
+  `RecompressStaged::Staged { stage_path, before, after }` or `KeptOriginal { reason, said }`, the
+  reason a `RecompressKept` and `said` the `recompress` area's sentence; `RecompressCeiling` is
+  `Kept`, `Studio`, `High` and `Cd`. The front end writes the stage over the document (Android a
+  `"wt"` descriptor, iOS a coordinated replace) and then calls **`song_recompressed(id, stage_path,
+  modified_ms)`**, which refuses a stage it did not hand out (`UnknownRecompressStage`) and a
+  document whose length is not the stage's (`RecompressNotWritten`, the stage kept for another
+  try), then lets the stage go and indexes the document again under the new stamp, so the row
+  keeps its id and its studies are forgotten by the stamp's triggers.
+  **`forget_recompress_stage(stage_path)`** lets a stage go unused
+  (`a_song_recompressed_is_staged_written_over_its_document_and_indexed_anew`,
+  `a_song_that_is_no_flac_is_kept_and_says_why_and_a_stage_forgotten_is_gone`). Neither phone
+  draws it yet.
+
 ## Logging
 
 `logging.rs` is the phones' `tracing` subscriber, safe code only: `keep_log(logbook)` installs once

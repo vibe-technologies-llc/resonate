@@ -424,6 +424,20 @@ pub enum Error {
         #[source]
         source: Box<resonate_library::Error>,
     },
+    #[error("{}", words::errors::recompress_staging(source.to_string()))]
+    RecompressStaging {
+        #[source]
+        source: io::Error,
+    },
+    #[error("{}", words::errors::recompress_failed(source.to_string()))]
+    Recompress {
+        #[source]
+        source: Box<resonate_library::Error>,
+    },
+    #[error("{}", words::errors::unknown_recompress_stage())]
+    UnknownRecompressStage,
+    #[error("{}", words::errors::RecompressNotWritten { staged: *staged, written: *written }.said())]
+    RecompressNotWritten { staged: u64, written: u64 },
     #[error("{}", words::errors::tags_unwritable())]
     TagsUnwritable,
     #[error("{}", words::errors::tags_unconfirmed())]

@@ -6,6 +6,8 @@ use crate::words;
 
 const MOST_LISTENED: NonZeroUsize = NonZeroUsize::new(10).unwrap();
 
+const LARGEST_FILES_LISTED: NonZeroUsize = NonZeroUsize::new(25).unwrap();
+
 pub const LISTENS_FOR_SECONDS: RangeInclusive<u64> = 4..=60;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -16,6 +18,17 @@ pub enum QualityArg {
     #[default]
     High,
     VeryHigh,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum CeilingArg {
+    #[default]
+    Kept,
+    #[value(name = "96k")]
+    Studio,
+    #[value(name = "48k")]
+    High,
+    Cd,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -1552,6 +1565,53 @@ pub enum Sub {
             help = words::grammar::sub_dedupe_apply()
         )]
         apply: bool,
+    },
+
+    #[command(
+        about = words::grammar::sub_recompress()
+    )]
+    Recompress {
+        #[arg(
+            value_name = "FILE",
+            required_unless_present = "all",
+            help = words::grammar::sub_recompress_files()
+        )]
+        files: Vec<PathBuf>,
+
+        #[arg(
+            long,
+            conflicts_with = "files",
+            help = words::grammar::sub_recompress_all()
+        )]
+        all: bool,
+
+        #[arg(
+            long,
+            value_enum,
+            value_name = "CEILING",
+            default_value_t,
+            help = words::grammar::sub_recompress_to()
+        )]
+        to: CeilingArg,
+
+        #[arg(
+            long,
+            help = words::grammar::sub_recompress_apply()
+        )]
+        apply: bool,
+    },
+
+    #[command(
+        about = words::grammar::sub_storage()
+    )]
+    Storage {
+        #[arg(
+            long,
+            value_name = "N",
+            default_value_t = LARGEST_FILES_LISTED,
+            help = words::grammar::sub_storage_limit()
+        )]
+        limit: NonZeroUsize,
     },
 
     #[command(

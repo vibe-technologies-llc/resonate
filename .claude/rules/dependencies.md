@@ -185,6 +185,10 @@ here, add it there.
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or `serde_json`
   (its protobuf and JSON are hand-written, so the binary without `online` still casts). The engine,
   codec, `rcgen` and `serde_json` are its dev-dependencies alone.
+- `resonate-library` reaches `resonate-dsp` directly (beside the analysis crate that already
+  reached it) for the resampler and dither a FLAC re-compressed under a ceiling goes through
+  (`library.md`'s *Re-compressing a FLAC*). `resonate-mobile` takes `resonate-vault` as a
+  dev-dependency alone, writing the FLAC its re-compression tests read through `FlacWriter`.
 - `resonate-musicbrainz`: core and `resonate-library` among workspace crates, with `resonate-fetch`
   and `ureq` only under its `download` feature (the binary's `online` turns it on, the phones
   leave it off); no gpui, engine, `resonate-online`, `resonate-sync`, serde, quinn or tokio;

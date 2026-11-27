@@ -21,6 +21,7 @@ pub enum PassKind {
     Import,
     TakeIn,
     Weigh,
+    Recompress,
 }
 
 pub trait Cancelling: Send + Sync {

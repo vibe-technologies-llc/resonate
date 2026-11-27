@@ -19,6 +19,7 @@ parking_lot.workspace = true
 resonate-analysis.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
+resonate-dsp.workspace = true
 resonate-vault.workspace = true
 resonate-providers.workspace = true
 resonate-words.workspace = true

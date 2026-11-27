@@ -119,6 +119,16 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
+- [M · 0.18.0] A FLAC re-compressed keeps no tag outside its metadata blocks and no cue sheet
+  under a new rate: a file with an ID3v1 or APE tag after the audio or an ID3v2 tag before the
+  stream, a CUESHEET block under a resampling ceiling and an APPLICATION block under a new rate or
+  depth are kept as they were (`KeptOriginal::TagAfterTheAudio`, `HeadUnread`,
+  `TiedToTheSamples`), where the trailing tags could be carried after the new audio and the cue
+  sheet's offsets rescaled to the new rate
+- [S · 0.18.0] The window and both phones offer no re-compression and no list of the files by
+  size yet: the library's `recompress`, `recompress_all` and `largest_files` and the phones'
+  `recompress_song` and `largest_songs` are there, the terminal's `recompress` and `storage`
+  alone reach them
 - [M · blocked: lofty] `.caf` and the DSD containers have no writer (lofty 0.25.5 has no such file
   type); `.oga` alone could be mapped to Vorbis by hand; `.mka` is written by hand (`library.md`) and
   has no way to take a picture back out

@@ -33,6 +33,7 @@ port = PORT
 profile = PROFIL
 queued = QUÉBEC
 release = LIBÉRATION
+size = TAILLE
 songs = CANTIQUES
 state = ETAT
 status = ÉTAT

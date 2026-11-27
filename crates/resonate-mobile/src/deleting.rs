@@ -264,7 +264,7 @@ impl MobilePlayer {
         unidentified
     }
 
-    fn measured(&self, uri: &str) -> Option<u64> {
+    pub(crate) fn measured(&self, uri: &str) -> Option<u64> {
         self.opened(uri)?.byte_len()
     }
 
@@ -356,7 +356,7 @@ fn counted(count: usize) -> u32 {
 }
 
 impl Catalog {
-    fn held_with_their_sizes(&self) -> Result<Vec<(u64, Track)>> {
+    pub(crate) fn held_with_their_sizes(&self) -> Result<Vec<(u64, Track)>> {
         let connection = self.0.lock();
         let mut query = connection
             .prepare(HELD_WITH_THEIR_SIZES)

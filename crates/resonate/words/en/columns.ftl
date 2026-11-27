@@ -33,6 +33,7 @@ port = PORT
 profile = PROFILE
 queued = QUEUED
 release = RELEASE
+size = SIZE
 songs = SONGS
 state = STATE
 status = STATUS

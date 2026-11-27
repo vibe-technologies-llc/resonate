@@ -484,6 +484,24 @@ fn organising_previews_moves_with_apply_and_walks_back_with_undo() {
 }
 
 #[test]
+fn storage_lists_the_largest_file_first_and_recompress_names_no_wave_as_a_candidate() {
+    let home = Home::new("storage", OFFLINE);
+
+    home.holding("album/short.wav", &silent_wave(1));
+    home.holding("album/long.wav", &silent_wave(3));
+    home.scanned();
+
+    let listed = home.ran(["storage", "--limit", "1"]).succeeded();
+    let candidates = home.ran(["recompress", "--all"]).succeeded();
+
+    listed.says("SIZE").says("long.wav");
+
+    assert!(!listed.out.contains("short.wav"), "{}", listed.out);
+
+    candidates.says("The library holds no whole FLAC file to re-compress.");
+}
+
+#[test]
 fn deduplicating_with_a_trash_that_refuses_fails_and_keeps_the_copy_then_folds_it_once_it_takes() {
     let home = Home::new("dedupe", OFFLINE);
 

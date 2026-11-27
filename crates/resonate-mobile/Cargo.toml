@@ -57,6 +57,7 @@ resonate-words-build.workspace = true
 hdf5-writer.workspace = true
 image.workspace = true
 resonate-coreaudio.workspace = true
+resonate-vault.workspace = true
 resonate-words-build.workspace = true
 
 [lints.rust]

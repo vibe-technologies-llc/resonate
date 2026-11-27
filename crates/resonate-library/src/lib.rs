@@ -51,6 +51,8 @@ mod pls;
 mod query;
 mod reach;
 mod reading;
+mod recompress;
+mod recompressing;
 mod reference;
 mod renamed;
 mod replacing;
@@ -104,8 +106,9 @@ pub use resonate_codec::{
 };
 pub use resonate_core::{Chromaprint, Isrc, Link, Mbid, Relation, Service, TextEncoding};
 pub use resonate_vault::{
-    Compacting, Encoding, Form, HeldFile, Holdings, Keeping, Kept as KeptInVault, KeptCover,
-    Reframing, Refusal as VaultRefusal, Taking, Vault, VaultFiles, VaultKey,
+    BlockKind, Compacting, Encoding, Form, Halt, HeadFault, HeldFile, Holdings, Keeping,
+    Kept as KeptInVault, KeptCover, Reframing, Refusal as VaultRefusal, Taking, TrailingTag, Vault,
+    VaultFiles, VaultKey,
 };
 
 #[cfg(fuzzing)]
@@ -127,7 +130,10 @@ pub use explore::{
 pub use crate::{
     chosen::{Chosen, ChosenVersion, Played, Variants},
     copies::{Copies, IdenticalCopy},
-    db::{CatalogStamp, HiddenTracks, Library, ReaderShare, Turn, WrittenElsewhere},
+    db::{
+        CatalogStamp, HiddenTracks, Library, ReaderShare, SizedAfter, SizedFile, Turn,
+        WrittenElsewhere,
+    },
     deleted::{Deleted, Removal, Trashes},
     elsewhere::{
         ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, AlbumFound, ArtistFound,
@@ -146,7 +152,7 @@ pub use crate::{
     enriched::{COVERS_ASKED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, due_again, due_parameters},
     error::{
         EncodedColumn, Error, FieldName, KeyColumn, LayoutFault, MoveOp, OrderedColumn,
-        PlaylistName, Result, SchemaFingerprint, StoreOp, TagName, TrashOp,
+        PlaylistName, RecompressOp, Result, SchemaFingerprint, StoreOp, TagName, TrashOp,
     },
     everywhere::DeletedEverywhere,
     filed::DeliveryFolder,
@@ -196,6 +202,13 @@ pub use crate::{
     query::{
         AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Kept, PlaylistOrder, RowOrder,
         SavedQuery, SearchResults, SortOrder, TrackQuery,
+    },
+    recompress::{
+        Ceiling, KeptOriginal, RecompressStage, Recompressed, Shrunk, SoundShape, recompress_into,
+    },
+    recompressing::{
+        RecompressCandidate, RecompressHandle, RecompressProgress, RecompressStats,
+        RecompressSummary, RecompressedFile,
     },
     reference::{
         AlbumMatch, ArtistMatch, ArtistPressings, ArtistProfile, ArtistRelease, BarcodeMatch,

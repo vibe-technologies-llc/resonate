@@ -820,6 +820,7 @@ const fn pass_named(pass: PassKind) -> &'static str {
         PassKind::Import => "import into the vault",
         PassKind::TakeIn => "copy into the music folder",
         PassKind::Weigh => "check of the vault",
+        PassKind::Recompress => "re-compression",
     }
 }
 

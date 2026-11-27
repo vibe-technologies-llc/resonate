@@ -129,7 +129,12 @@ const MIGRATIONS: &[&str] = &[
     A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED,
     RELEASES_ARE_READ_IN_THE_ORDER_THEY_WERE_ANSWERED,
     RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES,
+    FILES_ARE_LISTED_LARGEST_FIRST_OFF_AN_INDEX,
 ];
+
+const FILES_ARE_LISTED_LARGEST_FIRST_OFF_AN_INDEX: &str = "
+CREATE INDEX tracks_by_file_size ON tracks(file_size DESC, path);
+";
 
 const A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED: &str = "
 CREATE TABLE removals_pending (
@@ -1861,6 +1866,62 @@ mod tests {
                 "{statement} reads every row: {plan:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_catalog_from_before_files_were_listed_by_size_keeps_its_rows_and_gains_the_index() {
+        let connection = opened();
+
+        refolding_on(&connection).expect("the refolding function");
+        connection.execute_batch(V1).expect("the baseline");
+
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == FILES_ARE_LISTED_LARGEST_FIRST_OFF_AN_INDEX)
+            .expect("the size index migration");
+
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (path, title, artist, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                      VALUES ('/music/small.flac', 'Small', 'Ada', 44100, 2, 16, 1, 100, 1, 1, 1),
+                             ('/music/large.flac', 'Large', 'Ada', 96000, 2, 24, 1, 900, 1, 1, 1);",
+            )
+            .expect("a catalog holding two files");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the size index migration");
+
+        let plan: Vec<String> = connection
+            .prepare("EXPLAIN QUERY PLAN SELECT path FROM tracks ORDER BY file_size DESC, path")
+            .and_then(|mut plan| {
+                plan.query_map([], |row| row.get::<_, String>(3))
+                    .and_then(Iterator::collect)
+            })
+            .expect("a plan");
+        let paths: Vec<String> = connection
+            .prepare("SELECT path FROM tracks ORDER BY file_size DESC, path")
+            .and_then(|mut read| {
+                read.query_map([], |row| row.get::<_, String>(0))
+                    .and_then(Iterator::collect)
+            })
+            .expect("the rows");
+
+        assert!(
+            plan.iter().any(|step| step.contains("tracks_by_file_size")),
+            "{plan:?}"
+        );
+        assert!(
+            !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+            "{plan:?}"
+        );
+        assert_eq!(paths, ["/music/large.flac", "/music/small.flac"]);
     }
 
     #[test]

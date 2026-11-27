@@ -160,6 +160,28 @@ digest and frame count (`Heard::held_by`).
 **Three bounds are flacenc's, not FLAC's** (96 kHz, 24 bits, Rice parameter stopping at 14): 16-bit
 rips re-encoded, 24-bit generally kept and stripped, no rule naming depths.
 
+## The FLAC writer and reader others use
+
+The vault's encoder is the one FLAC writer of the tree, and the library's re-compression
+(`library.md`'s *Re-compressing a FLAC*) writes through it rather than a second copy:
+`FlacWriter::over(file, path, spec, bits, carried, ceiling)` takes the metadata blocks to carry
+(`HeadBlock`s, written after STREAMINFO in order), `push` takes interleaved samples at `bits`,
+`outgrew` says the output reached `ceiling` (writing stops, the digest still runs) and `finish`
+answers a `FlacWritten` (digest, frames, bytes, `outgrew`), rewriting STREAMINFO with the MD5 and
+total only where it did not outgrow. The vault's own `encode` is that writer with no block carried,
+its output byte for byte what it was
+(`the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs`). `FlacHead::read` reads a
+FLAC's STREAMINFO (`StreamInfo`) and every other block (`BlockKind`) without allocating what a
+header declares (bounded at `HEAD_BYTES_AT_MOST` and `BLOCKS_AT_MOST`), refusing as a `HeadFault`
+(`NotAFlac`, `TagBeforeTheStream` for a leading ID3v2, `NoStreamInfo`, `CutShort`, `TooLarge`,
+`Unread`) and naming a tag after the audio (`TrailingTag`); `FlacHead::carried` is every block but
+the seek table. `SampleDigest` hashes samples as FLAC's MD5 does (each sample little-endian in its
+whole bytes), `narrowed_to_depth` takes decoded 32-bit samples to a depth only where no dropped bit
+lives, and `heard_at_depth(sources, location, bits, halt)` decodes a location whole and answers its
+`HeardSamples` (digest, frames, whether any sample is wider than the depth). `Halt::is_asked` is the
+halt read outside the vault. Nothing here opens a vault: the library's own files are still never
+written by the vault, only by the library's re-compression, which the listener asks for.
+
 ## Keys and layout
 
 ```

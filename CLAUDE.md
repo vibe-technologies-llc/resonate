@@ -104,7 +104,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-cast       Google Cast receivers as sinks beside them, over UPnP's paced stream
   ├── resonate-online     MusicBrainz, covers, portraits, lyrics, AutoEq  [`online`]
   ├── resonate-musicbrainz  MusicBrainz kept here: the export compressed and indexed, kept answers, layered before `Online`  [`online`]
-  ├── resonate-library    scan, tags, persistence  (also on codec, vault, analysis, providers)
+  ├── resonate-library    scan, tags, persistence  (also on codec, dsp, vault, analysis, providers)
   ├── resonate-lyrics     lyric vocabulary and the provider seam
   ├── resonate-vault      the managed archive: FLAC, WAVE+zstd, JXL covers
   ├── resonate-analysis   one whole decode: waveform, spectrum, verdict, loudness, Chromaprint
@@ -337,7 +337,7 @@ stack's test harness:
 - **Output:** `sinks` (`--renderers` searches the network too), `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`, `abx` (a blind test of the equaliser).
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`;
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
-- **Catalog:** `musicbrainz` (the local copy of MusicBrainz: `--build [--from FOLDER]`, `--remove`, `--search`), `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome, YouTube Music; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
+- **Catalog:** `musicbrainz` (the local copy of MusicBrainz: `--build [--from FOLDER]`, `--remove`, `--search`), `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome, YouTube Music; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `recompress` (a FLAC written again smaller, or under a lower ceiling with `--to`), `storage` (the largest files), `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`, `offer` (the catalog offered on the local network as a UPnP media server until interrupted, with no window).
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `jellyfin` (Quick Connect sign-in, `--forget`), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`, `sign-in` in the `resonate-signin` window, `sign-out`).
 - **History:** `history` (`--export FILE` as ListenBrainz's JSON lines, `--import listenbrainz|lastfm [--user NAME]`).

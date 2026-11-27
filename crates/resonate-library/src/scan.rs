@@ -27,7 +27,7 @@ use rusqlite::params;
 
 use crate::{
     Error, Replaced, Result, StoreOp, alternatives,
-    db::{Inner, Library},
+    db::{Inner, Library, Walk},
     enriched::stripped_title,
     forgetting::{Forgetting, Rows, forget_rows},
     history, loose, moves,
@@ -350,8 +350,22 @@ pub(crate) fn read_the_landed(
     after: impl FnOnce() -> Replaced,
 ) -> Result<LandedRead> {
     let walking = inner.walk_the_tree()?;
+    let read = read_the_landed_while_walking(inner, &walking, root, landed)?;
 
-    Library::settle_removals_before_a_scan(inner, &walking)?;
+    drop(walking);
+    if read == LandedRead::Read {
+        after();
+    }
+    Ok(read)
+}
+
+pub(crate) fn read_the_landed_while_walking(
+    inner: &Arc<Inner>,
+    walking: &Walk,
+    root: &Path,
+    landed: &[PathBuf],
+) -> Result<LandedRead> {
+    Library::settle_removals_before_a_scan(inner, walking)?;
 
     let Some(root) = every_root(inner)?
         .into_iter()
@@ -428,8 +442,6 @@ pub(crate) fn read_the_landed(
         inner.write(alternatives::settle_if_owed)?;
         inner.restate_the_statistics();
     }
-    drop(walking);
-    after();
     Ok(LandedRead::Read)
 }
 

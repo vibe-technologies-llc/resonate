@@ -1,12 +1,12 @@
 use std::{
     fs::File,
     io::{Seek, SeekFrom, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use flacenc::{
     bitsink::MemSink,
-    component::{BitRepr, Stream},
+    component::{BitRepr, MetadataBlockData, Stream},
     config,
     constant::{fixed, qlpc, rice},
     encode_fixed_size_frame,
@@ -19,6 +19,7 @@ use resonate_core::{AudioBuffer, Frames, StreamSpec};
 use crate::{
     Halt,
     error::{Error, FlacOp, Result, VaultOp},
+    head::HeadBlock,
     key::VaultKey,
     pcm::{self, BLOCK_FRAMES, Narrowing},
 };
@@ -41,14 +42,22 @@ pub(crate) enum Encode {
     Wider,
 }
 
-struct Writing<'a> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlacWritten {
+    pub digest: VaultKey,
+    pub frames: Frames,
+    pub bytes: u64,
+    pub outgrew: bool,
+}
+
+struct Writing {
     file: File,
-    path: &'a Path,
+    path: PathBuf,
     written: u64,
     ceiling: Option<u64>,
 }
 
-impl Writing<'_> {
+impl Writing {
     fn outgrew(&self) -> bool {
         self.ceiling.is_some_and(|ceiling| self.written >= ceiling)
     }
@@ -56,9 +65,148 @@ impl Writing<'_> {
     fn write(&mut self, bytes: &[u8]) -> Result<()> {
         self.file
             .write_all(bytes)
-            .map_err(|source| Error::io(VaultOp::Write, self.path, source))?;
+            .map_err(|source| Error::io(VaultOp::Write, &self.path, source))?;
         self.written += bytes.len() as u64;
         Ok(())
+    }
+}
+
+pub struct FlacWriter {
+    config: Verified<config::Encoder>,
+    stream: Stream,
+    framebuf: FrameBuf,
+    context: Context,
+    writing: Writing,
+    pending: Vec<i32>,
+    whole_block: usize,
+    spec: StreamSpec,
+    bits: u8,
+}
+
+impl FlacWriter {
+    pub fn over(
+        file: File,
+        path: &Path,
+        spec: StreamSpec,
+        bits: u8,
+        carried: &[HeadBlock],
+        ceiling: Option<u64>,
+    ) -> Result<Self> {
+        let channels = usize::from(spec.channel_count().get());
+        let depth = usize::from(bits);
+        let rate = spec.rate.hz() as usize;
+        let config = at_the_most_compression()?;
+
+        let mut stream = unencodable(Stream::new(rate, channels, depth), spec, bits)?;
+
+        unencodable(
+            stream
+                .stream_info_mut()
+                .set_block_sizes(BLOCK_FRAMES, BLOCK_FRAMES),
+            spec,
+            bits,
+        )?;
+        for block in carried {
+            stream.add_metadata_block(unencodable(
+                MetadataBlockData::new_unknown(block.kind.tag(), &block.body),
+                spec,
+                bits,
+            )?);
+        }
+
+        let framebuf = unencodable(FrameBuf::with_size(channels, BLOCK_FRAMES), spec, bits)?;
+        let mut writing = Writing {
+            file,
+            path: path.to_path_buf(),
+            written: 0,
+            ceiling,
+        };
+
+        writing.write(&written(&stream)?)?;
+        Ok(Self {
+            config,
+            stream,
+            framebuf,
+            context: Context::new(depth, channels),
+            writing,
+            pending: Vec::with_capacity(BLOCK_FRAMES * channels * 2),
+            whole_block: BLOCK_FRAMES * channels,
+            spec,
+            bits,
+        })
+    }
+
+    pub fn outgrew(&self) -> bool {
+        self.writing.outgrew()
+    }
+
+    pub fn push(&mut self, interleaved: &[i32]) -> Result<()> {
+        self.pending.extend_from_slice(interleaved);
+
+        let mut at = 0;
+
+        while self.pending.len() - at >= self.whole_block {
+            emit(
+                &self.config,
+                &mut self.stream,
+                &mut self.framebuf,
+                &mut self.context,
+                &mut self.writing,
+                &self.pending[at..at + self.whole_block],
+            )?;
+            at += self.whole_block;
+        }
+        self.pending.drain(..at);
+        Ok(())
+    }
+
+    pub fn finish(mut self) -> Result<FlacWritten> {
+        if !self.pending.is_empty() {
+            emit(
+                &self.config,
+                &mut self.stream,
+                &mut self.framebuf,
+                &mut self.context,
+                &mut self.writing,
+                &self.pending,
+            )?;
+        }
+
+        let digest = self.context.md5_digest();
+        let total = self.context.total_samples();
+
+        let mut finished = FlacWritten {
+            digest: VaultKey::of(digest),
+            frames: Frames(total as u64),
+            bytes: self.writing.written,
+            outgrew: true,
+        };
+
+        if self.writing.outgrew() {
+            return Ok(finished);
+        }
+        self.stream.stream_info_mut().set_md5_digest(&digest);
+        self.stream.stream_info_mut().set_total_samples(total);
+        unencodable(
+            self.stream
+                .stream_info_mut()
+                .set_block_sizes(BLOCK_FRAMES, BLOCK_FRAMES),
+            self.spec,
+            self.bits,
+        )?;
+
+        let header = written(&self.stream)?;
+        let Writing { mut file, path, .. } = self.writing;
+
+        file.seek(SeekFrom::Start(0))
+            .map_err(|source| Error::io(VaultOp::Write, &path, source))?;
+        file.write_all(&header)
+            .map_err(|source| Error::io(VaultOp::Write, &path, source))?;
+        file.sync_all()
+            .map_err(|source| Error::io(VaultOp::Settle, &path, source))?;
+
+        finished.outgrew = false;
+        Ok(finished)
     }
 }
 
@@ -97,40 +245,24 @@ pub(crate) fn encode(
     ceiling: Option<u64>,
     halt: Halt<'_>,
 ) -> Result<Encode> {
-    let channels = usize::from(spec.channel_count().get());
-    let depth = usize::from(bits);
-    let rate = spec.rate.hz() as usize;
-    let whole_block = BLOCK_FRAMES * channels;
-    let config = at_the_most_compression()?;
-
     #[cfg(test)]
     ENCODES_BEGUN.with(|begun| begun.set(begun.get() + 1));
 
-    let mut stream = unencodable(Stream::new(rate, channels, depth), spec, bits)?;
-
+    at_the_most_compression()?;
     unencodable(
-        stream
-            .stream_info_mut()
-            .set_block_sizes(BLOCK_FRAMES, BLOCK_FRAMES),
+        Stream::new(
+            spec.rate.hz() as usize,
+            usize::from(spec.channel_count().get()),
+            usize::from(bits),
+        ),
         spec,
         bits,
     )?;
 
     let file = File::create(into).map_err(|source| Error::io(VaultOp::Stage, into, source))?;
-    let mut writing = Writing {
-        file,
-        path: into,
-        written: 0,
-        ceiling,
-    };
-
-    writing.write(&written(&stream)?)?;
-
-    let mut framebuf = unencodable(FrameBuf::with_size(channels, BLOCK_FRAMES), spec, bits)?;
-    let mut context = Context::new(depth, channels);
+    let mut writer = FlacWriter::over(file, into, spec, bits, &[], ceiling)?;
     let mut block = AudioBuffer::empty(spec);
     let mut widened = Vec::new();
-    let mut pending: Vec<i32> = Vec::with_capacity(whole_block * 2);
 
     loop {
         halt.heard()?;
@@ -147,69 +279,15 @@ pub(crate) fn encode(
         if !narrowing.narrowed(&mut widened) {
             return Ok(Encode::Wider);
         }
-        pending.extend_from_slice(&widened);
-
-        let mut at = 0;
-
-        while pending.len() - at >= whole_block {
-            emit(
-                &config,
-                &mut stream,
-                &mut framebuf,
-                &mut context,
-                &mut writing,
-                &pending[at..at + whole_block],
-            )?;
-            at += whole_block;
-        }
-        pending.drain(..at);
+        writer.push(&widened)?;
     }
 
-    if !pending.is_empty() {
-        emit(
-            &config,
-            &mut stream,
-            &mut framebuf,
-            &mut context,
-            &mut writing,
-            &pending,
-        )?;
-    }
-
-    let digest = context.md5_digest();
-    let total = context.total_samples();
-
-    if writing.outgrew() {
-        return Ok(Encode::Encoded(Encoded {
-            key: VaultKey::of(digest),
-            frames: Frames(total as u64),
-            outgrew: true,
-        }));
-    }
-    stream.stream_info_mut().set_md5_digest(&digest);
-    stream.stream_info_mut().set_total_samples(total);
-    unencodable(
-        stream
-            .stream_info_mut()
-            .set_block_sizes(BLOCK_FRAMES, BLOCK_FRAMES),
-        spec,
-        bits,
-    )?;
-
-    let header = written(&stream)?;
-    let mut file = writing.file;
-
-    file.seek(SeekFrom::Start(0))
-        .map_err(|source| Error::io(VaultOp::Write, into, source))?;
-    file.write_all(&header)
-        .map_err(|source| Error::io(VaultOp::Write, into, source))?;
-    file.sync_all()
-        .map_err(|source| Error::io(VaultOp::Settle, into, source))?;
+    let written = writer.finish()?;
 
     Ok(Encode::Encoded(Encoded {
-        key: VaultKey::of(digest),
-        frames: Frames(total as u64),
-        outgrew: false,
+        key: written.digest,
+        frames: written.frames,
+        outgrew: written.outgrew,
     }))
 }
 
@@ -218,7 +296,7 @@ fn emit(
     stream: &mut Stream,
     framebuf: &mut FrameBuf,
     context: &mut Context,
-    writing: &mut Writing<'_>,
+    writing: &mut Writing,
     samples: &[i32],
 ) -> Result<()> {
     let mut filling = (&mut *framebuf, &mut *context);
