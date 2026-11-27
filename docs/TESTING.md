@@ -93,11 +93,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Device sync
 
 ## Providers and network
-- [S · 0.18.1] Fuzz the media server's Host reader. **Low, builder.** `offered::addressed` reads the
-  `Host` header the media server now answers only when it names the address a request arrived at
-  (`crates/resonate-upnp/src/offered.rs`), and the `upnp` fuzz target never reaches it. Feed it the
-  request heads the target already builds, holding that a name is never admitted. Done when the
-  target calls it and its seeds pass.
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,
   `RESONATE_YTMUSIC_TESTS`, with `RESONATE_YTMUSIC_COOKIES`, `RESONATE_YTMUSIC_SONG`,
   `RESONATE_YTMUSIC_PLAYLIST`) has never been run: it lists an album song, reads the head of its best
@@ -122,6 +117,17 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.18.1] Lint the fuzzing seams as the fuzz build compiles them. **Low, builder.** Clippy
+  with `--cfg fuzzing` refuses `crates/resonate-codec/src/fuzzing.rs` (`chunks_exact_to_as_chunks`
+  on the operations' chunks), and no lint line builds the crates' `fuzzing` modules, so such a
+  warning lands unseen. Fix it and add a `--cfg fuzzing` clippy line to `cargo xtask lint`. Done
+  when the line runs clean.
+- [S · 0.18.1] Weigh a lone lowercase word in the window's catalog walk. **Low, builder.** The walks
+  refuse one inside `said!`, the print macros and `table.push(` (`SAID_TO_A_LISTENER`), but the
+  window draws words through gpui elements with no such marker, so a shown `none` in `resonate-ui`
+  still passes `every_word_the_window_shows_is_said_through_its_catalog`. Name the positions a word
+  reaches the screen from (a `div().child(`, a label's text) and weigh it there. Done when a drawn
+  literal `none` fails the window's test.
 - [S · 0.18.1] Give the server's page tests and the packaging unit's systemd check a required
   switch. **Low, builder.** `resonate-server`'s `shared::` page tests (`node`, a headless `firefox`)
   and `packaging.rs`'s systemd skip still print a skip and pass with no `RESONATE_*_TESTS=required`
@@ -136,14 +142,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   so `refuse resonate-core nosuchdep` passes: a typo or a renamed crate in a refusal enforces
   nothing. Hold each refused name to a package `cargo metadata` knows. Done when a refusal naming no
   package fails the job.
-- [M · 0.18.1] Stand in for the portal's inhibit and record what notifications say. **Medium,
-  builder.** No test stands in for `org.freedesktop.portal.Desktop`, so holding and releasing the
-  idle inhibit is proved only by `Gripping::toward` (`crates/resonate-mpris/src/idle.rs:115-128`);
-  the notification stand-in ignores the summary, body, hints and replacement
-  (`crates/resonate-mpris/tests/bus.rs:3605-3634`); and no fixture in the MCP or MPRIS suites holds
-  hostile tag text, a NUL, markup, a newline or 10 kB (`crates/resonate-mcp/tests/server.rs:72-90`,
-  `bus.rs:148-180`). Record both stand-ins' calls and parameterise the fixtures. Done when pause
-  releases the inhibit and a NUL title is notified, in tests.
 - [S · 0.18.1] Catch a catalog call that passes its values in the sentence's order. **Low,
   builder.** `resonate-words-build` writes each message's function with its parameters in
   alphabetical order, so a call passing them in the order the sentence says them still compiles
@@ -151,12 +149,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `cli::` caught it. Name the arguments at the call (a struct of the message's variables, or a
   builder), or refuse a call whose arguments are named otherwise than its parameters. Done when
   swapping two arguments of the same type fails to compile or fails a test.
-- [S · 0.18.1] Refuse a lone lowercase word in the catalog walks. **Low, builder.** `prose_in` reads a
-  literal as words only when it is capitalised or holds a space (`resonate-words-build`), so a
-  shown `none` or `faststart` passed the binary's catalog test until moved by hand. Weigh a lone
-  lowercase word where it reaches a listener (a `println!`/`said` argument, a table cell) without
-  flagging keys and identifiers. Done when a printed literal `none` fails the binary's catalog
-  test.
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
