@@ -372,39 +372,36 @@ struct OnlineSongRow: View {
         let downloads = features.downloads
         let track = (heldSong == song.id ? heldTrack : nil) ?? downloads.finishedTrack(for: song)
         let standing: DownloadStanding = track == nil ? downloads.standing(of: song) : .held
-        HStack(spacing: 12) {
-            Button {
-                Keyboard.stow()
-                if let track {
-                    library.play([track], at: 0)
-                } else if standing.startsOnTap {
-                    downloads.enqueue([song])
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    if let track {
-                        ArtworkView(track: track, corner: 8).frame(width: artworkEdge, height: artworkEdge)
-                    } else {
-                        OnlinePlaceholder(symbol: "music.note")
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(song.title).font(.body.weight(.medium)).titleLines()
-                        Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .titleLines()
-                        OnlineSongCaption(song: song, standing: standing)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 4)
-                .contentShape(.rect)
+        Button {
+            Keyboard.stow()
+            if let track {
+                library.play([track], at: 0)
+            } else if standing.startsOnTap {
+                downloads.enqueue([song])
             }
-            .buttonStyle(.plain)
-            .accessibilityHint(track != nil ? said("online.song.plays.hint") : standing.startsOnTap ? said("online.song.downloads.hint") : "")
-            DownloadBadge(standing: standing) { downloads.cancel(song) }
+        } label: {
+            HStack(spacing: 12) {
+                if let track {
+                    ArtworkView(track: track, corner: 8).frame(width: artworkEdge, height: artworkEdge)
+                } else {
+                    OnlinePlaceholder(symbol: "music.note")
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(song.title).font(.body.weight(.medium)).titleLines()
+                    Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .titleLines()
+                    OnlineSongCaption(song: song, standing: standing)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 4)
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
+        .accessibilityHint(track != nil ? said("online.song.plays.hint") : standing.startsOnTap ? said("online.song.downloads.hint") : "")
         .task(id: "\(song.id):\(library.catalogCount)") {
             guard let native = try? await library.player() else { return }
             let matched = (try? await Work.onScreen { try native.matchLocalSong(song: song) }) ?? nil
@@ -419,9 +416,11 @@ struct OnlineSongRow: View {
         .contextMenu {
             Button("wanted.download", systemImage: "arrow.down.circle") { downloads.enqueue([song]) }
                 .disabled(!standing.startsOnTap)
+            if standing.cancellable {
+                Button("online.cancel-download", systemImage: "xmark.circle") { downloads.cancel(song) }
+            }
             Button("online.save", systemImage: "bookmark") { features.saveWanted([song]) }
         }
-        .accessibilityElement(children: .contain)
         .accessibilityActions {
             if standing.cancellable {
                 Button("online.cancel-download") { downloads.cancel(song) }
