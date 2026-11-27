@@ -122,11 +122,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   still passes `every_word_the_window_shows_is_said_through_its_catalog`. Name the positions a word
   reaches the screen from (a `div().child(`, a label's text) and weigh it there. Done when a drawn
   literal `none` fails the window's test.
-- [S · 0.18.1] Give the server's page tests and the packaging unit's systemd check a required
-  switch. **Low, builder.** `resonate-server`'s `shared::` page tests (`node`, a headless `firefox`)
-  and `packaging.rs`'s systemd skip still print a skip and pass with no `RESONATE_*_TESTS=required`
-  switch, as every other suite needing the outside world now has (`build.md`). Add one each and set
-  it where CI provides the tool. Done when a required run without `node` fails.
 - [S · 0.18.1] Catch a catalog call that passes its values in the sentence's order. **Low,
   builder.** `resonate-words-build` writes each message's function with its parameters in
   alphabetical order, so a call passing them in the order the sentence says them still compiles
