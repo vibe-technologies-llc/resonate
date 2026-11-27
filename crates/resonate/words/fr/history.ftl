@@ -1,6 +1,6 @@
 exported = { $count ->
-    [one] { $file } a écrit une écoute.
-   *[other] écrit { $count } écoute { $file }
+    [one] une écoute écrite dans { $file }
+   *[other] { $count } écoutes écrites dans { $file }
 }
 brought-so-far = { $credited ->
     [one] { $credited } comptée
@@ -8,10 +8,7 @@ brought-so-far = { $credited ->
 }, { $held ->
     [one] { $held } déjà connue
    *[other] { $held } déjà connues
-}, { $unmatched ->
-    [one] { $unmatched } sans morceau ici
-   *[other] { $unmatched } sans morceau ici
-}
+}, { $unmatched } sans morceau ici
 brought-in = { $credited ->
     [one] { $credited } écoute importée
    *[other] { $credited } écoutes importées

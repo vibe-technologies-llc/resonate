@@ -489,6 +489,43 @@ mod tests {
     }
 
     #[test]
+    fn an_export_and_the_progress_of_an_import_are_said_naturally_in_every_language() {
+        resonate_words::speak(resonate_words::Language::English);
+
+        assert_eq!(
+            words::history::exported(1, "out.jsonl"),
+            "wrote one listen to out.jsonl"
+        );
+        assert_eq!(
+            words::history::exported(3, "out.jsonl"),
+            "wrote 3 listens to out.jsonl"
+        );
+        assert_eq!(
+            words::history::brought_so_far(5, 2, 1),
+            "5 counted, 2 held already, 1 not held here"
+        );
+
+        resonate_words::speak(resonate_words::Language::French);
+
+        assert_eq!(
+            words::history::exported(1, "out.jsonl"),
+            "une écoute écrite dans out.jsonl"
+        );
+        assert_eq!(
+            words::history::exported(3, "out.jsonl"),
+            "3 écoutes écrites dans out.jsonl"
+        );
+        assert_eq!(
+            words::history::brought_so_far(1, 1, 4),
+            "1 comptée, 1 déjà connue, 4 sans morceau ici"
+        );
+        assert_eq!(
+            words::history::brought_so_far(5, 2, 1),
+            "5 comptées, 2 déjà connues, 1 sans morceau ici"
+        );
+    }
+
+    #[test]
     fn a_file_and_a_service_are_two_ways_in_never_both_and_a_user_belongs_to_a_service() {
         let by_file = history_args(&["--import-file", "listenbrainz"]);
         let by_service = history_args(&["--import", "listenbrainz"]);
