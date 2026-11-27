@@ -958,18 +958,15 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_fifo_named_as_a_sidecar_is_passed_over_at_once_for_the_text_file_behind_it() {
-        use rustix::fs::{CWD, FileType, Mode, mknodat};
-
         let tree = Tree::new();
 
-        mknodat(
-            CWD,
-            tree.root.join("Echoes.lrc"),
-            FileType::Fifo,
-            Mode::RUSR | Mode::WUSR,
-            0,
-        )
-        .expect("a fifo");
+        let made = std::process::Command::new("mkfifo")
+            .arg(tree.root.join("Echoes.lrc"))
+            .status()
+            .expect("mkfifo runs");
+
+        assert!(made.success(), "a fifo");
+
         tree.write("Echoes.txt", "[00:01.00]all that you touch");
 
         let wanted = tree.track("Echoes.flac");

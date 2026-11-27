@@ -28,8 +28,6 @@ pub(crate) fn opened(path: &Path) -> io::Result<Option<File>> {
 mod tests {
     use std::{env, fs, process, time::Duration};
 
-    use rustix::fs::{CWD, FileType, Mode, mknodat};
-
     use super::*;
 
     struct Folder(std::path::PathBuf);
@@ -72,7 +70,12 @@ mod tests {
         let folder = Folder::new("fifo");
         let fifo = folder.0.join("Song.lrc");
 
-        mknodat(CWD, &fifo, FileType::Fifo, Mode::RUSR | Mode::WUSR, 0).expect("a fifo");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs");
+
+        assert!(made.success(), "a fifo");
 
         let (told, hears) = std::sync::mpsc::channel();
         let asked = fifo.clone();

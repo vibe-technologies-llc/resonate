@@ -5749,8 +5749,6 @@ mod tests {
             time::{Duration, Instant},
         };
 
-        use rustix::fs::{CWD, FileType, Mode, mknodat};
-
         const OURS_ALONE: u32 = 0o600;
         const SHARED_WITH_THE_GROUP: u32 = 0o640;
         const PATIENCE: Duration = Duration::from_secs(20);
@@ -5760,14 +5758,14 @@ mod tests {
         let from = folder.join("arriving.flac");
         let to = folder.join("copy.flac");
 
-        mknodat(
-            CWD,
-            &from,
-            FileType::Fifo,
-            Mode::from_raw_mode(SHARED_WITH_THE_GROUP),
-            0,
-        )
-        .expect("a pipe to copy from");
+        let made = std::process::Command::new("mkfifo")
+            .arg("-m")
+            .arg(format!("{SHARED_WITH_THE_GROUP:o}"))
+            .arg(&from)
+            .status()
+            .expect("mkfifo runs");
+
+        assert!(made.success(), "a pipe to copy from");
 
         let copier = {
             let (from, to) = (from.clone(), to.clone());

@@ -551,13 +551,16 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_fifo_standing_as_the_sheet_is_not_opened_to_see_what_it_says() {
-        use rustix::fs::{CWD, FileType, Mode, mknodat};
-
         let folder = Folder::new();
         let track = folder.track();
         let fifo = folder.0.join("Echoes.lrc");
 
-        mknodat(CWD, &fifo, FileType::Fifo, Mode::RUSR | Mode::WUSR, 0).expect("a fifo");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs");
+
+        assert!(made.success(), "a fifo");
 
         let (told, hears) = std::sync::mpsc::channel();
 
