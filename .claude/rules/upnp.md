@@ -244,6 +244,16 @@ for range reads and SSDP searches. It reads a declared, chunked or close-delimit
 (`soap::call`) posts an envelope to the control address with
 `SOAPAction: "<service type>#<action>"`, every argument escaped; a `500` is
 `Error::Fault { action, code }` from the body's `errorCode`.
+A head is read until `HEAD_BYTES_AT_MOST` (16 KiB) are held with no end to it (`Error::NotHttp`), a body
+until `ANSWER_BYTES_AT_MOST` (1 MiB, chunk framing counted) is passed (`Error::TooLong`, also for an answer with no length that never closes). The fake renderer's `Profile` can
+fault, stall, send a body or head past those, an endless body and a name of thousands of letters, on the description or any named action, and each is held to what it must end as: an open
+refused, a stream `Refused` or `Failed`, a sink left unlisted, a volume that never waits on the network
+(`a_description_misbehaving_is_refused_as_what_it_did_and_lists_nothing`,
+`a_renderer_misbehaving_on_the_address_fails_the_open_as_what_it_did_and_leaves_nothing_played`,
+`a_renderer_misbehaving_on_play_fails_the_stream_within_the_answer_time`,
+`a_stalled_volume_never_holds_the_caller_and_the_next_turn_goes_through_once_it_gives_up`,
+`a_volume_answer_of_exactly_the_most_bytes_is_read_and_one_byte_more_is_not`,
+`a_friendly_name_far_past_its_limit_is_shown_cut_on_a_letter_and_the_renderer_still_plays`).
 
 ## The stream
 

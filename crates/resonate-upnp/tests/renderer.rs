@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     env, fs,
-    io::{Read, Write},
+    io::{self, Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process,
@@ -17,8 +17,8 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_audio::{
     AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, Learnt, MediaRole,
-    Opener, Plays, SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent,
-    StreamRequest, Surveyor, Trial, TrialVerdict, Unplayed,
+    Opener, Operation, Plays, SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent,
+    StreamRequest, StreamState, Surveyor, Trial, TrialVerdict, Unplayed,
 };
 use resonate_codec::{DecodeStatus, Decoder, Sources};
 use resonate_core::{
@@ -26,10 +26,13 @@ use resonate_core::{
     TrackId, Trim, Volume,
 };
 use resonate_engine::{
-    Command, EngineConfig, Equalisation, Event, Levelling, NodeName, Player, Preamp,
-    Profile as EqProfile, QueueItem, ReplayGainMode,
+    Command, EngineConfig, Equalisation, Error as EngineError, Event, Levelling, NodeName, Player,
+    Preamp, Profile as EqProfile, QueueItem, ReplayGainMode,
 };
-use resonate_upnp::{Beside, FirstSearch, Located, Neighbours, Network, Searching, Udn, Vouched};
+use resonate_upnp::{
+    Action, Asked, Beside, Error as UpnpError, FirstSearch, Located, Neighbours, Network,
+    Searching, Udn, Vouched,
+};
 
 const UDN: &str = "uuid:fake-renderer";
 
@@ -57,12 +60,40 @@ const RESTARTED_WITHIN: Duration = Duration::from_millis(1_500);
 
 const QUIET_FOR: Duration = Duration::from_millis(900);
 
+const STALLED_FOR: Duration = Duration::from_secs(10);
+
+const ENDLESS_STOPS_AFTER_CHUNKS: usize = 8 << 10;
+
 const WAVE_ONLY: &str = "http-get:*:audio/mpeg:*,http-get:*:audio/wav:*";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum On {
+    Description,
+    Action(&'static str),
+}
+
+#[derive(Clone, Copy)]
+enum Misbehaviour {
+    Fault(u32),
+    Status(u16),
+    Stall,
+    Endless,
+    Body(usize),
+    Head(usize),
+}
+
+#[derive(Clone, Copy)]
+struct Fault {
+    on: On,
+    how: Misbehaviour,
+}
 
 #[derive(Clone, Copy)]
 struct Profile {
     sink: &'static str,
     openhome: bool,
+    fault: Option<Fault>,
+    name_letters: Option<usize>,
 }
 
 impl Profile {
@@ -70,6 +101,22 @@ impl Profile {
         Self {
             sink: WAVE_ONLY,
             openhome: false,
+            fault: None,
+            name_letters: None,
+        }
+    }
+
+    const fn faulting(on: On, how: Misbehaviour) -> Self {
+        Self {
+            fault: Some(Fault { on, how }),
+            ..Self::wave()
+        }
+    }
+
+    const fn named_by(letters: usize) -> Self {
+        Self {
+            name_letters: Some(letters),
+            ..Self::wave()
         }
     }
 }
@@ -103,6 +150,13 @@ impl Heard {
         let (hz, channels) = self.decodes_at_most?;
         let (rate, count) = shape_of(&self.fetched)?;
         Some(rate <= hz && count <= channels)
+    }
+
+    fn times(&self, action: &str) -> usize {
+        self.calls
+            .iter()
+            .filter(|(called, _)| called == action)
+            .count()
     }
 
     fn actions(&self) -> Vec<&str> {
@@ -197,6 +251,10 @@ impl Fake {
         self
     }
 
+    fn heal(&self) {
+        self.heard.lock().profile.fault = None;
+    }
+
     fn description_address(&self) -> Located {
         Located::parse(&format!(
             "http://{}/device/description.xml",
@@ -246,7 +304,7 @@ fn answer_searches(ssdp: &UdpSocket, described_at: SocketAddr, heard: &Mutex<Hea
     }
 }
 
-fn description(openhome: bool, udn: &str) -> String {
+fn description(openhome: bool, udn: &str, name: &str) -> String {
     let extra = if openhome {
         r#"<service><serviceType>urn:av-openhome-org:service:Product:1</serviceType><controlURL>/oh/product</controlURL></service>
       <service><serviceType>urn:av-openhome-org:service:Playlist:1</serviceType><controlURL>/oh/playlist</controlURL></service>
@@ -259,7 +317,7 @@ fn description(openhome: bool, udn: &str) -> String {
 <root xmlns="urn:schemas-upnp-org:device-1-0">
   <device>
     <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
-    <friendlyName>{NAME}</friendlyName>
+    <friendlyName>{name}</friendlyName>
     <UDN>{udn}</UDN>
     <serviceList>
       <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>control/av</controlURL></service>
@@ -270,6 +328,127 @@ fn description(openhome: bool, udn: &str) -> String {
   </device>
 </root>"#
     )
+}
+
+fn padded(mut text: String, bytes: usize) -> String {
+    text.push_str(&" ".repeat(bytes.saturating_sub(text.len())));
+    text
+}
+
+fn chunked_in_two(body: &str) -> Vec<u8> {
+    let (first, second) = body.as_bytes().split_at(body.len() / 2);
+
+    let mut chunked = format!("{:x}\r\n", first.len()).into_bytes();
+
+    chunked.extend_from_slice(first);
+    chunked.extend_from_slice(format!("\r\n{:x}\r\n", second.len()).as_bytes());
+    chunked.extend_from_slice(second);
+    chunked.extend_from_slice(b"\r\n0\r\n\r\n");
+    chunked
+}
+
+fn on_the_wire(body: &str, chunked: bool) -> Vec<u8> {
+    if chunked {
+        chunked_in_two(body)
+    } else {
+        body.as_bytes().to_vec()
+    }
+}
+
+fn padded_on_the_wire_to(body: &str, bytes: usize, chunked: bool) -> String {
+    let trial = padded(body.to_owned(), bytes);
+    let framing = on_the_wire(&trial, chunked).len() - trial.len();
+
+    padded(body.to_owned(), bytes.saturating_sub(framing))
+}
+
+fn answered_whole(body: &str, how: Option<Misbehaviour>, chunked: bool) -> Vec<u8> {
+    let (body, padding) = match how {
+        Some(Misbehaviour::Body(bytes)) => {
+            (padded_on_the_wire_to(body, bytes, chunked), String::new())
+        }
+        Some(Misbehaviour::Head(bytes)) => (
+            body.to_owned(),
+            format!("X-Padding: {}\r\n", "a".repeat(bytes)),
+        ),
+        _ => (body.to_owned(), String::new()),
+    };
+
+    let mut answer = if chunked {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\n{padding}Transfer-Encoding: chunked\r\n\r\n"
+        )
+        .into_bytes()
+    } else {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\n{padding}Content-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes()
+    };
+
+    answer.extend_from_slice(&on_the_wire(&body, chunked));
+    answer
+}
+
+fn fault_envelope(code: u32) -> String {
+    format!(
+        "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns=\"urn:schemas-upnp-org:control-1-0\"><errorCode>{code}</errorCode><errorDescription>Action Failed</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>"
+    )
+}
+
+fn stalled(stream: &mut TcpStream) {
+    let mut buffer = [0; 64];
+
+    let _ = stream.set_read_timeout(Some(STALLED_FOR));
+
+    while matches!(stream.read(&mut buffer), Ok(read) if read > 0) {}
+}
+
+fn endless(stream: &mut TcpStream) {
+    let chunk = [b'a'; 8 << 10];
+
+    if stream
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\n\r\n")
+        .is_err()
+    {
+        return;
+    }
+    for _ in 0..ENDLESS_STOPS_AFTER_CHUNKS {
+        if stream.write_all(&chunk).is_err() {
+            return;
+        }
+    }
+}
+
+fn misbehaved_early(stream: &mut TcpStream, how: Option<Misbehaviour>) -> bool {
+    match how {
+        Some(Misbehaviour::Fault(code)) => {
+            let envelope = fault_envelope(code);
+            let answer = format!(
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{envelope}",
+                envelope.len()
+            );
+            let _ = stream.write_all(answer.as_bytes());
+            true
+        }
+        Some(Misbehaviour::Status(status)) => {
+            let answer = format!(
+                "HTTP/1.1 {status} Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(answer.as_bytes());
+            true
+        }
+        Some(Misbehaviour::Stall) => {
+            stalled(stream);
+            true
+        }
+        Some(Misbehaviour::Endless) => {
+            endless(stream);
+            true
+        }
+        Some(Misbehaviour::Body(_) | Misbehaviour::Head(_)) | None => false,
+    }
 }
 
 fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
@@ -314,26 +493,6 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
     }
 
     let body = String::from_utf8_lossy(&body).into_owned();
-
-    if method == "GET" && path == "/device/description.xml" {
-        let (openhome, udn) = {
-            let held = heard.lock();
-            (held.profile.openhome, held.udn.unwrap_or(UDN))
-        };
-
-        let description = description(openhome, udn);
-        let (first, second) = description.split_at(description.len() / 2);
-
-        let chunked = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{first}\r\n{:x}\r\n{second}\r\n0\r\n\r\n",
-            first.len(),
-            second.len()
-        );
-        let _ = stream.write_all(chunked.as_bytes());
-
-        return;
-    }
-
     let action = header("SOAPAction")
         .and_then(|named| {
             named
@@ -343,8 +502,50 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
         })
         .unwrap_or_default();
 
+    let describing = method == "GET" && path == "/device/description.xml";
+    let misbehaving = {
+        let held = heard.lock();
+
+        held.profile
+            .fault
+            .filter(|fault| match fault.on {
+                On::Description => describing,
+                On::Action(named) => !describing && named == action,
+            })
+            .map(|fault| fault.how)
+    };
+
+    if describing {
+        if misbehaved_early(&mut stream, misbehaving) {
+            return;
+        }
+
+        let (openhome, udn, name) = {
+            let held = heard.lock();
+            (
+                held.profile.openhome,
+                held.udn.unwrap_or(UDN),
+                held.profile
+                    .name_letters
+                    .map_or_else(|| NAME.to_owned(), |letters| "é".repeat(letters)),
+            )
+        };
+
+        let _ = stream.write_all(&answered_whole(
+            &description(openhome, udn, &name),
+            misbehaving,
+            true,
+        ));
+
+        return;
+    }
+
     if path.starts_with("/oh/") {
         heard.lock().openhome.push((action.clone(), body.clone()));
+
+        if misbehaved_early(&mut stream, misbehaving) {
+            return;
+        }
 
         let arguments = match action.as_str() {
             "Characteristics" => "<VolumeMax>50</VolumeMax><VolumeUnity>25</VolumeUnity>",
@@ -354,15 +555,15 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
         let envelope = format!(
             "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action}Response xmlns:u=\"urn:av-openhome-org:service:Volume:1\">{arguments}</u:{action}Response></s:Body></s:Envelope>"
         );
-        let answer = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{envelope}",
-            envelope.len()
-        );
-        let _ = stream.write_all(answer.as_bytes());
+        let _ = stream.write_all(&answered_whole(&envelope, misbehaving, false));
 
         return;
     }
     heard.lock().calls.push((action.clone(), body.clone()));
+
+    if misbehaved_early(&mut stream, misbehaving) {
+        return;
+    }
 
     let arguments = match action.as_str() {
         "GetProtocolInfo" => format!(
@@ -415,11 +616,7 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
     let envelope = format!(
         "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action}Response xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\">{arguments}</u:{action}Response></s:Body></s:Envelope>"
     );
-    let answer = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{envelope}",
-        envelope.len()
-    );
-    let _ = stream.write_all(answer.as_bytes());
+    let _ = stream.write_all(&answered_whole(&envelope, misbehaving, false));
 }
 
 fn shape_of(fetched: &[u8]) -> Option<(u32, u16)> {
@@ -1376,6 +1573,7 @@ fn a_song_played_to_a_renderer_taking_flac_is_sent_flac_that_decodes_to_the_samp
     let fake = Fake::with(Profile {
         sink: FLAC_AND_WAVE,
         openhome: false,
+        ..Profile::wave()
     });
     let network =
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
@@ -1422,6 +1620,7 @@ fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_
     let flac = Fake::with(Profile {
         sink: FLAC_WITH_SIX_CHANNELS,
         openhome: false,
+        ..Profile::wave()
     });
     let network = Network::start(flac.searching(), FirstSearch::Awaited).expect("searches");
     let sink = the_renderer(&network);
@@ -1455,6 +1654,7 @@ fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_
     let wave = Fake::with(Profile {
         sink: WAVE_WITH_SIX_CHANNELS,
         openhome: false,
+        ..Profile::wave()
     });
     let network = Network::start(wave.searching(), FirstSearch::Awaited).expect("searches");
     let sink = the_renderer(&network);
@@ -1497,6 +1697,7 @@ fn a_renderer_that_does_not_state_channels_is_offered_stereo_alone() {
     let fake = Fake::with(Profile {
         sink: FLAC_AND_WAVE,
         openhome: false,
+        ..Profile::wave()
     });
 
     let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
@@ -1515,6 +1716,7 @@ fn a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_
     let fake = Fake::with(Profile {
         sink: WAVE_ONLY,
         openhome: true,
+        ..Profile::wave()
     });
     let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
     let sink = the_renderer(&network);
@@ -1569,6 +1771,7 @@ fn flac_carries_twenty_four_bits_up_to_ninety_six_kilohertz_bit_for_bit_and_wave
         let fake = Fake::with(Profile {
             sink: FLAC_AND_WAVE,
             openhome: false,
+            ..Profile::wave()
         });
         let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
         let sink = the_renderer(&network);
@@ -1609,6 +1812,7 @@ fn flac_above_ninety_six_kilohertz_is_sent_where_the_renderer_states_the_rate_an
         let fake = Fake::with(Profile {
             sink: FLAC_WITH_HIGH_RATES_STATED,
             openhome: false,
+            ..Profile::wave()
         });
         let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
         let sink = the_renderer(&network);
@@ -1658,6 +1862,7 @@ fn a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both() {
     let fake = Fake::with(Profile {
         sink: FLAC_AND_WAVE,
         openhome: false,
+        ..Profile::wave()
     });
     let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
     let sink = the_renderer(&network);
@@ -1715,6 +1920,7 @@ fn a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_wh
         let fake = Fake::with(Profile {
             sink: FLAC_ALONE,
             openhome: false,
+            ..Profile::wave()
         });
         let network = network_vouching(&fake, vouched);
         let sink = the_renderer(&network);
@@ -1733,6 +1939,7 @@ fn a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_wh
     let fake = Fake::with(Profile {
         sink: FLAC_ALONE,
         openhome: false,
+        ..Profile::wave()
     });
     let network = network_vouching(&fake, Vouched::flac_at_any_rate([Udn::new(UDN)]));
     let sink = the_renderer(&network);
@@ -1772,6 +1979,7 @@ fn a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_other
     let fake = Fake::with(Profile {
         sink: FLAC_AND_WAVE,
         openhome: false,
+        ..Profile::wave()
     });
     let network = network_vouching(&fake, Vouched::flac_at_any_rate([Udn::new(UDN)]));
     let sink = the_renderer(&network);
@@ -2097,6 +2305,7 @@ fn vouching_for_a_renderer_already_found_offers_it_high_rate_flac_at_once_and_vo
     let fake = Fake::with(Profile {
         sink: FLAC_ALONE,
         openhome: false,
+        ..Profile::wave()
     });
     let network = network_vouching(&fake, Vouched::default());
     let changes = changes_of(&network);
@@ -2132,6 +2341,7 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
     let fake = Fake::with(Profile {
         sink: FLAC_ALONE,
         openhome: false,
+        ..Profile::wave()
     });
     let network = Arc::new(network_vouching(&fake, Vouched::default()));
     let changes = changes_of(&network);
@@ -2261,6 +2471,7 @@ fn a_renderer_that_stops_on_what_it_cannot_decode_is_learnt_to_play_none_of_it()
     let fake = Fake::with(Profile {
         sink: FLAC_ALONE,
         openhome: false,
+        ..Profile::wave()
     })
     .decoding_at_most(96_000, 2);
     let network = network_vouching(&fake, Vouched::default());
@@ -2302,6 +2513,7 @@ fn a_renderer_is_offered_surround_up_to_the_rate_it_played_it_at_and_high_rates_
     let fake = Fake::with(Profile {
         sink: FLAC_ALONE,
         openhome: false,
+        ..Profile::wave()
     })
     .decoding_at_most(192_000, 6);
     let network = network_vouching(&fake, Vouched::default());
@@ -2343,6 +2555,7 @@ fn a_renderer_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it
     let fake = Fake::with(Profile {
         sink: FLAC_ALONE,
         openhome: false,
+        ..Profile::wave()
     });
     let network = Arc::new(network_vouching(&fake, Vouched::default()));
     let sink = the_renderer(&network);
@@ -2614,4 +2827,735 @@ fn a_forwarder_whose_receiver_is_dropped_ends_with_the_next_change() {
 
         thread::sleep(LOOKS_EVERY);
     }
+}
+
+const ANSWER_BYTES_AT_MOST: usize = 1 << 20;
+
+const HEAD_BYTES_AT_MOST: usize = 16 << 10;
+
+const NAME_BYTES_AT_MOST: usize = 256;
+
+const ANSWERED_WITHIN: Duration = Duration::from_secs(3);
+
+const GIVEN_UP_BY: Duration = Duration::from_secs(6);
+
+const A_LONG_NAME_IN_LETTERS: usize = 5_000;
+
+const PAST_THE_ANSWER: Misbehaviour = Misbehaviour::Body(ANSWER_BYTES_AT_MOST + 1);
+
+const PAST_THE_HEAD: Misbehaviour = Misbehaviour::Head(4 * HEAD_BYTES_AT_MOST);
+
+type Expected = fn(&UpnpError) -> bool;
+
+type Ended = fn(&StreamEvent) -> bool;
+
+const SET_ADDRESS: On = On::Action("SetAVTransportURI");
+
+const PLAY: On = On::Action("Play");
+
+fn upnp_error(error: &SinkError) -> Option<&UpnpError> {
+    match error {
+        SinkError::Backend { source, .. } => source
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<UpnpError>()),
+        _ => None,
+    }
+}
+
+fn beside_the(fake: &Fake) -> (Beside, Arc<Network>, SinkInfo) {
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let sink = the_renderer(&network);
+
+    (
+        Beside::over(Box::new(NoGraph::new()), Arc::<Network>::clone(&network)),
+        network,
+        sink,
+    )
+}
+
+fn long_stream(backend: &Beside, sink: &SinkInfo) -> SinkResult<SinkStream> {
+    backend.opener().open(
+        &StreamRequest {
+            target: Some(sink.id),
+            spec: stereo_sixteen(),
+            latency: LatencyRequest::Auto,
+            role: MediaRole::Music,
+            media_name: "Faulty".to_owned(),
+            force_graph_rate: false,
+            no_convert: true,
+            realtime: true,
+        },
+        Box::new(Counting {
+            next: 0,
+            left: RATE as usize * STRIDE * 30,
+        }),
+    )
+}
+
+fn is_failed(event: &StreamEvent) -> bool {
+    matches!(
+        event,
+        StreamEvent::StateChanged {
+            to: StreamState::Failed,
+            ..
+        }
+    )
+}
+
+fn is_refused(event: &StreamEvent) -> bool {
+    matches!(event, StreamEvent::Refused { .. })
+}
+
+fn events_until(
+    events: &Receiver<StreamEvent>,
+    wanted: impl Fn(&StreamEvent) -> bool,
+) -> Vec<StreamEvent> {
+    let since = Instant::now();
+    let mut heard = Vec::new();
+
+    while since.elapsed() < WAITED_AT_MOST {
+        if let Ok(event) = events.recv_timeout(LOOKS_EVERY) {
+            let done = wanted(&event);
+
+            heard.push(event);
+            if done {
+                break;
+            }
+        }
+    }
+    heard
+}
+
+fn reached_by_address(fake: &Fake) -> (Deaf, Network, Result<(), UpnpError>) {
+    let deaf = Deaf::start();
+    let network = Network::start(
+        deaf.searching(Duration::from_secs(3_600)),
+        FirstSearch::Awaited,
+    )
+    .expect("starts");
+
+    let located = network.locate(fake.description_address());
+
+    (deaf, network, located)
+}
+
+fn round_over(fake: &Fake) -> (Deaf, Network, Duration) {
+    let deaf = Deaf::start();
+    let network = Network::resting_describing_within(
+        deaf.searching(Duration::from_secs(3_600)),
+        ROUND_DESCRIBES_FOR,
+    )
+    .expect("rests");
+
+    network
+        .locate(fake.description_address())
+        .expect("a resting network holds it");
+
+    let began = Instant::now();
+
+    network
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    (deaf, network, began.elapsed())
+}
+
+#[test]
+fn a_renderer_faulting_the_address_fails_the_open_with_its_code_and_stays_listed_and_free() {
+    let fake = Fake::with(Profile::faulting(SET_ADDRESS, Misbehaviour::Fault(714)));
+    let (backend, network, sink) = beside_the(&fake);
+
+    let refused = long_stream(&backend, &sink)
+        .err()
+        .expect("the open was refused");
+
+    assert!(matches!(
+        refused,
+        SinkError::Backend {
+            op: Operation::Open,
+            ..
+        }
+    ));
+    assert!(matches!(
+        upnp_error(&refused),
+        Some(UpnpError::Fault {
+            action: Action::SetAvTransportUri,
+            code: Some(714)
+        })
+    ));
+    assert_eq!(network.sinks().len(), 1, "a refusal dropped the sink");
+    assert_eq!(fake.heard.lock().times("Play"), 0);
+
+    fake.heal();
+
+    let stream = long_stream(&backend, &sink).expect("a healed renderer takes the stream");
+
+    stream.set_active(true).expect("plays");
+    fake.until("the healed renderer to be played", |heard| {
+        heard.times("Play") == 1
+    });
+    stream.close().expect("closes");
+    fake.until("the healed renderer to be stopped", |heard| {
+        heard.times("Stop") >= 1
+    });
+}
+
+#[test]
+fn a_renderer_misbehaving_on_the_address_fails_the_open_as_what_it_did_and_leaves_nothing_played() {
+    let cases: [(Misbehaviour, Expected); 5] = [
+        (Misbehaviour::Status(503), |error| {
+            matches!(
+                error,
+                UpnpError::Status {
+                    asked: Asked::Action(Action::SetAvTransportUri),
+                    status: 503
+                }
+            )
+        }),
+        (PAST_THE_ANSWER, |error| {
+            matches!(
+                error,
+                UpnpError::TooLong {
+                    asked: Asked::Action(Action::SetAvTransportUri),
+                    at_most: ANSWER_BYTES_AT_MOST
+                }
+            )
+        }),
+        (Misbehaviour::Endless, |error| {
+            matches!(
+                error,
+                UpnpError::TooLong {
+                    asked: Asked::Action(Action::SetAvTransportUri),
+                    ..
+                }
+            )
+        }),
+        (PAST_THE_HEAD, |error| {
+            matches!(
+                error,
+                UpnpError::NotHttp {
+                    asked: Asked::Action(Action::SetAvTransportUri)
+                }
+            )
+        }),
+        (Misbehaviour::Stall, |error| {
+            matches!(
+                error,
+                UpnpError::Network { asked: Asked::Action(Action::SetAvTransportUri), source }
+                    if source.kind() == io::ErrorKind::TimedOut
+            )
+        }),
+    ];
+
+    for (how, expected) in cases {
+        let fake = Fake::with(Profile::faulting(SET_ADDRESS, how));
+        let (backend, network, sink) = beside_the(&fake);
+        let began = Instant::now();
+
+        let refused = long_stream(&backend, &sink)
+            .err()
+            .expect("the open was refused");
+
+        assert!(began.elapsed() < GIVEN_UP_BY, "the open hung");
+        assert!(
+            upnp_error(&refused).is_some_and(expected),
+            "{refused:?} was not the failure its fault should be"
+        );
+        assert_eq!(network.sinks().len(), 1, "a refusal dropped the sink");
+        assert_eq!(fake.heard.lock().times("Play"), 0);
+
+        fake.heal();
+
+        assert!(
+            long_stream(&backend, &sink).is_ok(),
+            "the renderer stayed held by the failed open"
+        );
+    }
+}
+
+#[test]
+fn a_stalled_address_is_given_up_on_after_the_answer_time_and_the_open_says_it_timed_out() {
+    let fake = Fake::with(Profile::faulting(SET_ADDRESS, Misbehaviour::Stall));
+    let (backend, _network, sink) = beside_the(&fake);
+    let began = Instant::now();
+
+    let refused = long_stream(&backend, &sink)
+        .err()
+        .expect("the open was refused");
+
+    assert!(began.elapsed() >= ANSWERED_WITHIN - LOOKS_EVERY);
+    assert!(began.elapsed() < GIVEN_UP_BY);
+    assert!(upnp_error(&refused).is_some());
+}
+
+#[test]
+fn a_renderer_faulting_play_refuses_the_stream_with_its_code_and_is_not_stopped_for_it() {
+    let fake = Fake::with(Profile::faulting(PLAY, Misbehaviour::Fault(701)));
+    let (backend, _network, sink) = beside_the(&fake);
+
+    let stream = long_stream(&backend, &sink).expect("the address was taken");
+
+    stream.set_active(true).expect("asks to play");
+
+    let heard = events_until(stream.events(), is_refused);
+
+    assert_eq!(
+        heard.last(),
+        Some(&StreamEvent::Refused {
+            from: StreamState::Paused,
+            op: Operation::Start,
+            status: 701
+        })
+    );
+    assert_eq!(
+        fake.heard.lock().actions(),
+        ["GetProtocolInfo", "GetVolume", "SetAVTransportURI", "Play"]
+    );
+}
+
+#[test]
+fn a_renderer_misbehaving_on_play_fails_the_stream_within_the_answer_time() {
+    let cases = [
+        Misbehaviour::Status(503),
+        PAST_THE_ANSWER,
+        Misbehaviour::Endless,
+        PAST_THE_HEAD,
+        Misbehaviour::Stall,
+    ];
+
+    for how in cases {
+        let fake = Fake::with(Profile::faulting(PLAY, how));
+        let (backend, _network, sink) = beside_the(&fake);
+
+        let stream = long_stream(&backend, &sink).expect("the address was taken");
+        let began = Instant::now();
+
+        stream.set_active(true).expect("asks to play");
+
+        let heard = events_until(stream.events(), is_failed);
+
+        assert!(
+            heard.last().is_some_and(is_failed),
+            "the stream was never failed: {heard:?}"
+        );
+        assert!(began.elapsed() < GIVEN_UP_BY);
+
+        stream.close().expect("closes");
+    }
+}
+
+#[test]
+fn a_renderer_faulting_pause_still_pauses_the_stream_and_plays_on_when_asked() {
+    let fake = Fake::with(Profile::faulting(
+        On::Action("Pause"),
+        Misbehaviour::Fault(701),
+    ));
+    let (backend, _network, sink) = beside_the(&fake);
+
+    let stream = long_stream(&backend, &sink).expect("the address was taken");
+
+    stream.set_active(true).expect("plays");
+    stream.set_active(false).expect("pauses");
+
+    let paused = events_until(stream.events(), |event| {
+        matches!(
+            event,
+            StreamEvent::StateChanged {
+                to: StreamState::Paused,
+                ..
+            }
+        )
+    });
+
+    stream.set_active(true).expect("plays on");
+    fake.until("the renderer to be played again", |heard| {
+        heard.times("Play") == 2
+    });
+
+    let again = events_until(stream.events(), |event| {
+        matches!(
+            event,
+            StreamEvent::StateChanged {
+                to: StreamState::Streaming,
+                ..
+            }
+        )
+    });
+
+    assert!(paused.last().is_some(), "the pause was never told");
+    assert!(
+        paused
+            .iter()
+            .chain(&again)
+            .all(|event| !is_failed(event) && !is_refused(event)),
+        "a refused pause failed the stream: {paused:?} {again:?}"
+    );
+    assert_eq!(fake.heard.lock().times("Pause"), 1);
+
+    stream.close().expect("closes");
+    fake.until("the renderer to be stopped", |heard| {
+        heard.times("Stop") == 1
+    });
+}
+
+#[test]
+fn a_renderer_faulting_stop_still_has_its_stream_ended_and_withdrawn() {
+    let fake = Fake::with(Profile::faulting(
+        On::Action("Stop"),
+        Misbehaviour::Fault(701),
+    ));
+    let (backend, _network, sink) = beside_the(&fake);
+
+    let stream = long_stream(&backend, &sink).expect("the address was taken");
+
+    stream.set_active(true).expect("plays");
+    fake.until("the renderer to be fetching", |heard| {
+        heard.fetching.is_some()
+    });
+    stream.close().expect("closes");
+    fake.until("the stream to be ended and stopped", |heard| {
+        heard.fetch_ended && heard.times("Stop") == 1
+    });
+
+    let again = long_stream(&backend, &sink).expect("a renderer that faulted a stop is free");
+
+    drop(again);
+}
+
+#[test]
+fn a_renderer_that_stops_answering_where_it_is_ends_the_stream_after_six_misses() {
+    let cases: [(Misbehaviour, Ended); 2] = [
+        (Misbehaviour::Fault(501), |event| {
+            matches!(
+                event,
+                StreamEvent::Refused {
+                    from: StreamState::Streaming,
+                    status: 501,
+                    ..
+                }
+            )
+        }),
+        (Misbehaviour::Status(503), is_failed),
+    ];
+
+    for (how, ended) in cases {
+        let fake = Fake::with(Profile::faulting(On::Action("GetPositionInfo"), how));
+        let (backend, _network, sink) = beside_the(&fake);
+
+        let stream = long_stream(&backend, &sink).expect("the address was taken");
+
+        stream.set_active(true).expect("plays");
+
+        let heard = events_until(stream.events(), ended);
+
+        assert!(
+            heard.last().is_some_and(ended),
+            "the stream never ended: {heard:?}"
+        );
+        assert!(fake.heard.lock().times("GetPositionInfo") >= 6);
+
+        stream.close().expect("closes");
+    }
+}
+
+#[test]
+fn a_renderer_faulting_the_volume_is_asked_without_waiting_and_is_asked_again() {
+    let fake = Fake::with(Profile::faulting(
+        On::Action("SetVolume"),
+        Misbehaviour::Fault(501),
+    ));
+    let (backend, _network, sink) = beside_the(&fake);
+    let half = Volume::new(0.5).expect("a volume").to_gain();
+
+    backend
+        .set_device_volume(sink.id, half)
+        .expect("a refused volume is not the caller's to wait for");
+    fake.until("the volume to reach the renderer", |heard| {
+        heard.times("SetVolume") == 1
+    });
+    fake.heal();
+    backend
+        .set_device_volume(sink.id, half)
+        .expect("turns again");
+    fake.until("the volume to reach the renderer again", |heard| {
+        heard.times("SetVolume") == 2
+    });
+}
+
+#[test]
+fn a_stalled_volume_never_holds_the_caller_and_the_next_turn_goes_through_once_it_gives_up() {
+    let fake = Fake::with(Profile::faulting(
+        On::Action("SetVolume"),
+        Misbehaviour::Stall,
+    ));
+    let (backend, _network, sink) = beside_the(&fake);
+    let half = Volume::new(0.5).expect("a volume").to_gain();
+    let asked_at = Instant::now();
+
+    backend.set_device_volume(sink.id, half).expect("turns");
+    backend.set_device_mute(sink.id, true).expect("mutes");
+
+    assert!(
+        asked_at.elapsed() < SOONER_THAN,
+        "a stalled renderer held the volume's caller for {:?}",
+        asked_at.elapsed()
+    );
+
+    fake.until("the stalled volume to arrive", |heard| {
+        heard.times("SetVolume") == 1
+    });
+    fake.heal();
+    backend
+        .set_device_volume(sink.id, half)
+        .expect("turns again");
+    fake.until(
+        "the volume to arrive once the stall was given up",
+        |heard| heard.times("SetVolume") == 2,
+    );
+}
+
+#[test]
+fn a_seek_on_a_renderer_that_faults_stop_still_offers_a_fresh_address_and_plays_on() {
+    let fake = Fake::with(Profile::faulting(
+        On::Action("Stop"),
+        Misbehaviour::Fault(701),
+    ));
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let tree = Tree::new();
+    let pcm = music(RATE as usize * 3);
+
+    let path = tree.write("song.wav", &wave_file(&pcm));
+    let player = playing_on(&network);
+    let lands_at = Duration::from_secs(2);
+
+    loaded(&player, &path);
+    fake.until("a quarter second to be fetched", |heard| {
+        heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(250))
+    });
+    player
+        .send(Command::Seek(Frames::from_duration(
+            lands_at,
+            SampleRate::HZ_44100,
+        )))
+        .expect("seeks");
+    fake.until("a second address to be fetched", |heard| {
+        heard.offers.len() >= 2 && heard.fetching == heard.offers.last().cloned()
+    });
+    finished(&player);
+
+    let rest = &pcm[pcm_bytes(lands_at + PAST_THE_FADE_IN)..];
+
+    fake.until("the fetch to take the song from where it landed", |heard| {
+        contains(&heard.fetched, rest)
+    });
+
+    let heard = fake.heard.lock();
+    let actions = heard.actions();
+    let stopped = actions
+        .iter()
+        .position(|action| *action == "Stop")
+        .expect("the renderer was asked to stop");
+
+    assert_eq!(
+        actions[stopped..stopped + 3],
+        ["Stop", "SetAVTransportURI", "Play"],
+        "{actions:?}"
+    );
+}
+
+#[test]
+fn a_renderer_faulting_play_leaves_the_player_told_the_device_refused_rather_than_playing_on() {
+    let fake = Fake::with(Profile::faulting(PLAY, Misbehaviour::Fault(701)));
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let tree = Tree::new();
+
+    let path = tree.write("song.wav", &wave_file(&music(RATE as usize)));
+    let player = playing_on(&network);
+    let since = Instant::now();
+
+    loaded(&player, &path);
+
+    let told = loop {
+        match player.events().recv_timeout(LOOKS_EVERY) {
+            Ok(Event::Failed { error, .. } | Event::Waiting { error, .. }) => break error,
+            Ok(Event::QueueFinished) => panic!("a refused Play finished the queue"),
+            Ok(_) | Err(_) => {}
+        }
+
+        assert!(
+            since.elapsed() < WAITED_AT_MOST,
+            "the player was never told"
+        );
+    };
+
+    assert!(
+        matches!(
+            told,
+            EngineError::Sink(SinkError::StreamRefused {
+                op: Operation::Start,
+                status: 701,
+                ..
+            })
+        ),
+        "{told:?}"
+    );
+}
+
+#[test]
+fn a_description_misbehaving_is_refused_as_what_it_did_and_lists_nothing() {
+    let cases: [(Misbehaviour, Expected); 5] = [
+        (Misbehaviour::Fault(401), |error| {
+            matches!(
+                error,
+                UpnpError::Status {
+                    asked: Asked::Description,
+                    status: 500
+                }
+            )
+        }),
+        (Misbehaviour::Status(503), |error| {
+            matches!(
+                error,
+                UpnpError::Status {
+                    asked: Asked::Description,
+                    status: 503
+                }
+            )
+        }),
+        (PAST_THE_ANSWER, |error| {
+            matches!(
+                error,
+                UpnpError::TooLong {
+                    asked: Asked::Description,
+                    at_most: ANSWER_BYTES_AT_MOST
+                }
+            )
+        }),
+        (Misbehaviour::Endless, |error| {
+            matches!(
+                error,
+                UpnpError::TooLong {
+                    asked: Asked::Description,
+                    ..
+                }
+            )
+        }),
+        (PAST_THE_HEAD, |error| {
+            matches!(
+                error,
+                UpnpError::NotHttp {
+                    asked: Asked::Description
+                }
+            )
+        }),
+    ];
+
+    for (how, expected) in cases {
+        let fake = Fake::with(Profile::faulting(On::Description, how));
+        let began = Instant::now();
+
+        let (_deaf, network, located) = reached_by_address(&fake);
+
+        assert!(began.elapsed() < GIVEN_UP_BY, "the description hung");
+        assert!(
+            located.as_ref().err().is_some_and(expected),
+            "{located:?} was not the failure its fault should be"
+        );
+        assert!(network.sinks().is_empty());
+    }
+}
+
+#[test]
+fn a_description_that_never_comes_is_given_up_on_at_the_rounds_deadline_and_lists_nothing() {
+    let fake = Fake::with(Profile::faulting(On::Description, Misbehaviour::Stall));
+
+    let (_deaf, network, took) = round_over(&fake);
+
+    assert!(took < WELL_PAST_A_ROUND, "the round took {took:?}");
+    assert!(network.sinks().is_empty());
+}
+
+#[test]
+fn a_description_of_exactly_the_most_bytes_is_read_and_a_head_under_its_limit_too() {
+    for how in [
+        Misbehaviour::Body(ANSWER_BYTES_AT_MOST),
+        Misbehaviour::Head(HEAD_BYTES_AT_MOST / 2),
+    ] {
+        let fake = Fake::with(Profile::faulting(On::Description, how));
+
+        let (_deaf, network, located) = reached_by_address(&fake);
+
+        assert!(located.is_ok(), "{located:?}");
+        assert_eq!(network.sinks().len(), 1);
+    }
+}
+
+#[test]
+fn a_connection_manager_misbehaving_leaves_the_renderer_listed_as_taking_wave_alone() {
+    let cases = [
+        Misbehaviour::Fault(501),
+        Misbehaviour::Status(503),
+        PAST_THE_ANSWER,
+        Misbehaviour::Endless,
+        PAST_THE_HEAD,
+        Misbehaviour::Stall,
+    ];
+
+    for how in cases {
+        let fake = Fake::with(Profile::faulting(On::Action("GetProtocolInfo"), how));
+
+        let (_deaf, network, took) = round_over(&fake);
+        let sink = the_renderer(&network);
+
+        assert!(took < WELL_PAST_A_ROUND, "the round took {took:?}");
+        assert!(sink.supports(stereo_sixteen()));
+        assert!(
+            !sink.supports(StreamSpec::new(
+                SampleRate::HZ_44100,
+                ChannelLayout::Stereo,
+                SampleFormat::F32
+            )),
+            "a renderer that did not say what it takes was offered more than WAVE"
+        );
+    }
+}
+
+#[test]
+fn a_volume_answer_of_exactly_the_most_bytes_is_read_and_one_byte_more_is_not() {
+    for (how, read) in [
+        (Misbehaviour::Body(ANSWER_BYTES_AT_MOST), true),
+        (PAST_THE_ANSWER, false),
+        (Misbehaviour::Head(HEAD_BYTES_AT_MOST / 2), true),
+        (PAST_THE_HEAD, false),
+        (Misbehaviour::Status(503), false),
+        (Misbehaviour::Fault(501), false),
+    ] {
+        let fake = Fake::with(Profile::faulting(On::Action("GetVolume"), how));
+        let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
+        let sink = the_renderer(&network);
+        let port = sink.port.expect("a renderer names where it is");
+
+        assert_eq!(port.volume.is_some(), read);
+        assert_eq!(port.hardware_volume, HardwareVolume::Always);
+    }
+}
+
+#[test]
+fn a_friendly_name_far_past_its_limit_is_shown_cut_on_a_letter_and_the_renderer_still_plays() {
+    let fake = Fake::with(Profile::named_by(A_LONG_NAME_IN_LETTERS));
+    let (backend, _network, sink) = beside_the(&fake);
+
+    assert_eq!(sink.description.len(), NAME_BYTES_AT_MOST);
+    assert!(sink.description.chars().all(|letter| letter == 'é'));
+    assert_eq!(sink.name, NodeName::new(format!("upnp:{UDN}")));
+
+    let stream = long_stream(&backend, &sink).expect("a long name does not stop the stream");
+
+    stream.set_active(true).expect("plays");
+    fake.until("the renderer to be played", |heard| {
+        heard.times("Play") == 1
+    });
+    stream.close().expect("closes");
 }
