@@ -213,7 +213,7 @@ mod tests {
     const SEARCH: &str = include_str!("../tests/fixtures/lrclib_search.json");
     const WORDED: &str =
         include_str!("../../resonate-lyrics/tests/fixtures/lyricsfile_worded.yaml");
-    const ECHOES_LASTS: Duration = Duration::from_secs(1412);
+    const SLOW_WATER_LASTS: Duration = Duration::from_secs(1412);
 
     fn found() -> Vec<Answer> {
         serde_json::from_str(SEARCH).expect("the fixture parses")
@@ -231,11 +231,11 @@ mod tests {
     #[test]
     fn a_length_past_what_a_duration_holds_is_read_as_no_length_rather_than_a_panic() {
         let answer: Answer = serde_json::from_str(
-            r#"{"trackName": "Echoes", "artistName": "Pink Floyd", "duration": 1e20}"#,
+            r#"{"trackName": "Slow Water", "artistName": "Example Band", "duration": 1e20}"#,
         )
         .expect("an answer");
 
-        assert!(answer.lasts_about(Some(ECHOES_LASTS)));
+        assert!(answer.lasts_about(Some(SLOW_WATER_LASTS)));
     }
 
     #[test]
@@ -243,8 +243,8 @@ mod tests {
         let answer: Answer = serde_json::from_str(GET).expect("the fixture parses");
 
         assert_eq!(answer.id, Some(488_884));
-        assert!(answer.names("Echoes", "Pink Floyd"));
-        assert!(answer.lasts_about(Some(ECHOES_LASTS)));
+        assert!(answer.names("Slow Water", "Example Band"));
+        assert!(answer.lasts_about(Some(SLOW_WATER_LASTS)));
 
         let told = answer.told().expect("the answer carries words");
 
@@ -260,7 +260,7 @@ mod tests {
             lyrics
                 .lines()
                 .iter()
-                .any(|line| line.text == "Overhead, the albatross")
+                .any(|line| line.text == "Beyond the harbour wall")
         );
 
         let plain_only: Answer = serde_json::from_str(
@@ -340,19 +340,28 @@ mod tests {
     fn a_search_answer_is_taken_only_where_it_names_the_track_and_lasts_about_as_long() {
         assert_eq!(found().len(), 5);
 
-        assert!(pick(found(), &asked("Echoes", "Pink Floyd", Some(ECHOES_LASTS))).is_none());
-        assert!(pick(found(), &asked("Echoes", "Pink Floyd", None)).is_none());
+        assert!(
+            pick(
+                found(),
+                &asked("Slow Water", "Example Band", Some(SLOW_WATER_LASTS))
+            )
+            .is_none()
+        );
+        assert!(pick(found(), &asked("Slow Water", "Example Band", None)).is_none());
 
-        let taken = pick(found(), &asked("echoes - ECHOES", "pink floyd", None))
-            .expect("the first is named so");
+        let taken = pick(
+            found(),
+            &asked("slow water - SLOW WATER", "example band", None),
+        )
+        .expect("the first is named so");
 
         assert_eq!(taken.id, Some(18_688_320));
 
         let taken = pick(
             found(),
             &asked(
-                "Echoes - Echoes",
-                "Pink Floyd",
+                "Slow Water - Slow Water",
+                "Example Band",
                 Some(Duration::from_secs(1000)),
             ),
         )
@@ -362,19 +371,29 @@ mod tests {
 
         let taken = pick(
             found(),
-            &asked("Echoes - Echoes", "Pink Floyd", Some(ECHOES_LASTS)),
+            &asked(
+                "Slow Water - Slow Water",
+                "Example Band",
+                Some(SLOW_WATER_LASTS),
+            ),
         )
         .expect("the last folds to the same name and lasts as long");
 
         assert_eq!(taken.id, Some(22_369_384));
 
-        assert!(pick(found(), &asked("Echoes - Echoes", "Roger Waters", None)).is_none());
+        assert!(
+            pick(
+                found(),
+                &asked("Slow Water - Slow Water", "Another Band", None)
+            )
+            .is_none()
+        );
         assert!(
             pick(
                 found(),
                 &asked(
-                    "Echoes - Echoes",
-                    "Pink Floyd",
+                    "Slow Water - Slow Water",
+                    "Example Band",
                     Some(Duration::from_secs(5000))
                 )
             )
@@ -385,19 +404,23 @@ mod tests {
     fn hit(id: u64, lasts: f64, synced: bool) -> Answer {
         Answer {
             id: Some(id),
-            track_name: Some("Time".to_owned()),
-            artist_name: Some("Pink Floyd".to_owned()),
+            track_name: Some("Small Hours".to_owned()),
+            artist_name: Some("Example Band".to_owned()),
             duration: Some(lasts),
             instrumental: false,
-            plain: Some("Ticking away".to_owned()),
-            synced: synced.then(|| "[00:01.00] Ticking away".to_owned()),
+            plain: Some("Counting the hours".to_owned()),
+            synced: synced.then(|| "[00:01.00] Counting the hours".to_owned()),
             lyricsfile: None,
         }
     }
 
     #[test]
     fn a_synced_hit_is_taken_over_an_earlier_plain_one_and_the_nearest_in_length_among_equals() {
-        let wanted = asked("Time", "Pink Floyd", Some(Duration::from_secs(413)));
+        let wanted = asked(
+            "Small Hours",
+            "Example Band",
+            Some(Duration::from_secs(413)),
+        );
 
         let taken = pick(vec![hit(1, 413.0, false), hit(2, 420.0, true)], &wanted)
             .expect("both are acceptable");
@@ -426,7 +449,7 @@ mod tests {
 
         let taken = pick(
             vec![hit(1, 413.0, true), hit(2, 413.0, true)],
-            &asked("Time", "Pink Floyd", None),
+            &asked("Small Hours", "Example Band", None),
         )
         .expect("both are acceptable");
 

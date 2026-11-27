@@ -598,10 +598,10 @@ mod tests {
 
         let line = &lyrics.lines()[0];
 
-        assert_eq!(line.text, "I used to rule the world");
+        assert_eq!(line.text, "We used to chart the stars");
         assert_eq!(
             texts(line),
-            ["I ", "used ", "to ", "rule ", "the ", "world"]
+            ["We ", "used ", "to ", "chart ", "the ", "stars"]
         );
         assert_eq!(line.at, Some(Duration::from_millis(12_741)));
         assert_eq!(line.until, Some(Duration::from_millis(16_514)));
@@ -619,7 +619,7 @@ mod tests {
         let together = lyrics
             .lines()
             .iter()
-            .find(|line| line.text == "'Cause you already know what you mean to me")
+            .find(|line| line.text == "Since you already know the way that I feel")
             .expect("a line sung together");
 
         assert_eq!(together.voice, Voice::One);
@@ -628,10 +628,10 @@ mod tests {
         let goodbye = lyrics
             .lines()
             .iter()
-            .find(|line| line.text.ends_with("say goodbye"))
+            .find(|line| line.text.ends_with("drift apart"))
             .expect("a line with a word sung in two syllables");
 
-        assert!(texts(goodbye).ends_with(&["say ", "good", "bye"]));
+        assert!(texts(goodbye).ends_with(&["drift ", "a", "part"]));
     }
 
     #[test]

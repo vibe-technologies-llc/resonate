@@ -126,8 +126,8 @@ mod tests {
 
     fn asked(length: Option<u64>) -> LyricsAsked {
         LyricsAsked {
-            title: "Viva la Vida".to_owned(),
-            artist: "Coldplay".to_owned(),
+            title: "Small Hours".to_owned(),
+            artist: "Example Artist".to_owned(),
             album: None,
             length: length.map(Duration::from_secs),
         }
@@ -146,7 +146,7 @@ mod tests {
         assert!(told.synced);
         assert!(
             told.text
-                .starts_with("[00:12.74]I used to rule the world\n")
+                .starts_with("[00:12.74]We used to chart the stars\n")
         );
 
         let document = told
