@@ -40,7 +40,7 @@ use super::{
         SETTINGS_CATEGORIES, SETTINGS_CATEGORIES_SPELT_BEFORE, document, named_on_the_command_line,
         parse, settings_category,
     },
-    writing::write,
+    writing::{edit, write},
     *,
 };
 use crate::{
