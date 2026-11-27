@@ -42,7 +42,18 @@ Linux, a Windows or Mac host) it is left out.
   folder holds it, adds every workspace package depending on one (`cargo tree --invert`, dev
   edges included), and lints and tests those; `RULES_AND_COMMENTS` is always tested, since the
   comment and rules-name checks read the whole tree. A root manifest, the lock,
-  `rust-toolchain.toml` or `.cargo/` is every package. The binary's feature lines come only with
+  `rust-toolchain.toml`, `.cargo/` or `.config/` is every package. **A file no member holds goes to
+  the crates whose tests read it**: `READINGS` is a table of path prefix to readers, the longest
+  prefix naming a file deciding (`packaging` is `resonate`, `resonate-cli`, `resonate-server` and
+  `resonate-ui`; `.github` is `resonate`; `fuzz/seeds/<name>` the one crate replaying that folder;
+  `.claude/rules` and `ios/Resonate/Info.plist` the phones' boundary; `docs` and the root's prose
+  nobody), and a file no prefix names is every package, so a new top-level folder is slow, never
+  skipped. The table rots only if a test reads a path it does not name, so two tests hold it:
+  `every_file_the_repository_tracks_is_placed_by_an_owner_a_reader_or_a_wide_rule` and
+  `every_path_a_crate_reads_above_itself_selects_that_crate`, which scans every crate's sources
+  for a `../../<top-level folder>` path and fails where the reading crate is not selected by it.
+  A crate reading a sibling crate's files (`include_str!("../../resonate-eq/…")`) is covered by the
+  dependency edge instead. The binary's feature lines come only with
   the binary, and `SYNC`'s line only with `resonate-sync`.
 - **Output** is one line a step, each kept whole in `target/xtask/NN-<step>.log` (cleared at the
   start of a run, under `CARGO_TARGET_DIR` where set); a failure shows its last

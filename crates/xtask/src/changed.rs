@@ -10,14 +10,142 @@ use std::{
 
 use crate::{
     error::{Error, Query},
-    plan::{DSP_LAB, DSP_LAB_FOLDER},
+    plan::{DSP_LAB, DSP_LAB_FOLDER, RULES_AND_COMMENTS},
     run,
 };
 
 const MANIFEST: &str = "Cargo.toml";
 const MEMBERS_OPEN: &str = "members = [";
 const WORKSPACE_WIDE_FILES: [&str; 3] = ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"];
-const WORKSPACE_WIDE_FOLDER: &str = ".cargo/";
+const WORKSPACE_WIDE_FOLDERS: [&str; 2] = [".cargo/", ".config/"];
+
+const RESONATE: &str = "resonate";
+const RESONATE_CLI: &str = "resonate-cli";
+const RESONATE_CODEC: &str = "resonate-codec";
+const RESONATE_MOBILE: &str = "resonate-mobile";
+const RESONATE_MUSICBRAINZ: &str = "resonate-musicbrainz";
+const RESONATE_SERVER: &str = "resonate-server";
+const RESONATE_SYNC: &str = "resonate-sync";
+const RESONATE_UI: &str = "resonate-ui";
+const RESONATE_UPNP: &str = "resonate-upnp";
+
+struct Reading {
+    prefix: &'static str,
+    readers: &'static [&'static str],
+}
+
+const READINGS: [Reading; 26] = [
+    Reading {
+        prefix: "packaging",
+        readers: &[
+            RESONATE,
+            RESONATE_CLI,
+            RESONATE_SERVER,
+            RESONATE_UI,
+            RULES_AND_COMMENTS,
+        ],
+    },
+    Reading {
+        prefix: ".github",
+        readers: &[RESONATE, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: ".claude",
+        readers: &[RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: ".claude/rules",
+        readers: &[RESONATE_MOBILE, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: ".claude/skills",
+        readers: &[RESONATE, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "fuzz",
+        readers: &[RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "fuzz/seeds",
+        readers: &[RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "fuzz/seeds/probe",
+        readers: &[RESONATE_CODEC, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "fuzz/seeds/sofa",
+        readers: &[RESONATE_CODEC, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "fuzz/seeds/replication",
+        readers: &[RESONATE_MUSICBRAINZ, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "fuzz/seeds/sync",
+        readers: &[RESONATE_SYNC, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "fuzz/seeds/dlna",
+        readers: &[RESONATE_UPNP, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "android",
+        readers: &[RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "ios",
+        readers: &[RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "ios/Resonate/Info.plist",
+        readers: &[RESONATE_MOBILE, RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "rust-formatter.toml",
+        readers: &[RULES_AND_COMMENTS],
+    },
+    Reading {
+        prefix: "docs",
+        readers: &[],
+    },
+    Reading {
+        prefix: "README.md",
+        readers: &[],
+    },
+    Reading {
+        prefix: "CLAUDE.md",
+        readers: &[],
+    },
+    Reading {
+        prefix: "AGENTS.md",
+        readers: &[],
+    },
+    Reading {
+        prefix: "CONTRIBUTING.md",
+        readers: &[],
+    },
+    Reading {
+        prefix: "SECURITY.md",
+        readers: &[],
+    },
+    Reading {
+        prefix: "LICENSE",
+        readers: &[],
+    },
+    Reading {
+        prefix: "COPYRIGHT",
+        readers: &[],
+    },
+    Reading {
+        prefix: ".gitignore",
+        readers: &[],
+    },
+    Reading {
+        prefix: ".gitattributes",
+        readers: &[],
+    },
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Member {
@@ -109,27 +237,47 @@ fn package_name(manifest: &str) -> Option<&str> {
 }
 
 pub fn owners(files: &BTreeSet<String>, members: &[Member]) -> Touch {
-    if files.iter().any(|file| is_workspace_wide(file)) {
-        return Touch::Everything;
+    let mut touched = BTreeSet::new();
+
+    for file in files {
+        if is_workspace_wide(file) {
+            return Touch::Everything;
+        }
+
+        if let Some(package) = owner(file, members).or_else(|| lab_owner(file)) {
+            touched.insert(package.to_owned());
+        } else if let Some(readers) = readers_of(file) {
+            touched.extend(readers.iter().map(|reader| (*reader).to_owned()));
+        } else {
+            return Touch::Everything;
+        }
     }
 
-    Touch::These(
-        files
-            .iter()
-            .filter_map(|file| owner(file, members).or_else(|| lab_owner(file)))
-            .map(str::to_owned)
-            .collect(),
-    )
+    Touch::These(touched)
 }
 
 fn is_workspace_wide(file: &str) -> bool {
-    WORKSPACE_WIDE_FILES.contains(&file) || file.starts_with(WORKSPACE_WIDE_FOLDER)
+    WORKSPACE_WIDE_FILES.contains(&file)
+        || WORKSPACE_WIDE_FOLDERS
+            .iter()
+            .any(|folder| file.starts_with(folder))
+}
+
+fn readers_of(file: &str) -> Option<&'static [&'static str]> {
+    READINGS
+        .iter()
+        .filter(|reading| holds(reading.prefix, file))
+        .max_by_key(|reading| reading.prefix.len())
+        .map(|reading| reading.readers)
+}
+
+fn holds(folder: &str, file: &str) -> bool {
+    file.strip_prefix(folder)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
 fn lab_owner(file: &str) -> Option<&'static str> {
-    file.strip_prefix(DSP_LAB_FOLDER)
-        .is_some_and(|rest| rest.starts_with('/'))
-        .then_some(DSP_LAB)
+    holds(DSP_LAB_FOLDER, file).then_some(DSP_LAB)
 }
 
 fn owner<'a>(file: &str, members: &'a [Member]) -> Option<&'a str> {
