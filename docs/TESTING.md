@@ -133,6 +133,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.18.1] Fail the layering job on a misspelled banned dependency. **Low, builder.** `check`
+  greps the captured tree for each name it refuses (`.github/workflows/ci.yml`, the `layering` job),
+  so `refuse resonate-core nosuchdep` passes: a typo or a renamed crate in a refusal enforces
+  nothing. Hold each refused name to a package `cargo metadata` knows. Done when a refusal naming no
+  package fails the job.
 - [S · 0.18.1] Give the library's scan a seam to hold it. **Low, builder.** The scan walks a
   tree and reads each file with nothing a test can gate (`crates/resonate-library/src/scan.rs`), so
   MCP's drain test holds a lookup instead (`crates/resonate-mcp/tests/server.rs`) and a scan
@@ -162,13 +167,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   hostile tag text, a NUL, markup, a newline or 10 kB (`crates/resonate-mcp/tests/server.rs:72-90`,
   `bus.rs:148-180`). Record both stand-ins' calls and parameterise the fixtures. Done when pause
   releases the inhibit and a NUL title is notified, in tests.
-- [M · 0.18.1] Make the layering job fail when `cargo tree` does. **Medium, builder.** Its loops end
-  `|| true` (`.github/workflows/ci.yml:144`, `:153`, `:163`, `:173`, `:217`, `:232`, `:239`, `:251`,
-  `:258`, `:276`, `:280`), which under `pipefail` swallows a failing `cargo tree`, and `check
-  "$(held_by ...)"` (`:207`, `:212`, `:215`, `:230`, `:288-304`) is not caught by `set -e`, so a
-  renamed crate or a target that stops resolving enforces nothing and passes. Capture `held_by` into
-  a variable first and keep `|| true` on the `grep` alone. Done when a nonexistent crate fails the
-  job.
 - [S · 0.18.1] Walk every commented config the tree holds for comments. **Low, builder.** `ROOTS`
   leaves out `.cargo/` and `.config/` (`crates/resonate-words-build/tests/comments.rs:3-12`), and
   `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
