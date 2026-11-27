@@ -269,6 +269,9 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
 - **A notification is keyed on what it *says*.** The cover lands a moment after the track starts:
   the second telling replaces the first under the server's `replaces_id`; teardown closes it and
   waits `FAREWELL` (500 ms). Body escaped only where `GetCapabilities` answers `body-markup`.
+  `notify::shown` fits each tag before it chooses: a title, artist or album left empty once
+  controls and a NUL are stripped is absent, so the summary falls back to the file's stem and the
+  body opens on the line that remains.
 - **Idle inhibit is not a setting; a notification is.** A desktop mutes an app by the
   `desktop-entry` hint (blunt for a player otherwise wanted), so `Host::notifies` sits beside
   `Host::attended`, weighed into `Telling::of(attended, notifies)`; a track passed over is still

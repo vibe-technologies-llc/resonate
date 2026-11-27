@@ -4333,6 +4333,7 @@ fn hostile_tracks() -> Vec<Tagged> {
         Tagged::new("a\0b", Some("Simon & Garfunkel <live>"), None),
         Tagged::new("<b>Tom & Jerry</b>", Some("\0"), Some("&amp;")),
         Tagged::new("one\ntwo\r\nthree", None, None),
+        Tagged::new("\0", Some("\0"), Some("Low Tide")),
         Tagged::new(
             &"x".repeat(10_000),
             Some(&format!("a{}", "\u{e9}".repeat(5_000))),
@@ -4391,20 +4392,27 @@ fn what_a_notification_says_is_the_tags_text_fitted_and_each_one_replaces_the_la
     let long_body = long_artist_body();
 
     assert_eq!(
-        summaries[..4],
-        ["Echoes", "ab", "<b>Tom & Jerry</b>", "one\ntwo\r\nthree"]
+        summaries[..5],
+        [
+            "Echoes",
+            "ab",
+            "<b>Tom & Jerry</b>",
+            "one\ntwo\r\nthree",
+            "4"
+        ]
     );
-    assert_eq!(summaries[4], "x".repeat(4 * 1024));
+    assert_eq!(summaries[5], "x".repeat(4 * 1024));
     assert_eq!(
-        bodies[..4],
+        bodies[..5],
         [
             "Pink Floyd\nMeddle",
             "Simon & Garfunkel <live>",
-            "\n&amp;",
-            ""
+            "&amp;",
+            "",
+            "Low Tide"
         ]
     );
-    assert_eq!(bodies[4], long_body);
+    assert_eq!(bodies[5], long_body);
     assert!(!told.iter().any(|raised| raised.summary.contains('\0')));
     assert!(!told.iter().any(|raised| raised.body.contains('\0')));
 
@@ -4412,7 +4420,7 @@ fn what_a_notification_says_is_the_tags_text_fitted_and_each_one_replaces_the_la
 
     assert_eq!(
         replaced,
-        [0, RAISED, RAISED + 1, RAISED + 2, RAISED + 3],
+        [0, RAISED, RAISED + 1, RAISED + 2, RAISED + 3, RAISED + 4],
         "each notification names the one before it"
     );
 }
@@ -4431,8 +4439,10 @@ fn a_body_is_escaped_only_for_a_server_that_says_it_reads_markup() {
     assert_eq!(told[1].summary, "ab");
     assert_eq!(told[1].body, "Simon &amp; Garfunkel &lt;live&gt;");
     assert_eq!(told[2].summary, "<b>Tom & Jerry</b>");
-    assert_eq!(told[2].body, "\n&amp;amp;");
-    assert_eq!(told[4].body, long_artist_body());
+    assert_eq!(told[2].body, "&amp;amp;");
+    assert_eq!(told[4].summary, "4");
+    assert_eq!(told[4].body, "Low Tide");
+    assert_eq!(told[5].body, long_artist_body());
 }
 
 #[test]

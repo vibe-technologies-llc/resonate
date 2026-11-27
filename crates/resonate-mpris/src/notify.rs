@@ -1,7 +1,7 @@
 use resonate_core::MediaLocation;
 use resonate_engine::{Command, TagSet};
 
-use crate::words;
+use crate::{fitted::field, words};
 
 pub(crate) const PREVIOUS: &str = "previous";
 pub(crate) const PLAY_PAUSE: &str = "play-pause";
@@ -31,10 +31,8 @@ impl Shown {
 }
 
 pub(crate) fn shown(tags: &TagSet, location: &MediaLocation, art: Option<String>) -> Option<Shown> {
-    let summary = tags
-        .title
-        .clone()
-        .or_else(|| location.stem().map(|stem| stem.into_owned()))?;
+    let summary = shown_text(tags.title.as_deref())
+        .or_else(|| location.stem().and_then(|stem| shown_text(Some(&stem))))?;
 
     Some(Shown {
         summary,
@@ -43,10 +41,17 @@ pub(crate) fn shown(tags: &TagSet, location: &MediaLocation, art: Option<String>
     })
 }
 
+fn shown_text(text: Option<&str>) -> Option<String> {
+    text.map(field).filter(|text| !text.is_empty())
+}
+
 fn underneath(tags: &TagSet) -> String {
-    match (tags.artist.as_deref(), tags.album.as_deref()) {
+    match (
+        shown_text(tags.artist.as_deref()),
+        shown_text(tags.album.as_deref()),
+    ) {
         (Some(artist), Some(album)) => format!("{artist}\n{album}"),
-        (Some(alone), None) | (None, Some(alone)) => alone.to_owned(),
+        (Some(alone), None) | (None, Some(alone)) => alone,
         (None, None) => String::new(),
     }
 }
@@ -94,6 +99,23 @@ mod tests {
 
         assert_eq!(shown.summary, "Echoes");
         assert_eq!(shown.body, "");
+    }
+
+    #[test]
+    fn text_made_only_of_controls_is_told_as_if_it_were_absent() {
+        let hollow = shown(
+            &tagged(Some("\0"), Some("\u{1}\0"), Some("Low Tide")),
+            &echoes(),
+            None,
+        )
+        .expect("a file names itself");
+        let nameless = shown(&tagged(Some("\0"), Some("\0"), Some("\0")), &echoes(), None)
+            .expect("a file names itself");
+
+        assert_eq!(hollow.summary, "Echoes");
+        assert_eq!(hollow.body, "Low Tide");
+        assert_eq!(nameless.summary, "Echoes");
+        assert_eq!(nameless.body, "");
     }
 
     #[test]
