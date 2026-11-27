@@ -454,6 +454,41 @@ mod tests {
     }
 
     #[test]
+    fn one_held_listen_and_one_unmatched_are_said_in_the_singular_in_every_language() {
+        let said = |language| {
+            resonate_words::speak(language);
+
+            [
+                words::history::brought_in(1, 1, "Last.fm", 1),
+                words::history::brought_in_from_file(1, "listens.jsonl", 1, 1),
+                words::history::brought_in(2, 2, "Last.fm", 2),
+                words::history::brought_in_from_file(2, "listens.jsonl", 2, 2),
+            ]
+        };
+
+        let [
+            english_one,
+            english_file_one,
+            english_many,
+            english_file_many,
+        ] = said(resonate_words::Language::English);
+        let [french_one, french_file_one, french_many, french_file_many] =
+            said(resonate_words::Language::French);
+
+        assert!(english_one.contains("1 was held already, and 1 names no song"));
+        assert!(english_file_one.contains("1 was held already, and 1 names no song"));
+        assert!(english_many.contains("2 were held already, and 2 name no song"));
+        assert!(english_file_many.contains("2 were held already, and 2 name no song"));
+
+        assert!(french_one.contains("1 figurait déjà"));
+        assert!(french_one.contains("1 ne correspond à aucun morceau"));
+        assert!(french_file_one.contains("1 écoute importée de listens.jsonl"));
+        assert!(french_many.contains("2 figuraient déjà"));
+        assert!(french_many.contains("2 ne correspondent à aucun morceau"));
+        assert!(french_file_many.contains("2 écoutes importées de listens.jsonl"));
+    }
+
+    #[test]
     fn a_file_and_a_service_are_two_ways_in_never_both_and_a_user_belongs_to_a_service() {
         let by_file = history_args(&["--import-file", "listenbrainz"]);
         let by_service = history_args(&["--import", "listenbrainz"]);

@@ -847,6 +847,83 @@ fn the_history_is_brought_in_from_a_file_and_exported_whole_and_a_bad_line_or_ta
     assert!(written.contains("\"track_name\":\"Evening\""), "{written}");
 }
 
+#[test]
+fn a_history_import_says_one_held_listen_and_one_unmatched_in_the_singular_and_more_in_the_plural()
+{
+    let home = Home::new("history-singular", OFFLINE);
+
+    home.holding(
+        "evening.wav",
+        &tagged_wave(&[(TITLE, "Evening"), (ARTIST, "Ada"), (ALBUM, "First Light")]),
+    );
+    home.scanned();
+
+    let once = home.0.join("once.jsonl");
+    let twice = home.0.join("twice.jsonl");
+
+    let evening = |second: u64| {
+        format!(
+            "{{\"listened_at\":{second},\"track_metadata\":{{\"artist_name\":\"Ada\",\"track_name\":\"Evening\",\"release_name\":\"First Light\"}}}}\n"
+        )
+    };
+    let elsewhere = |second: u64| {
+        format!(
+            "{{\"listened_at\":{second},\"track_metadata\":{{\"artist_name\":\"Bo\",\"track_name\":\"Nowhere\",\"release_name\":\"Lost\"}}}}\n"
+        )
+    };
+
+    fs::write(
+        &once,
+        [evening(1_700_000_000), elsewhere(1_700_000_100)].concat(),
+    )
+    .expect("two listens");
+    fs::write(
+        &twice,
+        [
+            evening(1_700_000_000),
+            evening(1_700_000_200),
+            elsewhere(1_700_000_100),
+            elsewhere(1_700_000_300),
+        ]
+        .concat(),
+    )
+    .expect("four listens");
+
+    let first = home
+        .ran([
+            OsStr::new("history"),
+            OsStr::new("--import-file"),
+            once.as_os_str(),
+        ])
+        .succeeded();
+    let second = home
+        .ran([
+            OsStr::new("history"),
+            OsStr::new("--import-file"),
+            once.as_os_str(),
+        ])
+        .succeeded();
+    let more = home
+        .ran([
+            OsStr::new("history"),
+            OsStr::new("--import-file"),
+            twice.as_os_str(),
+        ])
+        .succeeded();
+
+    first.says("0 were held already, and 1 names no song held here");
+    second.says(&format!(
+        "brought in 0 from {}: 1 was held already, and 1 names no song held here",
+        once.display()
+    ));
+    more.says(&format!(
+        "brought in 1 from {}: 1 was held already, and 2 name no song held here",
+        twice.display()
+    ));
+
+    assert!(!second.out.contains("1 were held"), "{}", second.out);
+}
+
 #[cfg(feature = "sync")]
 #[test]
 fn a_shared_name_is_kept_where_sync_runs_on_the_network_alone_and_sharing_needs_sync_on() {
