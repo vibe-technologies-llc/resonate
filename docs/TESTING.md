@@ -87,10 +87,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   of `resonate-eq` skips unless `RESONATE_AUTOEQ_INDEX` names the whole index
   (`crates/resonate-eq/tests/whole_index.rs:5-11`). Commit a few hundred index lines with the misses
   and run them by default. Done when the suggestion test runs without the variable.
-- [S · 0.18.1] Prove that a write against a broken settings file leaves it untouched. **Low,
-  builder.** No test of `crates/resonate/src/config/tests/writing.rs` writes a setting against a
-  file that does not parse. Add it. Done when the file is byte for byte the same after the refused
-  write.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
