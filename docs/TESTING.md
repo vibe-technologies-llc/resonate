@@ -83,10 +83,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   quadratic LRC scan nor deep TTML nesting can appear. Document `-max_len=262144`, add a dictionary
   of stamps and elements, and assert words within the input's length. Done when the target finds the
   TTML depth overflow before its fix.
-- [S · 0.18.1] Run AutoEq's index matching by default. **Low, builder.** The only integration test
-  of `resonate-eq` skips unless `RESONATE_AUTOEQ_INDEX` names the whole index
-  (`crates/resonate-eq/tests/whole_index.rs:5-11`). Commit a few hundred index lines with the misses
-  and run them by default. Done when the suggestion test runs without the variable.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
@@ -140,11 +136,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   so `refuse resonate-core nosuchdep` passes: a typo or a renamed crate in a refusal enforces
   nothing. Hold each refused name to a package `cargo metadata` knows. Done when a refusal naming no
   package fails the job.
-- [M · 0.18.1] Test the portal's trash where it can fail. **Medium, builder.** Both portal tests
-  skip without `xdg-desktop-portal`, `bwrap` and `xdg-dbus-proxy`, none of which CI installs
-  (`crates/resonate-mpris/tests/trash.rs:85-89`, `:152-157`, `.github/workflows/ci.yml:19-22`), and
-  they assert only success. Install them in CI and add a refusal case asserting the `Trashing`
-  variant. Done when a refused trash is tested.
 - [M · 0.18.1] Stand in for the portal's inhibit and record what notifications say. **Medium,
   builder.** No test stands in for `org.freedesktop.portal.Desktop`, so holding and releasing the
   idle inhibit is proved only by `Gripping::toward` (`crates/resonate-mpris/src/idle.rs:115-128`);
@@ -153,11 +144,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   hostile tag text, a NUL, markup, a newline or 10 kB (`crates/resonate-mcp/tests/server.rs:72-90`,
   `bus.rs:148-180`). Record both stand-ins' calls and parameterise the fixtures. Done when pause
   releases the inhibit and a NUL title is notified, in tests.
-- [S · 0.18.1] Walk every commented config the tree holds for comments. **Low, builder.** `ROOTS`
-  leaves out `.cargo/` and `.config/` (`crates/resonate-words-build/tests/comments.rs:3-12`), and
-  `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
-  (`crates/resonate-words-build/src/comments.rs:26-38`). Add them and update `rust-style.md`'s list.
-  Done when `# x` in `android/gradle.properties` fails the test.
 - [S · 0.18.1] Catch a catalog call that passes its values in the sentence's order. **Low,
   builder.** `resonate-words-build` writes each message's function with its parameters in
   alphabetical order, so a call passing them in the order the sentence says them still compiles
