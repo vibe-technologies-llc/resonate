@@ -169,13 +169,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   renamed crate or a target that stops resolving enforces nothing and passes. Capture `held_by` into
   a variable first and keep `|| true` on the `grep` alone. Done when a nonexistent crate fails the
   job.
-- [M · 0.18.1] Select the tests that read files outside their crate in `--changed`. **Medium,
-  builder.** `owner()` maps a changed file to the member holding it
-  (`crates/xtask/src/changed.rs:112-146`), so a change under `packaging/`, `.github/`, `fuzz/seeds/`
-  or `docs/` selects only `resonate-words-build`, while `resonate`, `resonate-server`,
-  `resonate-codec`, `resonate-sync` and `resonate-musicbrainz` have tests reading them. Map those
-  paths to their readers, or treat an unowned file as workspace-wide. Done when touching
-  `packaging/resonate.spec` selects `resonate`.
 - [S · 0.18.1] Walk every commented config the tree holds for comments. **Low, builder.** `ROOTS`
   leaves out `.cargo/` and `.config/` (`crates/resonate-words-build/tests/comments.rs:3-12`), and
   `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
