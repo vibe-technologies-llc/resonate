@@ -70,16 +70,19 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
+- [S · 0.18.1] Replace the inline lines of a real song in tests. **Low, builder.** The lyric
+  fixtures are invented now, but tests across `resonate-codec` (`sylt.rs`, `decoder.rs`,
+  `writing.rs`), `resonate-library` (`tests/finding.rs`, `stored.rs`, `retag.rs`, `synced.rs`,
+  `organise.rs`, `src/elsewhere.rs`), `resonate-lyrics` (`lrc.rs`, `sidecar.rs`), `resonate-sync`
+  (`ledger`, `wire.rs`, `tests/nearby.rs`), `resonate-online/tests/live.rs` and
+  `fuzz/seeds/lrc/sheet.lrc` still write a real song's line, title and artist inline. Write invented
+  ones of the same shape. Done when no test or seed quotes a real song.
 - [M · 0.18.1] Fuzz the lyric readers at the sizes their costs appear. **Medium, builder.** `lrc`,
   `ttml` and `lyricsfile` check only for a panic (`fuzz/fuzz_targets/lrc.rs:5-7`), their seeds are
   under 500 bytes and the documented run leaves `-max_len` at libFuzzer's 4 KiB, where neither the
   quadratic LRC scan nor deep TTML nesting can appear. Document `-max_len=262144`, add a dictionary
   of stamps and elements, and assert words within the input's length. Done when the target finds the
   TTML depth overflow before its fix.
-- [S · 0.18.1] Replace the lyric fixtures holding real songs. **Low, builder.**
-  `crates/resonate-lyrics/tests/fixtures/ttml_duet.ttml` and `ttml_worded.ttml` are verbatim service
-  answers carrying a real song's whole lyrics and its songwriters' names. Write invented lyrics and
-  names of the same structure. Done when no fixture names a real songwriter.
 - [S · 0.18.1] Run AutoEq's index matching by default. **Low, builder.** The only integration test
   of `resonate-eq` skips unless `RESONATE_AUTOEQ_INDEX` names the whole index
   (`crates/resonate-eq/tests/whole_index.rs:5-11`). Commit a few hundred index lines with the misses
