@@ -205,7 +205,11 @@ words.
 - **A prose literal fails its crate's test**: `resonate_words_build::prose_in(src, PROPER)` walks a
   crate's sources and answers each string literal that reads as words (a capitalised word, or a word
   beside a space once `{…}` placeholders are taken out) outside tests, attributes, panics, asserts,
-  `expect` and `tracing` calls. `resonate-ui`'s is `every_word_the_window_shows_is_said_through_its_catalog`
+  `expect` and `tracing` calls. A lone lowercase word (`none`, `faststart`: two letters or more, no
+  placeholder, no space) is prose only inside the arguments of `said!`, `said_on!`, `told!`, the
+  `print` and `write` macros or a `table.push(` (`SAID_TO_A_LISTENER`), where it reaches a listener
+  whole; a key, a match arm or a protocol string elsewhere stays code
+  (`a_lone_lowercase_word_is_prose_only_where_it_reaches_a_listener`). `resonate-ui`'s is `every_word_the_window_shows_is_said_through_its_catalog`
   (`views/audit.rs`): `PROPER` names the literals that are names, `NOT_WORDS` the files that hold
   none (markup, font families; a file mixing markup and words keeps its markup in a module of its
   own, as `wrapped_card/markup.rs`), `ONLY_UNDER_TEST` the test modules kept in files of their own (`driven.rs`, `models/tests.rs`, `views/browser/tests.rs` and the files under `views/browser/tests/`, `views/root/tests.rs`), and `STILL_TO_MOVE` the files not yet moved, which must shrink

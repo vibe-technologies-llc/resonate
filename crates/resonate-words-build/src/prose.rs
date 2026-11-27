@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs,
+    ops::Range,
     path::{Path, PathBuf},
 };
 
@@ -26,6 +27,19 @@ const SAID_FOR_THE_LOG: [&str; 19] = [
     ".expect_err(",
     "tracing::",
     "#[",
+];
+
+const SAID_TO_A_LISTENER: [&str; 10] = [
+    "said!(",
+    "said_on!(",
+    "told!(",
+    "println!(",
+    "print!(",
+    "eprintln!(",
+    "eprint!(",
+    "writeln!(",
+    "write!(",
+    "table.push(",
 ];
 
 const ONLY_UNDER_TEST: [&str; 2] = ["#[cfg(test)]", "#[cfg(all(test"];
@@ -93,12 +107,17 @@ pub fn prose_in(root: &Path, proper: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Pr
 pub fn prose_of(source: &str) -> Vec<Prose> {
     let lexed = lexed(source);
     let unread = lines_unread(&lexed.code);
+    let spoken = spans_said_to_a_listener(&lexed.code.join("\n"));
 
     lexed
         .literals
         .into_iter()
         .filter(|literal| !unread.get(literal.line).copied().unwrap_or(false))
-        .filter(|literal| reads_as_prose(&literal.text))
+        .filter(|literal| {
+            reads_as_prose(&literal.text)
+                || (is_a_lone_word(&literal.text)
+                    && spoken.iter().any(|span| span.contains(&literal.at)))
+        })
         .map(|literal| Prose {
             line: literal.line + 1,
             text: literal.text,
@@ -123,6 +142,58 @@ pub fn reads_as_prose(text: &str) -> bool {
     let spaced = bare.chars().any(char::is_whitespace) && !words.is_empty();
 
     capitalised || spaced
+}
+
+pub fn is_a_lone_word(text: &str) -> bool {
+    let trimmed = text.trim();
+    let letters = trimmed
+        .chars()
+        .filter(|letter| letter.is_alphabetic())
+        .count();
+
+    letters >= 2
+        && trimmed
+            .chars()
+            .all(|letter| letter.is_lowercase() || letter == '-' || letter == '\'')
+        && trimmed.starts_with(char::is_lowercase)
+        && trimmed.ends_with(char::is_lowercase)
+}
+
+fn spans_said_to_a_listener(code: &str) -> Vec<Range<usize>> {
+    let mut spans = Vec::new();
+
+    for marker in SAID_TO_A_LISTENER {
+        for (opened, _) in code.match_indices(marker) {
+            let named_apart = code[..opened]
+                .chars()
+                .next_back()
+                .is_none_or(|before| !before.is_alphanumeric() && before != '_');
+
+            if !named_apart {
+                continue;
+            }
+
+            let from = opened + marker.len();
+            let mut depth = 1usize;
+            let mut end = code.len();
+
+            for (at, letter) in code[from..].char_indices() {
+                match letter {
+                    '(' | '[' => depth += 1,
+                    ')' | ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = from + at;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            spans.push(from..end);
+        }
+    }
+    spans
 }
 
 fn without_placeholders(text: &str) -> String {
@@ -156,6 +227,7 @@ fn without_placeholders(text: &str) -> String {
 
 struct Literal {
     line: usize,
+    at: usize,
     text: String,
 }
 
@@ -218,7 +290,11 @@ pub(crate) fn lexed(source: &str) -> Lexed {
             '"' => {
                 let (text, end, lines) = quoted(&letters, at + 1);
 
-                literals.push(Literal { line, text });
+                literals.push(Literal {
+                    line,
+                    at: code.len(),
+                    text,
+                });
                 code.push_str("\"\"");
                 push_lines(&mut code, lines);
                 line += lines;
@@ -227,7 +303,11 @@ pub(crate) fn lexed(source: &str) -> Lexed {
             'r' if !before_is_word && matches!(next, Some('"' | '#')) => {
                 match raw(&letters, at + 1) {
                     Some((text, end, lines)) => {
-                        literals.push(Literal { line, text });
+                        literals.push(Literal {
+                            line,
+                            at: code.len(),
+                            text,
+                        });
                         code.push_str("\"\"");
                         push_lines(&mut code, lines);
                         line += lines;
@@ -552,6 +632,50 @@ mod tests {
                 text: "Two words".to_owned()
             }]
         );
+    }
+
+    #[test]
+    fn a_lone_lowercase_word_is_prose_only_where_it_reaches_a_listener() {
+        let source = r##"
+fn shown(table: &mut Table, ready: bool) {
+    said!("{}", if ready { "ready" } else { "none" });
+    said!("{}ms", 5);
+    said!("{name}: {}", "faststart");
+    println!("lossless");
+    table.push(vec!["none".to_owned(), String::new()]);
+    let key = "none";
+    let named = map.get("faststart");
+    let held = unsaid!("faststart");
+    match mode {
+        Mode::Off => "off",
+    }
+}
+"##;
+
+        assert_eq!(
+            texts(source),
+            ["ready", "none", "faststart", "lossless", "none"]
+        );
+    }
+
+    #[test]
+    fn a_lone_word_is_a_run_of_lowercase_letters_with_hyphens_between() {
+        for word in ["none", "faststart", "bit-perfect", " off "] {
+            assert!(is_a_lone_word(word), "{word}");
+        }
+        for other in [
+            "",
+            "a",
+            "None",
+            "FLAC",
+            "two words",
+            "-dash",
+            "kHz",
+            "{name}",
+            "x86",
+        ] {
+            assert!(!is_a_lone_word(other), "{other}");
+        }
     }
 
     #[test]
