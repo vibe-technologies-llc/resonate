@@ -128,7 +128,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::frame::{Opcode, write_frame};
+    use crate::frame::{Opcode, read_frame, write_frame};
 
     const APP: &str = "1234567890123456789";
     const SMALLEST_BUFFER: u32 = 1;
@@ -159,6 +159,7 @@ mod tests {
         thread::spawn(move || {
             let mut served = listener.accept().expect("a client");
 
+            read_frame(&mut served).expect("the handshake read");
             write_frame(&mut served, Opcode::Frame, &ready).expect("READY sent");
             then(served);
         })
