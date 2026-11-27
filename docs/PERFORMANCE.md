@@ -8,12 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
-- [S · 0.18.1] Hold a phone's history import from a pipe to a page too. **Low, builder.** A
-  descriptor that seeks is now read a page of listens at a time (`bring_in_stream`), but one that
-  cannot, as a cloud provider's picker may hand Android, is still read whole into memory and passed
-  to `bring_in_lines` (`crates/resonate-mobile/src/history.rs`), since the check and the landing
-  are two passes. Spool such a descriptor to a staged file first, or check and land in one pass.
-  Done when a pipe's import holds a bounded number of listens at once, in a test.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
