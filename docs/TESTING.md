@@ -70,15 +70,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [S · 0.18.1] Replace the real artists the remaining tests name. **Low, builder.** The Rust tests
-  hold invented songs for the Meddle and Radiohead cluster now ("Slow Water" by "Example Band" on
-  "Low Tide"), but other real artists and songs are still written across the tests (Björk, Air, the
-  Beatles, Queen, Miles Davis, Coltrane, Daft Punk, Sigur Rós, David Bowie, Led Zeppelin), the
-  phones' tests (`FolderFilingTest.kt`, `ZonePlanTest.kt`, `ios/Tests`) still name the Meddle
-  cluster, and `.claude/rules` uses it as its examples. Left by design: `resonate-sync`'s frozen
-  seeds, `resonate-online`'s captured answers and the tests asserting against them, its live
-  searches, and the MBIDs and ISRCs those fixtures agree on. Done when no test or rule outside those
-  names a real song.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
