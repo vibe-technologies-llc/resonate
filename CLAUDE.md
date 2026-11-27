@@ -315,7 +315,8 @@ Invariants the layering protects (the rules files have the rest):
 - `cd packaging/server && makepkg -f`: the sync server's package, cloned from the repository's
   remote (CI points `source` at its own checkout).
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
-  seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
+  seeds/<target> -- -max_len=262144 -max_total_time=180 -timeout=15`, with `-dict=dictionaries/<target>.dict`
+  where the target has one (`build.md`).
 - `cd dsp-lab && cargo run --release -- measure --against baseline.tsv`: every DSP stage and
   eleven chains the engine plans, measured for quality, with the resampler against libsoxr and
   rubato. It prints each suite's tables and fails on a reading worse than the committed baseline.

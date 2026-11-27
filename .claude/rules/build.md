@@ -335,6 +335,21 @@ Linux sound server or GUI libraries are needed.
   `equaliser` holds that what it writes of an EqualizerAPO profile reads back the same, and the stage the profile builds keeps an impulse finite and under `ESTIMATE_SLACK` times the loudest point the deepest preamp cannot take back (`fuzz_targets/stage.rs`, shared by `equaliser`, `store` and `measurement`; `stacked-boosts.txt`, 32 bands at +40 dB, is why the bound is the peak left over rather than full scale). `lrc`,
   `lyricsfile`, `ttml`, `playlist`, `mcp`, `ipc`, `stun` and the targets above that reach a private reader use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
   lines and envelopes and never dispatches, a tool being free to touch the filesystem.
+- **A run is at `-max_len=262144`, libFuzzer's 4 KiB hiding what only a large input costs**: the
+  quadratic scans and the nesting that overflows a stack need tens of kilobytes. A target with a
+  grammar has a dictionary beside the others in `fuzz/dictionaries/<target>.dict` (`lrc`, `ttml`,
+  `lyricsfile`: stamps, tags, elements, attributes, offset-time units, entities, YAML's escapes and
+  anchors), passed as `-dict=dictionaries/<target>.dict`; a dictionary holds no comment, as no other
+  source does. `lrc`, `ttml` and `lyricsfile` hold the lyrics they read to `fuzz_targets/bounded.rs`: no
+  line longer than the input, the text of the lines and the words together no longer than the input
+  (`lyricsfile`), than the input times the 64 nested paragraphs a TTML may hold, each read once
+  for every paragraph around it (`ttml`), or than the 1 MiB of text an LRC set may keep, a line
+  repeating once for each stamp on it (`lrc`). `ttml`'s input opens with its shape where the first
+  byte is 0, 1 or 2 (nest `p`, `span` or `div`) and the next two, little-endian, say how deep: the
+  target nests that many into a fixed scaffold, since a flat mutator never writes sixty thousand
+  matched pairs; any other first byte is the document. With the bound `Unread::TooDeep` reverted it
+  finds the overflow of the paragraph walk in seconds, and `nested-past-the-stack.bin` is the input
+  it found.
 - **`fuzz/seeds/<target>`** holds the smallest file of each thing a target reads, a second corpus
   folder; a grown `corpus/` is gitignored. Seeds are added by hand; nothing but a person runs the
   targets.

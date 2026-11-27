@@ -10,21 +10,27 @@ mod sidecar;
 mod ttml;
 
 #[cfg(fuzzing)]
-pub fn read_an_lrc_sheet(text: &str) {
+pub fn read_an_lrc_sheet(text: &str) -> Option<Lyrics> {
     let source = resonate_core::SourceId::local();
-    let _ = crate::lrc::read(source, text);
+    crate::lrc::read(source, text)
+        .ok()
+        .and_then(|sheet| sheet.lyrics)
 }
 
 #[cfg(fuzzing)]
-pub fn read_a_lyricsfile(text: &str) {
+pub fn read_a_lyricsfile(text: &str) -> Option<Lyrics> {
     let source = resonate_core::SourceId::local();
-    let _ = crate::lyricsfile::read_lyricsfile(source, text);
+    crate::lyricsfile::read_lyricsfile(source, text)
+        .ok()
+        .and_then(|read| read.lyrics)
 }
 
 #[cfg(fuzzing)]
-pub fn read_a_ttml(text: &str) {
+pub fn read_a_ttml(text: &str) -> Option<Lyrics> {
     let source = resonate_core::SourceId::local();
-    let _ = crate::ttml::read_ttml(source, text);
+    crate::ttml::read_ttml(source, text)
+        .ok()
+        .and_then(|read| read.lyrics)
 }
 
 pub use crate::{
