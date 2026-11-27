@@ -335,6 +335,15 @@ impl EqualiserCurve {
     }
 }
 
+pub(crate) fn lifts_within_the_bound(profile: &Profile) -> Result<()> {
+    if profile.lifts_within_the_bound(FITTED_AT) {
+        return Ok(());
+    }
+    Err(Error::ProfileTooLoud {
+        peak_db: profile.loudest_lift_db(FITTED_AT),
+    })
+}
+
 pub(crate) fn imported(profile: &Profile, name: String) -> EqualiserImport {
     let mut clamped = 0;
 
@@ -1146,6 +1155,11 @@ mod tests {
             assert!(
                 preset.curve.profile().is_ok(),
                 "{} is a valid curve",
+                preset.name
+            );
+            assert!(
+                lifts_within_the_bound(&preset.curve.profile().expect("a valid curve")).is_ok(),
+                "{} lifts within the bound",
                 preset.name
             );
             assert!(!preset.detail.is_empty());

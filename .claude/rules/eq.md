@@ -1548,7 +1548,12 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `PREAMP_AT_MOST_DB`); Q 0.1 to 40, core's own. `TooManyBands`, `BandFrequency`, `BandGain`,
   `BandQ`, `PreampRange` name the band (counted from one) and the value; NaN fails its range.
   `equaliser_limits` hands the bounds to Swift and Kotlin, which keep none of their own
-  (`a_curve_past_its_bounds_is_refused_naming_what_is_wrong`).
+  (`a_curve_past_its_bounds_is_refused_naming_what_is_wrong`). **The bands' sum is held too**:
+  `PlaybackPreferences::commands` refuses a curve that sounds unlike the one standing and lifts past
+  `BOOST_AT_MOST_DB` at `FITTED_AT` (`Profile::lifts_within_the_bound`) with `ProfileTooLoud`, as
+  `parse_eq_profile` does, so a stacked edit never reaches the engine and each phone's commit
+  fails into its banner while its draft settles back to the curve in force
+  (`an_edit_stacking_bands_past_the_lift_the_preamp_takes_back_is_refused`).
 - **The drawn curve is the stage's arithmetic**: `response_curve(curve, points, rate)` is
   `Profile::response` with the preamp, at the stream rate (48 kHz where none is given) over core's
   `sweep` (log-spaced 20 Hz to 20 kHz, points held to 2..=2048), so point *i* sits at

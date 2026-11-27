@@ -6,7 +6,10 @@ use resonate_engine::{
     Restoration, SkipUnderRepeat, SmartShuffle, Until,
 };
 
-use crate::{Error, Result, equaliser::EqualiserCurve};
+use crate::{
+    Error, Result,
+    equaliser::{EqualiserCurve, lifts_within_the_bound},
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum GainMode {
@@ -169,6 +172,9 @@ impl PlaybackPreferences {
     pub(crate) fn commands(&self, previous: &Self) -> Result<Vec<Command>> {
         let profile = self.equaliser.profile()?;
 
+        if self.equaliser.sounds_unlike(&previous.equaliser) {
+            lifts_within_the_bound(&profile)?;
+        }
         if !(50..=2000).contains(&self.buffer_ms) {
             return Err(Error::BufferRange {
                 milliseconds: self.buffer_ms,
@@ -276,7 +282,7 @@ pub fn default_playback_preferences() -> PlaybackPreferences {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::SampleRate;
+    use resonate_core::{SampleRate, eq::BOOST_AT_MOST_DB};
 
     use super::*;
     use crate::equaliser::{EqualiserBand, EqualiserFilter, ten_band_curve};
@@ -428,6 +434,38 @@ mod tests {
                 .len(),
             20
         );
+    }
+
+    #[test]
+    fn an_edit_stacking_bands_past_the_lift_the_preamp_takes_back_is_refused() {
+        let previous = PlaybackPreferences::default();
+        let mut stacked = previous.clone();
+
+        stacked.equaliser.bands = (0..4)
+            .map(|_| EqualiserBand {
+                filter: EqualiserFilter::Peaking,
+                frequency_hz: 1000.0,
+                gain_db: 24.0,
+                q: 1.0,
+                channels: u8::MAX,
+            })
+            .collect();
+
+        let refused = stacked.commands(&previous);
+
+        assert!(matches!(
+            refused,
+            Err(Error::ProfileTooLoud { peak_db }) if peak_db > f64::from(BOOST_AT_MOST_DB)
+        ));
+
+        stacked.equaliser.preamp_db = -24.0;
+        stacked
+            .equaliser
+            .bands
+            .iter_mut()
+            .for_each(|band| band.gain_db = 6.0);
+
+        assert!(stacked.commands(&previous).is_ok());
     }
 
     #[test]
