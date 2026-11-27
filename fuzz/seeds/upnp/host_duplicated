@@ -1,0 +1,5 @@
+GET /rootDesc.xml HTTP/1.1
+Host: 10.0.0.2
+Host: evil.example
+User-Agent: resonate
+

@@ -1,0 +1,4 @@
+GET /rootDesc.xml HTTP/1.1
+Host: [::ffff:a00:2]
+User-Agent: resonate
+

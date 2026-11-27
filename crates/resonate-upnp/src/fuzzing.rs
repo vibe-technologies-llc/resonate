@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     str,
 };
 
@@ -20,7 +20,7 @@ use crate::{
     http::HEADERS_AT_MOST,
     listing::{self, ENTRIES_A_LISTING_AT_MOST, TEXT_CHARS_AT_MOST},
     naming, neighbours,
-    offered::{self, Wanted},
+    offered::{self, Addressed, Wanted},
     serve, soap, ssdp,
     watched::Watched,
 };
@@ -143,6 +143,72 @@ fn read_what_a_control_point_asks(bytes: &[u8], text: Option<&str>) {
     }
 }
 
+const ARRIVED_PORT: u16 = 8200;
+
+const ARRIVED_AT: [IpAddr; 3] = [
+    IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+    IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)),
+    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0002)),
+];
+
+fn host_literal_of(host: &str) -> Option<IpAddr> {
+    let (address, zoned) = match host.strip_prefix('[') {
+        Some(bracketed) => (bracketed.split(']').next()?, true),
+        None => (host.split(':').next()?, false),
+    };
+
+    let address = if zoned {
+        address.split('%').next()?
+    } else {
+        address
+    };
+
+    address.parse().ok()
+}
+
+fn read_which_host_a_request_names(bytes: &[u8]) {
+    let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
+    let mut request = httparse::Request::new(&mut headers);
+
+    let parsed = matches!(request.parse(bytes), Ok(httparse::Status::Complete(_)));
+
+    for ip in ARRIVED_AT {
+        let arrived_at = SocketAddr::new(ip, ARRIVED_PORT);
+        let addressed = offered::addressed(bytes, arrived_at);
+
+        if !parsed {
+            assert_eq!(addressed, Addressed::Unnamed);
+
+            continue;
+        }
+
+        let hosts: Vec<_> = request
+            .headers
+            .iter()
+            .filter(|header| header.name.eq_ignore_ascii_case("Host"))
+            .collect();
+
+        if hosts.len() > 1 {
+            assert_eq!(addressed, Addressed::Unnamed);
+        }
+        if addressed != Addressed::Here {
+            continue;
+        }
+
+        match hosts.as_slice() {
+            [] => assert_eq!(request.version, Some(0)),
+            [host] => {
+                let host = str::from_utf8(host.value).expect("a host admitted reads as text");
+                let named = host_literal_of(host.trim()).expect("a name is never admitted");
+
+                assert_eq!(named.to_canonical(), ip.to_canonical());
+            }
+            _ => unreachable!("a host given twice is never admitted"),
+        }
+    }
+}
+
 const SENDER: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9));
 
 const DESCRIBED_AT: &str = "http://10.0.0.9:49152/desc.xml";
@@ -214,6 +280,7 @@ pub fn read_what_a_network_says(bytes: &[u8]) {
     }
 
     serve::read_a_request_head(bytes);
+    read_which_host_a_request_names(bytes);
 
     let _ = http::unchunked(bytes);
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];

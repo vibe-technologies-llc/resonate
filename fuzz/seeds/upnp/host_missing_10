@@ -1,0 +1,3 @@
+GET /rootDesc.xml HTTP/1.0
+User-Agent: resonate
+
