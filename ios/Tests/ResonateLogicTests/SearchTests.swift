@@ -488,8 +488,8 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
     }
 
     @Test func aQueryThatMatchesTheTitleMarksWhereTheEngineSaysItDoes() {
-        let marked = lightedRanges(in: "Example Band", by: "exam", in: .artist)
+        let marked = lightedRanges(in: "Example Band", by: "example", in: .artist)
 
-        #expect(marked.map { String("Example Band"[$0]) } == ["Exam"])
+        #expect(marked.map { String("Example Band"[$0]) } == ["Example"])
     }
 }

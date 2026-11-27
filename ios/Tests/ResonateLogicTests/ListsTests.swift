@@ -87,8 +87,8 @@ import Testing
         let keys = SongKeys.of(songs)
 
         #expect(keys.matching("solvi".searchFolded).map(\.id) == [1])
-        #expect(keys.matching("pink".searchFolded).map(\.id) == [2, 3])
-        #expect(keys.matching("the wall".searchFolded).map(\.id) == [3])
+        #expect(keys.matching("example".searchFolded).map(\.id) == [2, 3])
+        #expect(keys.matching("the pier".searchFolded).map(\.id) == [3])
         #expect(keys.matching("zzz").isEmpty)
     }
 

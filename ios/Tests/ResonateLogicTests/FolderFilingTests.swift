@@ -36,7 +36,7 @@ final class Scratch {
     @Test func aRelativePathIsEscapedPieceByPieceAndKeepsItsSlashes() {
         let uri = FolderURI.make(root: "abc", relative: "Example Band/100% #1?.flac")
 
-        #expect(uri == "resonate-folder://abc/Pink%20Floyd/100%25%20%231%3F.flac")
+        #expect(uri == "resonate-folder://abc/Example%20Band/100%25%20%231%3F.flac")
     }
 
     @Test func aMadeUriIsReadBackToTheSamePieces() {
@@ -85,7 +85,7 @@ final class Scratch {
 
         #expect(!decomposed.unicodeScalars.elementsEqual(composed.unicodeScalars))
         #expect(made == FolderURI.make(root: "abc", relative: composed))
-        #expect(made == "resonate-folder://abc/S%C3%B6lvi/J%C3%B3ga.flac")
+        #expect(made == "resonate-folder://abc/S%C3%B6lvi/L%C3%BAna.flac")
     }
 
     @Test func aComposedPathReachesAFileNamedDecomposedWhereTheFolderTellsTheTwoApart() {
