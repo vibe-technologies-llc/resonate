@@ -969,6 +969,7 @@
 "settings.playback.inner.skip-repeats-the-queue" = "A skip repeats the queue";
 "settings.playback.inner.previous-restarts" = "Previous restarts the song";
 "playback.resuming" = "Resuming";
+"playback.session-held" = "Another app is holding the sound. Resonate plays once it lets go.";
 "playback.carry-over.off" = "Off, every launch opens on an empty queue";
 "playback.resuming.footer" = "The queue comes back paused on the song it was playing, so nothing starts on its own.";
 "playback.shuffling" = "Shuffling";

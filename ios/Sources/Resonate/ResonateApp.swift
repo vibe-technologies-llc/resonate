@@ -31,6 +31,7 @@ struct ResonateApp: App {
                 library.features.foreground = true
                 library.features.cameForward()
                 library.prepareNowPlaying()
+                library.nowPlaying.cameForward()
             case .background:
                 library.features.foreground = false
                 library.features.wentToBackground()

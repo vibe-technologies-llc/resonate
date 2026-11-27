@@ -1,5 +1,6 @@
 import AVFoundation
 import MediaPlayer
+import os
 import ResonateLogic
 import ResonateNative
 import Synchronization
@@ -10,6 +11,7 @@ final class NowPlaying {
     private static let scaleWithoutAScreen: CGFloat = 3
     private static let secondsPerMillisecond = 0.001
     private static let rateSettles: [Duration] = [.milliseconds(250), .milliseconds(750), .seconds(2)]
+    nonisolated private static let log = Logger(subsystem: "org.resonate.ios", category: "session")
     static let followsSongRateKey = "follow-song-rate"
     static let playbackSettings = UserDefaults(suiteName: "playback") ?? .standard
 
@@ -39,11 +41,6 @@ final class NowPlaying {
     private var release = SessionRelease()
     private var sessionAsked = SessionAsked()
 
-    private struct Activation: Sendable {
-        let refusal: (any Swift.Error)?
-        let rateAsked: Bool
-    }
-
     init(library: Library) {
         self.library = library
     }
@@ -70,37 +67,86 @@ final class NowPlaying {
             },
             center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: session, queue: .main) {
                 [weak self] _ in
-                MainActor.assumeIsolated { self?.configureThenReport(rebind: true) }
+                MainActor.assumeIsolated { self?.servicesReset() }
             },
         ]
         registerCommands()
         enableCommands(for: nil)
     }
 
-    func activate(loading track: Track? = nil) {
+    func activation(loading track: Track? = nil) -> SessionActivation {
         sessionAsked.ask()
-        let wanted = Self.wantedRate(of: track ?? shown?.track)
-        Work.enqueueInOrder { [weak self] in
-            let activation = Self.activated(preferring: wanted)
+        return SessionActivation(wanted: Self.wantedRate(of: track ?? shown?.track)) { @Sendable [weak self] activation in
             Task { @MainActor in self?.settle(after: activation) }
         }
     }
 
-    private func settle(after activation: Activation) {
-        if let refusal = activation.refusal { library.report(refusal) }
-        if activation.rateAsked { settleRoute() }
-        reportRoute(rebind: false)
+    private func activate() {
+        let session = activation()
+        Work.enqueueInOrder { _ = session.held() }
     }
 
-    nonisolated private static func activated(preferring wanted: Double) -> Activation {
+    private func settle(after activation: SessionActivated) {
+        guard activation.refusal == nil else { return }
+        if activation.rateAsked { settleRoute() }
+        reportRoute(rebind: false)
+        perform(interruptions.listenerSounded())
+    }
+
+    func refusedToSound(_ zone: UInt32?) {
+        guard let zone else { return }
+        interruptions.refusedToSound([zone])
+    }
+
+    func listenerPaused() {
+        interruptions.listenerPaused()
+    }
+
+    func cameForward() {
+        perform(interruptions.cameForward())
+    }
+
+    private func servicesReset() {
+        configureThenReport(rebind: true)
+        perform(interruptions.servicesReset())
+    }
+
+    private func resume(_ zones: [UInt32]) {
+        guard native != nil else {
+            interruptions.resumeRefused()
+            return
+        }
+        sessionAsked.ask()
+        let wanted = Self.wantedRate(of: shown?.track)
+        Work.enqueueInOrder { [weak self] in
+            let activation = Self.activated(preferring: wanted)
+            Task { @MainActor in self?.resume(zones, after: activation) }
+        }
+    }
+
+    private func resume(_ zones: [UInt32], after activation: SessionActivated) {
+        guard activation.refusal == nil else {
+            interruptions.resumeRefused()
+            return
+        }
+        guard interruptions.resumed() else { return }
+        if activation.rateAsked { settleRoute() }
+        Task {
+            let reading = await Work.inSession { RouteReading.current }
+            report(reading, rebind: true)
+            library.playZones(zones)
+        }
+    }
+
+    nonisolated static func activated(preferring wanted: Double) -> SessionActivated {
         let session = AVAudioSession.sharedInstance()
-        var refusal: (any Swift.Error)?
         do {
             try session.setActive(true)
         } catch {
-            refusal = error
+            log.warning("the audio session would not activate: \(error.localizedDescription, privacy: .public)")
+            return SessionActivated(refusal: error, rateAsked: preferred(wanted, by: session))
         }
-        return Activation(refusal: refusal, rateAsked: preferred(wanted, by: session))
+        return SessionActivated(refusal: nil, rateAsked: preferred(wanted, by: session))
     }
 
     nonisolated private static func preferred(_ wanted: Double, by session: AVAudioSession) -> Bool {
@@ -215,7 +261,7 @@ final class NowPlaying {
     private func perform(_ action: SessionAction) {
         switch action {
         case .pauseSounding: library.pauseSoundingZones { [weak self] paused in self?.interruptions.paused(paused) }
-        case .resume(let zones): library.playZones(zones)
+        case .resume(let zones): resume(zones)
         case .nothing: break
         }
     }
@@ -240,7 +286,9 @@ final class NowPlaying {
             case .resumeShown: library.resume()
             case .pauseShown: library.pause()
             case .toggleShown: library.toggle()
-            case .pauseSounding: library.pauseSoundingZones()
+            case .pauseSounding:
+                listenerPaused()
+                library.pauseSoundingZones()
             }
         }
     }
@@ -489,6 +537,30 @@ final class NowPlaying {
 
     nonisolated private static func artwork(_ held: LockScreenArtwork) -> MPMediaItemArtwork {
         MPMediaItemArtwork(boundsSize: held.bounds) { @Sendable size in held.image(for: size) }
+    }
+}
+
+struct SessionActivated: Sendable {
+    let refusal: (any Swift.Error)?
+    let rateAsked: Bool
+}
+
+struct SessionRefused: Swift.Error {
+    let zone: UInt32?
+}
+
+struct SessionActivation: Sendable {
+    let wanted: Double
+    let settled: @Sendable (SessionActivated) -> Void
+
+    func held(for native: MobilePlayer) throws {
+        guard held() else { throw SessionRefused(zone: (try? native.snapshot())?.zone) }
+    }
+
+    func held() -> Bool {
+        let activation = NowPlaying.activated(preferring: wanted)
+        settled(activation)
+        return activation.refusal == nil
     }
 }
 

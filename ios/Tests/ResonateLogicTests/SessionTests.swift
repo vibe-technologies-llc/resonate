@@ -10,13 +10,15 @@ import Testing
 
         let began = policy.heard(.began)
         policy.paused([1, 3])
-        let owed = policy.resumesAfterwards
+        let owed = policy.owedResume
         let ended = policy.heard(.ended(shouldResume: true))
+        let resumed = policy.resumed()
 
         #expect(began == .pauseSounding)
         #expect(owed == [1, 3])
         #expect(ended == .resume([1, 3]))
-        #expect(policy.resumesAfterwards.isEmpty)
+        #expect(resumed)
+        #expect(policy.owedResume.isEmpty)
     }
 
     @Test func anInterruptionThatFoundNothingSoundingNeverStartsMusicWhenItEnds() {
@@ -25,20 +27,122 @@ import Testing
         let began = policy.heard(.began)
         policy.paused([])
         let ended = policy.heard(.ended(shouldResume: true))
+        let forward = policy.cameForward()
 
         #expect(began == .pauseSounding)
         #expect(ended == .nothing)
+        #expect(forward == .nothing)
     }
 
-    @Test func anInterruptionEndingWithoutTheSystemsLeaveDoesNotResume() {
+    @Test func anInterruptionEndingWithoutTheSystemsLeaveStillResumesTheZonesItPaused() {
         var policy = InterruptionPolicy()
         _ = policy.heard(.began)
         policy.paused([2])
 
         let ended = policy.heard(.ended(shouldResume: false))
 
+        #expect(ended == .resume([2]))
+    }
+
+    @Test func comingForwardWithAResumeOwedAndNoEndHeardResumesThePausedZones() {
+        var policy = InterruptionPolicy()
+        _ = policy.heard(.began)
+        policy.paused([1, 2])
+
+        let forward = policy.cameForward()
+        let resumed = policy.resumed()
+        let again = policy.cameForward()
+
+        #expect(forward == .resume([1, 2]))
+        #expect(resumed)
+        #expect(again == .nothing)
+    }
+
+    @Test func aResumeTheSessionRefusedStaysOwedAndIsTriedAgainOnEveryChance() {
+        var policy = InterruptionPolicy()
+        _ = policy.heard(.began)
+        policy.paused([1])
+
+        let ended = policy.heard(.ended(shouldResume: true))
+        policy.resumeRefused()
+        let owed = policy.owedResume
+        let forward = policy.cameForward()
+        policy.resumeRefused()
+        let reset = policy.servicesReset()
+
+        #expect(ended == .resume([1]))
+        #expect(owed == [1])
+        #expect(forward == .resume([1]))
+        #expect(reset == .resume([1]))
+    }
+
+    @Test func aResumeAlreadyUnderWayIsNotAskedTwice() {
+        var policy = InterruptionPolicy()
+        _ = policy.heard(.began)
+        policy.paused([1])
+
+        let ended = policy.heard(.ended(shouldResume: true))
+        let forward = policy.cameForward()
+
+        #expect(ended == .resume([1]))
+        #expect(forward == .nothing)
+    }
+
+    @Test func aListenersPauseTakesBackTheResumeOwed() {
+        var policy = InterruptionPolicy()
+        _ = policy.heard(.began)
+        policy.paused([1, 2])
+
+        policy.listenerPaused()
+        let ended = policy.heard(.ended(shouldResume: true))
+        let forward = policy.cameForward()
+
         #expect(ended == .nothing)
-        #expect(policy.resumesAfterwards.isEmpty)
+        #expect(forward == .nothing)
+        #expect(policy.owedResume.isEmpty)
+    }
+
+    @Test func aListenersPauseWhileAResumeIsUnderWayLeavesNothingToPlay() {
+        var policy = InterruptionPolicy()
+        _ = policy.heard(.began)
+        policy.paused([1])
+
+        let forward = policy.cameForward()
+        policy.listenerPaused()
+        let resumed = policy.resumed()
+
+        #expect(forward == .resume([1]))
+        #expect(!resumed)
+    }
+
+    @Test func anInterruptionBeginningWhileAResumeIsUnderWayCallsItOffAndKeepsItOwed() {
+        var policy = InterruptionPolicy()
+        _ = policy.heard(.began)
+        policy.paused([1])
+
+        let ended = policy.heard(.ended(shouldResume: true))
+        let again = policy.heard(.began)
+        let resumed = policy.resumed()
+        let forward = policy.cameForward()
+
+        #expect(ended == .resume([1]))
+        #expect(again == .pauseSounding)
+        #expect(!resumed)
+        #expect(forward == .resume([1]))
+    }
+
+    @Test func aPlayTheSessionRefusedIsOwedUntilTheListenerSoundsAgain() {
+        var policy = InterruptionPolicy()
+
+        policy.refusedToSound([4])
+        let owed = policy.owedResume
+        let sounded = policy.listenerSounded()
+        let resumed = policy.resumed()
+
+        #expect(owed == [4])
+        #expect(sounded == .resume([4]))
+        #expect(resumed)
+        #expect(policy.owedResume.isEmpty)
     }
 
     @Test func anEndWithNoBeginningDoesNothingAndNeverResumesTwice() {
@@ -48,6 +152,7 @@ import Testing
         _ = policy.heard(.began)
         policy.paused([1])
         let first = policy.heard(.ended(shouldResume: true))
+        _ = policy.resumed()
         let second = policy.heard(.ended(shouldResume: true))
 
         #expect(unbegun == .nothing)
@@ -87,7 +192,7 @@ import Testing
         let unnamed = policy.heard(nil)
 
         #expect(unnamed == .nothing)
-        #expect(policy.resumesAfterwards == [1])
+        #expect(policy.owedResume == [1])
     }
 
     @Test func theHeadphonesLeavingPausesEveryZoneThatSoundsAndTakesBackAnyOwedResume() {
@@ -98,9 +203,11 @@ import Testing
         let lost = policy.lostTheDevice()
         policy.paused([3])
         let ended = policy.heard(.ended(shouldResume: true))
+        let forward = policy.cameForward()
 
         #expect(lost == .pauseSounding)
         #expect(ended == .nothing)
+        #expect(forward == .nothing)
     }
 }
 

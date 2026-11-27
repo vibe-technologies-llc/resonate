@@ -969,6 +969,7 @@
 "settings.playback.inner.skip-repeats-the-queue" = "Un saut répète la file d’attente";
 "settings.playback.inner.previous-restarts" = "Le précédent redémarre la chanson";
 "playback.resuming" = "Reprise";
+"playback.session-held" = "Une autre app occupe le son. Resonate jouera dès qu’elle le libère.";
 "playback.carry-over.off" = "Off, chaque lancement s’ouvre sur une file vide";
 "playback.resuming.footer" = "La file d’attente revient en pause sur la chanson qu’elle jouait, donc rien ne commence par elle-même.";
 "playback.shuffling" = "Écrasement";

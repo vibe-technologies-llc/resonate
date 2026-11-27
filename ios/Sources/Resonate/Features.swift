@@ -762,8 +762,11 @@ final class Features {
                 guard let self else { return }
                 library.notice(said("sync.handoff.continuing", Int(loaded), device))
                 if handoff.playing {
-                    library.nowPlaying.activate()
-                    library.request { try $0.play() }
+                    let session = library.nowPlaying.activation()
+                    library.request { native in
+                        try session.held(for: native)
+                        try native.play()
+                    }
                 }
             }
         }

@@ -999,10 +999,11 @@ final class Library {
         let ids = rows.map(\.id)
         let start = UInt32(min(max(index, 0), rows.count - 1))
 
-        nowPlaying.activate(loading: rows[Int(start)])
+        let session = nowPlaying.activation(loading: rows[Int(start)])
         steer(.loading) { native in
             try native.load(ids: ids, startAt: start, autoplay: false)
             try native.setShuffle(shuffled: shuffle)
+            try session.held(for: native)
             try native.play()
         }
     }
@@ -1029,10 +1030,11 @@ final class Library {
         guard !uris.isEmpty else { return }
         let start = UInt32(min(max(index, 0), uris.count - 1))
 
-        nowPlaying.activate()
+        let session = nowPlaying.activation()
         steer(.loading) { native in
             try native.loadServed(uris: uris, startAt: start, autoplay: false)
             try native.setShuffle(shuffled: shuffle)
+            try session.held(for: native)
             try native.play()
         }
     }
@@ -1041,10 +1043,11 @@ final class Library {
         guard !songs.isEmpty else { return }
         let start = UInt32(min(max(index, 0), songs.count - 1))
 
-        nowPlaying.activate()
+        let session = nowPlaying.activation()
         steer(.loading) { native in
             try native.loadSongs(songs: songs, startAt: start, autoplay: false)
             try native.setShuffle(shuffled: false)
+            try session.held(for: native)
             try native.play()
         }
     }
@@ -1083,9 +1086,10 @@ final class Library {
 
     func jump(to row: Track) {
         guard let index = queue.firstIndex(where: { $0.queueId == row.queueId }) else { return }
-        nowPlaying.activate(loading: row)
+        let session = nowPlaying.activation(loading: row)
         steer(.loading) { native in
             try native.jumpTo(index: UInt32(index))
+            try session.held(for: native)
             try native.play()
         }
     }
@@ -1093,25 +1097,33 @@ final class Library {
     func toggle() {
         switch transport {
         case .playing, .loading:
-            steer(.paused) { try $0.pause() }
+            pause()
         case .paused, .stopped:
-            nowPlaying.activate()
-            steer(.playing) { try $0.play() }
+            playShown()
         }
     }
 
     func resume() {
         guard transport != .playing, transport != .loading else { return }
-        nowPlaying.activate()
-        steer(.playing) { try $0.play() }
+        playShown()
+    }
+
+    private func playShown() {
+        let session = nowPlaying.activation()
+        steer(.playing) { native in
+            try session.held(for: native)
+            try native.play()
+        }
     }
 
     func pause() {
         guard transport == .playing || transport == .loading else { return }
+        nowPlaying.listenerPaused()
         steer(.paused) { try $0.pause() }
     }
 
     func stop() {
+        nowPlaying.listenerPaused()
         steer(.stopped) { try $0.stop() }
     }
 
@@ -1122,7 +1134,6 @@ final class Library {
 
     func playZones(_ zones: [UInt32]) {
         guard !zones.isEmpty else { return }
-        nowPlaying.activate()
         request { try $0.playZones(zones: zones) }
     }
 
@@ -2169,7 +2180,12 @@ final class Library {
     }
 
     func report(_ failure: any Swift.Error) {
-        show(explained(failure), as: .failure)
+        guard let refused = failure as? SessionRefused else {
+            show(explained(failure), as: .failure)
+            return
+        }
+        nowPlaying.refusedToSound(refused.zone)
+        notice(said("playback.session-held"))
     }
 
     func report(_ failure: any Swift.Error, after done: String) {

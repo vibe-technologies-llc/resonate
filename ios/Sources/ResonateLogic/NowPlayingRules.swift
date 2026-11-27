@@ -14,7 +14,8 @@ public enum SessionAction: Equatable, Sendable {
 
 public struct InterruptionPolicy: Sendable {
     private var interrupted = false
-    private var zonesPaused: [UInt32] = []
+    private var owed: [UInt32] = []
+    private var resuming = false
 
     public init() {}
 
@@ -22,10 +23,11 @@ public struct InterruptionPolicy: Sendable {
         switch interruption {
         case .began?:
             interrupted = true
+            resuming = false
             return .pauseSounding
-        case .ended(let shouldResume)?:
-            defer { forget() }
-            return interrupted && shouldResume && !zonesPaused.isEmpty ? .resume(zonesPaused) : .nothing
+        case .ended?:
+            interrupted = false
+            return resumeOwed()
         case nil:
             return .nothing
         }
@@ -33,7 +35,38 @@ public struct InterruptionPolicy: Sendable {
 
     public mutating func paused(_ zones: [UInt32]) {
         guard interrupted else { return }
-        zonesPaused += zones.filter { !zonesPaused.contains($0) }
+        owe(zones)
+    }
+
+    public mutating func cameForward() -> SessionAction {
+        resumeOwed()
+    }
+
+    public mutating func servicesReset() -> SessionAction {
+        resumeOwed()
+    }
+
+    public mutating func listenerSounded() -> SessionAction {
+        interrupted = false
+        return resumeOwed()
+    }
+
+    public mutating func refusedToSound(_ zones: [UInt32]) {
+        owe(zones)
+    }
+
+    public mutating func resumeRefused() {
+        resuming = false
+    }
+
+    public mutating func resumed() -> Bool {
+        guard resuming else { return false }
+        forget()
+        return true
+    }
+
+    public mutating func listenerPaused() {
+        forget()
     }
 
     public mutating func lostTheDevice() -> SessionAction {
@@ -41,12 +74,23 @@ public struct InterruptionPolicy: Sendable {
         return .pauseSounding
     }
 
-    private mutating func forget() {
-        interrupted = false
-        zonesPaused = []
+    public var owedResume: [UInt32] { owed }
+
+    private mutating func resumeOwed() -> SessionAction {
+        guard !owed.isEmpty, !resuming else { return .nothing }
+        resuming = true
+        return .resume(owed)
     }
 
-    public var resumesAfterwards: [UInt32] { interrupted ? zonesPaused : [] }
+    private mutating func owe(_ zones: [UInt32]) {
+        owed += zones.filter { !owed.contains($0) }
+    }
+
+    private mutating func forget() {
+        interrupted = false
+        owed = []
+        resuming = false
+    }
 }
 
 public struct SessionRelease: Sendable {

@@ -187,9 +187,9 @@ sync seals its records and talks QUIC (TLS) of its own.
   the queue read, which costs a record per row, is `Work.aside`, as is applying the room
   correction (decoding up to 64 MiB; choosing, applying, forgetting and restoring one response run
   one after another in a chain of their own, `RoomCorrectionState.queue`). **No `AVAudioSession` call runs on the main actor**: each is
-  a call into the audio server that can take tens of milliseconds. Activation is queued straight
-  onto the transport's lane (`Work.enqueueInOrder`, so it precedes the `play()` steered after it), as
-  are the category (at launch, after a media-services reset and for Listen, whose begin awaits it)
+  a call into the audio server that can take tens of milliseconds. Activation runs on the transport's
+  lane inside the action that plays, just before its `play()` (`SessionActivation.held(for:)`), or is
+  queued straight onto it (`Work.enqueueInOrder`) for the poll's ask and an owed resume, as are the category (at launch, after a media-services reset and for Listen, whose begin awaits it)
   and the activation Listen's end gives up,
   and the preferred rate, the route, rate and latency readings and the volume are read on their own
   serial lane (`Work.inSession`); the main actor only applies the answer.
@@ -530,10 +530,21 @@ sync seals its records and talks QUIC (TLS) of its own.
   Android's is (`android.md`): the snapshot names the first other zone that plays or loads
   (`Snapshot.heard_elsewhere`, `mobile.md`). An interruption beginning and the old route disappearing
   pause every zone that sounds (`pause_sounding_zones`, through `Library.pauseSoundingZones`, whether
-  it plays or loads); `InterruptionPolicy` keeps the zones an interruption paused
-  (`InterruptionPolicy.paused`) and its end with `.shouldResume` plays exactly those again
-  (`Library.playZones`, `play_zones`, activating the session first), while a lost route takes back
-  any resume owed. While the zone shown is silent and another sounds, the now-playing info speaks
+  it plays or loads); `InterruptionPolicy` keeps the zones an interruption paused as a resume owed
+  (`InterruptionPolicy.paused`, `owedResume`), since the listener's choice is to carry on with what
+  was playing. **The owed resume is paid at the first chance, whatever the system says**: an
+  interruption's end resumes them with or without `.shouldResume`, and so does coming forward
+  (`NowPlaying.cameForward`, at every `.active`) and a media-services reset (`servicesReset`),
+  because iOS often sends no end at all (another app recording a voice message, then the listener
+  switching back) or an end without the flag, and the song stayed paused under a banner. A resume
+  activates the session first; refused, it stays owed and nothing is sent (`resumeRefused`), so the
+  next end, coming forward or reset tries again. Activated, it reports the route with a rebind
+  (`output_route_changed(..., rebind: true)`, as a reset does) before `play_zones`
+  (`Library.playZones`), so a zone parked waiting for a device opens a fresh RemoteIO unit, and the
+  snapshot's `waiting` ends as its stream opens (`mobile.md`). One resume is under way at a time; an
+  interruption beginning meanwhile calls it off and keeps it owed, and a resume that comes back
+  called off plays nothing (`InterruptionPolicy.resumed`). A listener's pause or stop, a lock-screen
+  pause and a lost route take back any resume owed (`listenerPaused`, `lostTheDevice`). While the zone shown is silent and another sounds, the now-playing info speaks
   for that one (`NowPlayingSpoken`, `Snapshot.spokenElsewhere`, `ZonesHeard.speaksFor`): its song,
   place and length, playing, one row of one, with play, pause and toggle alone enabled
   (`CommandAvailability.steers`); its pause and toggle pause every zone that sounds and its play
@@ -555,7 +566,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   timer paused it while no other zone sounds, or the last zone heard elsewhere fell silent with the
   zone shown stopped, never for showing another zone (`SessionRelease`; `releaseSessionIfDone`, on the transport's lane and only if no zone
   plays by then (`Snapshot.anyZoneSounds`), decided from the snapshot the engine answered, never a steered one: a steered stop ran ahead of the stop itself, found the transport still playing and was never owed again; the lock screen meanwhile shows the steered snapshot the app shows), so the app audio it interrupted may resume. **The session is asked for
-  the playing song's rate** (`preferRate`): on every song change and activation (a `play` or `jump` names the song it loads, `activate(loading:)`, not the one on the lock screen), while "Match the
+  the playing song's rate** (`preferRate`): on every song change and activation (a `play` or `jump` names the song it loads, `activation(loading:)`, not the one on the lock screen), while "Match the
   song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
   default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
   reported again, so a rate the route took moves `route_changed` and reformats the RemoteIO unit at it (reopening it only if the system refuses the reformat, `mobile.md`); a route
@@ -563,7 +574,14 @@ sync seals its records and talks QUIC (TLS) of its own.
   route notification, so the rate is read again 0.25, 1 and 3 s after asking and reported where it
   moved from the one last reported; the ask is once per song (`ratedTrack`), so a favourite flip or
   an artwork arrival rewrites the now-playing info without touching the session. A refused
-  activation is shown at once, not left to surface as RemoteIO's `OSStatus`. Now-playing info is written
+  activation sends no play: every play path (`Library.play`, `playServed`, `playMixed`, `jump`, `resume`,
+  `toggle`, a handoff's) activates on the transport's lane just before `play()`
+  (`NowPlaying.activation`, a `SessionActivation` whose `held(for:)` throws `SessionRefused` with the
+  shown zone), so RemoteIO is never started under a session iOS refused (which parked the song
+  waiting for a device and failed it at the second refusal). `Library.report` tells a
+  `SessionRefused` as a plain notice, never the raw error (`playback.session-held`), and owes that
+  zone's resume (`InterruptionPolicy.refusedToSound`); the next activation that holds, a listener's
+  play included (`listenerSounded`), resumes what is owed. Now-playing info is written
   only when the song, transport, artwork, favourite, queue place or count, shuffle or repeat change,
   or the position drifts more than 1.5 s from what the written rate predicts (a seek); between
   writes the system extrapolates elapsed time from the rate. Every command answers
