@@ -115,17 +115,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.18.1] Lint the fuzzing seams as the fuzz build compiles them. **Low, builder.** Clippy
-  with `--cfg fuzzing` refuses `crates/resonate-codec/src/fuzzing.rs` (`chunks_exact_to_as_chunks`
-  on the operations' chunks), and no lint line builds the crates' `fuzzing` modules, so such a
-  warning lands unseen. Fix it and add a `--cfg fuzzing` clippy line to `cargo xtask lint`. Done
-  when the line runs clean.
-- [S · 0.18.1] Weigh a lone lowercase word in the window's catalog walk. **Low, builder.** The walks
-  refuse one inside `said!`, the print macros and `table.push(` (`SAID_TO_A_LISTENER`), but the
-  window draws words through gpui elements with no such marker, so a shown `none` in `resonate-ui`
-  still passes `every_word_the_window_shows_is_said_through_its_catalog`. Name the positions a word
-  reaches the screen from (a `div().child(`, a label's text) and weigh it there. Done when a drawn
-  literal `none` fails the window's test.
 - [S · 0.18.1] Catch a catalog call that passes its values in the sentence's order. **Low,
   builder.** `resonate-words-build` writes each message's function with its parameters in
   alphabetical order, so a call passing them in the order the sentence says them still compiles
