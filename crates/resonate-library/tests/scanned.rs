@@ -150,11 +150,32 @@ impl ScanObserver for Reached {
 
 #[test]
 fn an_observer_is_told_of_each_file_once_in_name_order() -> Result<()> {
-    const NAMES: [&str; 6] = ["e.wav", "b.wav", "f.wav", "a.wav", "d.wav", "c.wav"];
+    const MADE: [&str; 9] = [
+        "e.wav",
+        "m/b.wav",
+        "c/y/a.wav",
+        "b.wav",
+        "c/b/z.wav",
+        "z/a.wav",
+        "c/x.wav",
+        "a.wav",
+        "c/b/a.wav",
+    ];
+    const IN_NAME_ORDER: [&str; 9] = [
+        "a.wav",
+        "b.wav",
+        "e.wav",
+        "c/x.wav",
+        "c/b/a.wav",
+        "c/b/z.wav",
+        "c/y/a.wav",
+        "m/b.wav",
+        "z/a.wav",
+    ];
 
     let tree = Tree::new();
 
-    for name in NAMES {
+    for name in MADE {
         tree.wav(name);
     }
 
@@ -170,11 +191,12 @@ fn an_observer_is_told_of_each_file_once_in_name_order() -> Result<()> {
         .scan_observed(options, Arc::clone(&reached) as Arc<dyn ScanObserver>)?
         .join()?;
 
-    let in_name_order: Vec<PathBuf> = ["a.wav", "b.wav", "c.wav", "d.wav", "e.wav", "f.wav"]
+    let in_name_order: Vec<PathBuf> = IN_NAME_ORDER
+        .iter()
         .map(|name| tree.path().join(name))
-        .into();
+        .collect();
 
-    assert_eq!(summary.stats.added, NAMES.len() as u64);
+    assert_eq!(summary.stats.added, MADE.len() as u64);
     assert_eq!(*reached.files.lock(), in_name_order);
     Ok(())
 }

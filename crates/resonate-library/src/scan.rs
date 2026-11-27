@@ -1345,6 +1345,7 @@ fn walk(
 
         let mut audio = Vec::new();
         let mut sheets = Vec::new();
+        let mut subfolders = Vec::new();
 
         let entries = match reading::directory(&directory)
             .and_then(Iterator::collect::<io::Result<Vec<_>>>)
@@ -1387,7 +1388,7 @@ fn walk(
                 continue;
             }
             if kind.is_dir() {
-                stack.push((path, depth.saturating_add(1), device));
+                subfolders.push(path);
                 continue;
             }
             if kind.is_file() && !is_a_sheet(&path) && !is_audio(&path) {
@@ -1412,7 +1413,7 @@ fn walk(
                 continue;
             }
             if metadata.is_dir() {
-                stack.push((path, depth.saturating_add(1), device));
+                subfolders.push(path);
                 continue;
             }
             if !metadata.is_file() {
@@ -1427,6 +1428,14 @@ fn walk(
 
         sheets.sort_by(|first, second| first.0.cmp(&second.0));
         audio.sort_by(|first, second| first.0.cmp(&second.0));
+        subfolders.sort();
+
+        stack.extend(
+            subfolders
+                .into_iter()
+                .rev()
+                .map(|path| (path, depth.saturating_add(1), device)),
+        );
 
         if !directory_of(walking, &sheets, &audio, &mut claimed_from_above)? {
             return Ok(false);
