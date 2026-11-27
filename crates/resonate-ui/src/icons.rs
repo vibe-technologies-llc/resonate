@@ -103,6 +103,7 @@ icons! {
     Export => "export",
     Tidy => "tidy",
     Fold => "fold",
+    Compress => "compress",
     Sort => "sort",
     Undo => "undo",
     Redo => "redo",

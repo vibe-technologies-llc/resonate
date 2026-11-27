@@ -19,7 +19,7 @@ use resonate_engine::{
     ReplayGainMode, Restoration, ShuffleStyle, Trial,
 };
 use resonate_eq::{Binding, ProfileName};
-use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions};
+use resonate_library::{Ceiling, HistoryKept, Layout, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_upnp::{Located, ServerName};
 use resonate_words::{Language, LanguageChoice, RegionChoice};
@@ -461,6 +461,9 @@ impl Config {
                     Some(at.one_of(value, settings_category)?.to_owned());
             }
             Valued::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
+            Valued::RecompressTo => {
+                config.recompress_to = Some(at.one_of(value, Ceiling::parse)?);
+            }
             Valued::EqualiserFor => {
                 config.equaliser_for.get_or_insert_default().by_sink = bindings(at, value)?;
             }

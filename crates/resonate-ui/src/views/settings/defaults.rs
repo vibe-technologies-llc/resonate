@@ -10,13 +10,14 @@ use resonate_core::{
 use resonate_engine::{
     Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat, SmartShuffle,
 };
-use resonate_library::{HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
+use resonate_library::{Ceiling, HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 use resonate_words::{LanguageChoice, RegionChoice};
 
 use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 
 pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
+pub(crate) const RECOMPRESS_TO: Ceiling = Ceiling::Kept;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const REDUCED_MOTION: bool = false;
 
@@ -47,6 +48,7 @@ pub(crate) struct Standing {
     pub(crate) listening_from: Listening,
     pub(crate) listening_for: Duration,
     pub(crate) history_kept: HistoryKept,
+    pub(crate) recompress_to: Ceiling,
     pub(crate) music_filters: MusicFilters,
     pub(crate) skip_under_repeat: SkipUnderRepeat,
     pub(crate) previous_restarts: PreviousRestarts,
@@ -90,6 +92,7 @@ impl Standing {
             listening_from: Listening::default(),
             listening_for: CLIP_BY_DEFAULT,
             history_kept: HISTORY_KEPT,
+            recompress_to: RECOMPRESS_TO,
             music_filters: MusicFilters::default(),
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
@@ -157,6 +160,7 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
         Group::FlacRenderers => standing.flac_renderers_named,
         Group::LearntFormats => standing.formats_learnt,
         Group::History => standing.history_kept != HISTORY_KEPT,
+        Group::Recompressing => standing.recompress_to != RECOMPRESS_TO,
         Group::MusicExtensions => standing.music_filters.extensions != MusicExtensions::default(),
         Group::MinimumLength => standing.music_filters.minimum_length != MinimumLength::default(),
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
@@ -245,6 +249,7 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
         | Group::LookingUp
         | Group::Retagging
         | Group::Identical
+        | Group::Storage
         | Group::Vault
         | Group::Build
         | Group::Places

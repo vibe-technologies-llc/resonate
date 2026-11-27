@@ -24,6 +24,7 @@ mod saving_lyrics;
 mod scanning;
 mod sharing;
 mod statistics;
+mod storage;
 mod suggested;
 mod switches;
 #[cfg(test)]
@@ -64,7 +65,13 @@ use resonate_library::{
 };
 use resonate_providers::WhyAway;
 
-use self::{arranged::Named, watched::load};
+#[cfg(test)]
+pub(crate) use self::storage::FILES_A_PAGE;
+use self::{
+    arranged::Named,
+    storage::{Recompressing, Storage},
+    watched::load,
+};
 pub(crate) use self::{
     arranged::{missing_track_rows, queued_rows, unheld_release_rows},
     pictures::{
@@ -75,6 +82,7 @@ pub use self::{
     deleting::Reach,
     passes::{IdenticalSong, Identified},
     pictures::{Drawn, Portrayed, Scale},
+    storage::StoredFile,
 };
 use crate::{
     ResonateApp,
@@ -740,6 +748,7 @@ enum Work {
     Polling(Arc<PollProgress>),
     Forgetting,
     Identical(Pass),
+    Recompressing(Recompressing),
 }
 
 impl Work {
@@ -756,7 +765,22 @@ impl Work {
             | Self::Tagging(..)
             | Self::Importing(..)
             | Self::Polling(_)
-            | Self::Forgetting => None,
+            | Self::Forgetting
+            | Self::Recompressing(_) => None,
+        }
+    }
+
+    const fn recompressing(&self) -> Option<&Recompressing> {
+        match self {
+            Self::Recompressing(recompressing) => Some(recompressing),
+            Self::Nothing
+            | Self::Scanning(_)
+            | Self::Organising(..)
+            | Self::Tagging(..)
+            | Self::Importing(..)
+            | Self::Polling(_)
+            | Self::Forgetting
+            | Self::Identical(_) => None,
         }
     }
 
@@ -769,7 +793,8 @@ impl Work {
             | Self::Importing(..)
             | Self::Polling(_)
             | Self::Forgetting
-            | Self::Identical(_) => None,
+            | Self::Identical(_)
+            | Self::Recompressing(_) => None,
         }
     }
 
@@ -782,7 +807,8 @@ impl Work {
             | Self::Importing(..)
             | Self::Polling(_)
             | Self::Forgetting
-            | Self::Identical(_) => None,
+            | Self::Identical(_)
+            | Self::Recompressing(_) => None,
         }
     }
 
@@ -795,7 +821,8 @@ impl Work {
             | Self::Importing(..)
             | Self::Polling(_)
             | Self::Forgetting
-            | Self::Identical(_) => None,
+            | Self::Identical(_)
+            | Self::Recompressing(_) => None,
         }
     }
 
@@ -808,7 +835,8 @@ impl Work {
             | Self::Tagging(..)
             | Self::Importing(..)
             | Self::Forgetting
-            | Self::Identical(_) => None,
+            | Self::Identical(_)
+            | Self::Recompressing(_) => None,
         }
     }
 
@@ -821,7 +849,8 @@ impl Work {
             | Self::Tagging(..)
             | Self::Polling(_)
             | Self::Forgetting
-            | Self::Identical(_) => None,
+            | Self::Identical(_)
+            | Self::Recompressing(_) => None,
         }
     }
 }
@@ -1068,6 +1097,7 @@ struct Running {
     _import: Task<()>,
     _poll: Task<()>,
     _retag: Task<()>,
+    _recompress: Task<()>,
     _passed: Task<()>,
 }
 
@@ -1118,6 +1148,7 @@ pub struct LibraryModel {
     choices: Choices,
     watchers: Watchers,
     running: Running,
+    storage: Storage,
 }
 
 #[derive(Debug, Default)]
@@ -1450,8 +1481,10 @@ impl LibraryModel {
                 _import: Task::ready(()),
                 _poll: Task::ready(()),
                 _retag: Task::ready(()),
+                _recompress: Task::ready(()),
                 _passed: Task::ready(()),
             },
+            storage: Storage::default(),
         };
 
         model.reload(cx);

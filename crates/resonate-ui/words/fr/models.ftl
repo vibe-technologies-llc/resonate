@@ -332,3 +332,40 @@ tracks-counted = { $count ->
 }
 forget-what-was-fetched = effacer ce qui a été récupéré pour ce morceau
 song-refreshed-next = { $title } sera effacé puis récupéré à nouveau une fois la recherche en cours terminée
+list-the-largest-files = lister les fichiers les plus lourds
+recompress-that-song = recompresser ce morceau
+recompress-every-flac = recompresser chaque fichier FLAC
+recompressed-smaller = « { $title } » recompressé — de { $before } à { $after }
+kept-as-it-was = « { $title } » gardé tel quel, { $why }
+recompressed-every-flac = { $smaller ->
+    [one] { $smaller } fichier réécrit plus léger
+   *[other] { $smaller } fichiers réécrits plus légers
+}, { $saved } gagnés · { $kept ->
+    [one] { $kept } gardé tel quel
+   *[other] { $kept } gardés tels quels
+}{ $failed ->
+    [0] {""}
+    [one] {" "}· { $failed } n’a pas pu être réécrit
+   *[other] {" "}· { $failed } n’ont pas pu être réécrits
+}
+stopped-recompressing = Recompression arrêtée — { $said }
+kept-no-smaller = car il n’est pas plus léger une fois réécrit
+kept-unverified = car la copie ne se relisait pas comme elle était entrée
+kept-changed-meanwhile = car le fichier a changé pendant sa réécriture
+kept-halted = car il a été arrêté avant la fin
+kept-not-a-flac = car ce n’est pas un fichier FLAC
+kept-vaulted = car son morceau est gardé dans le coffre
+kept-cut-by-sheet = car une feuille cue le découpe en morceaux
+kept-outside-the-library = car il n’est sous aucun dossier de la bibliothèque
+kept-head-unread = car son en-tête FLAC n’a pas pu être lu
+kept-id3-after-the-audio = car il porte une étiquette ID3v1 après le son
+kept-ape-after-the-audio = car il porte une étiquette APE après le son
+kept-beyond-the-encoder = car son son en { $rate } kHz et { $bits } bits dépasse ce que l’encodeur écrit, à moins de choisir une qualité plus basse
+kept-tied-to-the-samples = car son bloc { $block } désigne des endroits du son qu’une nouvelle fréquence ou profondeur déplacerait
+kept-disagrees-with-its-digest = car son son ne correspond pas à la somme de contrôle qu’il porte
+kept-wider-than-its-depth = car ses échantillons sont plus larges que la profondeur qu’il déclare
+kept-turns-partway = car son son change de forme en cours de route
+kept-undecodable = car son son n’a pas pu être décodé
+kept-silent = car il ne contient aucun son
+kept-held-under-other-names = car il est lié sous d’autres noms, qui garderaient l’ancienne copie
+kept-attributes-not-carried = car la copie n’a pas pu recevoir le propriétaire, les droits ou les attributs du fichier

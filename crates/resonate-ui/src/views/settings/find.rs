@@ -120,12 +120,13 @@ pub(crate) enum Page {
     ListeningTest,
     Enrichment,
     Identical,
+    Storage,
     Devices,
 }
 
 impl Page {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::HeadphoneCorrection,
         Self::OwnMeasurement,
         Self::RoomMeasurement,
@@ -133,6 +134,7 @@ impl Page {
         Self::ListeningTest,
         Self::Enrichment,
         Self::Identical,
+        Self::Storage,
         Self::Devices,
     ];
 
@@ -143,7 +145,7 @@ impl Page {
             | Self::RoomMeasurement
             | Self::RoomCorrection
             | Self::ListeningTest => Category::Equaliser,
-            Self::Enrichment | Self::Identical => Category::Library,
+            Self::Enrichment | Self::Identical | Self::Storage => Category::Library,
             Self::Devices => Category::Sync,
         }
     }
@@ -157,6 +159,7 @@ impl Page {
             Self::ListeningTest => words::settings_find::listening_test(),
             Self::Enrichment => words::settings_find::rescan_refresh_and_retag(),
             Self::Identical => words::settings_identical::identical_songs(),
+            Self::Storage => words::settings_storage::manage_storage(),
             Self::Devices => words::settings_find::your_devices(),
         }
     }
@@ -174,6 +177,7 @@ impl Page {
             Self::ListeningTest => words::settings_find::hear_whether_a_setting_can_be(),
             Self::Enrichment => words::settings_find::read_the_files_again_ask_what(),
             Self::Identical => words::settings_identical::page_about(),
+            Self::Storage => words::settings_storage::page_about(),
             Self::Devices => words::settings_find::who_shares_the_code_and_driving(),
         }
     }
@@ -187,6 +191,7 @@ impl Page {
             Self::RoomCorrection => Icon::Volume,
             Self::Enrichment => Icon::Redo,
             Self::Identical => Icon::Fold,
+            Self::Storage => Icon::Compress,
             Self::Devices => Icon::Phone,
         }
     }
@@ -198,7 +203,7 @@ impl Page {
             | Self::RoomMeasurement
             | Self::RoomCorrection
             | Self::ListeningTest => words::settings_find::corrections_and_tests(),
-            Self::Enrichment | Self::Identical => {
+            Self::Enrichment | Self::Identical | Self::Storage => {
                 words::settings_find::keeping_the_catalog_current()
             }
             Self::Devices => words::settings_find::your_other_devices(),
@@ -214,6 +219,7 @@ impl Page {
             Self::ListeningTest => "listening-test",
             Self::Enrichment => "enrichment",
             Self::Identical => "identical",
+            Self::Storage => "storage",
             Self::Devices => "devices",
         }
     }
@@ -273,6 +279,8 @@ pub(crate) enum Group {
     LookingUp,
     Retagging,
     Identical,
+    Recompressing,
+    Storage,
     Organising,
     Vault,
     Inbox,
@@ -322,7 +330,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 82] = [
+    pub(crate) const ALL: [Self; 84] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -359,6 +367,8 @@ impl Group {
         Self::LookingUp,
         Self::Retagging,
         Self::Identical,
+        Self::Recompressing,
+        Self::Storage,
         Self::Organising,
         Self::Vault,
         Self::Inbox,
@@ -766,6 +776,22 @@ impl Group {
                 title: words::settings_identical::identical_songs(),
                 hint: words::settings_identical::hint(),
                 also_called: words::settings_identical::also_called(),
+                keys: &[],
+            },
+            Self::Recompressing => Described {
+                category: Category::Library,
+                page: Some(Page::Storage),
+                title: words::settings_storage::recompressing(),
+                hint: words::settings_storage::recompressing_hint(),
+                also_called: words::settings_storage::recompressing_also_called(),
+                keys: &[ConfigKey::RecompressTo],
+            },
+            Self::Storage => Described {
+                category: Category::Library,
+                page: Some(Page::Storage),
+                title: words::settings_storage::largest_files(),
+                hint: words::settings_storage::largest_files_hint(),
+                also_called: words::settings_storage::largest_files_also_called(),
                 keys: &[],
             },
             Self::Organising => Described {
@@ -1586,7 +1612,7 @@ mod tests {
             Category::Library.drawn(),
             vec![
                 Drawn::Group(Group::Folders),
-                Drawn::Pages(vec![Page::Enrichment, Page::Identical]),
+                Drawn::Pages(vec![Page::Enrichment, Page::Identical, Page::Storage]),
                 Drawn::Group(Group::Organising),
                 Drawn::Group(Group::Vault),
                 Drawn::Group(Group::Inbox),

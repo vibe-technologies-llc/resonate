@@ -54,6 +54,21 @@ struct Bound {
 impl Ceiling {
     pub const ALL: [Self; 4] = [Self::Kept, Self::Studio, Self::High, Self::Cd];
 
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Kept => "kept",
+            Self::Studio => "96k",
+            Self::High => "48k",
+            Self::Cd => "cd",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|ceiling| ceiling.as_str().eq_ignore_ascii_case(text.trim()))
+    }
+
     const fn bound(self) -> Option<Bound> {
         match self {
             Self::Kept => None,
@@ -775,6 +790,17 @@ mod tests {
             bits,
             channels: 2,
         }
+    }
+
+    #[test]
+    fn a_ceiling_reads_back_from_its_spelling_and_no_other() {
+        for ceiling in Ceiling::ALL {
+            assert_eq!(Ceiling::parse(ceiling.as_str()), Some(ceiling));
+        }
+
+        assert_eq!(Ceiling::parse("CD"), Some(Ceiling::Cd));
+        assert_eq!(Ceiling::parse("192k"), None);
+        assert_eq!(Ceiling::parse(""), None);
     }
 
     #[test]

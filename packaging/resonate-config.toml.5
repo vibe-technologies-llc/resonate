@@ -204,6 +204,12 @@ String. The layout that files a song, from the fields {albumartist}, {artist}, {
 {year}, {disc}, {track} and {ext}, separated by /.
 Default: {albumartist}/{album}/{disc}{track} {title}.
 .TP
+.B recompress-to
+String kept, 96k, 48k or cd. The highest quality the window's Re-compress keeps when it writes a
+FLAC file again: kept leaves the sound bit for bit, 96k and 48k resample a file above that rate to
+the highest rate of its own family under it and lower a depth above 24 bits to 24, cd makes every
+file 44.1 kHz and 16 bits. resonate recompress takes --to instead. Default: kept.
+.TP
 .B music-extensions
 Array of strings. The audio extensions listings include, case-insensitive, with or without the dot.
 Absent is every extension the build scans, empty is none. Default: absent.

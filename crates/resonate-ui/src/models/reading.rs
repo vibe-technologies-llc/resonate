@@ -227,6 +227,7 @@ impl LibraryModel {
                 self.warm_the_covers(cx);
                 if shelved {
                     self.ask_when_due(cx);
+                    self.read_the_files_again(cx);
                 }
             }
             Err(error) => {

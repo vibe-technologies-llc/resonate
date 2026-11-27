@@ -293,6 +293,9 @@ that name. Every file argument goes through it.
   file said as its size before and after or kept with its reason (`kept_because`), then the files
   written smaller and the bytes saved. A file that fails ends the run `FilesFailed`, a halt
   `Cancelled`. `storage` prints `Library::largest_files`' first page, `--limit` (25) files.
+  `recompress-to` (`kept`, `96k`, `48k`, `cd`; `Config::recompress_to`, `kept` unless set) is the
+  window's ceiling alone; `--to` keeps its own default, and both spell a `Ceiling` alike
+  (`the_settings_file_spells_each_ceiling_as_the_grammar_does`).
 - **`dedupe --apply` exits 1 when the trash refused a copy** (`Error::TrashRefused`, the count of
   `Deleted::kept`), after saying so; `organise --undo --apply` prints every move it refused and exits 1
   for each (`failed_to_apply`), and a cancelled walk back is `Cancelled`, never "no applied run is kept"
@@ -497,7 +500,7 @@ subject.
 
 **Keys whose rule is not obvious**
 
-- **Live keys ride `Stored` onto a `ResonateApp` field** (`music_folder`, `file_dropped`, `organise_new_songs`,
+- **Live keys ride `Stored` onto a `ResonateApp` field** (`music_folder`, `file_dropped`, `organise_new_songs`, `recompress_to`,
   `scroll_volume`, `mouse_navigation`, `reduced_motion`, `scrollbars`, `tabs`, `WindowButtons`), written by the
   Appearance and Library panes, live at once. `Config::window_buttons`/`Config::tabs` fold their
   switches; close is never a window button; an off tab leaves the sidebar and pane keys,

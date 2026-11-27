@@ -313,6 +313,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             resume: keeps,
             history_kept: config.history_kept(),
             organise_as: config.organise_as().to_string(),
+            recompress_to: config.recompress_to(),
             notify,
             by_sound,
             lyrics_by_the_locale,

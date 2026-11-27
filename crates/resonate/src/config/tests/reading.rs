@@ -723,6 +723,34 @@ fn the_history_is_kept_forever_until_the_file_names_a_span_of_days() {
 }
 
 #[test]
+fn the_window_recompresses_bit_for_bit_until_the_file_names_a_ceiling_the_cli_spells() {
+    let ceiling = |text: &str| {
+        read(text)
+            .expect("a ceiling is valid")
+            .recompress_to
+            .unwrap_or_default()
+    };
+
+    assert_eq!(ceiling(""), Ceiling::Kept);
+    assert_eq!(ceiling("recompress-to = \"96k\""), Ceiling::Studio);
+    assert_eq!(ceiling("recompress-to = \"48k\""), Ceiling::High);
+    assert_eq!(ceiling("recompress-to = \"cd\""), Ceiling::Cd);
+
+    let error = read("recompress-to = \"192k\"").expect_err("no such ceiling");
+
+    assert!(
+        matches!(
+            error,
+            Error::ConfigValue {
+                key: ConfigKey::RecompressTo,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn a_whole_number_is_accepted_where_a_fraction_is_expected() {
     assert_eq!(
         read("volume = 1").expect("1 is in range").volume,

@@ -54,3 +54,4 @@ versions = Versions
 the-songs-own-version = { $kind }, la propre copie de la chanson
 the-version-in = { $kind } en { $place }
 the-version = { $kind }
+recompress = Recompresser le fichier

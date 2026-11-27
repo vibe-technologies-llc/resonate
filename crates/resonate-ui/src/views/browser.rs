@@ -18,6 +18,7 @@ use self::rows::CONTROL_GAP;
 pub(crate) use self::{
     artists::portrait_frame,
     heading::{ArtistShows, year_of},
+    menus::syncs_with_other_devices,
     missing_rows::{Unheld, fetching_colour},
     record::OpenedRecord,
     rows::{controls_place, cursor_ring, reached_ring},

@@ -7,7 +7,7 @@ use std::{
 use gpui::TestAppContext;
 use parking_lot::Mutex;
 use resonate_core::Switch;
-use resonate_library::{Library, MusicExtensions};
+use resonate_library::{Ceiling, Library, MusicExtensions};
 
 use super::{Armed, Category, Group, Page, library::Looked};
 use crate::{
@@ -403,6 +403,22 @@ fn the_playback_page_writes_the_resume_switch_and_the_shuffle_style(cx: &mut Tes
         written.as_slice(),
         [SettingChange::Store(Setting::ShuffleStyle(_))]
     ));
+}
+
+#[gpui::test]
+fn the_storage_page_writes_the_highest_quality_a_re_compression_keeps(cx: &mut TestAppContext) {
+    let mut pane = Pane::open(cx);
+
+    pane.page(Page::Storage);
+
+    let written = pane.pressing("recompress-to-3", 1);
+
+    assert_eq!(written, [stored(Setting::RecompressTo(Ceiling::Cd))]);
+    assert_eq!(pane.app(|app| app.recompress_to), Ceiling::Cd);
+
+    let written = pane.pressing("recompress-to-0", 1);
+
+    assert_eq!(written, [stored(Setting::RecompressTo(Ceiling::Kept))]);
 }
 
 #[gpui::test]

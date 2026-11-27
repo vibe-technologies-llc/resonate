@@ -221,6 +221,13 @@ analyse d’un dossier ne range rien, puisque ce qu’il contenait y était déj
 Chaîne. La mise en page qui dépose une chanson, à partir des champs albumartist, artist, album,
 title, year, disc, track et ext, séparés par /. Par défaut : albumartist/album/disctrack title.
 .TP
+.B recompress-to
+Chaîne kept, 96k, 48k ou cd. La qualité la plus haute que la recompression de la fenêtre garde
+quand elle réécrit un fichier FLAC : kept garde le son au bit près, 96k et 48k rééchantillonnent un
+fichier au-dessus de cette fréquence à la plus haute de sa famille en dessous et abaissent une
+profondeur au-dessus de 24 bits à 24, cd rend chaque fichier en 44,1 kHz et 16 bits. resonate
+recompress prend --to à la place. Par défaut : kept.
+.TP
 .B music-extensions
 Array des chaînes. Les listes d’extensions audio incluent, insensible à la casse, avec ou sans
 le point. Absent est chaque extension les scans de construction, vide est none. Par défaut:

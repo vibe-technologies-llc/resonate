@@ -2248,7 +2248,9 @@ whenever the copy is not both verified and smaller. `recompressing.rs` is the pa
 library, `db/recompressing.rs` the rows it reads.
 
 - **`Ceiling` is the highest quality kept**: `Kept` (bit for bit), `Studio` (96 kHz, 24 bits),
-  `High` (48 kHz, 24 bits), `Cd` (44.1 kHz, 16 bits). `Ceiling::shape_for` takes the source's
+  `High` (48 kHz, 24 bits), `Cd` (44.1 kHz, 16 bits). `Ceiling::as_str` spells each as the terminal's `--to` does
+  (`kept`, `96k`, `48k`, `cd`), which the `recompress-to` key the window keeps is read through
+  (`Ceiling::parse`, `a_ceiling_reads_back_from_its_spelling_and_no_other`). `Ceiling::shape_for` takes the source's
   `SoundShape` and answers the shape written: the depth is the lesser of the source's and the
   ceiling's; a rate within the ceiling is kept, one above it takes the highest rate of its own
   family that fits (44.1 kHz's: 44.1, 88.2, 176.4; 48 kHz's: 48, 96, 192), so 192 kHz under
@@ -2311,7 +2313,7 @@ every track id it holds in `span_start` order, so a file a sheet cuts is one ent
 `file_size DESC, path` off `tracks_by_file_size` and paged from the last one's `SizedFile::key`
 (`SizedAfter`), never by offset. A vaulted row is listed by its own file's size and flagged, since
 the file is still the listener's; the vault's objects are not listed
-(`the_largest_files_are_listed_first_a_page_at_a_time_with_a_sheets_cuts_as_one_file`).
+(`the_largest_files_are_listed_first_a_page_at_a_time_with_a_sheets_cuts_as_one_file`). The window's *Manage storage* page pages through it (`ui.md`).
 
 ## Organising
 

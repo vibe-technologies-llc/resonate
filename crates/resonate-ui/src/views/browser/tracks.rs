@@ -4,9 +4,9 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px,
     rgb, uniform_list,
 };
-use resonate_core::Span;
+use resonate_core::{Span, TrackId};
 use resonate_engine::Placement;
-use resonate_library::{Column, Cut, Favoured, HeldMedium, Lit, PlaylistEntry, Track};
+use resonate_library::{Codec, Column, Cut, Favoured, HeldMedium, Lit, PlaylistEntry, Track};
 
 use super::{
     Chooses, Plays, Rowed, TRACK_ADD_CONTROLS, TRACK_CONTROLS,
@@ -479,6 +479,7 @@ impl RootView {
                 let deleting = Deleting::of(track);
                 let everywhere =
                     syncs_with_other_devices(cx).then(|| deleting.clone().on_every_device());
+                let recompressible = recompressible(track);
                 let in_the_queue = (this.pane != Pane::Tracks
                     && this.is_in_the_queue(&track.location, track.span, cx))
                 .then(|| (track.location.clone(), track.span));
@@ -503,6 +504,15 @@ impl RootView {
                     .shares(track.id)
                     .offers_the_file(&track.location, names)
                     .saves_the_lyrics(lyric_sheet_of(track).into_iter().collect())
+                    .when_some(recompressible, |menu, (track, title)| {
+                        menu.does(
+                            Icon::Compress,
+                            words::menu::recompress(),
+                            move |this, _, cx| {
+                                this.recompress_the_song(track, title.clone(), cx);
+                            },
+                        )
+                    })
                     .when_some(placeable, |menu, track| {
                         menu.apart()
                             .nests(Icon::Globe, words::menu::identify(), move |menu| {
@@ -592,6 +602,11 @@ impl RootView {
             cx,
         )
     }
+}
+
+fn recompressible(track: &Track) -> Option<(TrackId, String)> {
+    (track.codec == Codec::Flac && track.span.is_none() && track.location.is_local())
+        .then(|| (track.id, track.title.clone()))
 }
 
 fn disc_heading(disc: u32, media: &[HeldMedium]) -> Div {

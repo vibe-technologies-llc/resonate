@@ -543,6 +543,7 @@ impl Driven {
                 resume: false,
                 history_kept: resonate_library::HistoryKept::Forever,
                 organise_as: String::new(),
+                recompress_to: resonate_library::Ceiling::Kept,
                 notify: Arc::new(AtomicBool::new(false)),
                 by_sound: Arc::new(AtomicBool::new(false)),
                 lyrics_by_the_locale: Arc::new(AtomicBool::new(false)),

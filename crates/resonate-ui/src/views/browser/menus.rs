@@ -448,7 +448,7 @@ pub(super) fn chosen_tracks_menu(
         })
 }
 
-pub(super) fn syncs_with_other_devices(cx: &App) -> bool {
+pub(crate) fn syncs_with_other_devices(cx: &App) -> bool {
     let app = cx.global::<ResonateApp>();
     app.syncing.is_some() && app.synchronised.enabled
 }

@@ -26,7 +26,7 @@ use resonate_engine::{
 };
 use resonate_eq::Corrected;
 use resonate_library::{
-    Fingerprinters, HistoryKept, Library, Reference, Scrobblers, SignsInToSpotify,
+    Ceiling, Fingerprinters, HistoryKept, Library, Reference, Scrobblers, SignsInToSpotify,
 };
 use resonate_lyrics::Lyricists;
 use resonate_providers::SignsIn;
@@ -224,6 +224,7 @@ pub struct ResonateApp {
     pub resume: bool,
     pub history_kept: HistoryKept,
     pub organise_as: String,
+    pub recompress_to: Ceiling,
     pub notify: Arc<AtomicBool>,
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,
@@ -1264,6 +1265,7 @@ pub fn run(
             resume: stored.resume,
             history_kept: stored.history_kept,
             organise_as: stored.organise_as.clone(),
+            recompress_to: stored.recompress_to,
             notify: Arc::clone(&stored.notify),
             by_sound: Arc::clone(&stored.by_sound),
             lyrics_by_the_locale: Arc::clone(&stored.lyrics_by_the_locale),

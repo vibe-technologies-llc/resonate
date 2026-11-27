@@ -24,7 +24,7 @@ use resonate_engine::{
     SkipUnderRepeat, Unlearnt,
 };
 use resonate_eq::Binding;
-use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
+use resonate_library::{Ceiling, Cut, HistoryKept, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_providers::Providers;
 use resonate_words::{LanguageChoice, RegionChoice};
@@ -237,6 +237,7 @@ pub enum Setting {
     ShuffleSpreadsAlbums(bool),
     ShuffleFreshFirst(bool),
     OrganiseAs(String),
+    RecompressTo(Ceiling),
     UpdateDismissed(String),
     MinimiseButton(bool),
     MaximiseButton(bool),
@@ -356,6 +357,7 @@ impl Setting {
             Self::ShuffleSpreadsAlbums(_) => ConfigKey::ShuffleSpreadsAlbums,
             Self::ShuffleFreshFirst(_) => ConfigKey::ShuffleFreshFirst,
             Self::OrganiseAs(_) => ConfigKey::OrganiseAs,
+            Self::RecompressTo(_) => ConfigKey::RecompressTo,
             Self::UpdateDismissed(_) => ConfigKey::UpdateDismissed,
             Self::MinimiseButton(_) => ConfigKey::MinimiseButton,
             Self::MaximiseButton(_) => ConfigKey::MaximiseButton,
@@ -895,6 +897,7 @@ pub struct Stored {
     pub resume: bool,
     pub history_kept: HistoryKept,
     pub organise_as: String,
+    pub recompress_to: Ceiling,
     pub notify: Arc<AtomicBool>,
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,

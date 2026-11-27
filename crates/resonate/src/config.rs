@@ -18,7 +18,9 @@ use resonate_engine::{
     ReplayGainMode, Restoration, ShuffleStyle, SkipUnderRepeat, SmartShuffle,
 };
 use resonate_eq::Binding;
-use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
+use resonate_library::{
+    Ceiling, HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters,
+};
 use resonate_listen::Listening;
 use resonate_upnp::{Located, ServerName, Udn, Vouched};
 use resonate_words::{Language, LanguageChoice, RegionChoice};
@@ -109,6 +111,7 @@ pub struct Config {
     pub offer_name: Option<ServerName>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
+    pub recompress_to: Option<Ceiling>,
     pub update_dismissed: Option<String>,
     pub minimise_button: Option<bool>,
     pub maximise_button: Option<bool>,
@@ -242,6 +245,7 @@ impl fmt::Debug for Config {
             offer_name,
             history_kept,
             organise_as,
+            recompress_to,
             update_dismissed,
             minimise_button,
             maximise_button,
@@ -364,6 +368,7 @@ impl fmt::Debug for Config {
             .field("offer_name", offer_name)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
+            .field("recompress_to", recompress_to)
             .field("update_dismissed", update_dismissed)
             .field("minimise_button", minimise_button)
             .field("maximise_button", maximise_button)
@@ -617,6 +622,11 @@ impl Config {
 
     pub fn history_kept(&self) -> HistoryKept {
         self.history_kept.unwrap_or_default()
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn recompress_to(&self) -> Ceiling {
+        self.recompress_to.unwrap_or_default()
     }
 
     #[cfg(feature = "ui")]

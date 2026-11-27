@@ -332,3 +332,39 @@ tracks-counted = { $count ->
 }
 forget-what-was-fetched = clear what was fetched for that song
 song-refreshed-next = Clearing and fetching { $title } again once the lookup running now ends
+list-the-largest-files = list the largest files
+recompress-that-song = re-compress that song
+recompress-every-flac = re-compress every FLAC file
+recompressed-smaller = Re-compressed “{ $title }” — { $before } to { $after }
+kept-as-it-was = Kept “{ $title }” as it was, { $why }
+recompressed-every-flac = { $smaller ->
+    [one] { $smaller } file written smaller
+   *[other] { $smaller } files written smaller
+}, { $saved } saved · { $kept ->
+    [one] { $kept } kept as it was
+   *[other] { $kept } kept as they were
+}{ $failed ->
+    [0] {""}
+   *[other] {" "}· { $failed } could not be written again
+}
+stopped-recompressing = Stopped re-compressing — { $said }
+kept-no-smaller = since it is no smaller written again
+kept-unverified = since the copy did not read back as it went in
+kept-changed-meanwhile = since the file changed while it was written again
+kept-halted = since it was stopped before it was done
+kept-not-a-flac = since it is not a FLAC file
+kept-vaulted = since its song is kept in the vault
+kept-cut-by-sheet = since a cue sheet cuts it into songs
+kept-outside-the-library = since it is under no folder of the library
+kept-head-unread = since its FLAC header could not be read
+kept-id3-after-the-audio = since it carries an ID3v1 tag after the sound
+kept-ape-after-the-audio = since it carries an APE tag after the sound
+kept-beyond-the-encoder = since its { $rate } kHz, { $bits } bit sound is beyond what the encoder writes unless a lower quality is chosen
+kept-tied-to-the-samples = since its { $block } block names places in the sound that a new rate or depth would move
+kept-disagrees-with-its-digest = since its sound does not match the checksum it carries
+kept-wider-than-its-depth = since its samples are wider than the depth it declares
+kept-turns-partway = since its sound changes shape partway through
+kept-undecodable = since its sound could not be decoded
+kept-silent = since it holds no sound
+kept-held-under-other-names = since it is linked under other names, which would keep the old copy
+kept-attributes-not-carried = since the copy could not be given the file's owner, permissions or attributes

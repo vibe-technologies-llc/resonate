@@ -50,7 +50,7 @@ fn the_man_page_gives_every_switch_the_default_the_table_does() {
 
 #[test]
 fn the_man_page_gives_every_spelling_a_setting_takes() {
-    let spelled: [(ConfigKey, Vec<String>); 19] = [
+    let spelled: [(ConfigKey, Vec<String>); 20] = [
         (ConfigKey::Quality, spelled_by::<QualityArg>()),
         (ConfigKey::FilterPhase, spelled_by::<FilterPhaseArg>()),
         (ConfigKey::Dither, spelled_by::<DitherArg>()),
@@ -136,6 +136,12 @@ fn the_man_page_gives_every_spelling_a_setting_takes() {
         (
             ConfigKey::DiscordShows,
             Shown::ALL.map(|shown| shown.as_str().to_owned()).to_vec(),
+        ),
+        (
+            ConfigKey::RecompressTo,
+            Ceiling::ALL
+                .map(|ceiling| ceiling.as_str().to_owned())
+                .to_vec(),
         ),
     ];
 

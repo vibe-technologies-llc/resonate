@@ -295,6 +295,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             Some((*previous == PreviousRestarts::RestartsTheTrack).into())
         }
         Setting::ShuffleStyle(style) => Some(style.as_str().into()),
+        Setting::RecompressTo(ceiling) => Some(ceiling.as_str().into()),
         Setting::ShuffleSpreadsArtists(spreads) => Some((*spreads).into()),
         Setting::ShuffleSpreadsAlbums(spreads) => Some((*spreads).into()),
         Setting::ShuffleFreshFirst(fresh) => Some((*fresh).into()),

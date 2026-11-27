@@ -24,8 +24,9 @@ magnifier), `Shelf` (playlists), `Passes` (organise, import, retag and identical
 `Detail` (the album or release opened, whose tracks the album's rows merge in, `played_from` plays and a
 want lists as downloads), `Wishes`, `Delivered` (downloads), `Naming`,
 `Browse` (the listings and how far they are read), `Choices` (the switches the settings hand it),
-`Watchers` (the background readers' tasks) and `Running` (the `Work` and what waits for it); a new
-field joins the group its subject belongs to.
+`Watchers` (the background readers' tasks), `Running` (the `Work` and what waits for it) and
+`Storage` (the largest files *Manage storage* lists, `models/storage.rs`); a new field joins the
+group its subject belongs to.
 
 **`RootView` is the same**: `views/root.rs` holds its fields, the panes and the `Render`, and
 `views/root/` one `impl RootView` a subject (`made` for `new`, `told`, `started`, `playlist_actions`,
@@ -287,7 +288,8 @@ so `editing` sees it.
   `LibraryModel::save_the_lyrics` on the background executor, one toast counting what was saved,
   already there, left alone and why: `lyrics.md`, and *Into the file's tags*,
   `LibraryModel::tag_the_lyrics`, an applied tag pass over those songs alone that *Put the last run
-  back* walks back), *Identify* (nesting *Enrich this song*, *Clear and fetch again*, the ISRC and
+  back* walks back, and for a whole local FLAC file *Re-compress the file*, `Icon::Compress`, at the
+  ceiling *Manage storage* holds), *Identify* (nesting *Enrich this song*, *Clear and fetch again*, the ISRC and
   *Place on a release…*, wherever the reference is reachable), and last what takes something away (*Take out
   of the queue*, *Remove* with hide, forget a delivery and delete; a playlist's *Discard*). The
   shared pieces (`Menu::holds`, `favours`, `reaches`, `shares`, `offers_the_file`,
@@ -2999,7 +3001,7 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   while it runs. *Put the last run back* (`walks_back`, `tags_walk_back`) is armed the same way.
   **One press is armed at a time**: `SettingsShown::armed` is an `Option<Armed>` (the filing's move and
   walk back, the tags' write and walk back, the reset, the vault's keep and upkeep (`Armed::TendTheVault`), the curve discard, history
-  aging, a folder's forget, a new pairing code, the earlier plays), `arm`, `is_armed` and `lower`
+  aging, a folder's forget, a new pairing code, the earlier plays, re-compressing every FLAC), `arm`, `is_armed` and `lower`
   its only gestures, so arming one lowers any other; `disarm` (leaving the pane, a category or a
   page) and the pointer leaving the settings body (a transition via `on_hover`) run
   `lower_every_armed_press`. Passes run through `Work`, read by `LibraryModel::is_busy`: scan, forget, organise,
@@ -3041,6 +3043,39 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   (`identical_songs_are_found_listed_and_folded_only_once_found_and_pressed_twice`). Any
   files holding the same bytes are offered, as the phones' *Identical songs* (`mobile.md`) do
   (`library.md` has which file is kept).
+- **Manage storage is a Library page listing the files largest first, each deleted or written
+  smaller from its row.** `Page::Storage` (`settings/storage.rs`) is gathered under *Keeping the
+  catalog current* with `Page::Enrichment` and `Page::Identical`, and holds two groups.
+  *Re-compressing* (`Group::Recompressing`, its key `recompress-to`) is the highest quality a
+  re-compression keeps, a `kit::segmented` over the library's `Ceiling` (*Bit for bit*, *96 kHz*,
+  *48 kHz*, *CD*), worn on `ResonateApp::recompress_to` and written as `Setting::RecompressTo`
+  (`RootView::recompress_to`), which the group's mark puts back; under it *Re-compress every FLAC*,
+  armed by `Armed::RecompressEveryFlac` and taking two presses, runs
+  `LibraryModel::recompress_every_flac` = `Library::recompress_all` as a `Work::Recompressing`
+  (refused with *Another library task is still running* while any `Work` runs,
+  `every_flac_is_not_re_compressed_while_a_scan_runs_and_the_scan_is_left_to_run`), its bar and
+  *weighed, smaller, saved* counts drawn only while it runs beside *Stop*
+  (`LibraryModel::stop_recompress`), and one toast at the end (`every_flac_told`: files written
+  smaller, bytes saved, kept, failed, or stopped). *Largest files* (`Group::Storage`) is
+  `LibraryModel::largest_files`: a page of `FILES_A_PAGE` (40) `StoredFile`s (the library's
+  `SizedFile` beside the `Track`s it holds, read with `tracks_with_ids` in the same background read),
+  read when the page opens (`read_the_largest_files`) or when the group is first drawn, again after
+  every whole read lands while it has been asked for (`read_the_files_again`, so a deletion, a
+  re-compression or a scan moves it), and paged on by *Show more* from the last file's key
+  (`show_more_files`), never by offset. A row is the song's title and artist (a file a sheet cuts:
+  its name and how many songs), size and `kit::format_badge`, then marks: *Re-compress* for a whole
+  FLAC file not in the vault (`StoredFile::recompresses`), *Delete* (`RootView::ask_to_delete` with
+  `Deleting::each` of the file's songs, the same sheet and reach as the song menu's) and, only while
+  `syncs_with_other_devices`, *Delete from every device* (`Deleting::on_every_device`)
+  (`the_page_lists_the_files_largest_first_and_shows_more_a_page_at_a_time`,
+  `a_file_deleted_from_the_page_is_asked_about_first_and_every_device_only_while_syncing`). One file's
+  re-compression, from its row or a song's menu, is `LibraryModel::recompress_the_file` =
+  `Library::recompress` after the edit chain, a `Work::Recompressing` of that track (its mark greyed,
+  every other row's too, while any `Work` runs), and its toast (`recompressed_told`) says the sizes
+  before and after, or why the file was kept as it was in the listener's words (`kept_because`, one
+  sentence for each `KeptOriginal`; no smaller and stopped are notes, the rest trouble)
+  (`a_flac_on_the_page_is_re_compressed_and_told_and_a_wave_is_not_offered`,
+  `the_storage_page_writes_the_highest_quality_a_re_compression_keeps`).
 - **Library roots are edited through the desktop's file picker, or typed.** `App::prompt_for_paths`
   (`directories: true`) is the XDG portal; a machine without one says so and points at
   `Typed::root` (*Or type a folder, then press enter*). `root_typed` reads a leading `~` as

@@ -21,7 +21,7 @@ use resonate_engine::{
     ReplayGainMode, Restoration, ShuffleStyle, SkipUnderRepeat, SmartShuffle, Trial,
 };
 use resonate_eq::{Binding, ProfileName};
-use resonate_library::{HistoryKept, Layout, MusicFilters};
+use resonate_library::{Ceiling, HistoryKept, Layout, MusicFilters};
 use resonate_listen::Listening;
 use resonate_upnp::{ServerName, Udn, Vouched};
 use resonate_words::{Language, LanguageChoice, RegionChoice};

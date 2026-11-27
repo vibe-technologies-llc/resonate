@@ -330,6 +330,21 @@ mod tests {
     }
 
     #[test]
+    fn the_settings_file_spells_each_ceiling_as_the_grammar_does() {
+        use clap::ValueEnum as _;
+
+        for asked in CeilingArg::value_variants() {
+            let spelled = asked
+                .to_possible_value()
+                .expect("every ceiling is offered")
+                .get_name()
+                .to_owned();
+
+            assert_eq!(ceiling_of(*asked).as_str(), spelled);
+        }
+    }
+
+    #[test]
     fn a_file_kept_says_why_in_the_listeners_words() {
         let said = said_of(
             "Lantern.flac".to_owned(),

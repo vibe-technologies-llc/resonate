@@ -17,6 +17,7 @@ mod output;
 mod pane;
 mod processing;
 pub(crate) mod spotify;
+mod storage;
 mod subsonic;
 mod switched;
 pub(crate) mod sync;
@@ -546,6 +547,10 @@ impl RootView {
     }
 
     pub(crate) fn open_the_settings_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        if page == Page::Storage {
+            self.library
+                .update(cx, |library, cx| library.read_the_largest_files(cx));
+        }
         self.show_settings(page.category(), cx);
         self.settings_pane
             .update(cx, |pane, _| pane.shown.page = Some(page));
@@ -636,6 +641,8 @@ impl RootView {
             Group::LookingUp => self.looking_up_group(cx),
             Group::Retagging => self.retagging_group(cx),
             Group::Identical => self.identical_group(cx),
+            Group::Recompressing => self.recompressing_group(cx),
+            Group::Storage => self.storage_group(cx),
             Group::Organising => self.organising_group(cx),
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
@@ -826,6 +833,7 @@ impl RootView {
                 self.set_the_head_yaw(HeadYaw::AHEAD, cx);
             }
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
+            Group::Recompressing => self.recompress_to(defaults::RECOMPRESS_TO, cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
             Group::Motion => self.reduce_motion(defaults::REDUCED_MOTION, cx),
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
@@ -988,6 +996,7 @@ impl RootView {
             listening_from,
             listening_for,
             history_kept,
+            recompress_to: cx.global::<ResonateApp>().recompress_to,
             music_filters: cx.global::<ResonateApp>().library.music_filters(),
             skip_under_repeat,
             previous_restarts,
@@ -1335,6 +1344,7 @@ pub(crate) enum Armed {
     WriteTheTags,
     KeepTheTracks,
     FoldTheCopies,
+    RecompressEveryFlac,
     TendTheVault(Tend),
     DiscardTheCurve,
     TellTheEarlierPlays,
