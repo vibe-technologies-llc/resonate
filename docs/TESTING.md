@@ -70,13 +70,17 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [S · 0.18.1] Replace the inline lines of a real song in tests. **Low, builder.** The lyric
-  fixtures are invented now, but tests across `resonate-codec` (`sylt.rs`, `decoder.rs`,
-  `writing.rs`), `resonate-library` (`tests/finding.rs`, `stored.rs`, `retag.rs`, `synced.rs`,
-  `organise.rs`, `src/elsewhere.rs`), `resonate-lyrics` (`lrc.rs`, `sidecar.rs`), `resonate-sync`
-  (`ledger`, `wire.rs`, `tests/nearby.rs`), `resonate-online/tests/live.rs` and
-  `fuzz/seeds/lrc/sheet.lrc` still write a real song's line, title and artist inline. Write invented
-  ones of the same shape. Done when no test or seed quotes a real song.
+- [S · 0.18.1] Replace the real songs the other crates' tests name. **Low, builder.** Codec, library,
+  lyrics, sync and the playlist, listens and URI seeds use invented songs now ("Slow Water" by
+  "Example Band" on "Low Tide"), but the providers (`inbox`, `subsonic`, `tidal`, `jellyfin`,
+  `monochrome`), `resonate-engine`, `resonate-ui`, `resonate-mobile`, `resonate-mpris`,
+  `resonate-discord`, `resonate-core` and the binary still write a real artist, album or title as a
+  tag value, `resonate-core/src/text.rs` and `resonate-library/tests/sheets.rs` a real band,
+  `resonate-mobile/src/search.rs` a real line, and some touched tests still name other real songs
+  (Radiohead, Leonard Cohen, Metallica). Left by design: `resonate-sync`'s frozen seeds
+  (`tests/seeds.rs`, `fuzz/seeds/sync`), frames a released build wrote and compared byte for byte,
+  and `resonate-online`'s captured service answers and live searches. Done when no test outside
+  those names a real song.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the

@@ -13,12 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Catalog
-- [S · 0.18.1] A title made only of control characters is notified with an empty summary. **Low,
-  builder.** The notification strips controls and a NUL (`resonate-mpris`'s `notify.rs`), so a tag
-  of `"\0"` is told as nothing rather than falling back to the file's stem as an empty title does,
-  and an artist of `"\0"` over an album opens the body on a blank line. Fall back once stripped
-  text is empty. Done when such a title is notified by the stem and the body opens on the album, in
-  a test.
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
