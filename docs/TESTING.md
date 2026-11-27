@@ -70,17 +70,15 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [S · 0.18.1] Replace the real songs the other crates' tests name. **Low, builder.** Codec, library,
-  lyrics, sync and the playlist, listens and URI seeds use invented songs now ("Slow Water" by
-  "Example Band" on "Low Tide"), but the providers (`inbox`, `subsonic`, `tidal`, `jellyfin`,
-  `monochrome`), `resonate-engine`, `resonate-ui`, `resonate-mobile`, `resonate-mpris`,
-  `resonate-discord`, `resonate-core` and the binary still write a real artist, album or title as a
-  tag value, `resonate-core/src/text.rs` and `resonate-library/tests/sheets.rs` a real band,
-  `resonate-mobile/src/search.rs` a real line, and some touched tests still name other real songs
-  (Radiohead, Leonard Cohen, Metallica). Left by design: `resonate-sync`'s frozen seeds
-  (`tests/seeds.rs`, `fuzz/seeds/sync`), frames a released build wrote and compared byte for byte,
-  and `resonate-online`'s captured service answers and live searches. Done when no test outside
-  those names a real song.
+- [S · 0.18.1] Replace the real artists the remaining tests name. **Low, builder.** The Rust tests
+  hold invented songs for the Meddle and Radiohead cluster now ("Slow Water" by "Example Band" on
+  "Low Tide"), but other real artists and songs are still written across the tests (Björk, Air, the
+  Beatles, Queen, Miles Davis, Coltrane, Daft Punk, Sigur Rós, David Bowie, Led Zeppelin), the
+  phones' tests (`FolderFilingTest.kt`, `ZonePlanTest.kt`, `ios/Tests`) still name the Meddle
+  cluster, and `.claude/rules` uses it as its examples. Left by design: `resonate-sync`'s frozen
+  seeds, `resonate-online`'s captured answers and the tests asserting against them, its live
+  searches, and the MBIDs and ISRCs those fixtures agree on. Done when no test or rule outside those
+  names a real song.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
