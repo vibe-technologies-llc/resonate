@@ -430,9 +430,9 @@ file's module (`keeps::…`), and a test that starts its own binary again asks i
 - **The walk tells an observer of each file before it reads it.** `Library::scan_observed` takes a
   `ScanObserver` whose `reaching` the walker thread calls once per audio file (a file a sheet cuts
   once, by `sheet_job`) before the file is weighed against the catalog, in the order the walk
-  reaches it; `Library::scan` passes none, so the shipped path costs one branch. The walker reads
+  reaches it, a folder's files in name order as its cue sheets are; `Library::scan` passes none, so the shipped path costs one branch. The walker reads
   `ScanProgress::is_cancelled` between the files of a folder, so a scan held in the observer and
-  cancelled stops at the next file (`an_observer_is_told_of_each_file_once_in_the_order_the_walk_reaches_it`).
+  cancelled stops at the next file (`an_observer_is_told_of_each_file_once_in_name_order`).
 - **The walk reads the catalog once, bounded by the roots.** `Known::under` takes `(path, id,
   file_size, modified, sheet_modified, probe_again)` per walked root in one indexed range query, as
   a snapshot before the walker starts; safe as no path is walked twice per scan. `Known::rows` =

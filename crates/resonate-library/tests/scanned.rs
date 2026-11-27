@@ -149,13 +149,13 @@ impl ScanObserver for Reached {
 }
 
 #[test]
-fn an_observer_is_told_of_each_file_once_in_the_order_the_walk_reaches_it() -> Result<()> {
-    const FILES: usize = 5;
+fn an_observer_is_told_of_each_file_once_in_name_order() -> Result<()> {
+    const NAMES: [&str; 6] = ["e.wav", "b.wav", "f.wav", "a.wav", "d.wav", "c.wav"];
 
     let tree = Tree::new();
 
-    for number in 1..=FILES {
-        tree.wav(&format!("{number:02}.wav"));
+    for name in NAMES {
+        tree.wav(name);
     }
 
     let library = Library::open_in_memory()?;
@@ -170,13 +170,12 @@ fn an_observer_is_told_of_each_file_once_in_the_order_the_walk_reaches_it() -> R
         .scan_observed(options, Arc::clone(&reached) as Arc<dyn ScanObserver>)?
         .join()?;
 
-    let in_directory_order: Vec<PathBuf> = fs::read_dir(tree.path())
-        .expect("a readable folder")
-        .map(|entry| entry.expect("an entry").path())
-        .collect();
+    let in_name_order: Vec<PathBuf> = ["a.wav", "b.wav", "c.wav", "d.wav", "e.wav", "f.wav"]
+        .map(|name| tree.path().join(name))
+        .into();
 
-    assert_eq!(summary.stats.added, FILES as u64);
-    assert_eq!(*reached.files.lock(), in_directory_order);
+    assert_eq!(summary.stats.added, NAMES.len() as u64);
+    assert_eq!(*reached.files.lock(), in_name_order);
     Ok(())
 }
 

@@ -1426,6 +1426,7 @@ fn walk(
         }
 
         sheets.sort_by(|first, second| first.0.cmp(&second.0));
+        audio.sort_by(|first, second| first.0.cmp(&second.0));
 
         if !directory_of(walking, &sheets, &audio, &mut claimed_from_above)? {
             return Ok(false);
