@@ -1,1 +1,2 @@
 fuzz/seeds/** -text
+*.sh text eol=lf

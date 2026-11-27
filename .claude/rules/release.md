@@ -138,6 +138,8 @@ paths:
   `rustup`, Gradle, cache or build stage, names the environment, and hands each secret only to a
   signing step, and the keystore is decoded only where `apksigner` signs
   (`no_job_that_builds_holds_a_signing_secret_and_every_job_that_signs_names_the_environment`).
+  `.gitattributes` keeps every `*.sh` at LF in a Windows checkout, since the test cuts `build.sh` into its
+  stages at a line's end and a shell script with CRLF endings fails under a shell anyway.
 - **Each signing job names the environment `release-signing` for a release alone.** `release.yml`
   asks for it where the run releases a tag (`needs.release.outputs.tag`), and the dispatch
   workflows where they run on a `v*` tag; any other run names no environment, so a branch builds
