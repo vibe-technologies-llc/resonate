@@ -226,6 +226,14 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   (1 s) instead of `WATCHED_EVERY` while any is left
   (`an_inhibit_granted_after_its_deadline_is_closed_once_the_session_is_let_go`, a stand-in portal
   answering after the connection's deadline; it skips without a session bus or where a real portal owns the name).
+  The bus suite stands in for the portal and the notification server on a bus of its own and records
+  what each is asked: `Portal` answers `Inhibit` with a request object whose `Close` is observed
+  (`the_idle_inhibit_is_held_while_sound_plays_and_let_go_when_it_pauses_stops_or_ends`,
+  `a_session_shut_down_while_sound_plays_lets_the_inhibit_go`), and `NotificationServer` keeps every
+  `Notify` argument, numbering its ids and advertising `body-markup` where a test asks, so a hostile
+  tag (a NUL, markup, a newline, 10 kB) is held to what the desktop is told
+  (`what_a_notification_says_is_the_tags_text_fitted_and_each_one_replaces_the_last`,
+  `a_body_is_escaped_only_for_a_server_that_says_it_reads_markup`).
   Either service missing = debug records, never a refusal to start. `trash.rs` is the same kind
   of errand for the catalog's deletes under Flatpak: `trash_through_the_portal` opens the file and
   passes the descriptor to `org.freedesktop.portal.Trash.TrashFile` on a connection of its own

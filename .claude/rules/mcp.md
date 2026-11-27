@@ -106,6 +106,11 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   `Refusal::TooLongField`, and a prompt's `brief` and `name` likewise
   (`Refusal::TooLongArgument`)
   (`a_name_or_query_past_its_length_is_refused_and_the_schema_says_how_long_it_may_be`).
+- **Tag text is answered as read, JSON doing the escaping**: a title holding a NUL, markup, a
+  newline or 10 kB reaches `now_playing`, `show_queue` and their resources intact and the text block
+  stays the JSON of `structuredContent`; only what the library keeps of a title is bounded
+  (`hostile_title_text_is_answered_as_valid_json_and_intact_by_what_is_playing_and_the_queue`,
+  `hostile_title_text_in_the_catalog_is_listed_searched_and_embedded_as_valid_json`).
 - **Id lists are held to `MOST_ROWS`** (1000): every id array's schema has `maxItems`; more is
   `Refusal::TooMany`.
 - **A failed queueing says how far it got** (`Error::QueuedPartway`).

@@ -66,6 +66,10 @@ const ON_A_BUS_OF_ITS_OWN: &str = "RESONATE_ON_A_BUS_OF_ITS_OWN";
 const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
 const NOTIFICATIONS_PATH: &str = "/org/freedesktop/Notifications";
 const RAISED: u32 = 41;
+const PORTAL: &str = "org.freedesktop.portal.Desktop";
+const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
+const PORTAL_REQUESTS: &str = "/org/freedesktop/portal/desktop/request";
+const SUSPEND_AND_IDLE: u32 = 12;
 const IDENTITY: &str = "Resonate";
 const SYSTEM_BUS_TOO: &str = r#"DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" exec "$@""#;
 const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
@@ -3742,18 +3746,53 @@ fn a_row_moved_is_announced_as_that_row_removed_and_added_again() {
 }
 
 struct Raised {
+    application: String,
+    replaces: u32,
+    icon: String,
     summary: String,
+    body: String,
     actions: Vec<String>,
+    hints: HashMap<String, OwnedVariant>,
+    timeout: i32,
 }
 
 struct NotificationServer {
     raised: Sender<Raised>,
+    markup: bool,
+    distinct: bool,
+    sent: AtomicU32,
+}
+
+impl NotificationServer {
+    fn new(raised: Sender<Raised>) -> Self {
+        Self {
+            raised,
+            markup: false,
+            distinct: false,
+            sent: AtomicU32::new(0),
+        }
+    }
+
+    fn marking_up(mut self) -> Self {
+        self.markup = true;
+        self
+    }
+
+    fn numbering(mut self) -> Self {
+        self.distinct = true;
+        self
+    }
 }
 
 #[interface(name = "org.freedesktop.Notifications")]
 impl NotificationServer {
     fn get_capabilities(&self) -> Vec<String> {
-        vec!["actions".to_owned(), "body".to_owned()]
+        let mut capabilities = vec!["actions".to_owned(), "body".to_owned()];
+
+        if self.markup {
+            capabilities.push("body-markup".to_owned());
+        }
+        capabilities
     }
 
     #[expect(
@@ -3762,17 +3801,33 @@ impl NotificationServer {
     )]
     fn notify(
         &self,
-        _application: String,
-        _replaces: u32,
-        _icon: String,
+        application: String,
+        replaces: u32,
+        icon: String,
         summary: String,
-        _body: String,
+        body: String,
         actions: Vec<String>,
-        _hints: HashMap<String, OwnedVariant>,
-        _timeout: i32,
+        hints: HashMap<String, OwnedVariant>,
+        timeout: i32,
     ) -> u32 {
-        let _ = self.raised.send(Raised { summary, actions });
-        RAISED
+        let before = self.sent.fetch_add(1, Ordering::AcqRel);
+
+        let _ = self.raised.send(Raised {
+            application,
+            replaces,
+            icon,
+            summary,
+            body,
+            actions,
+            hints,
+            timeout,
+        });
+
+        if self.distinct {
+            RAISED + before
+        } else {
+            RAISED
+        }
     }
 
     fn close_notification(&self, _id: u32) {}
@@ -3784,6 +3839,123 @@ impl NotificationServer {
             "1".to_owned(),
             "1.2".to_owned(),
         )
+    }
+}
+
+#[derive(Debug)]
+struct Inhibited {
+    window: String,
+    flags: u32,
+    reason: Option<String>,
+    token: Option<String>,
+    request: String,
+}
+
+#[derive(Debug)]
+enum Portaled {
+    Inhibited(Inhibited),
+    Closed(String),
+}
+
+struct Request {
+    path: String,
+    events: Sender<Portaled>,
+}
+
+#[interface(name = "org.freedesktop.portal.Request")]
+impl Request {
+    fn close(&self) {
+        let _ = self.events.send(Portaled::Closed(self.path.clone()));
+    }
+}
+
+struct Portal {
+    events: Sender<Portaled>,
+}
+
+fn request_path(sender: &str, token: &str) -> String {
+    format!(
+        "{PORTAL_REQUESTS}/{}/{token}",
+        sender.trim_start_matches(':').replace('.', "_")
+    )
+}
+
+#[interface(name = "org.freedesktop.portal.Inhibit")]
+impl Portal {
+    async fn inhibit(
+        &self,
+        window: String,
+        flags: u32,
+        options: HashMap<String, OwnedVariant>,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
+        let token = text(&options, "handle_token");
+        let sender = header.sender().map(ToString::to_string).unwrap_or_default();
+
+        let request = request_path(&sender, token.as_deref().unwrap_or_default());
+        let path = OwnedObjectPath::try_from(request.clone())
+            .map_err(|error| zbus::fdo::Error::InvalidArgs(error.to_string()))?;
+
+        connection
+            .object_server()
+            .at(
+                path.clone(),
+                Request {
+                    path: request.clone(),
+                    events: self.events.clone(),
+                },
+            )
+            .await?;
+
+        let _ = self.events.send(Portaled::Inhibited(Inhibited {
+            window,
+            flags,
+            reason: text(&options, "reason"),
+            token,
+            request,
+        }));
+
+        Ok(path)
+    }
+}
+
+fn serve_notifications(server: NotificationServer) -> Connection {
+    connection::Builder::session()
+        .and_then(|builder| builder.name(NOTIFICATIONS))
+        .and_then(|builder| builder.serve_at(NOTIFICATIONS_PATH, server))
+        .and_then(connection::Builder::build)
+        .expect("a stand-in notification server on the private bus")
+}
+
+fn serve_portal() -> (Connection, Receiver<Portaled>) {
+    let (events, portaled) = unbounded();
+    let portal = connection::Builder::session()
+        .and_then(|builder| builder.name(PORTAL))
+        .and_then(|builder| builder.serve_at(PORTAL_PATH, Portal { events }))
+        .and_then(connection::Builder::build)
+        .expect("a stand-in portal on the private bus");
+
+    (portal, portaled)
+}
+
+fn portal_said(portaled: &Receiver<Portaled>) -> Portaled {
+    portaled
+        .recv_timeout(PATIENCE)
+        .expect("the portal was called")
+}
+
+fn inhibited(portaled: &Receiver<Portaled>) -> Inhibited {
+    match portal_said(portaled) {
+        Portaled::Inhibited(inhibited) => inhibited,
+        other => panic!("the session was asked to stay awake, not {other:?}"),
+    }
+}
+
+fn closed_request(portaled: &Receiver<Portaled>) -> String {
+    match portal_said(portaled) {
+        Portaled::Closed(request) => request,
+        other => panic!("the request to stay awake was closed, not {other:?}"),
     }
 }
 
@@ -3883,11 +4055,7 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
     }
 
     let (raised, notifications) = unbounded();
-    let server = connection::Builder::session()
-        .and_then(|builder| builder.name(NOTIFICATIONS))
-        .and_then(|builder| builder.serve_at(NOTIFICATIONS_PATH, NotificationServer { raised }))
-        .and_then(connection::Builder::build)
-        .expect("a stand-in notification server on the private bus");
+    let server = serve_notifications(NotificationServer::new(raised));
     let Some(harness) = Harness::start() else {
         return;
     };
@@ -3954,11 +4122,7 @@ fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up()
     }
 
     let (raised, notifications) = unbounded();
-    let _server = connection::Builder::session()
-        .and_then(|builder| builder.name(NOTIFICATIONS))
-        .and_then(|builder| builder.serve_at(NOTIFICATIONS_PATH, NotificationServer { raised }))
-        .and_then(connection::Builder::build)
-        .expect("a stand-in notification server on the private bus");
+    let _server = serve_notifications(NotificationServer::new(raised));
     let Some(harness) = Harness::start() else {
         return;
     };
@@ -4024,6 +4188,281 @@ fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up()
 
     assert_eq!(after.summary, "After");
     assert_eq!(harness.names(), [BUS_NAME]);
+}
+
+#[test]
+fn the_idle_inhibit_is_held_while_sound_plays_and_let_go_when_it_pauses_stops_or_ends() {
+    if !on_a_bus_of_its_own() {
+        return;
+    }
+
+    let (_portal, portaled) = serve_portal();
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+
+    harness.load(&tree.wav("echoes.wav"));
+
+    let playing = inhibited(&portaled);
+
+    assert_eq!(playing.window, "");
+    assert_eq!(playing.flags, SUSPEND_AND_IDLE);
+    assert_eq!(playing.reason.as_deref(), Some("Resonate is playing"));
+    assert_eq!(playing.token.as_deref(), Some("resonate_1"));
+    assert!(
+        portaled.recv_timeout(SETTLE).is_err(),
+        "the session was asked once for a track that kept playing"
+    );
+
+    harness
+        .player
+        .send(Command::Pause)
+        .expect("the engine takes a pause");
+
+    assert_eq!(closed_request(&portaled), playing.request);
+
+    harness
+        .player
+        .send(Command::Play)
+        .expect("the engine takes a play");
+
+    let resumed = inhibited(&portaled);
+
+    assert_eq!(resumed.token.as_deref(), Some("resonate_2"));
+    assert_ne!(resumed.request, playing.request);
+
+    harness
+        .player
+        .send(Command::Stop)
+        .expect("the engine takes a stop");
+
+    assert_eq!(closed_request(&portaled), resumed.request);
+    assert!(
+        portaled.recv_timeout(SETTLE).is_err(),
+        "the stopped session was let go of again"
+    );
+
+    harness
+        .player
+        .send(Command::Play)
+        .expect("the engine takes a play");
+
+    let again = inhibited(&portaled);
+
+    assert_eq!(again.token.as_deref(), Some("resonate_3"));
+
+    harness.wait_for(
+        |harness| {
+            harness
+                .player
+                .state()
+                .current
+                .is_some_and(|track| track.duration.is_some())
+        },
+        "the length of the track to be known",
+    );
+    harness
+        .proxy(PLAYER)
+        .call::<_, _, ()>("Seek", &(60_000_000_i64,))
+        .expect("Seek is served");
+
+    harness.wait_for(
+        |harness| harness.status() == "Stopped",
+        "the end of the queue to stop playback",
+    );
+
+    assert_eq!(closed_request(&portaled), again.request);
+}
+
+#[test]
+fn a_session_shut_down_while_sound_plays_lets_the_inhibit_go() {
+    if !on_a_bus_of_its_own() {
+        return;
+    }
+
+    let (_portal, portaled) = serve_portal();
+    let Some(mut harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+
+    harness.load(&tree.wav("echoes.wav"));
+
+    let playing = inhibited(&portaled);
+
+    harness
+        .mpris
+        .take()
+        .expect("the service is running")
+        .shutdown();
+
+    assert_eq!(closed_request(&portaled), playing.request);
+}
+
+struct Tagged {
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+}
+
+impl Tagged {
+    fn new(title: &str, artist: Option<&str>, album: Option<&str>) -> Self {
+        Self {
+            title: title.to_owned(),
+            artist: artist.map(str::to_owned),
+            album: album.map(str::to_owned),
+        }
+    }
+
+    fn comments(&self) -> Vec<(&str, &str)> {
+        [
+            Some(("TITLE", self.title.as_str())),
+            self.artist.as_deref().map(|artist| ("ARTIST", artist)),
+            self.album.as_deref().map(|album| ("ALBUM", album)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+}
+
+fn hostile_tracks() -> Vec<Tagged> {
+    vec![
+        Tagged::new("Echoes", Some("Pink Floyd"), Some("Meddle")),
+        Tagged::new("a\0b", Some("Simon & Garfunkel <live>"), None),
+        Tagged::new("<b>Tom & Jerry</b>", Some("\0"), Some("&amp;")),
+        Tagged::new("one\ntwo\r\nthree", None, None),
+        Tagged::new(
+            &"x".repeat(10_000),
+            Some(&format!("a{}", "\u{e9}".repeat(5_000))),
+            None,
+        ),
+    ]
+}
+
+fn told_of(markup: bool, tracks: &[Tagged]) -> Option<Vec<Raised>> {
+    let (raised, notifications) = unbounded();
+    let server = NotificationServer::new(raised).numbering();
+    let _server = serve_notifications(if markup { server.marking_up() } else { server });
+    let harness = Harness::start()?;
+    let tree = Tree::new();
+    let files: Vec<PathBuf> = tracks
+        .iter()
+        .enumerate()
+        .map(|(index, track)| tree.flac(&format!("{index}.flac"), &track.comments()))
+        .collect();
+
+    harness.load_all(&files);
+
+    let mut told = Vec::new();
+
+    for index in 0..tracks.len() {
+        if index > 0 {
+            harness
+                .player
+                .send(Command::Next)
+                .expect("the engine takes a skip");
+        }
+        told.push(
+            notifications
+                .recv_timeout(PATIENCE)
+                .unwrap_or_else(|_| panic!("track {index} was told to the desktop")),
+        );
+    }
+    Some(told)
+}
+
+fn long_artist_body() -> String {
+    format!("a{}", "\u{e9}".repeat(2_047))
+}
+
+#[test]
+fn what_a_notification_says_is_the_tags_text_fitted_and_each_one_replaces_the_last() {
+    if !on_a_bus_of_its_own() {
+        return;
+    }
+
+    let Some(told) = told_of(false, &hostile_tracks()) else {
+        return;
+    };
+    let summaries: Vec<&str> = told.iter().map(|raised| raised.summary.as_str()).collect();
+    let bodies: Vec<&str> = told.iter().map(|raised| raised.body.as_str()).collect();
+    let long_body = long_artist_body();
+
+    assert_eq!(
+        summaries[..4],
+        ["Echoes", "ab", "<b>Tom & Jerry</b>", "one\ntwo\r\nthree"]
+    );
+    assert_eq!(summaries[4], "x".repeat(4 * 1024));
+    assert_eq!(
+        bodies[..4],
+        [
+            "Pink Floyd\nMeddle",
+            "Simon & Garfunkel <live>",
+            "\n&amp;",
+            ""
+        ]
+    );
+    assert_eq!(bodies[4], long_body);
+    assert!(!told.iter().any(|raised| raised.summary.contains('\0')));
+    assert!(!told.iter().any(|raised| raised.body.contains('\0')));
+
+    let replaced: Vec<u32> = told.iter().map(|raised| raised.replaces).collect();
+
+    assert_eq!(
+        replaced,
+        [0, RAISED, RAISED + 1, RAISED + 2, RAISED + 3],
+        "each notification names the one before it"
+    );
+}
+
+#[test]
+fn a_body_is_escaped_only_for_a_server_that_says_it_reads_markup() {
+    if !on_a_bus_of_its_own() {
+        return;
+    }
+
+    let Some(told) = told_of(true, &hostile_tracks()) else {
+        return;
+    };
+
+    assert_eq!(told[0].body, "Pink Floyd\nMeddle");
+    assert_eq!(told[1].summary, "ab");
+    assert_eq!(told[1].body, "Simon &amp; Garfunkel &lt;live&gt;");
+    assert_eq!(told[2].summary, "<b>Tom & Jerry</b>");
+    assert_eq!(told[2].body, "\n&amp;amp;");
+    assert_eq!(told[4].body, long_artist_body());
+}
+
+#[test]
+fn a_notification_carries_the_hints_and_buttons_the_desktop_reads() {
+    if !on_a_bus_of_its_own() {
+        return;
+    }
+
+    let Some(told) = told_of(false, &hostile_tracks()[..1]) else {
+        return;
+    };
+    let first = &told[0];
+
+    assert_eq!(first.application, IDENTITY);
+    assert_eq!(first.icon, "resonate");
+    assert_eq!(first.timeout, -1);
+    assert_eq!(first.actions.len(), 6);
+    assert_eq!(flag(&first.hints, "transient"), Some(true));
+    assert_eq!(
+        text(&first.hints, "desktop-entry").as_deref(),
+        Some("resonate")
+    );
+    assert_eq!(
+        first
+            .hints
+            .get("urgency")
+            .and_then(|urgency| u8::try_from(urgency.try_clone().ok()?).ok()),
+        Some(0)
+    );
+    assert!(!first.hints.contains_key("image-path"));
 }
 
 #[test]
