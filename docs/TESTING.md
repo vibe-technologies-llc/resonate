@@ -166,14 +166,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Release
-- [S · 0.18.1] The signing jobs have not run. `release.yml`, `android-apk.yml` and `macos-dmg.yml`
-  build on one runner and sign on another (`release.md`'s *Signing apart from the build*), and a
-  run that releases no tag names the environment `${{ ... || '' }}`, an empty name, which GitHub's
-  documentation does not say is read as no environment; nor has `build.ps1 -Stage`, the macOS
-  `bundle` and `image` stages on a Mac or `apksigner sign` with the release keystore run. Dispatch
-  `android-apk.yml` and `macos-dmg.yml` on a branch and on a `v*` tag, and `release.yml` on a
-  branch, once the `release-signing` environment is set. Done when each leg has run and the APK it
-  signs installs over the last release.
+- [S · 0.18.1] The signed legs have not run. The `release-signing` environment holds the Android
+  keystore and admits `v*` tags alone, and every leg run from a branch passed (`android-apk.yml`,
+  `macos-dmg.yml`, `release.yml`: the build and sign jobs apart, an empty environment name read as
+  none), but no `v*` tag has yet reached a signing job: `apksigner sign` with the release keystore,
+  `build.ps1 -Stage` and the macOS `image` stage under a certificate. A throwaway tag would burn a
+  release name (releases are immutable), so the next release's tag is the run. The repository's own
+  copies of the four Android secrets stay while `release/0.15` to `release/0.17` sign from them.
+  Done when a release's signed APK installs over the one before.
 
 ## Dependencies
 - [S · blocked: flacenc] `heapless` 0.8.0, which `flacenc` 0.5.1 (the latest, and upstream's
