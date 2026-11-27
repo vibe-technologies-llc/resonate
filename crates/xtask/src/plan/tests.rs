@@ -15,6 +15,8 @@ fn line(step: &Step) -> String {
     format!("{} {}", step.program.path(), step.args.join(" "))
 }
 
+const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
+
 const LINUX: Host = Host {
     linux: true,
     bus: false,
@@ -118,16 +120,16 @@ fn the_sync_crate_is_linted_again_as_the_server_links_it_without_its_device_feat
 #[test]
 fn the_dsp_lab_is_linted_and_tested_without_its_references_whenever_it_or_what_it_measures_changed()
 {
-    let lab = lint(&these(&[DSP_LAB]), None, true);
-    let measured = lint(&these(&["resonate-engine"]), None, false);
-    let unrelated = lint(&these(&["resonate-sync"]), None, false);
+    let lab = lint(&these(&[DSP_LAB]), Some(LINUX_TARGET), true);
+    let measured = lint(&these(&["resonate-engine"]), Some(LINUX_TARGET), false);
+    let unrelated = lint(&these(&["resonate-sync"]), Some(LINUX_TARGET), false);
     let tested = test(&these(&[DSP_LAB]), true, &[], LINUX);
     let alone = test(&these(&["resonate-sync"]), false, &[], LINUX);
 
     assert_eq!(lab.len(), 1);
     assert_eq!(
         line(&lab[0]),
-        "cargo clippy --locked --manifest-path dsp-lab/Cargo.toml --all-targets --no-default-features -- -D warnings"
+        "cargo clippy --locked --target x86_64-unknown-linux-gnu --manifest-path dsp-lab/Cargo.toml --all-targets --no-default-features -- -D warnings"
     );
     assert!(line(&measured[measured.len() - 1]).contains("--manifest-path dsp-lab/Cargo.toml"));
     assert!(unrelated.iter().all(|step| !line(step).contains("dsp-lab")));
