@@ -102,12 +102,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   (`crates/resonate-upnp/src/offered.rs`), and the `upnp` fuzz target never reaches it. Feed it the
   request heads the target already builds, holding that a name is never admitted. Done when the
   target calls it and its seeds pass.
-- [M · 0.18.1] Let the fake renderer fault, stall and lie. **Medium, builder.** The renderer fake
-  always answers 200 with a fixed name (`crates/resonate-upnp/tests/renderer.rs:245`, `:271-420`),
-  and `ANSWER_BYTES_AT_MOST` and `HEAD_BYTES_AT_MOST` (`crates/resonate-upnp/src/http.rs:11-15`) are
-  referenced by no test. Give `Profile` a fault on a named action, an answer that never comes, an
-  oversized body and a long name. Done when each ends the stream cleanly or drops the sink in a
-  test.
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,
   `RESONATE_YTMUSIC_TESTS`, with `RESONATE_YTMUSIC_COOKIES`, `RESONATE_YTMUSIC_SONG`,
   `RESONATE_YTMUSIC_PLAYLIST`) has never been run: it lists an album song, reads the head of its best
