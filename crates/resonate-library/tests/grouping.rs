@@ -80,28 +80,28 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
     let tree = Tree::new();
 
     tree.write(
-        "beatles.wav",
+        "bellringers.wav",
         &Wav::new()
-            .text(TITLE, "Help!")
-            .text(ARTIST, "The Beatles")
-            .text(ARTIST_SORT, "Beatles, The")
-            .text(ALBUM, "Help!")
+            .text(TITLE, "Hold Fast!")
+            .text(ARTIST, "The Bell Ringers")
+            .text(ARTIST_SORT, "Bell Ringers, The")
+            .text(ALBUM, "Hold Fast!")
             .build(),
     );
     tree.write(
-        "cure.wav",
+        "cove.wav",
         &Wav::new()
             .text(TITLE, "Lovesong")
-            .text(ARTIST, "The Cure")
-            .text(ALBUM_ARTIST, "The Cure")
-            .text(ALBUM_ARTIST_SORT, "Cure, The")
-            .text(ALBUM, "Disintegration")
+            .text(ARTIST, "The Cove")
+            .text(ALBUM_ARTIST, "The Cove")
+            .text(ALBUM_ARTIST_SORT, "Cove, The")
+            .text(ALBUM, "Dispersal")
             .build(),
     );
     for (file, artist) in [
-        ("abba.wav", "ABBA"),
-        ("blur.wav", "Blur"),
-        ("doves.wav", "Doves"),
+        ("acme.wav", "ACME"),
+        ("brambles.wav", "Brambles"),
+        ("dunes.wav", "Dunes"),
     ] {
         tree.write(
             file,
@@ -131,11 +131,11 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
 
     assert_eq!(
         named(Direction::Ascending)?,
-        ["ABBA", "The Beatles", "Blur", "The Cure", "Doves"]
+        ["ACME", "The Bell Ringers", "Brambles", "The Cove", "Dunes"]
     );
     assert_eq!(
         named(Direction::Descending)?,
-        ["Doves", "The Cure", "Blur", "The Beatles", "ABBA"]
+        ["Dunes", "The Cove", "Brambles", "The Bell Ringers", "ACME"]
     );
 
     let by_owner: Vec<String> = library
@@ -150,7 +150,7 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
 
     assert_eq!(
         by_owner,
-        ["ABBA", "Help!", "Blur", "Disintegration", "Doves"]
+        ["ACME", "Hold Fast!", "Brambles", "Dispersal", "Dunes"]
     );
     Ok(())
 }
@@ -160,18 +160,18 @@ fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
     let tree = Tree::new();
 
     for (file, title, sort) in [
-        ("black.wav", "The Black Album", Some("Black Album, The")),
+        ("brown.wav", "The Brown Album", Some("Brown Album, The")),
         (
-            "black-again.wav",
-            "The Black Album",
-            Some("Black Album, The"),
+            "brown-again.wav",
+            "The Brown Album",
+            Some("Brown Album, The"),
         ),
-        ("abbey.wav", "Abbey Road", None),
-        ("revolver.wav", "Revolver", None),
+        ("anchor.wav", "Anchor Road", None),
+        ("rowboat.wav", "Rowboat", None),
     ] {
         let wav = Wav::new()
             .text(TITLE, "Song")
-            .text(ARTIST, "The Beatles")
+            .text(ARTIST, "The Bell Ringers")
             .text(ALBUM, title);
         let wav = match sort {
             Some(sort) => wav.text(ALBUM_SORT, sort),
@@ -199,11 +199,11 @@ fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
 
     assert_eq!(
         titled(Direction::Ascending)?,
-        ["Abbey Road", "The Black Album", "Revolver"]
+        ["Anchor Road", "The Brown Album", "Rowboat"]
     );
     assert_eq!(
         titled(Direction::Descending)?,
-        ["Revolver", "The Black Album", "Abbey Road"]
+        ["Rowboat", "The Brown Album", "Anchor Road"]
     );
     Ok(())
 }
@@ -213,17 +213,17 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
     let tree = Tree::new();
 
     for (file, title, title_sort, artist, artist_sort) in [
-        ("end.wav", "The End", Some("End, The"), "Doves", None),
-        ("abba.wav", "Angel Eyes", None, "ABBA", None),
+        ("end.wav", "The End", Some("End, The"), "Dunes", None),
+        ("acme.wav", "Amber Eyes", None, "ACME", None),
         (
-            "beatles.wav",
-            "Help!",
+            "bellringers.wav",
+            "Hold Fast!",
             None,
-            "The Beatles",
-            Some("Beatles, The"),
+            "The Bell Ringers",
+            Some("Bell Ringers, The"),
         ),
-        ("fade.wav", "Fade", None, "Blur", None),
-        ("yesterday.wav", "Yesterday", None, "The Beatles", None),
+        ("fade.wav", "Fade", None, "Brambles", None),
+        ("yonder.wav", "Yonder", None, "The Bell Ringers", None),
     ] {
         let wav = Wav::new().text(TITLE, title).text(ARTIST, artist);
         let wav = match title_sort {
@@ -256,27 +256,27 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
 
     assert_eq!(
         listed(SortOrder::Title, Direction::Ascending)?,
-        ["Angel Eyes", "The End", "Fade", "Help!", "Yesterday"]
+        ["Amber Eyes", "The End", "Fade", "Hold Fast!", "Yonder"]
     );
     assert_eq!(
         listed(SortOrder::Title, Direction::Descending)?,
-        ["Yesterday", "Help!", "Fade", "The End", "Angel Eyes"]
+        ["Yonder", "Hold Fast!", "Fade", "The End", "Amber Eyes"]
     );
 
     let by_artist = listed(SortOrder::Artist, Direction::Ascending)?;
 
-    assert_eq!(&by_artist[..1], ["Angel Eyes"]);
+    assert_eq!(&by_artist[..1], ["Amber Eyes"]);
     assert_eq!(
         by_artist[1..3].iter().collect::<BTreeSet<_>>(),
-        BTreeSet::from([&"Help!".to_owned(), &"Yesterday".to_owned()]),
-        "a Beatles track its file does not sort was not filed under the artist's sort name"
+        BTreeSet::from([&"Hold Fast!".to_owned(), &"Yonder".to_owned()]),
+        "a Bell Ringers track its file does not sort was not filed under the artist's sort name"
     );
     assert_eq!(&by_artist[3..], ["Fade", "The End"]);
 
     let backwards = listed(SortOrder::Artist, Direction::Descending)?;
 
     assert_eq!(&backwards[..2], ["The End", "Fade"]);
-    assert_eq!(&backwards[4..], ["Angel Eyes"]);
+    assert_eq!(&backwards[4..], ["Amber Eyes"]);
     Ok(())
 }
 

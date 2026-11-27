@@ -95,7 +95,7 @@ import Testing
     }
 
     @Test func searchWordsAreFoldedAndSplitButKeepTheirHyphens() {
-        #expect(SettingsSearch.words("True-peak, Björk!") == ["true-peak", "bjork"])
+        #expect(SettingsSearch.words("True-peak, Sölvi!") == ["true-peak", "solvi"])
         #expect(SettingsSearch.matching("truepeak").first?.place == .processing)
         #expect(SettingsSearch.matching("peak").map(\.place).contains(.processing))
     }
@@ -165,7 +165,7 @@ import Testing
     }
 
     @Test func theShelfChosenIsKeptAndReadBackAndOutranksAnOlderPage() throws {
-        let kept = KeptNavigation(tab: .library, paths: [.library: [.artist("Björk")]], shelf: .artists)
+        let kept = KeptNavigation(tab: .library, paths: [.library: [.artist("Sölvi")]], shelf: .artists)
         let encoded = try #require(kept.encoded)
         let older = #"{"tab":"library","shelf":"playlists","paths":["library",[{"artists":{}}]]}"#
 

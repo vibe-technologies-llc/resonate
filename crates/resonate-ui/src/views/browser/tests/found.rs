@@ -7,7 +7,7 @@ use resonate_library::Library;
 use resonate_providers::Providers;
 
 use super::{
-    fixtures::{Delivers, HEROES_TONIGHT, HEROES_TONIGHT_GROUP, LIGHTS_GROUP, MusicBrainz, mbid},
+    fixtures::{Delivers, LANTERN_TONIGHT, LANTERN_TONIGHT_GROUP, LIGHTS_GROUP, MusicBrainz, mbid},
     searching::typed,
 };
 use crate::{
@@ -28,7 +28,7 @@ fn a_reach_for_an_album_not_held(cx: &mut TestAppContext) -> Driven {
 
     let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     driven.until(|root, cx| !root.library.read(cx).albums_found().is_empty());
     driven
 }
@@ -38,7 +38,7 @@ fn an_album_not_held_opens_its_page_when_the_lookup_lands(cx: &mut TestAppContex
     let mut driven = a_reach_for_an_album_not_held(cx);
 
     driven.root.update(&mut driven.cx, |root, cx| {
-        root.open_album_not_held(mbid(HEROES_TONIGHT_GROUP), cx);
+        root.open_album_not_held(mbid(LANTERN_TONIGHT_GROUP), cx);
     });
     driven.until(|root, cx| matches!(root.library.read(cx).selection(), Selection::Album(_)));
 
@@ -73,7 +73,7 @@ fn a_song_downloaded_on_an_album_opened_from_the_search_stays_on_it_as_the_held_
         });
     });
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     driven.until(|root, cx| !root.library.read(cx).found().is_empty());
     driven.root.update(&mut driven.cx, |root, cx| {
         root.open_album_not_held(mbid(LIGHTS_GROUP), cx);
@@ -110,7 +110,7 @@ fn a_song_downloaded_on_an_album_opened_from_the_search_stays_on_it_as_the_held_
         "the song downloaded left the album it was pressed on"
     );
 
-    typed(&mut driven, "Heroes");
+    typed(&mut driven, "Lantern");
     driven.until(|root, cx| root.library.read(cx).listing().is_empty());
 }
 
@@ -121,7 +121,7 @@ fn an_album_not_held_does_not_open_over_a_pane_the_window_moved_to_while_it_was_
     let mut driven = a_reach_for_an_album_not_held(cx);
 
     driven.root.update(&mut driven.cx, |root, cx| {
-        root.open_album_not_held(mbid(HEROES_TONIGHT_GROUP), cx);
+        root.open_album_not_held(mbid(LANTERN_TONIGHT_GROUP), cx);
         root.set_pane(Pane::Queue, cx);
     });
     driven.settle();
@@ -199,7 +199,7 @@ fn a_found_song_pressed_lands_once_as_the_held_track_and_plays(cx: &mut TestAppC
         });
     });
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     driven.until(|root, cx| !root.library.read(cx).found().is_empty());
     driven.click("unheld-title-0");
     driven.until(|root, cx| {
@@ -215,7 +215,7 @@ fn a_found_song_pressed_lands_once_as_the_held_track_and_plays(cx: &mut TestAppC
     driven.until(|root, cx| root.player.read(cx).state().current.is_some());
 
     assert!(
-        driven.read(|root, cx| !root.library.read(cx).is_awaited(&mbid(HEROES_TONIGHT))),
+        driven.read(|root, cx| !root.library.read(cx).is_awaited(&mbid(LANTERN_TONIGHT))),
         "a song pressed and landed within half a minute plays once and is awaited no more"
     );
     assert_eq!(
@@ -264,7 +264,7 @@ fn a_found_song_pressed_on_one_zone_plays_there_though_another_is_shown_when_it_
     });
     driven.settle();
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     driven.until(|root, cx| !root.library.read(cx).found().is_empty());
     driven.root.update(&mut driven.cx, |root, cx| {
         let found = root
@@ -363,7 +363,11 @@ fn a_search_begun_on_any_pane_opens_the_top_results(cx: &mut TestAppContext) {
     folder.tagged(
         "one.wav",
         1,
-        &[(b"IART", "Janji"), (b"INAM", "Heroes"), (b"IPRD", "Album")],
+        &[
+            (b"IART", "Another Band"),
+            (b"INAM", "Lantern"),
+            (b"IPRD", "Album"),
+        ],
     );
 
     let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
@@ -383,7 +387,7 @@ fn a_search_begun_on_any_pane_opens_the_top_results(cx: &mut TestAppContext) {
     ] {
         driven.click(sidebar);
         driven.cx.update(|_, cx| {
-            search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
+            search.update(cx, |search, cx| search.set_text("lantern".to_owned(), cx));
         });
         driven.until(|root, cx| root.search_in_front(cx).is_some());
 
@@ -407,12 +411,12 @@ fn songs_not_in_the_library_stand_on_the_first_page_however_many_it_holds(cx: &m
     let folder = Folder::new();
 
     for number in 0..40 {
-        let title = format!("Heroes {number}");
+        let title = format!("Lantern {number}");
 
         folder.tagged(
             &format!("{number:02}.wav"),
             1,
-            &[(b"IART", "Janji"), (b"INAM", title.as_str())],
+            &[(b"IART", "Another Band"), (b"INAM", title.as_str())],
         );
     }
 
@@ -429,7 +433,7 @@ fn songs_not_in_the_library_stand_on_the_first_page_however_many_it_holds(cx: &m
     let search = driven.read(|root, _| root.typed.search.clone());
 
     driven.cx.update(|_, cx| {
-        search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
+        search.update(cx, |search, cx| search.set_text("lantern".to_owned(), cx));
     });
     driven.until(|root, cx| {
         let library = root.library.read(cx);
@@ -486,12 +490,12 @@ fn an_album_found_elsewhere_stands_under_the_albums_held_and_in_the_top_results(
     let folder = Folder::new();
 
     folder.tagged(
-        "heroes.wav",
+        "lantern.wav",
         1,
         &[
-            (b"IART", "Janji"),
-            (b"INAM", "Heroes Again"),
-            (b"IPRD", "Heroes"),
+            (b"IART", "Another Band"),
+            (b"INAM", "Lantern Again"),
+            (b"IPRD", "Lantern"),
         ],
     );
 
@@ -505,12 +509,12 @@ fn an_album_found_elsewhere_stands_under_the_albums_held_and_in_the_top_results(
     };
     let mut driven = Driven::reaching(cx, library, &folder, reaching);
     let cell: &'static str =
-        Box::leak(format!("album-found-{HEROES_TONIGHT_GROUP}").into_boxed_str());
+        Box::leak(format!("album-found-{LANTERN_TONIGHT_GROUP}").into_boxed_str());
 
     let search = driven.read(|root, _| root.typed.search.clone());
 
     driven.cx.update(|_, cx| {
-        search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
+        search.update(cx, |search, cx| search.set_text("lantern".to_owned(), cx));
     });
     driven.until(|root, cx| !root.library.read(cx).albums_found().is_empty());
 

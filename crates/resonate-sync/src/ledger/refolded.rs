@@ -174,7 +174,7 @@ mod tests {
     fn song(artist: &str, album: &str) -> Recording {
         Recording {
             mbid: None,
-            title: "Paradise City".into(),
+            title: "Harbour City".into(),
             artist: artist.into(),
             album: album.into(),
             length: Some(Duration::from_secs(406)),
@@ -182,11 +182,11 @@ mod tests {
     }
 
     fn quoted() -> Recording {
-        song("Guns N' Roses", "Appetite for Destruction")
+        song("Rum N' Raisin", "Hunger for Reasons")
     }
 
     fn plain() -> Recording {
-        song("Guns N Roses", "Appetite For Destruction!")
+        song("Rum N Raisin", "Hunger For Reasons!")
     }
 
     fn identified() -> Recording {

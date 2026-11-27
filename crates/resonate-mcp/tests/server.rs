@@ -2783,7 +2783,7 @@ fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
 
     let library = scanned(&tree);
     let id = library
-        .create_playlist("AC/DC & Friends?")
+        .create_playlist("AB/CD & Friends?")
         .expect("a playlist to be made");
     let track = library
         .tracks(&Default::default())
@@ -2815,19 +2815,19 @@ fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
             "resonate://library/statistics",
             "resonate://library/suggestions",
             "resonate://library/missing",
-            "resonate://library/playlist/AC/DC%20%26%20Friends%3F",
+            "resonate://library/playlist/AB/CD%20%26%20Friends%3F",
         ]
     );
-    assert_eq!(listed["resources"][8]["name"], "AC/DC & Friends?");
+    assert_eq!(listed["resources"][8]["name"], "AB/CD & Friends?");
 
     let rows = read_resource(&server, uris[8]);
 
-    assert_eq!(rows["playlist"]["name"], "AC/DC & Friends?");
+    assert_eq!(rows["playlist"]["name"], "AB/CD & Friends?");
     assert_eq!(rows["tracks"][0]["title"], "Night Signal");
     assert_eq!(
         read_resource(
             &server,
-            "resonate://library/playlist/ac%2Fdc%20%26%20friends%3F"
+            "resonate://library/playlist/ab%2Fcd%20%26%20friends%3F"
         ),
         rows
     );

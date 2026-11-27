@@ -1538,14 +1538,14 @@ mod tests {
 
     #[test]
     fn an_equals_sign_asks_for_the_whole_name() {
-        let whole = worded("artist:=Air");
-        let quoted = worded("artist:=\"Air Supply\"");
+        let whole = worded("artist:=Kestrel");
+        let quoted = worded("artist:=\"Kestrel Hill\"");
 
         assert_eq!(
             whole,
             vec![Word {
                 column: Some(Column::Artist),
-                text: "Air".to_owned(),
+                text: "Kestrel".to_owned(),
                 reach: Reach::Whole,
             }]
         );
@@ -1553,12 +1553,12 @@ mod tests {
             quoted,
             vec![Word {
                 column: Some(Column::Artist),
-                text: "Air Supply".to_owned(),
+                text: "Kestrel Hill".to_owned(),
                 reach: Reach::Whole,
             }]
         );
         assert_eq!(
-            worded("artist:\"=Air\"").first().map(|word| word.reach),
+            worded("artist:\"=Kestrel\"").first().map(|word| word.reach),
             Some(Reach::Phrase),
             "an equals sign inside the quotes is part of the phrase"
         );
@@ -1569,7 +1569,7 @@ mod tests {
         );
 
         for text in [
-            "artist:=\"Air\"",
+            "artist:=\"Kestrel\"",
             "-album:=\"The Lighthouse\"",
             "genre:=\"trip hop\"",
         ] {
@@ -1580,7 +1580,7 @@ mod tests {
             );
         }
 
-        assert!(Search::read("artist:=Air").reads() == vec!["artist:=\"Air\"".to_owned()]);
+        assert!(Search::read("artist:=Kestrel").reads() == vec!["artist:=\"Kestrel\"".to_owned()]);
     }
 
     #[test]
@@ -1948,7 +1948,7 @@ mod tests {
 
     #[test]
     fn a_word_lights_a_name_however_the_name_is_spelled() {
-        assert_eq!(lit("Björk", "bjork", Column::Artist), ["Björk"]);
+        assert_eq!(lit("Sölvi", "solvi", Column::Artist), ["Sölvi"]);
         assert_eq!(
             lit("Marcin Przybyłowicz", "przybylowicz", Column::Artist),
             ["Przybyłowicz"]
@@ -1959,15 +1959,15 @@ mod tests {
 
     #[test]
     fn a_combining_accent_is_part_of_the_word_it_sits_in_typed_or_held() {
-        let typed = "Mo\u{0308}tley";
-        let held = "Mo\u{0308}tley Cru\u{0308}e";
+        let typed = "No\u{0308}ble";
+        let held = "No\u{0308}ble Cru\u{0308}e";
 
-        assert_eq!(pieces_of(&worded(typed)[0]).as_slice(), ["motley"]);
-        assert_eq!(lit(held, "motley", Column::Artist), ["Mo\u{0308}tley"]);
-        assert_eq!(lit("Mötley Crüe", typed, Column::Artist), ["Mötley"]);
+        assert_eq!(pieces_of(&worded(typed)[0]).as_slice(), ["noble"]);
+        assert_eq!(lit(held, "noble", Column::Artist), ["No\u{0308}ble"]);
+        assert_eq!(lit("Nöble Crüe", typed, Column::Artist), ["Nöble"]);
         assert_eq!(
-            lit(held, "\"motley crue\"", Column::Artist),
-            ["Mo\u{0308}tley Cru\u{0308}e"]
+            lit(held, "\"noble crue\"", Column::Artist),
+            ["No\u{0308}ble Cru\u{0308}e"]
         );
         assert_eq!(pieces_of(&worded("हिन्दी")[0]).as_slice(), ["हिन्दी"]);
     }

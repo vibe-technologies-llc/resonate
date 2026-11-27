@@ -937,11 +937,11 @@ mod tests {
                 .expect("an album artist");
         };
 
-        song("joga", "Björk", "Homogenic", "");
-        song("bachelorette", "BJORK", "HOMOGENIC", "Bjork");
-        song("hunter", "Bjork", "homogenic", "");
+        song("luna", "Sölvi", "Seabrook", "");
+        song("mooring", "SOLVI", "SEABROOK", "Solvi");
+        song("wavebreak", "Solvi", "seabrook", "");
         song("alone", "", "", "");
-        song("sometimes", "Air", "Moon Safari", "");
+        song("sometimes", "Kestrel", "Salt Meadow", "");
 
         let held = catalog.statistics(0).expect("the statistics");
 
@@ -967,10 +967,10 @@ mod tests {
                 .expect("a song")
                 .id as i64
         };
-        let joga = song("joga", "Joga", "Björk", "Homogenic");
-        let bachelorette = song("bachelorette", "Bachelorette", "BJORK", "Homogenic");
-        let sometimes = song("sometimes", "Sometimes", "Air", "Moon Safari");
-        let hidden = song("hidden", "Hidden", "Air", "Moon Safari");
+        let luna = song("luna", "Luna", "Sölvi", "Seabrook");
+        let mooring = song("mooring", "Mooring", "SOLVI", "Seabrook");
+        let sometimes = song("sometimes", "Sometimes", "Kestrel", "Salt Meadow");
+        let hidden = song("hidden", "Hidden", "Kestrel", "Salt Meadow");
 
         catalog
             .0
@@ -986,8 +986,8 @@ mod tests {
         let day = 86_400;
 
         for (track, began, heard, counted) in [
-            (joga, now - 60, 200_000, 1),
-            (bachelorette, now - 120, 100_000, 1),
+            (luna, now - 60, 200_000, 1),
+            (mooring, now - 120, 100_000, 1),
             (sometimes, now - 3 * day, 50_000, 1),
             (sometimes, now - 3 * day - 60, 40_000, 0),
             (hidden, now - 30, 900_000, 1),
@@ -1011,14 +1011,14 @@ mod tests {
             .expect("all time");
 
         assert_eq!(week.albums.len(), 2);
-        assert_eq!(week.albums[0].name, "Homogenic");
-        assert_eq!(week.albums[0].by.to_lowercase(), "bjork");
+        assert_eq!(week.albums[0].name, "Seabrook");
+        assert_eq!(week.albums[0].by.to_lowercase(), "solvi");
         assert_eq!(week.albums[0].plays, 2);
         assert_eq!(week.albums[0].listened_ms, 300_000);
-        assert_eq!(week.albums[1].name, "Moon Safari");
-        assert_eq!(week.artists[0].key, "bjork");
+        assert_eq!(week.albums[1].name, "Salt Meadow");
+        assert_eq!(week.artists[0].key, "solvi");
         assert_eq!(week.artists[0].plays, 2);
-        assert_eq!(week.artists[1].name, "Air");
+        assert_eq!(week.artists[1].name, "Kestrel");
         assert_eq!(week.artists[1].plays, 1);
         assert_eq!(week.days.len(), 2);
         assert_eq!(week.songs_heard, 3);

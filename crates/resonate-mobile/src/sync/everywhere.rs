@@ -201,32 +201,32 @@ mod tests {
     use crate::{MobilePlayer, Track};
 
     const A_MINUTE_IN_NANOS: i64 = 60 * 1_000_000_000;
-    const JOGA: &str = "5c1f2b7e-3d9a-4e6b-8f0c-1a2b3c4d5e6f";
-    const ANOTHER_JOGA: &str = "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b";
+    const LUNA: &str = "5c1f2b7e-3d9a-4e6b-8f0c-1a2b3c4d5e6f";
+    const ANOTHER_LUNA: &str = "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b";
     const LIVE_MS: u64 = 342_000;
 
-    struct Joga<'a> {
+    struct Luna<'a> {
         album: &'a str,
         duration_ms: u64,
         recording: Option<&'a str>,
     }
 
-    const ON_HOMOGENIC: Joga<'static> = Joga {
-        album: "Homogenic",
+    const ON_SEABROOK: Luna<'static> = Luna {
+        album: "Seabrook",
         duration_ms: 305_000,
         recording: None,
     };
 
-    fn joga(player: &MobilePlayer, uri: &str, joga: &Joga<'_>) -> Track {
+    fn luna(player: &MobilePlayer, uri: &str, luna: &Luna<'_>) -> Track {
         let track = player
             .catalog
             .upsert(Track {
                 uri: uri.into(),
-                name: "Jóga.flac".into(),
-                title: "Jóga".into(),
-                artist: "Björk".into(),
-                album: joga.album.into(),
-                duration_ms: joga.duration_ms,
+                name: "Lúna.flac".into(),
+                title: "Lúna".into(),
+                artist: "Sölvi".into(),
+                album: luna.album.into(),
+                duration_ms: luna.duration_ms,
                 rate: 44_100,
                 codec: "FLAC".into(),
                 ..Track::default()
@@ -235,7 +235,7 @@ mod tests {
 
         player
             .catalog
-            .learned(track.id, joga.recording, None, None, "")
+            .learned(track.id, luna.recording, None, None, "")
             .expect("a recording identity");
         track
     }
@@ -258,12 +258,12 @@ mod tests {
         )
     }
 
-    fn homogenic(title: &str) -> Recording {
+    fn seabrook(title: &str) -> Recording {
         Recording {
             mbid: None,
             title: title.into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             length: Some(Duration::from_secs(305)),
         }
     }
@@ -274,15 +274,15 @@ mod tests {
         let player = player(&folder);
 
         let documents = documents_of(&player, &folder);
-        let hunter = song(&player, "content://test/hunter.flac", "Hunter", None);
-        let joga = song(&player, "content://test/joga.flac", "Jóga", None);
+        let wavebreak = song(&player, "content://test/wavebreak.flac", "Wavebreak", None);
+        let luna = song(&player, "content://test/luna.flac", "Lúna", None);
 
         player
-            .forget_deleted_songs(vec![joga.id])
+            .forget_deleted_songs(vec![luna.id])
             .expect("deleted here");
 
         let deleted = player
-            .forget_songs_deleted_everywhere(vec![hunter.id])
+            .forget_songs_deleted_everywhere(vec![wavebreak.id])
             .expect("deleted everywhere");
         let waiting = documents.deleted_everywhere().expect("the waiting");
 
@@ -300,10 +300,14 @@ mod tests {
                 .iter()
                 .map(|told| told.recording.title.as_str())
                 .collect::<Vec<_>>(),
-            ["Hunter"]
+            ["Wavebreak"]
         );
         assert!(told.is_empty());
-        assert!(documents.deleted_here(&homogenic("Hunter")).expect("asked"));
+        assert!(
+            documents
+                .deleted_here(&seabrook("Wavebreak"))
+                .expect("asked")
+        );
     }
 
     #[test]
@@ -312,8 +316,8 @@ mod tests {
         let player = player(&folder);
 
         let documents = documents_of(&player, &folder);
-        let bachelorette = song(&player, "content://test/b.flac", "Bachelorette", None);
-        let told = homogenic("Bachelorette");
+        let mooring = song(&player, "content://test/b.flac", "Mooring", None);
+        let told = seabrook("Mooring");
         let a_minute_ago = wall_nanos() - A_MINUTE_IN_NANOS;
         let in_a_minute = wall_nanos() + A_MINUTE_IN_NANOS;
 
@@ -347,7 +351,7 @@ mod tests {
                 .iter()
                 .map(|track| track.id)
                 .collect::<Vec<_>>(),
-            [bachelorette.id]
+            [mooring.id]
         );
         assert!(once_taken.is_empty());
     }
@@ -385,10 +389,15 @@ mod tests {
         let refusing = folder("refusing-phone");
 
         let (deleting, kept, refused) = (player(&here), player(&there), player(&refusing));
-        let hunter = song(&deleting, "content://test/hunter.flac", "Hunter", None);
-        let copy = song(&kept, "content://test/hunter.flac", "Hunter", None);
+        let wavebreak = song(
+            &deleting,
+            "content://test/wavebreak.flac",
+            "Wavebreak",
+            None,
+        );
+        let copy = song(&kept, "content://test/wavebreak.flac", "Wavebreak", None);
 
-        song(&refused, "content://test/hunter.flac", "Hunter", None);
+        song(&refused, "content://test/wavebreak.flac", "Wavebreak", None);
 
         let (from, to) = (documents_of(&deleting, &here), documents_of(&kept, &there));
         let unwilling = DocumentCatalog {
@@ -402,7 +411,7 @@ mod tests {
         told_by(&mut unwilling_ledger, &unwilling);
 
         deleting
-            .forget_songs_deleted_everywhere(vec![hunter.id])
+            .forget_songs_deleted_everywhere(vec![wavebreak.id])
             .expect("deleted everywhere");
 
         let told = told_by(&mut from_ledger, &from);
@@ -417,7 +426,7 @@ mod tests {
             .take_deletions_from_other_devices()
             .expect("waiting");
         let followed_back = unwilling_ledger
-            .deleted_everywhere(&homogenic("Hunter"))
+            .deleted_everywhere(&seabrook("Wavebreak"))
             .expect("asked");
 
         for folder in [here, there, refusing] {
@@ -450,15 +459,20 @@ mod tests {
     ) -> Told {
         let deleting = player(here);
 
-        let hunter = song(&deleting, "content://test/hunter.flac", "Hunter", None);
-        let copy = song(kept, "content://test/hunter.flac", "Hunter", None);
+        let wavebreak = song(
+            &deleting,
+            "content://test/wavebreak.flac",
+            "Wavebreak",
+            None,
+        );
+        let copy = song(kept, "content://test/wavebreak.flac", "Wavebreak", None);
         let from = documents_of(&deleting, here);
         let mut from_ledger = ledger();
 
         told_by(&mut from_ledger, &from);
         told_by(to_ledger, to);
         deleting
-            .forget_songs_deleted_everywhere(vec![hunter.id])
+            .forget_songs_deleted_everywhere(vec![wavebreak.id])
             .expect("deleted everywhere");
 
         let told = told_by(&mut from_ledger, &from);
@@ -593,8 +607,8 @@ mod tests {
 
         let added_there = song(
             &answering.deleting,
-            "content://test/hunter-again.flac",
-            "Hunter",
+            "content://test/wavebreak-again.flac",
+            "Wavebreak",
             None,
         );
 
@@ -610,7 +624,7 @@ mod tests {
             .take_deletions_from_other_devices()
             .expect("waiting");
         let standing_there = answered_ledger
-            .deleted_everywhere(&homogenic("Hunter"))
+            .deleted_everywhere(&seabrook("Wavebreak"))
             .expect("asked");
 
         let adding = player(&here);
@@ -619,7 +633,12 @@ mod tests {
 
         let told_here = told_a_deletion(&deleting_here, &adding, &to_adding, &mut adding_ledger);
 
-        let added_here = song(&adding, "content://test/hunter-again.flac", "Hunter", None);
+        let added_here = song(
+            &adding,
+            "content://test/wavebreak-again.flac",
+            "Wavebreak",
+            None,
+        );
 
         added_a_minute_on(&adding, &added_here);
 
@@ -656,43 +675,43 @@ mod tests {
         let folder = folder("deleted-by-id");
         let player = player(&folder);
 
-        let named = joga(
+        let named = luna(
             &player,
-            "content://test/joga.flac",
-            &Joga {
-                recording: Some(JOGA),
-                ..ON_HOMOGENIC
+            "content://test/luna.flac",
+            &Luna {
+                recording: Some(LUNA),
+                ..ON_SEABROOK
             },
         );
 
-        joga(
+        luna(
             &player,
-            "content://test/joga-debut.flac",
-            &Joga {
-                album: "Debut",
-                ..ON_HOMOGENIC
+            "content://test/luna-debut.flac",
+            &Luna {
+                album: "Early Days",
+                ..ON_SEABROOK
             },
         );
-        joga(
+        luna(
             &player,
-            "content://test/joga-live.flac",
-            &Joga {
+            "content://test/luna-live.flac",
+            &Luna {
                 duration_ms: LIVE_MS,
-                ..ON_HOMOGENIC
+                ..ON_SEABROOK
             },
         );
-        joga(
+        luna(
             &player,
-            "content://test/joga-another.flac",
-            &Joga {
-                recording: Some(ANOTHER_JOGA),
-                ..ON_HOMOGENIC
+            "content://test/luna-another.flac",
+            &Luna {
+                recording: Some(ANOTHER_LUNA),
+                ..ON_SEABROOK
             },
         );
 
         let told = Recording {
-            mbid: Some(Mbid::new(JOGA).expect("an mbid")),
-            ..homogenic("Jóga")
+            mbid: Some(Mbid::new(LUNA).expect("an mbid")),
+            ..seabrook("Lúna")
         };
         let (taken, for_the_platform) = waiting_for_the_platform(&player, &told);
 
@@ -707,26 +726,26 @@ mod tests {
         let folder = folder("deleted-by-name");
         let player = player(&folder);
 
-        let named = joga(&player, "content://test/joga.flac", &ON_HOMOGENIC);
+        let named = luna(&player, "content://test/luna.flac", &ON_SEABROOK);
 
-        joga(
+        luna(
             &player,
-            "content://test/joga-debut.flac",
-            &Joga {
-                album: "Debut",
-                ..ON_HOMOGENIC
+            "content://test/luna-debut.flac",
+            &Luna {
+                album: "Early Days",
+                ..ON_SEABROOK
             },
         );
-        joga(
+        luna(
             &player,
-            "content://test/joga-live.flac",
-            &Joga {
+            "content://test/luna-live.flac",
+            &Luna {
                 duration_ms: LIVE_MS,
-                ..ON_HOMOGENIC
+                ..ON_SEABROOK
             },
         );
 
-        let (taken, for_the_platform) = waiting_for_the_platform(&player, &homogenic("Jóga"));
+        let (taken, for_the_platform) = waiting_for_the_platform(&player, &seabrook("Lúna"));
 
         let _ = fs::remove_dir_all(&folder);
 
@@ -739,20 +758,20 @@ mod tests {
         let folder = folder("deleted-bare");
         let player = player(&folder);
 
-        joga(&player, "content://test/joga.flac", &ON_HOMOGENIC);
-        joga(
+        luna(&player, "content://test/luna.flac", &ON_SEABROOK);
+        luna(
             &player,
-            "content://test/joga-debut.flac",
-            &Joga {
-                album: "Debut",
-                ..ON_HOMOGENIC
+            "content://test/luna-debut.flac",
+            &Luna {
+                album: "Early Days",
+                ..ON_SEABROOK
             },
         );
 
         let told = Recording {
             album: String::new(),
             length: None,
-            ..homogenic("Jóga")
+            ..seabrook("Lúna")
         };
         let (taken, for_the_platform) = waiting_for_the_platform(&player, &told);
 

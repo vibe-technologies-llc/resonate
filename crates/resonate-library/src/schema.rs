@@ -3022,34 +3022,34 @@ mod tests {
         lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
-                "INSERT INTO artists (id, key, name) VALUES (1, 'sigur ros', 'Sigur Ros');
+                "INSERT INTO artists (id, key, name) VALUES (1, 'silvo mor', 'Silvo Mor');
                  INSERT INTO artist_releases (artist_id, mbid, title, folded)
-                 VALUES (1, 'a', 'Agaetis Byrjun', 'agaetis byrjun');
-                 INSERT INTO albums (id, title, artist_id) VALUES (1, 'Takk', 1);
+                 VALUES (1, 'a', 'Agaet Dogun', 'agaet dogun');
+                 INSERT INTO albums (id, title, artist_id) VALUES (1, 'Glima', 1);
                  INSERT INTO release_tracks (id, album_id, disc, position, title, folded)
-                 VALUES (4, 1, 1, 1, 'Glosoli', 'glosoli');",
+                 VALUES (4, 1, 1, 1, 'Rosolin', 'rosolin');",
             )
             .expect("the rows are stored");
 
         connection
             .execute_batch(
-                "UPDATE artists SET key = 'sigur rosa' WHERE id = 1;
-                 UPDATE artist_releases SET folded = 'valtari' WHERE mbid = 'a';
-                 UPDATE release_tracks SET folded = 'hoppipolla' WHERE id = 4;",
+                "UPDATE artists SET key = 'silvo mora' WHERE id = 1;
+                 UPDATE artist_releases SET folded = 'sumarland' WHERE mbid = 'a';
+                 UPDATE release_tracks SET folded = 'hlidabrun' WHERE id = 4;",
             )
             .expect("the rows are renamed");
 
         assert_eq!(
-            trigram_hits(&connection, "artists_key_fts", "key", "rosa"),
+            trigram_hits(&connection, "artists_key_fts", "key", "mora"),
             [1]
         );
         assert_eq!(
-            trigram_hits(&connection, "artist_releases_fts", "folded", "valt"),
+            trigram_hits(&connection, "artist_releases_fts", "folded", "suma"),
             [1]
         );
-        assert!(trigram_hits(&connection, "artist_releases_fts", "folded", "byrj").is_empty());
+        assert!(trigram_hits(&connection, "artist_releases_fts", "folded", "dogu").is_empty());
         assert_eq!(
-            trigram_hits(&connection, "release_tracks_fts", "folded", "hoppi"),
+            trigram_hits(&connection, "release_tracks_fts", "folded", "hlida"),
             [4]
         );
         assert!(trigram_hits(&connection, "release_tracks_fts", "folded", "oso").is_empty());
@@ -3058,9 +3058,9 @@ mod tests {
             .execute_batch("DELETE FROM artists WHERE id = 1; DELETE FROM albums WHERE id = 1;")
             .expect("the rows cascade away");
 
-        assert!(trigram_hits(&connection, "artists_key_fts", "key", "rosa").is_empty());
-        assert!(trigram_hits(&connection, "artist_releases_fts", "folded", "valt").is_empty());
-        assert!(trigram_hits(&connection, "release_tracks_fts", "folded", "hoppi").is_empty());
+        assert!(trigram_hits(&connection, "artists_key_fts", "key", "mora").is_empty());
+        assert!(trigram_hits(&connection, "artist_releases_fts", "folded", "suma").is_empty());
+        assert!(trigram_hits(&connection, "release_tracks_fts", "folded", "hlida").is_empty());
         assert!(unfinished_indexes(&connection).is_empty());
     }
 
@@ -3166,7 +3166,7 @@ mod tests {
                 "INSERT INTO tracks (path, title, artist, tagged_title, tagged_artist, title_sort, artist_sort, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
                  VALUES ('as-tagged.flac', 'The End', 'The Doors', 'The End', 'The Doors', 'End, The', 'Doors, The', 44100, 2, 1, 1, 10, 1, 1, 1),
                         ('renamed.flac', 'The Lighthouse', 'Example Band', 'the lighthous', 'exampel band', 'Lighthous, The', 'Band, Exampel', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        ('unsorted.flac', 'Angel', 'Massive Attack', 'Angel', 'Massive Attack', NULL, NULL, 44100, 2, 1, 1, 10, 1, 1, 1);",
+                        ('unsorted.flac', 'Angel', 'Another Band', 'Angel', 'Another Band', NULL, NULL, 44100, 2, 1, 1, 10, 1, 1, 1);",
             )
             .expect("the rows are stored");
 
@@ -3195,7 +3195,7 @@ mod tests {
                 (
                     "unsorted.flac".to_owned(),
                     "Angel".to_owned(),
-                    "Massive Attack".to_owned()
+                    "Another Band".to_owned()
                 ),
             ]
         );
@@ -3274,11 +3274,11 @@ mod tests {
         connection
             .execute_batch(
                 "INSERT INTO artists (id, key, name, tagged_sort) VALUES (1, 'the doors', 'The Doors', 'Doors, The');
-                 INSERT INTO artists (id, key, name) VALUES (2, 'the beatles', 'The Beatles');
+                 INSERT INTO artists (id, key, name) VALUES (2, 'the bell ringers', 'The Bell Ringers');
                  INSERT INTO tracks (path, title, artist, artist_id, tagged_title, tagged_artist, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
                  VALUES ('untagged.flac', 'The End', 'The Doors', 1, 'The End', 'The Doors', 44100, 2, 1, 1, 10, 1, 1, 1),
                         ('featuring.flac', 'Riders', 'The Doors & Friends', 1, 'Riders', 'The Doors & Friends', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        ('beatles.flac', 'Help!', 'The Beatles', 2, 'Help!', 'The Beatles', 44100, 2, 1, 1, 10, 1, 1, 1);",
+                        ('bellringers.flac', 'Help!', 'The Bell Ringers', 2, 'Help!', 'The Bell Ringers', 44100, 2, 1, 1, 10, 1, 1, 1);",
             )
             .expect("the rows are stored");
 
@@ -3287,29 +3287,35 @@ mod tests {
             filed("featuring.flac").as_deref(),
             Some("The Doors & Friends")
         );
-        assert_eq!(filed("beatles.flac").as_deref(), Some("The Beatles"));
+        assert_eq!(
+            filed("bellringers.flac").as_deref(),
+            Some("The Bell Ringers")
+        );
 
         connection
-            .execute_batch("UPDATE artists SET sort_name = 'Beatles, The' WHERE id = 2;")
+            .execute_batch("UPDATE artists SET sort_name = 'Bell Ringers, The' WHERE id = 2;")
             .expect("a lookup sorts the artist");
 
-        assert_eq!(filed("beatles.flac").as_deref(), Some("Beatles, The"));
+        assert_eq!(
+            filed("bellringers.flac").as_deref(),
+            Some("Bell Ringers, The")
+        );
 
         connection
             .execute_batch(
-                "UPDATE tracks SET artist_sort = 'Fab Four' WHERE path = 'beatles.flac';",
+                "UPDATE tracks SET artist_sort = 'Fab Four' WHERE path = 'bellringers.flac';",
             )
             .expect("the file names a sort of its own");
 
-        assert_eq!(filed("beatles.flac").as_deref(), Some("Fab Four"));
+        assert_eq!(filed("bellringers.flac").as_deref(), Some("Fab Four"));
 
         connection
             .execute_batch(
-                "UPDATE tracks SET artist = 'Beatles', artist_id = NULL WHERE path = 'beatles.flac';",
+                "UPDATE tracks SET artist = 'Bell Ringers', artist_id = NULL WHERE path = 'bellringers.flac';",
             )
             .expect("a lookup renames the credit");
 
-        assert_eq!(filed("beatles.flac").as_deref(), Some("Beatles"));
+        assert_eq!(filed("bellringers.flac").as_deref(), Some("Bell Ringers"));
     }
 
     #[test]
@@ -3433,9 +3439,9 @@ mod tests {
             .iter()
             .position(|step| *step == RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES)
             .expect("the refold step");
-        let quoted = "named:guns n' roses\u{1f}paradise city\u{1f}appetite for destruction";
-        let plain = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction!";
-        let refolded = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction";
+        let quoted = "named:rum n' raisin\u{1f}harbour city\u{1f}hunger for reasons";
+        let plain = "named:rum n raisin\u{1f}harbour city\u{1f}hunger for reasons!";
+        let refolded = "named:rum n raisin\u{1f}harbour city\u{1f}hunger for reasons";
         let identified = "mbid:83d91898-7763-47d7-b03b-b92132375c47";
 
         connection
@@ -3447,8 +3453,8 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO songs_received (recording, path, title, artist, album) VALUES
-                     (?1, '/music/quoted.flac', 'Paradise City', 'Guns N'' Roses', NULL),
-                     (?2, '/music/plain.flac', 'Paradise City', 'Guns N Roses', NULL),
+                     (?1, '/music/quoted.flac', 'Harbour City', 'Rum N'' Raisin', NULL),
+                     (?2, '/music/plain.flac', 'Harbour City', 'Rum N Raisin', NULL),
                      (?3, '/music/quoted.flac', NULL, NULL, NULL)",
                 params![quoted, plain, identified],
             )

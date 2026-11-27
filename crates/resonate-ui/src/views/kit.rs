@@ -2152,7 +2152,7 @@ mod tests {
 
             for name in [
                 "AVATAR",
-                "Taylor Swift",
+                "Marlow Reed",
                 "A very long song title ".repeat(30).as_str(),
             ] {
                 let text = gpui::StyledText::new(name.to_owned());
@@ -2189,7 +2189,7 @@ mod tests {
         cx.run_until_parked();
         names.read_with(cx, |names, _| {
             assert_eq!(names.layouts[0].text(), "AVATAR");
-            assert_eq!(names.layouts[1].text(), "Taylor Swift");
+            assert_eq!(names.layouts[1].text(), "Marlow Reed");
             assert!(names.layouts[2].text().ends_with('…'));
         });
     }

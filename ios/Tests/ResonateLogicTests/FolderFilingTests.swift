@@ -34,18 +34,18 @@ final class Scratch {
 
 @Suite struct FolderURITests {
     @Test func aRelativePathIsEscapedPieceByPieceAndKeepsItsSlashes() {
-        let uri = FolderURI.make(root: "abc", relative: "Pink Floyd/100% #1?.flac")
+        let uri = FolderURI.make(root: "abc", relative: "Example Band/100% #1?.flac")
 
         #expect(uri == "resonate-folder://abc/Pink%20Floyd/100%25%20%231%3F.flac")
     }
 
     @Test func aMadeUriIsReadBackToTheSamePieces() {
-        let uri = FolderURI.make(root: "abc", relative: "Björk/Homogenic/01 Hunter.flac")
+        let uri = FolderURI.make(root: "abc", relative: "Sölvi/Seabrook/01 Wavebreak.flac")
 
         let (root, relative) = FolderURI.split(uri)!
 
         #expect(root == "abc")
-        #expect(FolderURI.components(of: relative) == ["Björk", "Homogenic", "01 Hunter.flac"])
+        #expect(FolderURI.components(of: relative) == ["Sölvi", "Seabrook", "01 Wavebreak.flac"])
     }
 
     @Test func aUriNamingOnlyTheRootHasNoRelativePath() {
@@ -78,33 +78,33 @@ final class Scratch {
     }
 
     @Test func aNameSpelledDecomposedMakesTheUriOfItsComposedSpelling() {
-        let composed = "Björk/Jóga.flac"
+        let composed = "Sölvi/Lúna.flac"
         let decomposed = composed.decomposedStringWithCanonicalMapping
 
         let made = FolderURI.make(root: "abc", relative: decomposed)
 
         #expect(!decomposed.unicodeScalars.elementsEqual(composed.unicodeScalars))
         #expect(made == FolderURI.make(root: "abc", relative: composed))
-        #expect(made == "resonate-folder://abc/Bj%C3%B6rk/J%C3%B3ga.flac")
+        #expect(made == "resonate-folder://abc/S%C3%B6lvi/J%C3%B3ga.flac")
     }
 
     @Test func aComposedPathReachesAFileNamedDecomposedWhereTheFolderTellsTheTwoApart() {
         let scratch = Scratch()
-        let decomposed = "Björk/Jóga.flac".decomposedStringWithCanonicalMapping
+        let decomposed = "Sölvi/Lúna.flac".decomposedStringWithCanonicalMapping
         scratch.write(decomposed)
 
-        let reached = FolderURI.reached(["Björk", "Jóga.flac"], under: scratch.url)
+        let reached = FolderURI.reached(["Sölvi", "Lúna.flac"], under: scratch.url)
 
         #expect(FileManager.default.fileExists(atPath: reached.path))
-        #expect(reached.lastPathComponent.unicodeScalars.elementsEqual("Jóga.flac".decomposedStringWithCanonicalMapping.unicodeScalars))
+        #expect(reached.lastPathComponent.unicodeScalars.elementsEqual("Lúna.flac".decomposedStringWithCanonicalMapping.unicodeScalars))
     }
 
     @Test func aPathNamingNoFileIsReachedAsSpelled() {
         let scratch = Scratch()
 
-        let reached = FolderURI.reached(["Björk", "Jóga.flac"], under: scratch.url)
+        let reached = FolderURI.reached(["Sölvi", "Lúna.flac"], under: scratch.url)
 
-        #expect(reached == scratch.url.appendingPathComponent("Björk").appendingPathComponent("Jóga.flac"))
+        #expect(reached == scratch.url.appendingPathComponent("Sölvi").appendingPathComponent("Lúna.flac"))
     }
 
     @Test func aDotsNameThatIsNotAClimbIsAllowed() {
@@ -277,54 +277,54 @@ final class Scratch {
 }
 
 @Suite struct StandingCopiesTests {
-    let homogenic = ["Björk", "Homogenic"]
+    let seabrook = ["Sölvi", "Seabrook"]
 
     func standing(in scratch: Scratch, filed: [[String]]) -> Set<String> {
         Set(
-            StandingCopies.standing(named: "Björk - Hunter.flac", filed: filed, in: "abc", at: scratch.url)
+            StandingCopies.standing(named: "Sölvi - Wavebreak.flac", filed: filed, in: "abc", at: scratch.url)
                 .map { "\($0.folder.joined(separator: "/"))|\($0.name)|\($0.uri)" }
         )
     }
 
     @Test func theRootHandsOnlyNamesOnTheStemAndAFiledFolderHandsEveryFile() {
         let scratch = Scratch()
-        scratch.write("Björk - Hunter.flac")
-        scratch.write("Björk - Hunter (1).flac")
-        scratch.write("Björk - Jóga.flac")
-        scratch.write("Björk/Homogenic/02 Hunter.flac")
-        scratch.write("Björk/Homogenic/cover.jpg")
+        scratch.write("Sölvi - Wavebreak.flac")
+        scratch.write("Sölvi - Wavebreak (1).flac")
+        scratch.write("Sölvi - Lúna.flac")
+        scratch.write("Sölvi/Seabrook/02 Wavebreak.flac")
+        scratch.write("Sölvi/Seabrook/cover.jpg")
 
-        let found = standing(in: scratch, filed: [homogenic])
+        let found = standing(in: scratch, filed: [seabrook])
         let made = { (relative: String) in FolderURI.make(root: "abc", relative: relative) }
 
         #expect(
             found == [
-                "|Björk - Hunter.flac|\(made("Björk - Hunter.flac"))",
-                "|Björk - Hunter (1).flac|\(made("Björk - Hunter (1).flac"))",
-                "Björk/Homogenic|02 Hunter.flac|\(made("Björk/Homogenic/02 Hunter.flac"))",
-                "Björk/Homogenic|cover.jpg|\(made("Björk/Homogenic/cover.jpg"))",
+                "|Sölvi - Wavebreak.flac|\(made("Sölvi - Wavebreak.flac"))",
+                "|Sölvi - Wavebreak (1).flac|\(made("Sölvi - Wavebreak (1).flac"))",
+                "Sölvi/Seabrook|02 Wavebreak.flac|\(made("Sölvi/Seabrook/02 Wavebreak.flac"))",
+                "Sölvi/Seabrook|cover.jpg|\(made("Sölvi/Seabrook/cover.jpg"))",
             ]
         )
     }
 
     @Test func aFolderNotNamedIsNeverWalked() {
         let scratch = Scratch()
-        scratch.write("Björk/Debut/Hunter.flac")
-        scratch.write("Björk/Hunter.flac")
-        scratch.write("Other/Hunter.flac")
+        scratch.write("Sölvi/Early Days/Wavebreak.flac")
+        scratch.write("Sölvi/Wavebreak.flac")
+        scratch.write("Other/Wavebreak.flac")
 
-        #expect(standing(in: scratch, filed: [homogenic]).isEmpty)
+        #expect(standing(in: scratch, filed: [seabrook]).isEmpty)
         #expect(standing(in: scratch, filed: []).isEmpty)
     }
 
     @Test func aFolderLeavingTheRootIsRefusedBeforeAnythingIsListed() {
         let scratch = Scratch()
-        scratch.write("inside/Hunter.flac")
+        scratch.write("inside/Wavebreak.flac")
         let inside = scratch.url.appendingPathComponent("inside")
 
-        let found = StandingCopies.standing(named: "Hunter.flac", filed: [[".."], [""], []], in: "abc", at: inside)
+        let found = StandingCopies.standing(named: "Wavebreak.flac", filed: [[".."], [""], []], in: "abc", at: inside)
 
-        #expect(found.map(\.name) == ["Hunter.flac"])
+        #expect(found.map(\.name) == ["Wavebreak.flac"])
         #expect(found.allSatisfy { $0.folder.isEmpty })
     }
 }

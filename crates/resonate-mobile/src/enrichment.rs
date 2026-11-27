@@ -3614,8 +3614,8 @@ mod tests {
             .upsert(Track {
                 uri: "content://test/a.flac".into(),
                 title: "A".into(),
-                artist: "Björk".into(),
-                album: "Début".into(),
+                artist: "Sölvi".into(),
+                album: "Prélude".into(),
                 ..Track::default()
             })
             .expect("a song");
@@ -3623,14 +3623,14 @@ mod tests {
             .upsert(Track {
                 uri: "content://test/b.flac".into(),
                 title: "B".into(),
-                artist: "Björk".into(),
+                artist: "Sölvi".into(),
                 ..Track::default()
             })
             .expect("a song without an album");
 
         assert_eq!(
             catalog.album_key_of(track.id).expect("a key"),
-            keyed("Début", "Björk")
+            keyed("Prélude", "Sölvi")
         );
         assert_eq!(catalog.album_key_of(untitled.id).expect("no key"), None);
 
@@ -3645,7 +3645,7 @@ mod tests {
 
         assert_eq!(
             catalog.album_key_of(track.id).expect("a key"),
-            keyed("Début", "Various")
+            keyed("Prélude", "Various")
         );
     }
 
@@ -3772,7 +3772,7 @@ mod tests {
             for (name, title, artist) in [
                 ('a', "Time", "Example Band"),
                 ('b', "Money", "Example Band"),
-                ('c', "Time", "Air"),
+                ('c', "Time", "Kestrel"),
                 ('d', "d.wav", ""),
             ] {
                 harness

@@ -1685,16 +1685,16 @@ mod tests {
     #[test]
     fn a_sort_name_a_lookup_gave_is_written_only_where_the_file_names_none() {
         let row = TrackToTag {
-            artist: Some("The Beatles".to_owned()),
-            artist_sort: Some("Beatles, The".to_owned()),
-            album_artist: Some("The Beatles".to_owned()),
-            album_artist_sort: Some("Beatles, The".to_owned()),
+            artist: Some("The Bell Ringers".to_owned()),
+            artist_sort: Some("Bell Ringers, The".to_owned()),
+            album_artist: Some("The Bell Ringers".to_owned()),
+            album_artist_sort: Some("Bell Ringers, The".to_owned()),
             ..row()
         };
         let unsorted = TagSet::default();
         let sorted_by_its_tagger = TagSet {
-            artist_sort: Some("Beatles".to_owned()),
-            album_artist_sort: Some("Beatles".to_owned()),
+            artist_sort: Some("Bell Ringers".to_owned()),
+            album_artist_sort: Some("Bell Ringers".to_owned()),
             ..TagSet::default()
         };
 

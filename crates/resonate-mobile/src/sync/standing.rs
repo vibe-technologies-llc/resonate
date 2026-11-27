@@ -178,7 +178,7 @@ mod tests {
     use super::*;
     use crate::sync::ReceivedSong;
 
-    const LANDING: &str = "Björk - Hunter.wav";
+    const LANDING: &str = "Sölvi - Wavebreak.wav";
 
     fn waiting() -> Waiting {
         Waiting {
@@ -203,32 +203,32 @@ mod tests {
 
     #[test]
     fn a_filed_folder_has_its_named_alike_weighed_first_and_never_more_than_the_bound() {
-        let homogenic = ["Björk", "Homogenic"];
+        let seabrook = ["Sölvi", "Seabrook"];
         let mut standing = (0..100)
-            .map(|nth| document(&format!("{nth:02} Song.WAV"), &homogenic))
+            .map(|nth| document(&format!("{nth:02} Song.WAV"), &seabrook))
             .collect::<Vec<_>>();
 
-        standing.push(document("cover.jpg", &homogenic));
-        standing.push(document(LANDING, &["Bjo\u{308}rk", "Homogenic"]));
-        standing.push(document(LANDING, &["Björk", "Debut"]));
-        standing.push(document("Björk - Hunter (1).wav", &[]));
-        standing.push(document("01 Hunter.wav", &[]));
+        standing.push(document("cover.jpg", &seabrook));
+        standing.push(document(LANDING, &["So\u{308}lvi", "Seabrook"]));
+        standing.push(document(LANDING, &["Sölvi", "Early Days"]));
+        standing.push(document("Sölvi - Wavebreak (1).wav", &[]));
+        standing.push(document("01 Wavebreak.wav", &[]));
 
-        let folders = vec![homogenic.map(str::to_owned).to_vec()];
+        let folders = vec![seabrook.map(str::to_owned).to_vec()];
 
         let weighed = weighed(&waiting(), &folders, &standing);
 
         assert_eq!(weighed.len(), 1 + FILED_COPIES_WEIGHED_AT_MOST);
-        assert_eq!(weighed[0].name, "Björk - Hunter (1).wav");
+        assert_eq!(weighed[0].name, "Sölvi - Wavebreak (1).wav");
         assert_eq!(weighed[1].name, LANDING);
-        assert_eq!(weighed[1].folder, ["Bjo\u{308}rk", "Homogenic"]);
+        assert_eq!(weighed[1].folder, ["So\u{308}lvi", "Seabrook"]);
         assert!(weighed.iter().all(|document| {
             document.name != "cover.jpg"
-                && document.name != "01 Hunter.wav"
+                && document.name != "01 Wavebreak.wav"
                 && document
                     .folder
                     .get(1)
-                    .is_none_or(|album| album == "Homogenic")
+                    .is_none_or(|album| album == "Seabrook")
         }));
     }
 }

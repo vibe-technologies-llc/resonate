@@ -1431,11 +1431,11 @@ mod tests {
     fn a_title_holding_what_a_shared_or_fat_folder_refuses_is_a_name_it_takes() {
         let song = SearchSong {
             title: "Why? Who: \"This\" <or> That*|".into(),
-            artist: "AC/DC".into(),
+            artist: "AB/CD".into(),
             ..SearchSong::default()
         };
 
-        assert_eq!(file_stem_of(&song), "AC_DC - Why_ Who_ _This_ _or_ That__");
+        assert_eq!(file_stem_of(&song), "AB_CD - Why_ Who_ _This_ _or_ That__");
     }
     use std::{
         io::{BufRead, BufReader},

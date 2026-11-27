@@ -549,8 +549,8 @@ mod tests {
 
     const PLAIN: Song<'static> = Song {
         name: "song",
-        artist: "Air",
-        album: "Moon Safari",
+        artist: "Kestrel",
+        album: "Salt Meadow",
         genre: "",
         codec: "FLAC",
         rate: 44_100,

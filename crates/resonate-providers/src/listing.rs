@@ -257,9 +257,9 @@ mod tests {
                 Isrc::new("GBUM71029604").expect("an isrc"),
                 Isrc::new("GBCEE0400076").expect("an isrc"),
             ],
-            artist: Some("Queen feat. Nobody".to_owned()),
+            artist: Some("Third Band feat. Nobody".to_owned()),
             length: Some(Duration::from_secs(355)),
-            ..Identity::named("Bohemian Rhapsody (Remastered 2011)")
+            ..Identity::named("Harbour Lights (Remastered 2011)")
         }
     }
 
@@ -281,19 +281,26 @@ mod tests {
         }
     }
 
-    const QUEEN_ISRC: &str = "GBUM71029604";
+    const THIRD_BAND_ISRC: &str = "GBUM71029604";
     const OTHER_ISRC: &str = "USUM71900001";
 
     #[test]
     fn an_explicit_listing_is_taken_over_one_the_want_is_coded_for_and_over_one_unmarked() {
         let mut choosing = Choosing::default();
         let want = wanted();
-        let title = "Bohemian Rhapsody";
+        let title = "Harbour Lights";
 
-        choosing.weigh(&want, &listed(QUEEN_ISRC, title, "Queen", 355), "coded");
         choosing.weigh(
             &want,
-            &rated(listed(OTHER_ISRC, title, "Queen", 355), Rating::Explicit),
+            &listed(THIRD_BAND_ISRC, title, "Third Band", 355),
+            "coded",
+        );
+        choosing.weigh(
+            &want,
+            &rated(
+                listed(OTHER_ISRC, title, "Third Band", 355),
+                Rating::Explicit,
+            ),
             "explicit",
         );
 
@@ -306,13 +313,16 @@ mod tests {
     #[test]
     fn a_clean_listing_is_never_taken_though_it_is_the_very_code_wanted() {
         let want = wanted();
-        let title = "Bohemian Rhapsody";
+        let title = "Harbour Lights";
 
         let mut stated = Choosing::default();
 
         stated.weigh(
             &want,
-            &rated(listed(QUEEN_ISRC, title, "Queen", 355), Rating::Clean),
+            &rated(
+                listed(THIRD_BAND_ISRC, title, "Third Band", 355),
+                Rating::Clean,
+            ),
             "clean",
         );
 
@@ -323,10 +333,14 @@ mod tests {
 
         worded.weigh(
             &want,
-            &listed(QUEEN_ISRC, "Bohemian Rhapsody (Clean)", "Queen", 355),
+            &listed(THIRD_BAND_ISRC, "Harbour Lights (Clean)", "Third Band", 355),
             "clean",
         );
-        worded.weigh(&want, &listed(OTHER_ISRC, title, "Queen", 355), "plain");
+        worded.weigh(
+            &want,
+            &listed(OTHER_ISRC, title, "Third Band", 355),
+            "plain",
+        );
 
         assert_eq!(worded.chosen(), Some(("plain", Taken::NamedAlike)));
     }
@@ -334,7 +348,7 @@ mod tests {
     #[test]
     fn a_want_named_clean_is_still_given_the_explicit_take() {
         let want = Identity {
-            title: "Bohemian Rhapsody (Clean)".to_owned(),
+            title: "Harbour Lights (Clean)".to_owned(),
             isrcs: Vec::new(),
             ..wanted()
         };
@@ -343,7 +357,7 @@ mod tests {
         choosing.weigh(
             &want,
             &rated(
-                listed(OTHER_ISRC, "Bohemian Rhapsody", "Queen", 355),
+                listed(OTHER_ISRC, "Harbour Lights", "Third Band", 355),
                 Rating::Explicit,
             ),
             "explicit",
@@ -359,12 +373,12 @@ mod tests {
 
         choosing.weigh(
             &want,
-            &listed(OTHER_ISRC, "Bohemian Rhapsody", "Queen", 355),
+            &listed(OTHER_ISRC, "Harbour Lights", "Third Band", 355),
             "named",
         );
         choosing.weigh(
             &want,
-            &listed(QUEEN_ISRC, "Bohemian Rhapsody", "Queen", 355),
+            &listed(THIRD_BAND_ISRC, "Harbour Lights", "Third Band", 355),
             "coded",
         );
 
@@ -376,10 +390,10 @@ mod tests {
         assert_eq!(
             wanted().wordings(),
             [
-                "Bohemian Rhapsody (Remastered 2011) Queen",
-                "Queen Bohemian Rhapsody (Remastered 2011)",
-                "Bohemian Rhapsody Queen",
-                "Bohemian Rhapsody (Remastered 2011)",
+                "Harbour Lights (Remastered 2011) Third Band",
+                "Third Band Harbour Lights (Remastered 2011)",
+                "Harbour Lights Third Band",
+                "Harbour Lights (Remastered 2011)",
             ]
         );
         assert_eq!(
@@ -416,24 +430,22 @@ mod tests {
         for (item, listing) in [
             (
                 1,
-                listed("USHR10421348", "Bohemian Rhapsody - Live", "Queen", 355),
+                listed("USHR10421348", "Harbour Lights - Live", "Third Band", 355),
             ),
-            (2, listed("USHR10421348", "Bohemian Rhapsody", "Queen", 358)),
+            (
+                2,
+                listed("USHR10421348", "Harbour Lights", "Third Band", 358),
+            ),
             (
                 3,
-                listed(
-                    "USHR10421348",
-                    "Bohemian Rhapsody",
-                    "Panic! at the Disco",
-                    355,
-                ),
+                listed("USHR10421348", "Harbour Lights", "Panic! at the Disco", 355),
             ),
             (
                 4,
                 listed(
                     "USHR10421348",
-                    "Bohemian Rhapsody - 2011 Remaster",
-                    "Queen",
+                    "Harbour Lights - 2011 Remaster",
+                    "Third Band",
                     356,
                 ),
             ),
@@ -448,12 +460,12 @@ mod tests {
 
         coded.weigh(
             &identity,
-            &listed("USHR10421348", "Bohemian Rhapsody", "Queen", 355),
+            &listed("USHR10421348", "Harbour Lights", "Third Band", 355),
             1,
         );
         coded.weigh(
             &identity,
-            &listed("GBUM71029604", "Bohemian Rhapsody", "Queen", 359),
+            &listed("GBUM71029604", "Harbour Lights", "Third Band", 359),
             2,
         );
 
@@ -467,18 +479,18 @@ mod tests {
         let mut choosing = Choosing::default();
         let uncoded = Listed {
             isrcs: Vec::new(),
-            ..listed("", "Bohemian Rhapsody", "Queen", 355)
+            ..listed("", "Harbour Lights", "Third Band", 355)
         };
 
         choosing.weigh(&identity, &uncoded, 1);
         choosing.weigh(
             &identity,
-            &listed("USHR10421348", "Bohemian Rhapsody", "Queen", 357),
+            &listed("USHR10421348", "Harbour Lights", "Third Band", 357),
             2,
         );
         choosing.weigh(
             &identity,
-            &listed("USHR10421348", "Bohemian Rhapsody", "Queen", 356),
+            &listed("USHR10421348", "Harbour Lights", "Third Band", 356),
             3,
         );
 
@@ -494,7 +506,7 @@ mod tests {
 
     #[test]
     fn a_want_of_no_length_or_no_artist_is_never_taken_by_its_name() {
-        let listing = listed("USHR10421348", "Bohemian Rhapsody", "Queen", 355);
+        let listing = listed("USHR10421348", "Harbour Lights", "Third Band", 355);
         let unmeasured = Identity {
             length: None,
             ..wanted()
@@ -510,7 +522,7 @@ mod tests {
         assert!(
             wanted().named_alike(&Listed {
                 version: Some("Remastered 2011"),
-                artists: vec!["Queen & David Bowie"],
+                artists: vec!["Third Band & Another Band"],
                 ..listing.clone()
             }),
             "a version a listing names apart and a guest beside its lead are weighed as written"
@@ -553,7 +565,10 @@ mod tests {
             .map(str::to_owned)
         };
 
-        assert_eq!(led("Janji & Johnning").as_deref(), Some("Janji"));
+        assert_eq!(
+            led("Another Band & Third Band").as_deref(),
+            Some("Another Band")
+        );
         assert_eq!(
             led("Yung Gravy, bbno$ and Rich Brian").as_deref(),
             Some("Yung Gravy")

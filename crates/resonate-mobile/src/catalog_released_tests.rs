@@ -382,9 +382,9 @@ fn keys_received_and_deleted_under_the_earlier_fold_are_refolded_and_one_song_ke
         .iter()
         .position(|step| *step == super::RECORDINGS_ARE_KEYED_BY_THE_WORDS_OF_THEIR_NAMES)
         .expect("the refold step");
-    let quoted = "named:guns n' roses\u{1f}paradise city\u{1f}appetite for destruction";
-    let plain = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction!";
-    let refolded = "named:guns n roses\u{1f}paradise city\u{1f}appetite for destruction";
+    let quoted = "named:rum n' raisin\u{1f}harbour city\u{1f}hunger for reasons";
+    let plain = "named:rum n raisin\u{1f}harbour city\u{1f}hunger for reasons!";
+    let refolded = "named:rum n raisin\u{1f}harbour city\u{1f}hunger for reasons";
     let identified = "mbid:83d91898-7763-47d7-b03b-b92132375c47";
 
     let laid = Connection::open(&path).expect("a catalog");
@@ -401,11 +401,11 @@ fn keys_received_and_deleted_under_the_earlier_fold_are_refolded_and_one_song_ke
     }
     laid.execute_batch(
         "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec, favourite, size, modified)
-         VALUES (7, 'content://tree/a.flac', 'a.flac', 'Paradise City', 'Guns N'' Roses', 'Appetite for Destruction', 406000, 44100, 'FLAC', 0, 1000, NULL),
-                (8, 'content://tree/b.flac', 'b.flac', 'Paradise City', 'Guns N Roses', 'Appetite For Destruction!', 406000, 44100, 'FLAC', 0, 1000, NULL);
+         VALUES (7, 'content://tree/a.flac', 'a.flac', 'Harbour City', 'Rum N'' Raisin', 'Hunger for Reasons', 406000, 44100, 'FLAC', 0, 1000, NULL),
+                (8, 'content://tree/b.flac', 'b.flac', 'Harbour City', 'Rum N Raisin', 'Hunger For Reasons!', 406000, 44100, 'FLAC', 0, 1000, NULL);
          INSERT INTO received (id, path, extension, title, artist, album)
-         VALUES (4, '/received/4.flac', 'flac', 'Paradise City', 'Guns N Roses', ''),
-                (5, '/received/5.flac', 'flac', 'Paradise City', 'Guns N'' Roses', '');",
+         VALUES (4, '/received/4.flac', 'flac', 'Harbour City', 'Rum N Raisin', ''),
+                (5, '/received/5.flac', 'flac', 'Harbour City', 'Rum N'' Raisin', '');",
     )
     .expect("songs held and waiting");
     laid.execute(

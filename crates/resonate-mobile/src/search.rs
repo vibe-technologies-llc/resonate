@@ -2563,49 +2563,49 @@ mod tests {
                 ..UNTAGGED
             },
             Tagged {
-                title: "Jóga",
-                artist: "Björk",
-                album: "Homogenic",
+                title: "Lúna",
+                artist: "Sölvi",
+                album: "Seabrook",
                 genre: "Electronic",
                 date: "1997",
                 ..UNTAGGED
             },
             Tagged {
-                title: "So What",
-                artist: "Miles Davis",
-                album: "Kind of Blue",
+                title: "Salt Road",
+                artist: "Mira Dale",
+                album: "Kelp River",
                 genre: "Jazz",
                 date: "1959",
                 ..UNTAGGED
             },
             Tagged {
-                title: "Sexy Boy",
-                artist: "Air",
-                album: "Moon Safari",
+                title: "Slow Boat",
+                artist: "Kestrel",
+                album: "Salt Meadow",
                 genre: "Electronic",
                 date: "1998",
                 ..UNTAGGED
             },
             Tagged {
                 title: "Sugar Kiss",
-                artist: "Airiel",
+                artist: "Kestrelle",
                 album: "Winks & Kisses",
                 genre: "Shoegaze",
                 date: "2007",
                 ..UNTAGGED
             },
             Tagged {
-                title: "Money for Nothing",
-                artist: "Dire Straits",
-                album: "Brothers in Arms",
+                title: "Money Over Water",
+                artist: "Fourth Act",
+                album: "Sisters in Oars",
                 genre: "Rock",
                 date: "1985",
                 ..UNTAGGED
             },
             Tagged {
-                title: "Paranoid Android",
+                title: "Restless Machine",
                 artist: "Tideline",
-                album: "OK Computer",
+                album: "Good Machine",
                 genre: "Rock",
                 date: "1997",
                 ..UNTAGGED
@@ -2640,9 +2640,9 @@ mod tests {
     fn an_unaccented_word_finds_the_accented_name() {
         let catalog = library();
 
-        let found = searched(&catalog, "bjork joga");
+        let found = searched(&catalog, "solvi luna");
 
-        assert_eq!(titles(&found.tracks), vec!["Jóga"]);
+        assert_eq!(titles(&found.tracks), vec!["Lúna"]);
     }
 
     #[test]
@@ -2651,7 +2651,7 @@ mod tests {
 
         let found = searched(&catalog, "money");
 
-        assert_eq!(titles(&found.tracks), vec!["Money", "Money for Nothing"]);
+        assert_eq!(titles(&found.tracks), vec!["Money", "Money Over Water"]);
     }
 
     #[test]
@@ -2661,9 +2661,9 @@ mod tests {
         let jazz = searched(&catalog, "genre:jazz");
         let seventies = searched(&catalog, "year:1970-1979");
         let studio = searched(&catalog, "band -live");
-        let either = searched(&catalog, "artist:air or artist:tideline");
+        let either = searched(&catalog, "artist:kestrel or artist:tideline");
 
-        assert_eq!(titles(&jazz.tracks), vec!["So What"]);
+        assert_eq!(titles(&jazz.tracks), vec!["Salt Road"]);
         assert_eq!(jazz.reads, vec!["genre:jazz"]);
         assert_eq!(titles(&seventies.tracks), vec!["Money", "Time"]);
         assert_eq!(titles(&studio.tracks), vec!["Money", "Time"]);
@@ -2674,10 +2674,10 @@ mod tests {
     fn a_whole_name_is_only_that_name() {
         let catalog = library();
 
-        let whole = searched(&catalog, "artist:=Air");
-        let begun = searched(&catalog, "artist:air");
+        let whole = searched(&catalog, "artist:=Kestrel");
+        let begun = searched(&catalog, "artist:kestrel");
 
-        assert_eq!(titles(&whole.tracks), vec!["Sexy Boy"]);
+        assert_eq!(titles(&whole.tracks), vec!["Slow Boat"]);
         assert_eq!(begun.track_count, 2);
     }
 
@@ -2708,7 +2708,7 @@ mod tests {
                 )
                 .expect("older songs");
             connection
-                .execute("UPDATE documents SET added = NULL WHERE title = 'Jóga'", [])
+                .execute("UPDATE documents SET added = NULL WHERE title = 'Lúna'", [])
                 .expect("an undated song");
         }
 
@@ -2717,7 +2717,7 @@ mod tests {
         let not_recent = searched(&catalog, "-added:<7d");
 
         assert_eq!(recent.track_count, 6);
-        assert!(!titles(&recent.tracks).contains(&"Jóga"));
+        assert!(!titles(&recent.tracks).contains(&"Lúna"));
         assert_eq!(older.track_count, 2);
         assert!(
             titles(&older.tracks)
@@ -2748,21 +2748,21 @@ mod tests {
 
         studying("Time", Verdict::Fake);
         studying("Money", Verdict::Suspect);
-        studying("Jóga", Verdict::Genuine);
+        studying("Lúna", Verdict::Genuine);
 
         let fake = searched("is:fake");
         let suspect = searched("is:suspect");
         let not_fake = searched("-is:fake");
 
         studying("Time", Verdict::Genuine);
-        studying("Jóga", Verdict::Fake);
+        studying("Lúna", Verdict::Fake);
 
         let fake_again = searched("is:fake");
 
         assert_eq!(titles(&fake.tracks), vec!["Time"]);
         assert_eq!(titles(&suspect.tracks), vec!["Money"]);
         assert_eq!(not_fake.track_count, 8);
-        assert_eq!(titles(&fake_again.tracks), vec!["Jóga"]);
+        assert_eq!(titles(&fake_again.tracks), vec!["Lúna"]);
     }
 
     #[test]
@@ -2801,10 +2801,10 @@ mod tests {
 
         studying("Time");
         studying("Money");
-        studying("Jóga");
+        studying("Lúna");
         hearing("Time", Agreement::Disagrees);
         hearing("Money", Agreement::Agrees);
-        hearing("Jóga", Agreement::Unheard);
+        hearing("Lúna", Agreement::Unheard);
 
         let misnamed = searched("is:misnamed");
         let not_misnamed = searched("-is:misnamed");
@@ -2839,14 +2839,14 @@ mod tests {
     fn a_fragment_inside_a_word_is_found() {
         let catalog = library();
 
-        let found = searched(&catalog, "roid");
+        let found = searched(&catalog, "stles");
 
-        assert_eq!(titles(&found.tracks), vec!["Paranoid Android"]);
+        assert_eq!(titles(&found.tracks), vec!["Restless Machine"]);
     }
 
     #[test]
     fn highlights_are_counted_in_utf16_units() {
-        let accented = highlights("jog".into(), "Björk — Jóga".into(), SearchColumn::Title);
+        let accented = highlights("lun".into(), "Sölvi — Lúna".into(), SearchColumn::Title);
         let pictured = highlights("love".into(), "🎵 Love".into(), SearchColumn::Title);
         let elsewhere = highlights("artist:love".into(), "🎵 Love".into(), SearchColumn::Title);
 
@@ -3001,13 +3001,13 @@ mod tests {
         for tagged in [
             Tagged {
                 title: "Hidden",
-                album: "The Wall",
+                album: "The Pier",
                 artist: "Example Band",
                 ..UNTAGGED
             },
             Tagged {
-                title: "Hey You",
-                album: "The Wall",
+                title: "Small Mercies",
+                album: "The Pier",
                 artist: "Example Band",
                 disc: Some(2),
                 number: Some(1),
@@ -3015,15 +3015,15 @@ mod tests {
             },
             Tagged {
                 title: "Mother",
-                album: "the wall",
+                album: "the pier",
                 artist: "Example Band",
                 disc: Some(1),
                 number: Some(5),
                 ..UNTAGGED
             },
             Tagged {
-                title: "In the Flesh?",
-                album: "THE WALL",
+                title: "In the Pier?",
+                album: "THE PIER",
                 artist: "Third Band",
                 album_artist: "Example Band",
                 disc: Some(1),
@@ -3043,7 +3043,7 @@ mod tests {
         let albums = searching
             .albums(&catalog, CollectionOrder::Alphabetical)
             .expect("albums");
-        let wall = albums.first().expect("the wall");
+        let wall = albums.first().expect("the pier");
         let tracks = searching
             .album_tracks(&catalog, &wall.key)
             .expect("the album's tracks");
@@ -3059,7 +3059,7 @@ mod tests {
         assert_eq!(wall.year, Some(1979));
         assert_eq!(
             titles(&tracks),
-            vec!["In the Flesh?", "Mother", "Hey You", "Hidden"]
+            vec!["In the Pier?", "Mother", "Small Mercies", "Hidden"]
         );
         assert_eq!(band.len(), 5);
         assert_eq!(
@@ -3078,9 +3078,9 @@ mod tests {
         let first = song(
             &catalog,
             Tagged {
-                title: "Hyperballad",
-                artist: "Björk",
-                album: "Post",
+                title: "Hush Signal",
+                artist: "Sölvi",
+                album: "Tidewater",
                 number: Some(4),
                 date: "1995",
                 ..UNTAGGED
@@ -3090,20 +3090,20 @@ mod tests {
         song(
             &catalog,
             Tagged {
-                title: "Army of Me",
-                artist: "Bjork",
-                album: "POST ",
+                title: "Anchor Hymn",
+                artist: "Solvi",
+                album: "TIDEWATER ",
                 number: Some(1),
                 ..UNTAGGED
             },
         );
 
-        let joga = song(
+        let luna = song(
             &catalog,
             Tagged {
-                title: "Joga",
-                artist: "Björk",
-                album: "Homogenic",
+                title: "Luna",
+                artist: "Sölvi",
+                album: "Seabrook",
                 date: "1997",
                 ..UNTAGGED
             },
@@ -3114,7 +3114,7 @@ mod tests {
             .lock()
             .execute(
                 "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, 1700000000, 30000, 1), (?1, 1700000600, 30000, 1)",
-                [joga.id as i64],
+                [luna.id as i64],
             )
             .expect("two plays");
 
@@ -3129,29 +3129,29 @@ mod tests {
             .album_tracks(&catalog, &key)
             .expect("the album's tracks");
         let albums = searching
-            .albums_by(&catalog, "bjork")
+            .albums_by(&catalog, "solvi")
             .expect("the artist's albums");
 
         assert_eq!(album.map(|album| album.songs), Some(2));
-        assert_eq!(titles(&tracks), vec!["Army of Me", "Hyperballad"]);
+        assert_eq!(titles(&tracks), vec!["Anchor Hymn", "Hush Signal"]);
         assert_eq!(
             albums
                 .iter()
                 .map(|album| album.title.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Homogenic", "Post"]
+            vec!["Seabrook", "Tidewater"]
         );
         assert_eq!(
             titles(
                 &searching
-                    .most_played_by(&catalog, "Björk", 2)
+                    .most_played_by(&catalog, "Sölvi", 2)
                     .expect("the most played")
             ),
-            vec!["Joga", "Army of Me"]
+            vec!["Luna", "Anchor Hymn"]
         );
-        assert_eq!(album_key(" ".into(), "Björk".into(), String::new()), None);
+        assert_eq!(album_key(" ".into(), "Sölvi".into(), String::new()), None);
         assert_eq!(
-            album_key("Post".into(), "Bjork".into(), String::new()),
+            album_key("Tidewater".into(), "Solvi".into(), String::new()),
             Some(key)
         );
     }
@@ -3211,7 +3211,7 @@ mod tests {
     #[test]
     fn the_text_a_phone_filters_by_is_folded_as_the_search_index_folds_it() {
         assert_eq!(folded_text("Łódź".into()), folded_text("Lodz".into()));
-        assert_eq!(folded_text("Björk".into()), folded_text("bjork".into()));
+        assert_eq!(folded_text("Sölvi".into()), folded_text("solvi".into()));
         assert_eq!(folded_text("Straße".into()), folded_letters("Straße"));
     }
 
@@ -3364,7 +3364,7 @@ mod tests {
             &catalog,
             Tagged {
                 title: "Early",
-                artist: "Air",
+                artist: "Kestrel",
                 ..UNTAGGED
             },
         );
@@ -3372,7 +3372,7 @@ mod tests {
             &catalog,
             Tagged {
                 title: "Late",
-                artist: "Air",
+                artist: "Kestrel",
                 ..UNTAGGED
             },
         );
@@ -3381,7 +3381,7 @@ mod tests {
             &catalog,
             Tagged {
                 title: "Never",
-                artist: "Air",
+                artist: "Kestrel",
                 ..UNTAGGED
             },
         );

@@ -82,25 +82,25 @@ private fun filed(id: Long, from: String, vararg to: String) =
 class FolderFilingTest {
     @Test
     fun aSongMovesIntoFoldersMadeForItAndIsReportedAtTheUriTheProviderGave() {
-        val tree = FakeTree().apply { add("Downloads/flesh.flac") }
+        val tree = FakeTree().apply { add("Downloads/pier.flac") }
 
         val result =
             FolderFiling(tree)
-                .file(listOf(filed(1, "Downloads/flesh.flac", "Pink Floyd", "The Wall", "01 Flesh.flac")))
+                .file(listOf(filed(1, "Downloads/pier.flac", "Example Band", "The Pier", "01 Pier.flac")))
 
         assertEquals(0, result.failed)
-        assertTrue(tree.has("Pink Floyd/The Wall/01 Flesh.flac"))
-        assertFalse(tree.has("Downloads/flesh.flac"))
+        assertTrue(tree.has("Example Band/The Pier/01 Pier.flac"))
+        assertFalse(tree.has("Downloads/pier.flac"))
         assertEquals(
-            listOf(MovedDocument(1uL, "tree:primary:Music/Pink Floyd/The Wall/01 Flesh.flac")),
+            listOf(MovedDocument(1uL, "tree:primary:Music/Example Band/The Pier/01 Pier.flac")),
             result.moved,
         )
         assertEquals(
             listOf(
                 FiledSong(
                     1uL,
-                    "tree:primary:Music/Pink Floyd/The Wall/01 Flesh.flac",
-                    listOf("Downloads", "flesh.flac"),
+                    "tree:primary:Music/Example Band/The Pier/01 Pier.flac",
+                    listOf("Downloads", "pier.flac"),
                 )
             ),
             result.back,
@@ -109,15 +109,15 @@ class FolderFilingTest {
 
     @Test
     fun aSongRenamedWhereItStandsKeepsItsFolder() {
-        val tree = FakeTree().apply { add("Pink Floyd/The Wall/flesh.flac") }
+        val tree = FakeTree().apply { add("Example Band/The Pier/pier.flac") }
 
         val result =
             FolderFiling(tree)
-                .file(listOf(filed(1, "Pink Floyd/The Wall/flesh.flac", "Pink Floyd", "The Wall", "01 Flesh.flac")))
+                .file(listOf(filed(1, "Example Band/The Pier/pier.flac", "Example Band", "The Pier", "01 Pier.flac")))
 
         assertEquals(0, result.failed)
-        assertTrue(tree.has("Pink Floyd/The Wall/01 Flesh.flac"))
-        assertFalse(tree.has("Pink Floyd/The Wall/flesh.flac"))
+        assertTrue(tree.has("Example Band/The Pier/01 Pier.flac"))
+        assertFalse(tree.has("Example Band/The Pier/pier.flac"))
         assertTrue(tree.removed.isEmpty())
     }
 
@@ -125,10 +125,10 @@ class FolderFilingTest {
     fun aPlaceThatIsHeldCountsAsFailedAndMovesNothing() {
         val tree =
             FakeTree().apply {
-                add("a.flac", "Pink Floyd/The Wall/01 Flesh.flac")
+                add("a.flac", "Example Band/The Pier/01 Pier.flac")
             }
 
-        val result = FolderFiling(tree).file(listOf(filed(1, "a.flac", "Pink Floyd", "The Wall", "01 flesh.FLAC")))
+        val result = FolderFiling(tree).file(listOf(filed(1, "a.flac", "Example Band", "The Pier", "01 pier.FLAC")))
 
         assertEquals(1, result.failed)
         assertTrue(result.moved.isEmpty())
@@ -167,25 +167,25 @@ class FolderFilingTest {
 
     @Test
     fun aSidecarLyricMovesAlongWhereItsPlaceIsFree() {
-        val tree = FakeTree().apply { add("In/flesh.flac", "In/Flesh.LRC", "In/other.lrc") }
+        val tree = FakeTree().apply { add("In/pier.flac", "In/Pier.LRC", "In/other.lrc") }
 
-        FolderFiling(tree).file(listOf(filed(1, "In/flesh.flac", "Out", "01 Flesh.flac")))
+        FolderFiling(tree).file(listOf(filed(1, "In/pier.flac", "Out", "01 Pier.flac")))
 
-        assertTrue(tree.has("Out/01 Flesh.lrc"))
-        assertFalse(tree.has("In/Flesh.LRC"))
+        assertTrue(tree.has("Out/01 Pier.lrc"))
+        assertFalse(tree.has("In/Pier.LRC"))
         assertTrue(tree.has("In/other.lrc"))
     }
 
     @Test
     fun aSidecarStaysWhereItsPlaceIsHeld() {
         val tree =
-            FakeTree().apply { add("In/flesh.flac", "In/flesh.lrc", "Out/01 flesh.LRC") }
+            FakeTree().apply { add("In/pier.flac", "In/pier.lrc", "Out/01 pier.LRC") }
 
-        val result = FolderFiling(tree).file(listOf(filed(1, "In/flesh.flac", "Out", "01 Flesh.flac")))
+        val result = FolderFiling(tree).file(listOf(filed(1, "In/pier.flac", "Out", "01 Pier.flac")))
 
         assertEquals(0, result.failed)
-        assertTrue(tree.has("In/flesh.lrc"))
-        assertTrue(tree.has("Out/01 flesh.LRC"))
+        assertTrue(tree.has("In/pier.lrc"))
+        assertTrue(tree.has("Out/01 pier.LRC"))
     }
 
     @Test
@@ -233,11 +233,11 @@ class FolderFilingTest {
             FolderFiling(tree)
                 .file(
                     listOf(
-                        filed(1, "Loose/Deep/a.flac", "Pink Floyd", "The Wall", "01 A.flac"),
-                        filed(2, "b.flac", "Pink Floyd", "The Wall", "02 B.flac"),
+                        filed(1, "Loose/Deep/a.flac", "Example Band", "The Pier", "01 A.flac"),
+                        filed(2, "b.flac", "Example Band", "The Pier", "02 B.flac"),
                     )
                 )
-        assertTrue(tree.has("Pink Floyd/The Wall/01 A.lrc"))
+        assertTrue(tree.has("Example Band/The Pier/01 A.lrc"))
         assertFalse(tree.hasDirectory("Loose"))
 
         val second = FolderFiling(tree).file(first.back)
@@ -246,7 +246,7 @@ class FolderFilingTest {
         assertTrue(tree.has("Loose/Deep/a.flac"))
         assertTrue(tree.has("Loose/Deep/a.lrc"))
         assertTrue(tree.has("b.flac"))
-        assertFalse(tree.hasDirectory("Pink Floyd"))
+        assertFalse(tree.hasDirectory("Example Band"))
         assertEquals(
             listOf(MovedDocument(2uL, "tree:primary:Music/b.flac"), MovedDocument(1uL, "tree:primary:Music/Loose/Deep/a.flac")).toSet(),
             second.moved.toSet(),
@@ -255,27 +255,27 @@ class FolderFilingTest {
 
     @Test
     fun aMoveWhoseRenameIsRefusedPutsTheFileBackWhereItWas() {
-        val tree = FakeTree().apply { add("In/flesh.flac") }
+        val tree = FakeTree().apply { add("In/pier.flac") }
         tree.refuseRename = true
 
-        val result = FolderFiling(tree).file(listOf(filed(1, "In/flesh.flac", "Out", "01 Flesh.flac")))
+        val result = FolderFiling(tree).file(listOf(filed(1, "In/pier.flac", "Out", "01 Pier.flac")))
 
         assertEquals(1, result.failed)
-        assertTrue(tree.has("In/flesh.flac"))
-        assertFalse(tree.has("Out/flesh.flac"))
+        assertTrue(tree.has("In/pier.flac"))
+        assertFalse(tree.has("Out/pier.flac"))
         assertFalse(tree.hasDirectory("Out"))
     }
 
     @Test
     fun aNameTheDestinationFolderAlreadyUsesIsRenamedBeforeTheMove() {
-        val tree = FakeTree().apply { add("In/flesh.flac", "Out/flesh.flac") }
+        val tree = FakeTree().apply { add("In/pier.flac", "Out/pier.flac") }
 
-        val result = FolderFiling(tree).file(listOf(filed(1, "In/flesh.flac", "Out", "01 Flesh.flac")))
+        val result = FolderFiling(tree).file(listOf(filed(1, "In/pier.flac", "Out", "01 Pier.flac")))
 
         assertEquals(0, result.failed)
-        assertTrue(tree.has("Out/01 Flesh.flac"))
-        assertTrue(tree.has("Out/flesh.flac"))
-        assertFalse(tree.has("In/flesh.flac"))
+        assertTrue(tree.has("Out/01 Pier.flac"))
+        assertTrue(tree.has("Out/pier.flac"))
+        assertFalse(tree.has("In/pier.flac"))
     }
 
     @Test

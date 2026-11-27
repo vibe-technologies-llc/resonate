@@ -39,7 +39,7 @@ class SuggestedListsTest {
 
     @Test
     fun aSearchWithNoCapComesBackWithNone() {
-        val search = SavedSearch("artist:=\"Air\"", SearchOrder.ALBUM, false, null)
+        val search = SavedSearch("artist:=\"Kestrel\"", SearchOrder.ALBUM, false, null)
 
         assertNull(SuggestedSearch.of(search).native().rows)
         assertEquals(search, SuggestedSearch.of(search).native())

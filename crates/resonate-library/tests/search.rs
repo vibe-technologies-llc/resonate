@@ -214,24 +214,24 @@ fn a_name_typed_or_tagged_with_combining_accents_is_found_as_the_precomposed_nam
         "a.wav",
         &Wav::new()
             .text(TITLE, "Kickstart My Heart")
-            .text(ARTIST, "Mötley Crüe"),
+            .text(ARTIST, "Nöble Crüe"),
     );
     tree.write(
         "b.wav",
         &Wav::new()
             .text(TITLE, "Dr. Feelgood")
-            .text(ARTIST, "Mo\u{0308}tley Cru\u{0308}e"),
+            .text(ARTIST, "No\u{0308}ble Cru\u{0308}e"),
     );
-    tree.write("c.wav", &Wav::new().text(TITLE, "Tley").text(ARTIST, "Mo"));
+    tree.write("c.wav", &Wav::new().text(TITLE, "Ble").text(ARTIST, "No"));
 
     let library = scanned(&tree)?;
     let both = named(&["Kickstart My Heart", "Dr. Feelgood"]);
 
     for text in [
-        "Mötley",
-        "Mo\u{0308}tley",
-        "artist:mo\u{0308}tley",
-        "\"Mo\u{0308}tley Cru\u{0308}e\"",
+        "Nöble",
+        "No\u{0308}ble",
+        "artist:no\u{0308}ble",
+        "\"No\u{0308}ble Cru\u{0308}e\"",
     ] {
         assert_eq!(titled(&library, text)?, both, "{text} missed a spelling");
     }
@@ -388,16 +388,16 @@ fn an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it
 
     for number in 0..ENOUGH_TO_BE_OFFERED {
         tree.write(
-            &format!("air/{number}.wav"),
+            &format!("kestrel/{number}.wav"),
             &Wav::new()
-                .text(TITLE, &format!("Moon Safari {number}"))
-                .text(ARTIST, "Air"),
+                .text(TITLE, &format!("Salt Meadow {number}"))
+                .text(ARTIST, "Kestrel"),
         );
         tree.write(
-            &format!("supply/{number}.wav"),
+            &format!("hill/{number}.wav"),
             &Wav::new()
-                .text(TITLE, &format!("All Out of Love {number}"))
-                .text(ARTIST, "Air Supply"),
+                .text(TITLE, &format!("Out of Reach {number}"))
+                .text(ARTIST, "Kestrel Hill"),
         );
     }
 
@@ -405,10 +405,10 @@ fn an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it
     let suggestions = library.suggestions()?;
     let mix = suggestions
         .iter()
-        .find(|suggestion| suggestion.reason == Reason::Artist && suggestion.name == "Air")
-        .expect("Air is offered a mix of its own");
+        .find(|suggestion| suggestion.reason == Reason::Artist && suggestion.name == "Kestrel")
+        .expect("Kestrel is offered a mix of its own");
 
-    let saved = library.save_query("Air", &mix.query)?;
+    let saved = library.save_query("Kestrel", &mix.query)?;
     let held = library.playlist_entries(saved, None)?;
 
     assert_eq!(mix.rows, ENOUGH_TO_BE_OFFERED as u64);
@@ -416,20 +416,20 @@ fn an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it
     assert!(
         held.iter()
             .filter_map(|entry| entry.track.as_ref())
-            .all(|track| track.artist.as_deref() == Some("Air")),
-        "the mix for Air held another artist's tracks"
+            .all(|track| track.artist.as_deref() == Some("Kestrel")),
+        "the mix for Kestrel held another artist's tracks"
     );
     assert_eq!(
-        titled(&library, "artist:=air")?.len(),
+        titled(&library, "artist:=kestrel")?.len(),
         ENOUGH_TO_BE_OFFERED,
         "a whole name should be one however it is cased"
     );
     assert_eq!(
-        titled(&library, "artist:=\"air supply\"")?.len(),
+        titled(&library, "artist:=\"kestrel hill\"")?.len(),
         ENOUGH_TO_BE_OFFERED
     );
     assert_eq!(
-        titled(&library, "artist:air")?.len(),
+        titled(&library, "artist:kestrel")?.len(),
         2 * ENOUGH_TO_BE_OFFERED,
         "a word should still reach every name it begins"
     );

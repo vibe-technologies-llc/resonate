@@ -370,8 +370,8 @@ mod tests {
 
     const MINIDLNA: &str = r#"<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
 <container id="1$4" parentID="1" restricted="1" searchable="1" childCount="12"><dc:title>All Music</dc:title><upnp:class>object.container.storageFolder</upnp:class><upnp:storageUsed>-1</upnp:storageUsed></container>
-<container id="1$7$1" parentID="1$7" restricted="1" childCount="9"><dc:title>Kind of Blue</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class><upnp:artist>Miles Davis</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_TN">http://192.168.1.4:8200/AlbumArt/31-2.jpg</upnp:albumArtURI></container>
-<item id="64$0$1" parentID="64$0" restricted="1"><dc:title>So What</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class><dc:creator>Miles Davis</dc:creator><upnp:artist>Miles Davis</upnp:artist><upnp:album>Kind of Blue</upnp:album><upnp:genre>Jazz</upnp:genre><upnp:originalTrackNumber>1</upnp:originalTrackNumber><dc:date>1959-01-01</dc:date><upnp:albumArtURI dlna:profileID="JPEG_TN">http://192.168.1.4:8200/AlbumArt/31-2.jpg</upnp:albumArtURI><res size="22413312" duration="0:09:22.533" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.4:8200/MediaItems/22.flac</res></item>
+<container id="1$7$1" parentID="1$7" restricted="1" childCount="9"><dc:title>Kelp River</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class><upnp:artist>Mira Dale</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_TN">http://192.168.1.4:8200/AlbumArt/31-2.jpg</upnp:albumArtURI></container>
+<item id="64$0$1" parentID="64$0" restricted="1"><dc:title>Salt Road</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class><dc:creator>Mira Dale</dc:creator><upnp:artist>Mira Dale</upnp:artist><upnp:album>Kelp River</upnp:album><upnp:genre>Jazz</upnp:genre><upnp:originalTrackNumber>1</upnp:originalTrackNumber><dc:date>1959-01-01</dc:date><upnp:albumArtURI dlna:profileID="JPEG_TN">http://192.168.1.4:8200/AlbumArt/31-2.jpg</upnp:albumArtURI><res size="22413312" duration="0:09:22.533" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.4:8200/MediaItems/22.flac</res></item>
 <item id="64$0$2" parentID="64$0" restricted="1"><dc:title>A picture</dc:title><upnp:class>object.item.imageItem.photo</upnp:class><res protocolInfo="http-get:*:image/jpeg:*">http://192.168.1.4:8200/MediaItems/9.jpg</res></item>
 </DIDL-Lite>"#;
 
@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(listing.containers[0].children, Some(12));
         assert!(!listing.containers[0].is_an_album());
         assert!(listing.containers[1].is_an_album());
-        assert_eq!(listing.containers[1].artist.as_deref(), Some("Miles Davis"));
+        assert_eq!(listing.containers[1].artist.as_deref(), Some("Mira Dale"));
         assert_eq!(
             listing.containers[1]
                 .cover
@@ -398,8 +398,8 @@ mod tests {
         let song = &listing.items[0];
         let played = song.played_from().expect("a resource");
 
-        assert_eq!(song.title, "So What");
-        assert_eq!(song.album.as_deref(), Some("Kind of Blue"));
+        assert_eq!(song.title, "Salt Road");
+        assert_eq!(song.album.as_deref(), Some("Kelp River"));
         assert_eq!(song.track, Some(1));
         assert_eq!(
             played.at.to_string(),

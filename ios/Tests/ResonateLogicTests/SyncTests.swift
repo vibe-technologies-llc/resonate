@@ -23,7 +23,7 @@ func device(
 func transfer(
     _ title: String,
     from: String = "Desktop",
-    artist: String = "Pink Floyd",
+    artist: String = "Example Band",
     received: UInt64 = 0,
     size: UInt64 = 0,
     _ state: SyncTransferState = .waiting
@@ -269,7 +269,7 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
 
 @Suite struct SyncTransferKeysTests {
     @Test func aRepeatOfTheSameSongFromTheSameDeviceIsNumberedSoNoTwoRowsShareAKey() {
-        let rows = SyncTransferKeys.keyed([transfer("Echoes"), transfer("Echoes"), transfer("Hey You")], as: "active")
+        let rows = SyncTransferKeys.keyed([transfer("Slow Water"), transfer("Slow Water"), transfer("Small Mercies")], as: "active")
 
         #expect(Set(rows.map(\.key)).count == 3)
         #expect(rows[0].key.hasSuffix("0"))
@@ -284,17 +284,17 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
     }
 
     @Test func theSameSongInDifferentGroupsOrFromDifferentDevicesKeysApart() {
-        let active = SyncTransferKeys.keyed([transfer("Echoes")], as: "active")[0].key
-        let finished = SyncTransferKeys.keyed([transfer("Echoes")], as: "finished")[0].key
-        let elsewhere = SyncTransferKeys.keyed([transfer("Echoes", from: "Tablet")], as: "active")[0].key
+        let active = SyncTransferKeys.keyed([transfer("Slow Water")], as: "active")[0].key
+        let finished = SyncTransferKeys.keyed([transfer("Slow Water")], as: "finished")[0].key
+        let elsewhere = SyncTransferKeys.keyed([transfer("Slow Water", from: "Tablet")], as: "active")[0].key
 
         #expect(active != finished)
         #expect(active != elsewhere)
     }
 
     @Test func aKeyKeepsItsRowWhateverTheProgress() {
-        let early = SyncTransferKeys.keyed([transfer("Echoes", received: 1, size: 10, .moving)], as: "active")[0]
-        let later = SyncTransferKeys.keyed([transfer("Echoes", received: 9, size: 10, .moving)], as: "active")[0]
+        let early = SyncTransferKeys.keyed([transfer("Slow Water", received: 1, size: 10, .moving)], as: "active")[0]
+        let later = SyncTransferKeys.keyed([transfer("Slow Water", received: 9, size: 10, .moving)], as: "active")[0]
 
         #expect(early.key == later.key)
     }

@@ -1939,9 +1939,9 @@ mod tests {
             "one.wav",
             1,
             &[
-                (b"INAM", "Homogenic"),
-                (b"IART", "Björk Ásgeirsdóttir Guðmundsdóttir Sigurðardóttir"),
-                (b"IPRD", "Homogenic"),
+                (b"INAM", "Seabrook"),
+                (b"IART", "Sölvi Ásgeirsdóttir Guðmundsdóttir Sveinsdóttir"),
+                (b"IPRD", "Seabrook"),
                 (b"ICRD", "1997"),
             ],
         );
@@ -4311,8 +4311,8 @@ mod tests {
         let folder = Folder::new();
 
         folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Low Tide")]);
-        folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Animals")]);
-        folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Wish")]);
+        folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Flocks")]);
+        folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Hope")]);
 
         let library = catalog();
 
@@ -4695,9 +4695,9 @@ mod tests {
 
     fn three_artists(folder: &Folder) -> Arc<Library> {
         for (file, title, artist) in [
-            ("one.wav", "One", "Air"),
-            ("two.wav", "Two", "Beck"),
-            ("three.wav", "Three", "Cake"),
+            ("one.wav", "One", "Kestrel"),
+            ("two.wav", "Two", "Brook Act"),
+            ("three.wav", "Three", "Coral Act"),
         ] {
             folder.tagged(file, 1, &[(b"INAM", title), (b"IART", artist)]);
         }
@@ -4813,9 +4813,9 @@ mod tests {
 
     fn three_records_all_favourite(folder: &Folder) -> Arc<Library> {
         for (file, title, artist, album) in [
-            ("one.wav", "One", "Air", "Low Tide"),
-            ("two.wav", "Two", "Beck", "Animals"),
-            ("three.wav", "Three", "Cake", "Wish"),
+            ("one.wav", "One", "Kestrel", "Low Tide"),
+            ("two.wav", "Two", "Brook Act", "Flocks"),
+            ("three.wav", "Three", "Coral Act", "Hope"),
         ] {
             folder.tagged(
                 file,
@@ -6607,11 +6607,11 @@ mod tests {
         driven.read(|root, cx| pressings_held(root, cx, album))
     }
 
-    fn air_and_beck(folder: &Folder) {
+    fn kestrel_and_third_band(folder: &Folder) {
         for (file, title, artist, album) in [
-            ("one.wav", "La Femme d'Argent", "Air", "Moon Safari"),
-            ("two.wav", "Kelly Watch the Stars", "Air", "Moon Safari"),
-            ("three.wav", "Loser", "Beck", "Mellow Gold"),
+            ("one.wav", "La Mer d'Argent", "Kestrel", "Salt Meadow"),
+            ("two.wav", "Marta Watch the Tide", "Kestrel", "Salt Meadow"),
+            ("three.wav", "Drifter", "Brook Act", "Soft Brass"),
         ] {
             folder.tagged(
                 file,
@@ -6648,14 +6648,14 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        air_and_beck(&folder);
+        kestrel_and_third_band(&folder);
         folder.tagged(
             "four.wav",
             1,
             &[
                 (b"INAM", "Venus"),
-                (b"IART", "Air"),
-                (b"IPRD", "Talkie Walkie"),
+                (b"IART", "Kestrel"),
+                (b"IPRD", "Tide Radio"),
             ],
         );
 
@@ -6663,18 +6663,18 @@ mod tests {
 
         Driven::scanned(&library, &folder);
 
-        let air = the_artist_named(&library, "Air");
+        let kestrel = the_artist_named(&library, "Kestrel");
         let mut driven = Driven::opened_in(cx, library, &folder);
 
         assert_eq!(artist_shelf(&mut driven), None);
 
-        open_the_artist(&mut driven, air);
+        open_the_artist(&mut driven, kestrel);
 
         assert_eq!(
             artist_shelf(&mut driven),
             Some(ArtistShelf {
-                name: "Air".to_owned(),
-                records: vec!["Moon Safari".to_owned(), "Talkie Walkie".to_owned()],
+                name: "Kestrel".to_owned(),
+                records: vec!["Salt Meadow".to_owned(), "Tide Radio".to_owned()],
                 albums: 2,
                 tracks: 3,
             })
@@ -6710,23 +6710,23 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        air_and_beck(&folder);
+        kestrel_and_third_band(&folder);
 
         let library = catalog();
 
         Driven::scanned(&library, &folder);
 
-        let air = the_artist_named(&library, "Air");
+        let kestrel = the_artist_named(&library, "Kestrel");
         let mut driven = Driven::opened_in(cx, library, &folder);
 
         let model = driven.read(|root, _| root.library.clone());
 
         driven.cx.update(|_, cx| {
-            model.update(cx, |library, cx| library.set_query("Kelly".to_owned(), cx));
+            model.update(cx, |library, cx| library.set_query("Marta".to_owned(), cx));
         });
         driven.until(|root, cx| root.library.read(cx).listing().len() == 1);
 
-        open_the_artist(&mut driven, air);
+        open_the_artist(&mut driven, kestrel);
 
         assert_eq!(titles_listed(&mut driven).len(), 2);
         assert_eq!(played_with_the_words(&mut driven), None);
@@ -6736,9 +6736,9 @@ mod tests {
 
         assert_eq!(
             titles_listed(&mut driven),
-            vec!["Kelly Watch the Stars".to_owned()]
+            vec!["Marta Watch the Tide".to_owned()]
         );
-        assert_eq!(played_with_the_words(&mut driven), Some("Kelly".to_owned()));
+        assert_eq!(played_with_the_words(&mut driven), Some("Marta".to_owned()));
 
         driven.click("show-the-whole-page");
         driven.until(|root, cx| root.library.read(cx).listing().len() == 2);
@@ -6746,7 +6746,7 @@ mod tests {
         assert_eq!(played_with_the_words(&mut driven), None);
         assert_eq!(
             driven.read(|root, cx| root.library.read(cx).query().to_owned()),
-            "Kelly"
+            "Marta"
         );
     }
 
@@ -6756,16 +6756,16 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        air_and_beck(&folder);
+        kestrel_and_third_band(&folder);
 
         let library = catalog();
 
         Driven::scanned(&library, &folder);
 
-        let air = the_artist_named(&library, "Air");
+        let kestrel = the_artist_named(&library, "Kestrel");
         let mut driven = Driven::opened_in(cx, library, &folder);
 
-        open_the_artist(&mut driven, air);
+        open_the_artist(&mut driven, kestrel);
 
         let opened = artist_shelf(&mut driven);
 
@@ -6777,7 +6777,7 @@ mod tests {
 
         assert_eq!(
             driven.read(|root, cx| (root.pane, root.library.read(cx).selection())),
-            (Pane::Tracks, Selection::Artist(air))
+            (Pane::Tracks, Selection::Artist(kestrel))
         );
         assert_eq!(artist_shelf(&mut driven), opened);
         assert!(opened.is_some());
@@ -6789,20 +6789,20 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        air_and_beck(&folder);
+        kestrel_and_third_band(&folder);
 
         let library = catalog();
 
         Driven::scanned(&library, &folder);
 
-        let air = the_artist_named(&library, "Air");
+        let kestrel = the_artist_named(&library, "Kestrel");
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
 
-        open_the_artist(&mut driven, air);
+        open_the_artist(&mut driven, kestrel);
 
         assert_eq!(
             artist_shelf(&mut driven).map(|shelf| (shelf.records, shelf.albums, shelf.tracks)),
-            Some((vec!["Moon Safari".to_owned()], 1, 2))
+            Some((vec!["Salt Meadow".to_owned()], 1, 2))
         );
 
         folder.tagged(
@@ -6810,8 +6810,8 @@ mod tests {
             1,
             &[
                 (b"INAM", "Venus"),
-                (b"IART", "Air"),
-                (b"IPRD", "Talkie Walkie"),
+                (b"IART", "Kestrel"),
+                (b"IPRD", "Tide Radio"),
             ],
         );
         Driven::scanned(&library, &folder);
@@ -6826,8 +6826,8 @@ mod tests {
         assert_eq!(
             artist_shelf(&mut driven),
             Some(ArtistShelf {
-                name: "Air".to_owned(),
-                records: vec!["Moon Safari".to_owned(), "Talkie Walkie".to_owned()],
+                name: "Kestrel".to_owned(),
+                records: vec!["Salt Meadow".to_owned(), "Tide Radio".to_owned()],
                 albums: 2,
                 tracks: 3,
             })

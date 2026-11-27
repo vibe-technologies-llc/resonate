@@ -2438,7 +2438,7 @@ guard and re-keys a sleeve-keyed album after moves land.
   behind a writer the guard waits on). `--as` is the one-run layout, read via `Layout::read`.
 - **A file beside a track sharing its name travels with it.** `Planner::sidecars`: files in the
   track's folder that are not scanned rows, named stem plus `.` and more, extension not audio
-  (`Meddle.cue`, `Meddle.wav.log` follow `Meddle.wav`); one also carrying a longer-named audio
+  (`Lowtide.cue`, `Lowtide.wav.log` follow `Lowtide.wav`); one also carrying a longer-named audio
   file's stem is left to that one. Rows cut from one file are filed by the folder their layouts
   agree on and keep their name; rows of one file naming two folders are `Unidentified`. A sheet
   cutting *one* row from a file renders by the layout like any other, so `sheets_follow_their_audio`
@@ -2536,7 +2536,7 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   high end first is the range named (`bounded`). A bare rate below
   `A_BARE_RATE_IS_IN_KILOHERTZ_BELOW` (1 000) is kilohertz (`rate:44.1` = 44 100 Hz).
 - **`=` asks a whole name; a word or phrase a run inside one.** A phrase matches tokens anywhere in
-  a column (`artist:"Air"` holds *Air Supply*); `artist:=Air` is `Reach::Whole` (beside `Begins`,
+  a column (`artist:"Kestrel"` holds *Kestrel Hill*); `artist:=Kestrel` is `Reach::Whole` (beside `Begins`,
   `Phrase`); `=` inside quotes is phrase text; `lyrics:` takes no whole name. `db::named` weighs it
   through the `words_of` SQL function: artist by id (`tracks.artist_id` or a `track_credits` member
   of that name); album by billed or scanned title; title by the column behind the phrase's
@@ -2766,13 +2766,13 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   against titles alone); the result is the whole query rewritten via `Display for Search` (what the
   *Reads* chips draw). **Correct only where the catalog cannot already match, and never further than
   affordable**: `Vocabulary::holds` passes over a run the index would find (held outright, or
-  beginning a held word: *floy* is not corrected to *Floyd*, *floid* is). `furthest_from` is the
+  beginning a held word: *exampl* is not corrected to *Example*, *exampke* is). `furthest_from` is the
   budget: under four letters never, up to seven (`ONE_LETTER_WRONG_UNTIL`) one letter wrong, longer
   two (`FURTHEST`); `apart_by` is a bounded optimal-string-alignment distance. Nearest wins, then
   the word most rows hold; the marked spelling is drawn. A suggestion is only ever a held word.
   **Run-together and split are corrections too; neither invents a word.** `Spellings::whole` is the
   *exact* reading; `run_together` where two runs joined name one held word and the two apart do not
-  both, `split_apart` where one run cuts into held words (*pinkfloyd* is **Pink Floyd**). Order:
+  both, `split_apart` where one run cuts into held words (*exampleband* is **Example Band**). Order:
   join, nearest word, split. A split cuts into up to `MOST_PIECES` (4): fewest pieces win, then most
   rows. `run_tokens_together` joins across two plain undenied same-scope *tokens*; a scoped split is
   written as a phrase so `artist:` reaches both halves; `worth_asking` weighs an adjacent pair
@@ -2782,8 +2782,8 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   `holds`'s counterpart); unquoted, `name_the_tokens` gathers adjacent same-scope plain tokens
   (longest run to two, `MOST_TOKENS_IN_A_NAME`) for `instead_of_the_name`, but `beyond_a_word`
   weighs a run as a name only where a token is a word the catalog neither holds nor can spell nearer
-  (*the great gig in teh sky* is **The Great Gig in the Sky**, *pink floid* is still **pink
-  Floyd**). The budget is in letters (`letters_in`), not bytes.
+  (*the long walk in teh rain* is **The Long Walk in the Rain**, *example bnad* is still
+  **example Band**). The budget is in letters (`letters_in`), not bytes.
 - **The read is the cost: paid once, kept until a name could have moved.** `Library::did_you_mean`
   walks every title, artist and album name, so the window asks only where albums, artists, tracks
   and lyric matches (`sung`) all came back empty, on the background executor, and

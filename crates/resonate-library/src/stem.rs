@@ -108,35 +108,35 @@ mod tests {
     #[test]
     fn a_stem_is_read_as_a_number_an_artist_and_a_title() {
         assert_eq!(
-            read_as("03 - Miles Davis - So What"),
+            read_as("03 - Mira Dale - Salt Road"),
             (
                 Some(3),
-                Some("Miles Davis".to_owned()),
-                "So What".to_owned()
+                Some("Mira Dale".to_owned()),
+                "Salt Road".to_owned()
             )
         );
         assert_eq!(
-            read_as("03. Miles Davis – So What"),
+            read_as("03. Mira Dale – Salt Road"),
             (
                 Some(3),
-                Some("Miles Davis".to_owned()),
-                "So What".to_owned()
+                Some("Mira Dale".to_owned()),
+                "Salt Road".to_owned()
             )
         );
         assert_eq!(
-            read_as("003_Miles Davis — So What"),
+            read_as("003_Mira Dale — Salt Road"),
             (
                 Some(3),
-                Some("Miles Davis".to_owned()),
-                "So What".to_owned()
+                Some("Mira Dale".to_owned()),
+                "Salt Road".to_owned()
             )
         );
         assert_eq!(
-            read_as("7) Miles Davis - So What"),
+            read_as("7) Mira Dale - Salt Road"),
             (
                 Some(7),
-                Some("Miles Davis".to_owned()),
-                "So What".to_owned()
+                Some("Mira Dale".to_owned()),
+                "Salt Road".to_owned()
             )
         );
     }
@@ -144,28 +144,31 @@ mod tests {
     #[test]
     fn the_first_separator_is_the_one_that_splits_an_artist_from_a_title() {
         assert_eq!(
-            read_as("Miles Davis - So What - Live"),
+            read_as("Mira Dale - Salt Road - Live"),
             (
                 None,
-                Some("Miles Davis".to_owned()),
-                "So What - Live".to_owned()
+                Some("Mira Dale".to_owned()),
+                "Salt Road - Live".to_owned()
             )
         );
     }
 
     #[test]
     fn a_stem_with_no_separator_is_the_title_alone() {
-        assert_eq!(read_as("01 So What"), (Some(1), None, "So What".to_owned()));
         assert_eq!(
-            read_as("12. So What"),
-            (Some(12), None, "So What".to_owned())
+            read_as("01 Salt Road"),
+            (Some(1), None, "Salt Road".to_owned())
+        );
+        assert_eq!(
+            read_as("12. Salt Road"),
+            (Some(12), None, "Salt Road".to_owned())
         );
     }
 
     #[test]
     fn a_stem_that_parses_to_nothing_but_itself_is_left_to_the_fallback() {
         assert!(read("sparky").is_none());
-        assert!(read("So What").is_none());
+        assert!(read("Salt Road").is_none());
         assert!(read("2011").is_none());
         assert!(read("123").is_none());
         assert!(read("12Stones").is_none());
@@ -175,7 +178,7 @@ mod tests {
 
     #[test]
     fn a_number_only_a_space_parts_from_the_title_is_the_titles_own_unless_padded() {
-        assert!(read("99 Luftballons").is_none());
+        assert!(read("99 Lanterns").is_none());
         assert!(read("21 Guns").is_none());
         assert_eq!(
             read_as("7 Seconds - Youssou N'Dour"),
@@ -185,11 +188,17 @@ mod tests {
                 "Youssou N'Dour".to_owned()
             )
         );
-        assert_eq!(read_as("09 So What"), (Some(9), None, "So What".to_owned()));
-        assert_eq!(read_as("9. So What"), (Some(9), None, "So What".to_owned()));
         assert_eq!(
-            read_as("9 - So What"),
-            (Some(9), None, "So What".to_owned())
+            read_as("09 Salt Road"),
+            (Some(9), None, "Salt Road".to_owned())
+        );
+        assert_eq!(
+            read_as("9. Salt Road"),
+            (Some(9), None, "Salt Road".to_owned())
+        );
+        assert_eq!(
+            read_as("9 - Salt Road"),
+            (Some(9), None, "Salt Road".to_owned())
         );
     }
 

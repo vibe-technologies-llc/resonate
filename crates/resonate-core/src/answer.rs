@@ -343,8 +343,8 @@ mod tests {
         let answered = |id: i64| Answered {
             recording: Recording {
                 mbid: None,
-                title: "Joga".into(),
-                artist: "Björk".into(),
+                title: "Luna".into(),
+                artist: "Sölvi".into(),
                 album: String::new(),
                 length: None,
             },

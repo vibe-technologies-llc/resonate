@@ -10,8 +10,8 @@ use resonate_library::{EnrichOptions, Fingerprinters, Library, MissingTrack};
 use resonate_providers::Providers;
 
 use super::fixtures::{
-    Asked, HEROES_TONIGHT, HEROES_TONIGHT_GROUP, MusicBrainz, NCS_PLAYLIST, Shop, heroes_tonight,
-    mbid,
+    Asked, LANTERN_TONIGHT, LANTERN_TONIGHT_GROUP, MusicBrainz, NCS_PLAYLIST, Shop,
+    lantern_tonight, mbid,
 };
 use crate::{
     Supplying,
@@ -29,9 +29,9 @@ fn a_missing_song_pressed_on_an_album_is_listed_among_the_downloads(cx: &mut Tes
         "other.wav",
         1,
         &[
-            (b"IART", "Janji & Johnning"),
+            (b"IART", "Another Band & Third Band"),
             (b"INAM", "Another Song"),
-            (b"IPRD", "Heroes Tonight"),
+            (b"IPRD", "Lantern Tonight"),
         ],
     );
 
@@ -91,9 +91,12 @@ fn a_missing_song_pressed_on_an_album_is_listed_among_the_downloads(cx: &mut Tes
 
     assert_eq!(
         listed,
-        [("Heroes Tonight".to_owned(), "Janji & Johnning".to_owned())]
+        [(
+            "Lantern Tonight".to_owned(),
+            "Another Band & Third Band".to_owned()
+        )]
     );
-    assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+    assert_eq!(asked.lock()[0].recording, Some(mbid(LANTERN_TONIGHT)));
 }
 
 fn an_album_short_of_a_song(
@@ -105,9 +108,9 @@ fn an_album_short_of_a_song(
         "other.wav",
         1,
         &[
-            (b"IART", "Janji & Johnning"),
+            (b"IART", "Another Band & Third Band"),
             (b"INAM", "Another Song"),
-            (b"IPRD", "Heroes Tonight"),
+            (b"IPRD", "Lantern Tonight"),
         ],
     );
 
@@ -170,7 +173,7 @@ fn a_right_press_on_a_missing_song_of_an_album_downloads_it_without_waiting_to_p
     let asked = Arc::new(Mutex::new(Vec::new()));
 
     let (mut driven, library, _, title) = an_album_short_of_a_song(cx, &asked, &folder);
-    let recording = mbid(HEROES_TONIGHT);
+    let recording = mbid(LANTERN_TONIGHT);
 
     driven.right_click(title);
 
@@ -216,7 +219,7 @@ fn a_right_press_on_a_missing_song_of_an_album_can_download_it_and_play_it_once_
     let asked = Arc::new(Mutex::new(Vec::new()));
 
     let (mut driven, library, _, title) = an_album_short_of_a_song(cx, &asked, &folder);
-    let recording = mbid(HEROES_TONIGHT);
+    let recording = mbid(LANTERN_TONIGHT);
 
     driven.right_click(title);
     driven.click("menu-entry-0");
@@ -286,12 +289,12 @@ fn shop_reaching(asked: &Arc<Mutex<Vec<Asked>>>, open: &Arc<AtomicBool>) -> Reac
     }
 }
 
-fn heroes_tonight_found() -> resonate_library::Found {
-    let matched = heroes_tonight();
+fn lantern_tonight_found() -> resonate_library::Found {
+    let matched = lantern_tonight();
     resonate_library::Found {
         recording: matched.recording,
         title: matched.title,
-        artist: "Janji & Johnning".to_owned(),
+        artist: "Another Band & Third Band".to_owned(),
         length: None,
         release: matched.releases.first().cloned(),
         releases: matched.releases,
@@ -310,7 +313,7 @@ fn a_song_still_wanted_is_listed_among_the_downloads_when_the_window_opens_again
     let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
 
     library
-        .want_found(&MusicBrainz::new(), &heroes_tonight_found())
+        .want_found(&MusicBrainz::new(), &lantern_tonight_found())
         .expect("the song is wanted");
 
     let mut driven = Driven::reaching(cx, library, &folder, shop_reaching(&asked, &open));
@@ -331,7 +334,7 @@ fn a_song_still_wanted_is_listed_among_the_downloads_when_the_window_opens_again
             .collect::<Vec<_>>()
     });
 
-    assert_eq!(listed, [("Heroes Tonight".to_owned(), true)]);
+    assert_eq!(listed, [("Lantern Tonight".to_owned(), true)]);
 }
 
 #[gpui::test]
@@ -347,7 +350,7 @@ fn a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is(cx: &m
 
     driven.cx.update(|_, cx| {
         model.update(cx, |library, cx| {
-            library.want_found(heroes_tonight_found(), cx);
+            library.want_found(lantern_tonight_found(), cx);
         });
     });
     driven.until(|root, cx| {
@@ -366,7 +369,7 @@ fn a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is(cx: &m
     });
     driven.until(|_, _| !asked.lock().is_empty());
 
-    assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+    assert_eq!(asked.lock()[0].recording, Some(mbid(LANTERN_TONIGHT)));
 }
 
 #[gpui::test]
@@ -403,7 +406,7 @@ fn a_playlist_link_pasted_into_the_search_wants_every_song_it_holds_that_is_not_
         driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
         ""
     );
-    assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+    assert_eq!(asked.lock()[0].recording, Some(mbid(LANTERN_TONIGHT)));
     assert_eq!(library.wants().expect("the wants read").len(), 1);
     assert!(
         library
@@ -453,12 +456,12 @@ fn a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was
         driven.read(|root, cx| root.library.read(cx).downloads().len()),
         1
     );
-    assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+    assert_eq!(asked.lock()[0].recording, Some(mbid(LANTERN_TONIGHT)));
 
     let wants = library.wants().expect("the wants read");
 
     assert_eq!(wants.len(), 1);
-    assert_eq!(wants[0].title, "Heroes Tonight");
+    assert_eq!(wants[0].title, "Lantern Tonight");
 }
 
 #[gpui::test]
@@ -485,7 +488,7 @@ fn an_album_link_pasted_into_the_search_wants_every_song_of_the_album_it_names(
 
     driven.cx.update(|window, cx| {
         cx.write_to_clipboard(ClipboardItem::new_string(format!(
-            "https://musicbrainz.org/release-group/{HEROES_TONIGHT_GROUP}"
+            "https://musicbrainz.org/release-group/{LANTERN_TONIGHT_GROUP}"
         )));
         search.update(cx, |search, cx| search.pastes(window, cx));
     });
@@ -500,10 +503,10 @@ fn an_album_link_pasted_into_the_search_wants_every_song_of_the_album_it_names(
         driven.read(|root, cx| root.library.read(cx).downloads().len()),
         1
     );
-    assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+    assert_eq!(asked.lock()[0].recording, Some(mbid(LANTERN_TONIGHT)));
 
     let wants = library.wants().expect("the wants read");
 
     assert_eq!(wants.len(), 1);
-    assert_eq!(wants[0].album_title, "Heroes Tonight");
+    assert_eq!(wants[0].album_title, "Lantern Tonight");
 }

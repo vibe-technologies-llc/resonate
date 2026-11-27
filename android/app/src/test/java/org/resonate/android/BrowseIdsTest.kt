@@ -11,14 +11,14 @@ class BrowseIdsTest {
         assertEquals(BrowseNode.Albums, BrowseIds.read(BrowseIds.ALBUMS))
         assertEquals(BrowseNode.Favourites, BrowseIds.read(BrowseIds.FAVOURITES))
         assertEquals(BrowseNode.Playlist(7uL), BrowseIds.read(BrowseIds.playlist(7uL)))
-        assertEquals(BrowseNode.Artist("Air"), BrowseIds.read(BrowseIds.artist("Air")))
+        assertEquals(BrowseNode.Artist("Kestrel"), BrowseIds.read(BrowseIds.artist("Kestrel")))
         assertNull(BrowseIds.read("playlist:seven"))
         assertNull(BrowseIds.read("nothing"))
     }
 
     @Test
     fun anAlbumKeyKeepsItsSeparatorAndAtSigns() {
-        val key = "moon safari\u001fair@home"
+        val key = "salt meadow\u001fkestrel@home"
 
         assertEquals(BrowseNode.Album(key), BrowseIds.read(BrowseIds.album(key)))
         assertEquals(12uL to BrowseIds.album(key), BrowseIds.songOf(BrowseIds.song(12uL, BrowseIds.album(key))))

@@ -43,11 +43,11 @@ fn words_searched_again_are_answered_from_memory_rather_than_asked_twice(cx: &mu
     let musicbrainz = MusicBrainz::new();
     let mut driven = searching(&musicbrainz, cx);
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     answered(&mut driven);
-    typed(&mut driven, "janji heroes");
+    typed(&mut driven, "another band lantern");
     answered(&mut driven);
-    typed(&mut driven, "heroes   TONIGHT");
+    typed(&mut driven, "lantern   TONIGHT");
 
     let at_once = driven.read(|root, cx| root.library.read(cx).found().len());
 
@@ -60,7 +60,7 @@ fn words_searched_again_are_answered_from_memory_rather_than_asked_twice(cx: &mu
     );
     assert_eq!(
         musicbrainz.searched.lock().clone(),
-        ["heroes tonight", "janji heroes"]
+        ["lantern tonight", "another band lantern"]
     );
 }
 
@@ -69,9 +69,9 @@ fn songs_found_for_fewer_words_stay_listed_while_more_are_asked_for(cx: &mut Tes
     let musicbrainz = MusicBrainz::new();
     let mut driven = searching(&musicbrainz, cx);
 
-    typed(&mut driven, "heroes");
+    typed(&mut driven, "lantern");
     answered(&mut driven);
-    typed(&mut driven, "heroes ton");
+    typed(&mut driven, "lantern ton");
 
     let narrowed = driven.read(|root, cx| {
         let library = root.library.read(cx);
@@ -94,7 +94,7 @@ fn a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press(cx: &mut T
 
     let mut driven = searching(&musicbrainz, cx);
 
-    typed(&mut driven, "heroes tonight");
+    typed(&mut driven, "lantern tonight");
     driven.until(|root, cx| root.library.read(cx).elsewhere() == Some(Beyond::Unreached(0)));
     musicbrainz.refusing.store(false, Ordering::Relaxed);
     driven.click("ask-elsewhere-again");
@@ -102,7 +102,7 @@ fn a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press(cx: &mut T
 
     assert_eq!(
         musicbrainz.searched.lock().clone(),
-        ["heroes tonight", "heroes tonight"]
+        ["lantern tonight", "lantern tonight"]
     );
 }
 
@@ -124,7 +124,7 @@ fn songs_found_stand_where_musicbrainz_refused_the_albums_which_are_asked_for_ag
 
     let mut driven = searching(&musicbrainz, cx);
 
-    typed(&mut driven, "heroes tonight");
+    typed(&mut driven, "lantern tonight");
     answered(&mut driven);
 
     let refused = driven.read(|root, cx| {
@@ -133,9 +133,9 @@ fn songs_found_stand_where_musicbrainz_refused_the_albums_which_are_asked_for_ag
     });
 
     musicbrainz.refusing_albums.store(false, Ordering::Relaxed);
-    typed(&mut driven, "janji");
+    typed(&mut driven, "another band");
     answered(&mut driven);
-    typed(&mut driven, "heroes tonight");
+    typed(&mut driven, "lantern tonight");
     answered(&mut driven);
 
     assert_eq!(refused, (1, 0));
@@ -145,7 +145,7 @@ fn songs_found_stand_where_musicbrainz_refused_the_albums_which_are_asked_for_ag
     );
     assert_eq!(
         musicbrainz.albums_searched.lock().clone(),
-        ["heroes tonight", "janji", "heroes tonight"]
+        ["lantern tonight", "another band", "lantern tonight"]
     );
 }
 
@@ -154,17 +154,20 @@ fn a_search_typed_past_does_not_ask_musicbrainz_for_its_albums(cx: &mut TestAppC
     let musicbrainz = MusicBrainz::new();
     let mut driven = searching(&musicbrainz, cx);
 
-    typed(&mut driven, "heroes tonight");
+    typed(&mut driven, "lantern tonight");
     asked_now(&mut driven);
-    typed(&mut driven, "janji heroes");
+    typed(&mut driven, "another band lantern");
     asked_now(&mut driven);
     answered(&mut driven);
 
     assert_eq!(
         musicbrainz.searched.lock().clone(),
-        ["heroes tonight", "janji heroes"]
+        ["lantern tonight", "another band lantern"]
     );
-    assert_eq!(musicbrainz.albums_searched.lock().clone(), ["janji heroes"]);
+    assert_eq!(
+        musicbrainz.albums_searched.lock().clone(),
+        ["another band lantern"]
+    );
 }
 
 #[gpui::test]
@@ -172,9 +175,9 @@ fn albums_found_stay_listed_while_the_words_are_edited(cx: &mut TestAppContext) 
     let musicbrainz = MusicBrainz::new();
     let mut driven = searching(&musicbrainz, cx);
 
-    typed(&mut driven, "heroes tonight");
+    typed(&mut driven, "lantern tonight");
     answered(&mut driven);
-    typed(&mut driven, "heroes tonigh");
+    typed(&mut driven, "lantern tonigh");
 
     let while_asked = driven.read(|root, cx| {
         let library = root.library.read(cx);
@@ -189,7 +192,7 @@ fn every_found_song_below_the_held_ones_can_be_reached_from_the_keyboard(cx: &mu
     let musicbrainz = MusicBrainz::new();
     let folder = Folder::new();
 
-    folder.tone("Heroes Tonight.wav", 1);
+    folder.tone("Lantern Tonight.wav", 1);
 
     let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
 
@@ -201,7 +204,7 @@ fn every_found_song_below_the_held_ones_can_be_reached_from_the_keyboard(cx: &mu
     };
     let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
-    typed(&mut driven, "heroes tonight");
+    typed(&mut driven, "lantern tonight");
     answered(&mut driven);
     driven.until(|root, cx| {
         let library = root.library.read(cx);
@@ -355,7 +358,7 @@ fn a_search_inside_an_artist_asks_musicbrainz_nothing(cx: &mut TestAppContext) {
             library.select(Selection::Artist(artist), cx)
         });
     });
-    typed(&mut driven, "heroes tonight");
+    typed(&mut driven, "lantern tonight");
     asked_now(&mut driven);
     driven.settle();
 

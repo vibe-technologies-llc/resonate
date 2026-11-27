@@ -910,7 +910,7 @@ fn an_album_titled_composed_on_one_track_and_decomposed_on_another_is_one_album(
             &format!("rip/{file}"),
             &Wav::new()
                 .text(TITLE, file)
-                .text(ARTIST, "Sigur Ros")
+                .text(ARTIST, "Silvo Mor")
                 .text(ALBUM, album)
                 .build(),
         );
@@ -1213,11 +1213,11 @@ fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -
 #[test]
 fn a_name_a_mac_hands_back_decomposed_is_catalogued_composed_and_still_opens() -> Result<()> {
     let tree = Tree::new();
-    let decomposed = tree.path().join("Bjo\u{308}rk").join("Je\u{301}ga.wav");
-    let composed = tree.path().join("Bj\u{f6}rk").join("J\u{e9}ga.wav");
+    let decomposed = tree.path().join("So\u{308}lvi").join("Le\u{301}na.wav");
+    let composed = tree.path().join("S\u{f6}lvi").join("L\u{e9}na.wav");
 
-    fs::create_dir(tree.path().join("Bjo\u{308}rk")).expect("a folder named decomposed");
-    fs::write(&decomposed, Wav::new().text(TITLE, "Joga").build())
+    fs::create_dir(tree.path().join("So\u{308}lvi")).expect("a folder named decomposed");
+    fs::write(&decomposed, Wav::new().text(TITLE, "Luna").build())
         .expect("a file named decomposed");
 
     let library = Library::open_in_memory()?;

@@ -4,7 +4,7 @@ import Testing
 
 @testable import ResonateLogic
 
-func found(_ count: UInt32 = 1, completions: [String] = [], title: String = "Echoes") -> LibrarySearch {
+func found(_ count: UInt32 = 1, completions: [String] = [], title: String = "Slow Water") -> LibrarySearch {
     LibrarySearch(
         tracks: (0..<count).map { track(UInt64($0) + 1, title: title) },
         trackCount: count,
@@ -265,13 +265,13 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
 
     @Test func refreshAsksAgainAtOnceWithoutTheSettle() async {
         let search = model()
-        search.text = "echoes"
+        search.text = "slow water"
         await eventually { search.hasAnswer }
 
         search.refresh()
         await eventually { await asked.texts.count == 2 }
 
-        #expect(await asked.texts == ["echoes", "echoes"])
+        #expect(await asked.texts == ["slow water", "slow water"])
     }
 
     @Test func refreshWithNothingTypedAsksNothing() async {
@@ -314,46 +314,46 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
 
     @Test func recentSearchesSurviveToAnotherModelOnTheSameDefaults() {
         let first = model()
-        first.text = "echoes"
+        first.text = "slow water"
         first.remember()
 
         let second = model()
 
-        #expect(second.recents == ["echoes"])
+        #expect(second.recents == ["slow water"])
     }
 
     @Test func aModelNotRememberingKeepsNothingAndNothingIsReadBack() {
         let remembered = model()
-        remembered.text = "echoes"
+        remembered.text = "slow water"
         remembered.remember()
 
         let forgetful = model(remembering: false)
-        forgetful.text = "hunter"
+        forgetful.text = "wavebreak"
         forgetful.remember()
 
         #expect(forgetful.recents.isEmpty)
-        #expect(model().recents == ["echoes"])
+        #expect(model().recents == ["slow water"])
     }
 
     @Test func switchingHistoryOffHidesAndStopsKeepingRecentSearches() {
         let search = model()
-        search.text = "echoes"
+        search.text = "slow water"
         search.remember()
         history.first.set(false, forKey: SearchModel.historyKeptKey)
 
-        search.text = "hunter"
+        search.text = "wavebreak"
         search.remember()
         search.recallRecents()
 
         #expect(search.recents.isEmpty)
         #expect(model().recents.isEmpty)
         history.first.set(true, forKey: SearchModel.historyKeptKey)
-        #expect(model().recents == ["echoes"])
+        #expect(model().recents == ["slow water"])
     }
 
     @Test func forgettingRecentsEmptiesThemInTheModelAndInStorage() {
         let search = model()
-        search.text = "echoes"
+        search.text = "slow water"
         search.remember()
 
         search.forgetRecents()
@@ -365,12 +365,12 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
     @Test func recallingRecentsTakesWhatAnotherTabKept() {
         let one = model()
         let other = model()
-        other.text = "hunter"
+        other.text = "wavebreak"
         other.remember()
 
         one.recallRecents()
 
-        #expect(one.recents == ["hunter"])
+        #expect(one.recents == ["wavebreak"])
     }
 }
 
@@ -410,10 +410,10 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
     }
 
     @Test func aNameIsFiledUnderItsFirstLetterOrNumberFoldedOfAccents() {
-        #expect(LetterRun.letter(of: "Björk") == "B")
-        #expect(LetterRun.letter(of: "Édith Piaf") == "E")
+        #expect(LetterRun.letter(of: "Sölvi") == "S")
+        #expect(LetterRun.letter(of: "Édith Moreau") == "E")
         #expect(LetterRun.letter(of: "élan") == "E")
-        #expect(LetterRun.letter(of: "The Wall") == "T")
+        #expect(LetterRun.letter(of: "The Pier") == "T")
     }
 
     @Test func aNameLeadingWithPunctuationIsFiledUnderTheFirstLetterAfterIt() {
@@ -424,7 +424,7 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
     @Test func aNumberDigitsAndNamesWithNoLetterFromTheLatinAlphabetFallUnderHash() {
         #expect(LetterRun.letter(of: "") == "#")
         #expect(LetterRun.letter(of: "!!!") == "#")
-        #expect(LetterRun.letter(of: "99 Luftballons") == "#")
+        #expect(LetterRun.letter(of: "99 Lanterns") == "#")
         #expect(LetterRun.letter(of: "Ελλάδα") == "#")
         #expect(LetterRun.letter(of: "日本") == "#")
     }
@@ -440,11 +440,11 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
 
 @Suite struct LightedRangesTests {
     @Test func aRangeInUtf16UnitsMarksTheSameCharactersInTheString() {
-        let text = "Pink Floyd"
+        let text = "Example Band"
 
-        let marked = lightedRanges(in: text, ranges: [TextRange(start: 5, end: 10)])
+        let marked = lightedRanges(in: text, ranges: [TextRange(start: 8, end: 12)])
 
-        #expect(marked.map { String(text[$0]) } == ["Floyd"])
+        #expect(marked.map { String(text[$0]) } == ["Band"])
     }
 
     @Test func aRangeCountsBothHalvesOfASurrogatePairAsTwoUnits() {
@@ -464,9 +464,9 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
     }
 
     @Test func aRangeInsideAnAccentedLetterMarksTheWholeLetterWithItsAccent() {
-        let text = "Bjo\u{0308}rk"
+        let text = "So\u{0308}lvi"
 
-        let marked = lightedRanges(in: text, ranges: [TextRange(start: 2, end: 3)])
+        let marked = lightedRanges(in: text, ranges: [TextRange(start: 1, end: 2)])
 
         #expect(marked.map { String(text[$0]) } == ["o\u{0308}"])
     }
@@ -488,8 +488,8 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
     }
 
     @Test func aQueryThatMatchesTheTitleMarksWhereTheEngineSaysItDoes() {
-        let marked = lightedRanges(in: "Pink Floyd", by: "pink", in: .artist)
+        let marked = lightedRanges(in: "Example Band", by: "exam", in: .artist)
 
-        #expect(marked.map { String("Pink Floyd"[$0]) } == ["Pink"])
+        #expect(marked.map { String("Example Band"[$0]) } == ["Exam"])
     }
 }

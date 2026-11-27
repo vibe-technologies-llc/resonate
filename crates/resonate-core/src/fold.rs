@@ -91,14 +91,14 @@ mod tests {
         );
         assert_eq!(words_of_a_name("Can't"), ["cant"]);
         assert_eq!(words_of_a_name("Hey A.B."), ["hey", "a", "b"]);
-        assert_eq!(words_of_a_name("AC/DC"), ["ac", "dc"]);
-        assert_eq!(words_of_a_name("Björk — Jóga"), ["bjork", "joga"]);
+        assert_eq!(words_of_a_name("AB/CD"), ["ab", "cd"]);
+        assert_eq!(words_of_a_name("Sölvi — Lúna"), ["solvi", "luna"]);
         assert!(words_of_a_name("!!!").is_empty());
     }
 
     #[test]
     fn a_mark_is_an_accent_only_on_a_latin_greek_or_cyrillic_letter() {
-        assert_eq!(folded_letters("Björk"), "bjork");
+        assert_eq!(folded_letters("Sölvi"), "solvi");
         assert_eq!(folded_letters("Ελλάδα"), "ελλαδα");
         assert_eq!(folded_letters("Йога"), "иога");
         assert_ne!(folded_letters("ガラス"), folded_letters("カラス"));

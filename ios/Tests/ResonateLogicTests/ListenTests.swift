@@ -21,27 +21,27 @@ func song(_ title: String, key: String? = nil) -> HeardSong {
 
 @Suite struct ListenNextTests {
     @Test func aNamedSongIsToldWhenNothingStandsOrAnotherDoes() {
-        let named = HeardAnswer.named(song: song("Echoes"))
+        let named = HeardAnswer.named(song: song("Slow Water"))
 
-        #expect(ListenNext.after(named, naming: nil, standing: nil) == .tell(song("Echoes")))
-        #expect(ListenNext.after(named, naming: nil, standing: song("Hey You")) == .tell(song("Echoes")))
+        #expect(ListenNext.after(named, naming: nil, standing: nil) == .tell(song("Slow Water")))
+        #expect(ListenNext.after(named, naming: nil, standing: song("Small Mercies")) == .tell(song("Slow Water")))
     }
 
     @Test func theSongAlreadyStandingIsKeptQuietlyWhileFollowing() {
-        let named = HeardAnswer.named(song: song("Echoes", key: "echoes pink floyd"))
+        let named = HeardAnswer.named(song: song("Slow Water", key: "slow water example band"))
 
-        #expect(ListenNext.after(named, naming: nil, standing: song("Echoes", key: "echoes pink floyd")) == .keep)
+        #expect(ListenNext.after(named, naming: nil, standing: song("Slow Water", key: "slow water example band")) == .keep)
     }
 
     @Test func aSongNamedOnATryIsToldWhetherOrNotItStands() {
-        let named = HeardAnswer.named(song: song("Echoes"))
+        let named = HeardAnswer.named(song: song("Slow Water"))
 
-        #expect(ListenNext.after(named, naming: 2, standing: song("Echoes")) == .tell(song("Echoes")))
+        #expect(ListenNext.after(named, naming: 2, standing: song("Slow Water")) == .tell(song("Slow Water")))
     }
 
     @Test func aMissWhileFollowingChangesNothing() {
         for answer in [HeardAnswer.missed, .silent, .unreached(service: "Shazam")] {
-            #expect(ListenNext.after(answer, naming: nil, standing: song("Echoes")) == .keep)
+            #expect(ListenNext.after(answer, naming: nil, standing: song("Slow Water")) == .keep)
         }
     }
 
@@ -64,7 +64,7 @@ func song(_ title: String, key: String? = nil) -> HeardSong {
 
     @Test func theStagesSayWhetherTheyListenAndWhetherTheyAnswered() {
         let listening: [ListenStage] = [.recording(nth: 1, since: Date()), .asking]
-        let answered: [ListenStage] = [.found(song("Echoes")), .unknown]
+        let answered: [ListenStage] = [.found(song("Slow Water")), .unknown]
         let neither: [ListenStage] = [.idle, .silent, .unreached("x"), .offline, .denied, .failed("x")]
 
         #expect(listening.allSatisfy { $0.isListening })

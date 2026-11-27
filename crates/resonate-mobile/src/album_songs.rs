@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn a_song_is_held_by_its_recording_its_title_or_its_place() {
         let catalog = opened();
-        let by_title = held(&catalog, "JÓGA", None, None);
+        let by_title = held(&catalog, "LÚNA", None, None);
         let by_place = held(&catalog, "Track 02", Some(1), Some(2));
         let by_recording = held(&catalog, "Renamed", None, None);
 
@@ -458,10 +458,10 @@ mod tests {
         let read = release(vec![medium(
             1,
             vec![
-                track(1, "Joga", None),
-                track(2, "Hunter", None),
-                track(3, "Pluto", Some(SECOND)),
-                track(4, "Unravel", None),
+                track(1, "Luna", None),
+                track(2, "Wavebreak", None),
+                track(3, "Pebble", Some(SECOND)),
+                track(4, "Unmoor", None),
             ],
         )]);
 
@@ -470,7 +470,7 @@ mod tests {
         assert_eq!(key_of(&catalog, &by_place), key);
         assert_eq!(
             titles(&catalog.album_songs_not_held(&key).expect("the rows")),
-            vec!["Unravel"]
+            vec!["Unmoor"]
         );
     }
 

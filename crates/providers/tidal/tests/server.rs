@@ -25,7 +25,7 @@ use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal, Ti
 const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
 const SEARCH_RESULTS: &str = include_str!("fixtures/search_results.json");
 const SLOW_WATER_ISRC: &str = "GBN9Y1100089";
-const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
+const LANTERN_TONIGHT_ISRC: &str = "GB2LD0902006";
 const TRACK: u64 = 55_391_743;
 const BEARER: &str = "Bearer fresh-access";
 
@@ -420,9 +420,9 @@ fn by_isrc() -> Identity {
 
 fn ncs_song() -> Identity {
     Identity {
-        isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
-        artist: Some("Janji".to_owned()),
-        ..Identity::named("Heroes Tonight")
+        isrcs: vec![Isrc::new(LANTERN_TONIGHT_ISRC).expect("an isrc")],
+        artist: Some("Another Band".to_owned()),
+        ..Identity::named("Lantern Tonight")
     }
 }
 
@@ -1553,7 +1553,7 @@ fn a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_un
 }
 
 #[test]
-fn the_hosted_hifi_service_downloads_ncs_heroes_tonight_by_isrc() {
+fn the_hosted_hifi_service_downloads_ncs_lantern_tonight_by_isrc() {
     const GATE: &str = "RESONATE_HIFI_LIVE_TESTS";
 
     if env::var_os(GATE).is_none() {

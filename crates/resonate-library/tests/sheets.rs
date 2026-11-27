@@ -805,7 +805,7 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
 
-    tree.write("Bj\u{f6}rk.wav", b"a file no scan has read");
+    tree.write("S\u{f6}lvi.wav", b"a file no scan has read");
 
     let mut bytes = b"#EXTM3U\n#PLAYLIST:Kv".to_vec();
 
@@ -814,9 +814,9 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
     bytes.push(0x93);
     bytes.extend_from_slice(b"Live");
     bytes.push(0x94);
-    bytes.extend_from_slice(b"\nBj");
+    bytes.extend_from_slice(b"\nS");
     bytes.push(0xf6);
-    bytes.extend_from_slice(b"rk.wav\n");
+    bytes.extend_from_slice(b"lvi.wav\n");
 
     let sheet = tree.write("legacy.m3u", &bytes);
     let imported = library.import_playlist(&sheet, None)?;
@@ -828,7 +828,7 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
     );
     assert_eq!(imported.added, 1);
     assert_eq!(imported.missing, 0);
-    assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["Björk"]);
+    assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["Sölvi"]);
 
     let strict = tree.write("legacy.m3u8", &bytes);
 

@@ -15,15 +15,15 @@ use resonate_library::{
 };
 use resonate_providers::{Identity, Obtained, Provider};
 
-use super::enriching::HEROES_MISSPELT;
+use super::enriching::LANTERN_MISSPELT;
 
-pub(super) const HEROES_TONIGHT: &str = "1a7d3b23-842a-4e57-8a8b-0f8b96a25f20";
+pub(super) const LANTERN_TONIGHT: &str = "1a7d3b23-842a-4e57-8a8b-0f8b96a25f20";
 
-const HEROES_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";
+const LANTERN_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";
 
-pub(super) const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
+pub(super) const LANTERN_TONIGHT_ISRC: &str = "GB2LD0902006";
 
-pub(super) const HEROES_TONIGHT_GROUP: &str = "6c0b1f5e-3a2d-4f7e-9b8c-1d2e3f4a5b6c";
+pub(super) const LANTERN_TONIGHT_GROUP: &str = "6c0b1f5e-3a2d-4f7e-9b8c-1d2e3f4a5b6c";
 
 pub(super) const LIGHTS_GROUP: &str = "8e1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b";
 
@@ -31,7 +31,7 @@ const LIGHTS_RELEASE: &str = "2f3a4b5c-6d7e-4f8a-9b0c-1d2e3f4a5b6c";
 
 const SKYLINE: &str = "4a5b6c7d-8e9f-4a0b-8c1d-2e3f4a5b6c7d";
 
-const JANJI: &str = "0b3c6f5d-2e1a-4c8b-9d7e-6f5a4b3c2d1e";
+const ANOTHER_BAND: &str = "0b3c6f5d-2e1a-4c8b-9d7e-6f5a4b3c2d1e";
 
 pub(super) const NCS_PLAYLIST: u64 = 1_234;
 
@@ -39,11 +39,11 @@ pub(super) fn mbid(id: &str) -> Mbid {
     Mbid::new(id).expect("an mbid")
 }
 
-pub(super) fn janji() -> Vec<Credit> {
+pub(super) fn another_band() -> Vec<Credit> {
     vec![Credit {
-        name: "Janji".to_owned(),
-        joined_by: " & Johnning".to_owned(),
-        mbid: Some(mbid(JANJI)),
+        name: "Another Band".to_owned(),
+        joined_by: " & Third Band".to_owned(),
+        mbid: Some(mbid(ANOTHER_BAND)),
     }]
 }
 
@@ -99,7 +99,7 @@ impl Reference for MusicBrainz {
 
     fn release(&self, id: &Mbid) -> Result<Option<Release>> {
         Ok(match id.as_str() {
-            HEROES_TONIGHT_RELEASE => Some(heroes_tonight_release()),
+            LANTERN_TONIGHT_RELEASE => Some(lantern_tonight_release()),
             LIGHTS_RELEASE => Some(lights_release()),
             _ => None,
         })
@@ -110,13 +110,13 @@ impl Reference for MusicBrainz {
     }
 
     fn find_release(&self, asked: &ReleaseAsked) -> Result<Vec<ReleaseMatch>> {
-        Ok((asked.title == "Heroes Tonight")
+        Ok((asked.title == "Lantern Tonight")
             .then(|| ReleaseMatch {
-                release: mbid(HEROES_TONIGHT_RELEASE),
+                release: mbid(LANTERN_TONIGHT_RELEASE),
                 group: None,
                 score: 100,
-                title: "Heroes Tonight".to_owned(),
-                credit: janji(),
+                title: "Lantern Tonight".to_owned(),
+                credit: another_band(),
                 track_count: Some(1),
                 date: Some("2015-12-22".to_owned()),
             })
@@ -125,21 +125,21 @@ impl Reference for MusicBrainz {
     }
 
     fn recording(&self, id: &Mbid) -> Result<Option<Recording>> {
-        Ok((id.as_str() == HEROES_TONIGHT).then(|| heroes_tonight().into_recording()))
+        Ok((id.as_str() == LANTERN_TONIGHT).then(|| lantern_tonight().into_recording()))
     }
 
     fn recordings_of_isrc(&self, isrc: &resonate_library::Isrc) -> Result<Vec<Recording>> {
-        Ok((isrc.as_str() == HEROES_TONIGHT_ISRC)
-            .then(|| heroes_tonight().into_recording())
+        Ok((isrc.as_str() == LANTERN_TONIGHT_ISRC)
+            .then(|| lantern_tonight().into_recording())
             .into_iter()
             .collect())
     }
 
     fn find_recording(&self, asked: &RecordingAsked) -> Result<Vec<RecordingMatch>> {
-        Ok((asked.title == HEROES_MISSPELT)
+        Ok((asked.title == LANTERN_MISSPELT)
             .then(|| RecordingMatch {
                 score: 58,
-                ..heroes_tonight()
+                ..lantern_tonight()
             })
             .into_iter()
             .collect())
@@ -153,20 +153,22 @@ impl Reference for MusicBrainz {
                 status: 503,
             });
         }
-        Ok(vec![heroes_tonight()])
+        Ok(vec![lantern_tonight()])
     }
 
     fn release_group(&self, id: &Mbid) -> Result<Option<ReleaseGroup>> {
-        Ok((id.as_str() == HEROES_TONIGHT_GROUP).then(|| ReleaseGroup {
-            id: mbid(HEROES_TONIGHT_GROUP),
-            title: "Heroes Tonight".to_owned(),
-            credit: janji(),
-            kind: Some("Single".to_owned()),
-            first_released: Some("2015-12-22".to_owned()),
-            disambiguation: None,
-            links: Vec::new(),
-            releases: Vec::new(),
-        }))
+        Ok(
+            (id.as_str() == LANTERN_TONIGHT_GROUP).then(|| ReleaseGroup {
+                id: mbid(LANTERN_TONIGHT_GROUP),
+                title: "Lantern Tonight".to_owned(),
+                credit: another_band(),
+                kind: Some("Single".to_owned()),
+                first_released: Some("2015-12-22".to_owned()),
+                disambiguation: None,
+                links: Vec::new(),
+                releases: Vec::new(),
+            }),
+        )
     }
 
     fn find_release_group(&self, _: &GroupAsked) -> Result<Vec<GroupMatch>> {
@@ -182,10 +184,10 @@ impl Reference for MusicBrainz {
             });
         }
         Ok(vec![AlbumMatch {
-            group: mbid(HEROES_TONIGHT_GROUP),
+            group: mbid(LANTERN_TONIGHT_GROUP),
             score: 100,
-            title: "Heroes Tonight".to_owned(),
-            credit: janji(),
+            title: "Lantern Tonight".to_owned(),
+            credit: another_band(),
             kind: Some("Album".to_owned()),
             secondary: Vec::new(),
             first_released: Some("2015-12-22".to_owned()),
@@ -210,9 +212,9 @@ impl Reference for MusicBrainz {
 
     fn releases_of_group(&self, group: &Mbid) -> Result<Vec<Release>> {
         Ok(match group.as_str() {
-            HEROES_TONIGHT_GROUP => vec![Release {
-                group: Some(mbid(HEROES_TONIGHT_GROUP)),
-                ..heroes_tonight_release()
+            LANTERN_TONIGHT_GROUP => vec![Release {
+                group: Some(mbid(LANTERN_TONIGHT_GROUP)),
+                ..lantern_tonight_release()
             }],
             LIGHTS_GROUP => vec![lights_release()],
             _ => Vec::new(),
@@ -241,7 +243,7 @@ impl Reference for MusicBrainz {
 
     fn song_linked(&self, _: &SongLink) -> Result<Option<LinkNames>> {
         Ok(Some(LinkNames {
-            isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
+            isrcs: vec![Isrc::new(LANTERN_TONIGHT_ISRC).expect("an isrc")],
             length: None,
             title: None,
             artist: None,
@@ -260,7 +262,7 @@ impl Reference for MusicBrainz {
         Ok(
             (link == &PlaylistLink::Deezer(NCS_PLAYLIST)).then(|| LinkedPlaylist {
                 name: "NCS".to_owned(),
-                songs: vec![ListedSong::Recording(mbid(HEROES_TONIGHT))],
+                songs: vec![ListedSong::Recording(mbid(LANTERN_TONIGHT))],
             }),
         )
     }
@@ -274,12 +276,12 @@ impl Reference for MusicBrainz {
     }
 }
 
-fn heroes_tonight_release() -> Release {
+fn lantern_tonight_release() -> Release {
     Release {
-        id: mbid(HEROES_TONIGHT_RELEASE),
+        id: mbid(LANTERN_TONIGHT_RELEASE),
         group: None,
-        title: "Heroes Tonight".to_owned(),
-        credit: janji(),
+        title: "Lantern Tonight".to_owned(),
+        credit: another_band(),
         date: Some("2015-12-22".to_owned()),
         country: None,
         label: None,
@@ -296,12 +298,12 @@ fn heroes_tonight_release() -> Release {
             tracks: vec![ReleaseTrack {
                 position: 1,
                 number: "1".to_owned(),
-                title: "Heroes Tonight".to_owned(),
+                title: "Lantern Tonight".to_owned(),
                 artist: None,
-                recording: Some(mbid(HEROES_TONIGHT)),
+                recording: Some(mbid(LANTERN_TONIGHT)),
                 track: None,
                 length: None,
-                isrcs: vec![HEROES_TONIGHT_ISRC.to_owned()],
+                isrcs: vec![LANTERN_TONIGHT_ISRC.to_owned()],
                 links: Vec::new(),
             }],
         }],
@@ -331,25 +333,25 @@ fn lights_release() -> Release {
             format: None,
             title: None,
             tracks: vec![
-                song(1, "Heroes Tonight", HEROES_TONIGHT),
+                song(1, "Lantern Tonight", LANTERN_TONIGHT),
                 song(2, "Skyline", SKYLINE),
             ],
         }],
-        ..heroes_tonight_release()
+        ..lantern_tonight_release()
     }
 }
 
-pub(super) fn heroes_tonight() -> RecordingMatch {
+pub(super) fn lantern_tonight() -> RecordingMatch {
     RecordingMatch {
-        recording: mbid(HEROES_TONIGHT),
+        recording: mbid(LANTERN_TONIGHT),
         score: 100,
-        title: "Heroes Tonight".to_owned(),
-        credit: janji(),
+        title: "Lantern Tonight".to_owned(),
+        credit: another_band(),
         length: None,
-        isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
+        isrcs: vec![Isrc::new(LANTERN_TONIGHT_ISRC).expect("an isrc")],
         releases: vec![RecordingRelease {
-            id: mbid(HEROES_TONIGHT_RELEASE),
-            title: "Heroes Tonight".to_owned(),
+            id: mbid(LANTERN_TONIGHT_RELEASE),
+            title: "Lantern Tonight".to_owned(),
             date: Some("2015-12-22".to_owned()),
             disc: Some(1),
             position: Some(1),

@@ -348,8 +348,8 @@ platforms; the catalog seam stays thin.
   Queries fold alike through `query_folds` (`fold_queries`, `query_namesake_made_apart`), the
   survivor's body standing; a body the catalog cannot write folds nothing until it can.
 - **A song's names key it by their words.** `Recording::named_key` is `named:` and the
-  `title_words` of the artist, the title and the album, so `Guns N' Roses` and `Guns N Roses`, or
-  `AC/DC` and `AC DC`, key one song
+  `title_words` of the artist, the title and the album, so `Rum N' Raisin` and `Rum N Raisin`, or
+  `AB/CD` and `AB CD`, key one song
   (`a_recording_is_keyed_alike_whatever_punctuation_and_spacing_its_names_carry`), and
   `surely_names` and both catalogs' holdings match (the library's `named_alike`, the phones'
   `Index`) weigh the artist and album as words too. **No key travels**: every change carries the

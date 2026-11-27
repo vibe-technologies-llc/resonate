@@ -475,8 +475,8 @@ mod tests {
                 uri: format!("resonate-folder://local/{name}"),
                 name: name.into(),
                 title: title.into(),
-                artist: "Björk".into(),
-                album: "Homogenic".into(),
+                artist: "Sölvi".into(),
+                album: "Seabrook".into(),
                 duration_ms: 255_000,
                 ..crate::Track::default()
             })
@@ -491,8 +491,8 @@ mod tests {
         std::fs::create_dir_all(&folder).expect("a folder");
 
         let catalog = Catalog::open(&folder.join("catalog.sqlite")).expect("opened");
-        let lost = song(&catalog, "Hunter.flac", "Hunter");
-        let other = song(&catalog, "Joga.flac", "Jóga");
+        let lost = song(&catalog, "Wavebreak.flac", "Wavebreak");
+        let other = song(&catalog, "Luna.flac", "Lúna");
 
         catalog.favourite(lost.id, true).expect("favoured");
         catalog
@@ -510,7 +510,7 @@ mod tests {
             .mark_missing(&[lost.id as i64], &[])
             .expect("hidden");
 
-        let back = song(&catalog, "Hunter (1).flac", "Hunter");
+        let back = song(&catalog, "Wavebreak (1).flac", "Wavebreak");
         let replaced = catalog
             .take_the_place_of_missing(back.id, Absorbing::EveryHidden)
             .expect("taken over");

@@ -22,16 +22,16 @@ private func year(_ slides: [WrappedSlide]) -> WrappedYear {
     @Test func theCardLeadsWithTheFirstSlideAndRanksOnlyTheSlidesThatRank() throws {
         let words = try #require(WrappedCardWords.of(year([
             slide("Resonate Wrapped 2025", "100 hours of music"),
-            slide("Your song of the year", "Echoes", by: "Pink Floyd", ranked: true),
+            slide("Your song of the year", "Slow Water", by: "Example Band", ranked: true),
             slide("Your year", "March was your biggest month"),
-            slide("Your artist of the year", "Air", ranked: true),
+            slide("Your artist of the year", "Kestrel", ranked: true),
         ])))
 
         #expect(words.eyebrow == "Resonate Wrapped 2025")
         #expect(words.headline == "100 hours of music")
         #expect(words.rows == [
-            WrappedCardRow(label: "Your song of the year", name: "Echoes", by: "Pink Floyd"),
-            WrappedCardRow(label: "Your artist of the year", name: "Air", by: nil),
+            WrappedCardRow(label: "Your song of the year", name: "Slow Water", by: "Example Band"),
+            WrappedCardRow(label: "Your artist of the year", name: "Kestrel", by: nil),
         ])
     }
 

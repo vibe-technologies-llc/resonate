@@ -7,12 +7,12 @@ import Testing
 @Suite struct ShownNamesTests {
     @Test func aSongWithoutATitleIsShownByItsFileName() {
         #expect(track(1, title: "", name: "01 untitled.flac").shownTitle == "01 untitled.flac")
-        #expect(track(1, title: "Echoes").shownTitle == "Echoes")
+        #expect(track(1, title: "Slow Water").shownTitle == "Slow Water")
     }
 
     @Test func aSongWithoutAnArtistIsShownByTheWordsUnknownArtist() {
         #expect(track(1, artist: "").shownArtist == "Unknown artist")
-        #expect(track(1, artist: "Björk").shownArtist == "Björk")
+        #expect(track(1, artist: "Sölvi").shownArtist == "Sölvi")
     }
 
     @Test func aSongIsGroupedUnderItsAlbumArtistWhereItHasOne() {
@@ -37,11 +37,11 @@ import Testing
     }
 
     @Test func anAlbumsDetailJoinsItsArtistYearAndSongCountSkippingAnEmptyYear() {
-        let dated = AlbumHit(key: "k", title: "Meddle", artist: "Pink Floyd", year: 1971, songs: 6, durationMs: 0, artworkTrack: 0)
-        let undated = AlbumHit(key: "k", title: "Meddle", artist: "Pink Floyd", year: nil, songs: 1, durationMs: 0, artworkTrack: 0)
+        let dated = AlbumHit(key: "k", title: "Low Tide", artist: "Example Band", year: 1971, songs: 6, durationMs: 0, artworkTrack: 0)
+        let undated = AlbumHit(key: "k", title: "Low Tide", artist: "Example Band", year: nil, songs: 1, durationMs: 0, artworkTrack: 0)
 
-        #expect(dated.detail == "Pink Floyd · 1971 · 6 songs")
-        #expect(undated.detail == "Pink Floyd · 1 song")
+        #expect(dated.detail == "Example Band · 1971 · 6 songs")
+        #expect(undated.detail == "Example Band · 1 song")
     }
 
     @Test func anArtistsDetailLeavesOutAlbumsItHasNone() {
@@ -74,9 +74,9 @@ import Testing
 
 @Suite struct SongKeysTests {
     let songs = [
-        track(1, title: "Hunter", artist: "Björk", album: "Homogenic"),
-        track(2, title: "Echoes", artist: "Pink Floyd", album: "Meddle"),
-        track(3, title: "Hey You", artist: "Pink Floyd", album: "The Wall"),
+        track(1, title: "Wavebreak", artist: "Sölvi", album: "Seabrook"),
+        track(2, title: "Slow Water", artist: "Example Band", album: "Low Tide"),
+        track(3, title: "Small Mercies", artist: "Example Band", album: "The Pier"),
     ]
 
     @Test func aBlankSearchMatchesEverySong() {
@@ -86,16 +86,16 @@ import Testing
     @Test func aSearchMatchesTitleArtistOrAlbumFoldedOfAccentsAndCase() {
         let keys = SongKeys.of(songs)
 
-        #expect(keys.matching("bjork".searchFolded).map(\.id) == [1])
+        #expect(keys.matching("solvi".searchFolded).map(\.id) == [1])
         #expect(keys.matching("pink".searchFolded).map(\.id) == [2, 3])
         #expect(keys.matching("the wall".searchFolded).map(\.id) == [3])
         #expect(keys.matching("zzz").isEmpty)
     }
 
     @Test func aSearchDoesNotRunAcrossTheFieldsItJoins() {
-        let keys = SongKeys.of([track(1, title: "Hunter", artist: "Bjork", album: "Homogenic")])
+        let keys = SongKeys.of([track(1, title: "Wavebreak", artist: "Solvi", album: "Seabrook")])
 
-        #expect(keys.matching("hunterbjork").isEmpty)
+        #expect(keys.matching("wavebreaksolvi").isEmpty)
     }
 
     @Test func nothingKeyedMatchesNothing() {
@@ -395,15 +395,15 @@ import Testing
         filter.minimumRate = 88_200
         filter.minimumBits = 24
         filter.genre = "Rock"
-        filter.artist = "Pink Floyd"
-        filter.album = "Meddle"
+        filter.artist = "Example Band"
+        filter.album = "Low Tide"
         filter.order = .plays
         filter.descending = true
 
         #expect(
             FilterChip.of(filter).map(\.label) == [
-                "Favourites", "Unplayed", "Played", "Hi-res", "24-bit or more", "Genre: Rock", "Artist: Pink Floyd",
-                "Album: Meddle", "Sorted by plays, descending",
+                "Favourites", "Unplayed", "Played", "Hi-res", "24-bit or more", "Genre: Rock", "Artist: Example Band",
+                "Album: Low Tide", "Sorted by plays, descending",
             ]
         )
     }

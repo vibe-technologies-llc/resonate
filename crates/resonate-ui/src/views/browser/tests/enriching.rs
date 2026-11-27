@@ -7,7 +7,7 @@ use resonate_library::{Library, Track, TrackQuery};
 use resonate_providers::Providers;
 
 use super::{
-    fixtures::{Asked, HEROES_TONIGHT, HEROES_TONIGHT_ISRC, MusicBrainz, Shop, mbid, ncs_cover},
+    fixtures::{Asked, LANTERN_TONIGHT, LANTERN_TONIGHT_ISRC, MusicBrainz, Shop, mbid, ncs_cover},
     searching::typed,
 };
 use crate::{
@@ -42,7 +42,7 @@ fn pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for
 
     driven.cx.update(|_, cx| {
         model.update(cx, |library, cx| {
-            library.set_query("Heroes Tonight".to_owned(), cx);
+            library.set_query("Lantern Tonight".to_owned(), cx);
         });
     });
     driven.until(|root, cx| !root.library.read(cx).found().is_empty());
@@ -69,16 +69,19 @@ fn pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for
     let wants = library.wants().expect("the wants read");
 
     assert_eq!(wants.len(), 1);
-    assert_eq!(wants[0].artist.as_deref(), Some("Janji & Johnning"));
+    assert_eq!(
+        wants[0].artist.as_deref(),
+        Some("Another Band & Third Band")
+    );
     assert_eq!(
         library.cover_art(wants[0].album).expect("the cover read"),
         Some(ncs_cover())
     );
 
     let expected = Asked {
-        recording: Some(mbid(HEROES_TONIGHT)),
-        isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
-        artist: Some("Janji & Johnning".to_owned()),
+        recording: Some(mbid(LANTERN_TONIGHT)),
+        isrc: Some(Isrc::new(LANTERN_TONIGHT_ISRC).expect("an isrc")),
+        artist: Some("Another Band & Third Band".to_owned()),
     };
     let heard = asked.lock().clone();
 
@@ -87,7 +90,7 @@ fn pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for
         "the providers were asked once from what the search found and once by the poll: {heard:?}"
     );
 
-    let recording = mbid(HEROES_TONIGHT);
+    let recording = mbid(LANTERN_TONIGHT);
 
     driven.cx.update(|_, cx| {
         model.update(cx, |library, cx| library.cancel_download(&recording, cx));
@@ -116,9 +119,9 @@ fn a_right_press_on_a_song_found_on_musicbrainz_downloads_it_without_waiting_to_
     let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
 
     let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
-    let recording = mbid(HEROES_TONIGHT);
+    let recording = mbid(LANTERN_TONIGHT);
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     driven.until(|root, cx| !root.library.read(cx).found().is_empty());
     driven.right_click("unheld-title-0");
 
@@ -167,7 +170,7 @@ fn a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_a
     let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
 
     let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
-    let recording = mbid(HEROES_TONIGHT);
+    let recording = mbid(LANTERN_TONIGHT);
     let found_now = |root: &crate::views::root::RootView, cx: &gpui::App| {
         root.library
             .read(cx)
@@ -176,7 +179,7 @@ fn a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_a
             .any(|found| found.recording == recording)
     };
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     driven.until(|root, cx| found_now(root, cx));
     driven.click("unheld-title-0");
     driven.until(|_, _| !asked.lock().is_empty());
@@ -199,7 +202,7 @@ fn a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_a
     );
 }
 
-pub(super) const HEROES_MISSPELT: &str = "Heros tonite";
+pub(super) const LANTERN_MISSPELT: &str = "Lantren tonite";
 
 #[gpui::test]
 fn a_song_matched_to_a_recording_its_name_only_nearly_spells_takes_that_recording(
@@ -207,7 +210,7 @@ fn a_song_matched_to_a_recording_its_name_only_nearly_spells_takes_that_recordin
 ) {
     let folder = Folder::new();
 
-    folder.tone(&format!("{HEROES_MISSPELT}.wav"), 1);
+    folder.tone(&format!("{LANTERN_MISSPELT}.wav"), 1);
 
     let reaching = Reaching {
         reference: Arc::new(MusicBrainz::new()),
@@ -227,7 +230,7 @@ fn a_song_matched_to_a_recording_its_name_only_nearly_spells_takes_that_recordin
 
     driven.cx.update(|window, cx| {
         root.update(cx, |root, cx| {
-            root.ask_to_match(track, HEROES_MISSPELT.into(), window, cx);
+            root.ask_to_match(track, LANTERN_MISSPELT.into(), window, cx);
         });
     });
 
@@ -249,20 +252,20 @@ fn a_song_matched_to_a_recording_its_name_only_nearly_spells_takes_that_recordin
             .tracks(&TrackQuery::default())
             .expect("the tracks read")
             .first()
-            .is_some_and(|held| held.title == "Heroes Tonight")
+            .is_some_and(|held| held.title == "Lantern Tonight")
     });
 
     let taken = &library
         .tracks(&TrackQuery::default())
         .expect("the tracks read")[0];
 
-    assert_eq!(taken.artist.as_deref(), Some("Janji & Johnning"));
+    assert_eq!(taken.artist.as_deref(), Some("Another Band & Third Band"));
     assert_eq!(
         library
             .track_to_ask(taken.id)
             .expect("the track read")
             .and_then(|asked| asked.mbid),
-        Some(mbid(HEROES_TONIGHT)),
+        Some(mbid(LANTERN_TONIGHT)),
         "the song was not given the recording chosen"
     );
 }
@@ -332,22 +335,22 @@ fn told_in_turn(driven: &mut Driven, said: &str) {
 #[gpui::test]
 fn enrich_this_song_finds_the_song_by_its_code_and_says_so(cx: &mut TestAppContext) {
     let folder = Folder::new();
-    let (mut driven, library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+    let (mut driven, library, track) = a_song_held_alone(cx, &folder, "Lantern Tonight");
 
     library
-        .set_isrc(track.id, &Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc"))
+        .set_isrc(track.id, &Isrc::new(LANTERN_TONIGHT_ISRC).expect("an isrc"))
         .expect("the code is given");
 
     enrich_this_song_pressed(&mut driven, &track);
 
     assert_eq!(
         told(&mut driven).as_deref(),
-        Some("Looking up Heroes Tonight on MusicBrainz")
+        Some("Looking up Lantern Tonight on MusicBrainz")
     );
 
     told_in_turn(
         &mut driven,
-        "Found Heroes Tonight on MusicBrainz and filled in what it says",
+        "Found Lantern Tonight on MusicBrainz and filled in what it says",
     );
 
     assert_eq!(
@@ -355,7 +358,7 @@ fn enrich_this_song_finds_the_song_by_its_code_and_says_so(cx: &mut TestAppConte
             .track_to_ask(track.id)
             .expect("the track read")
             .and_then(|asked| asked.mbid),
-        Some(mbid(HEROES_TONIGHT)),
+        Some(mbid(LANTERN_TONIGHT)),
         "the song was not given the recording its code names"
     );
 }
@@ -365,16 +368,16 @@ fn clearing_what_was_fetched_for_a_song_looks_it_up_again_and_fills_it_in_afresh
     cx: &mut TestAppContext,
 ) {
     let folder = Folder::new();
-    let (mut driven, library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+    let (mut driven, library, track) = a_song_held_alone(cx, &folder, "Lantern Tonight");
 
     library
-        .set_isrc(track.id, &Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc"))
+        .set_isrc(track.id, &Isrc::new(LANTERN_TONIGHT_ISRC).expect("an isrc"))
         .expect("the code is given");
 
     enrich_this_song_pressed(&mut driven, &track);
     told_in_turn(
         &mut driven,
-        "Found Heroes Tonight on MusicBrainz and filled in what it says",
+        "Found Lantern Tonight on MusicBrainz and filled in what it says",
     );
     driven.until(|root, cx| !root.library.read(cx).is_enriching());
 
@@ -382,7 +385,7 @@ fn clearing_what_was_fetched_for_a_song_looks_it_up_again_and_fills_it_in_afresh
     driven.until(|root, cx| root.library.read(cx).is_enriching());
     told_in_turn(
         &mut driven,
-        "Found Heroes Tonight on MusicBrainz and filled in what it says",
+        "Found Lantern Tonight on MusicBrainz and filled in what it says",
     );
 
     assert_eq!(
@@ -390,7 +393,7 @@ fn clearing_what_was_fetched_for_a_song_looks_it_up_again_and_fills_it_in_afresh
             .track_to_ask(track.id)
             .expect("the track read")
             .and_then(|asked| asked.mbid),
-        Some(mbid(HEROES_TONIGHT)),
+        Some(mbid(LANTERN_TONIGHT)),
         "the song fetched again was not given its recording"
     );
 }
@@ -400,7 +403,7 @@ fn clearing_what_was_fetched_on_a_metered_connection_clears_nothing_and_says_why
     cx: &mut TestAppContext,
 ) {
     let folder = Folder::new();
-    let (mut driven, _library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+    let (mut driven, _library, track) = a_song_held_alone(cx, &folder, "Lantern Tonight");
 
     driven.metering.report(resonate_core::Meter::Metered);
 
@@ -410,7 +413,7 @@ fn clearing_what_was_fetched_on_a_metered_connection_clears_nothing_and_says_why
     assert_eq!(
         told(&mut driven).as_deref(),
         Some(
-            "Heroes Tonight wasn't looked up: the connection is metered, and Settings › Online holds lookups on it"
+            "Lantern Tonight wasn't looked up: the connection is metered, and Settings › Online holds lookups on it"
         )
     );
 }
@@ -418,20 +421,20 @@ fn clearing_what_was_fetched_on_a_metered_connection_clears_nothing_and_says_why
 #[gpui::test]
 fn enrich_this_song_says_plainly_when_nothing_strictly_matches(cx: &mut TestAppContext) {
     let folder = Folder::new();
-    let (mut driven, _library, track) = a_song_held_alone(cx, &folder, HEROES_MISSPELT);
+    let (mut driven, _library, track) = a_song_held_alone(cx, &folder, LANTERN_MISSPELT);
 
     enrich_this_song_pressed(&mut driven, &track);
 
     told_in_turn(
         &mut driven,
-        "MusicBrainz has no strict match for Heros tonite, so nothing was changed",
+        "MusicBrainz has no strict match for Lantren tonite, so nothing was changed",
     );
 }
 
 #[gpui::test]
 fn enrich_this_song_on_a_metered_connection_asks_nothing_and_says_why(cx: &mut TestAppContext) {
     let folder = Folder::new();
-    let (mut driven, _library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+    let (mut driven, _library, track) = a_song_held_alone(cx, &folder, "Lantern Tonight");
 
     driven.metering.report(resonate_core::Meter::Metered);
 
@@ -441,7 +444,7 @@ fn enrich_this_song_on_a_metered_connection_asks_nothing_and_says_why(cx: &mut T
     assert_eq!(
         told(&mut driven).as_deref(),
         Some(
-            "Heroes Tonight wasn't looked up: the connection is metered, and Settings › Online holds lookups on it"
+            "Lantern Tonight wasn't looked up: the connection is metered, and Settings › Online holds lookups on it"
         )
     );
 }
@@ -459,19 +462,19 @@ fn pressing_the_artist_of_a_song_found_on_musicbrainz_opens_the_artist_and_wants
 
     let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
-    typed(&mut driven, "Heroes Tonight");
+    typed(&mut driven, "Lantern Tonight");
     driven.until(|root, cx| !root.library.read(cx).found().is_empty());
     driven.click("unheld-artist-0");
     driven.until(|root, cx| matches!(root.library.read(cx).selection(), Selection::Artist(_)));
 
-    let janji = library
-        .artist_named("Janji")
+    let another_band = library
+        .artist_named("Another Band")
         .expect("the artist read")
         .expect("the artist landed");
 
     assert_eq!(
         driven.read(|root, cx| root.library.read(cx).selection()),
-        Selection::Artist(janji)
+        Selection::Artist(another_band)
     );
     assert!(
         library.wants().expect("the wants read").is_empty(),

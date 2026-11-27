@@ -87,7 +87,7 @@ class ZonePlanTest {
 
     @Test
     fun aZoneSaysItsOutputAndWhatItIsDoing() {
-        assertEquals("Topping · Playing Echoes", ZonePlan.line(English, "Topping", Transport.PLAYING, "Echoes"))
+        assertEquals("Topping · Playing Slow Water", ZonePlan.line(English, "Topping", Transport.PLAYING, "Slow Water"))
         assertEquals("Topping · Paused", ZonePlan.line(English, "Topping", Transport.PAUSED, null))
         assertEquals("System default · Stopped", ZonePlan.line(English, "System default", Transport.STOPPED, null))
     }

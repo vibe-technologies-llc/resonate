@@ -452,7 +452,7 @@ mod tests {
         for path in [
             "/music/Example Band/Slow Water.flac",
             "/music/100% Live/a+b.mp3",
-            "/music/Sigur Rós/Ágætis byrjun.flac",
+            "/music/Silvo Mór/Ágæt dögun.flac",
         ] {
             let location = MediaLocation::local(path);
             let uri = location.to_uri();

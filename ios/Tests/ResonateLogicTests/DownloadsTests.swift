@@ -4,12 +4,12 @@ import Testing
 
 @testable import ResonateLogic
 
-func searchSong(_ title: String = "Echoes") -> SearchSong {
+func searchSong(_ title: String = "Slow Water") -> SearchSong {
     SearchSong(
         recording: "rec-\(title)",
         title: title,
-        artist: "Pink Floyd",
-        album: "Meddle",
+        artist: "Example Band",
+        album: "Low Tide",
         durationMs: 1_400_000,
         isrcs: []
     )
@@ -259,7 +259,7 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
 
     @Test func theLatestJobOfASongDecidesAndOtherSongsAreIgnored() {
         let song = searchSong()
-        let other = searchSong("Fearless")
+        let other = searchSong("Tideline")
         let jobs = [job(1, song, .failed("No match")), job(2, other, .downloading), job(3, song, .waiting)]
 
         #expect(DownloadStanding.of(song, in: jobs, starting: false) == .waiting)
@@ -268,7 +268,7 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
 
     @Test func theLatestJobOfEachSongIsFoundByItsPlace() {
         let song = searchSong()
-        let other = searchSong("Fearless")
+        let other = searchSong("Tideline")
         let jobs = [job(1, song, .failed("No match")), job(2, other, .downloading), job(3, song, .waiting)]
 
         let latest = DownloadStandingRead.latest(in: jobs)
@@ -279,7 +279,7 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
 
     @Test func aFinishedJobIsReadWithTheSongItLanded() {
         let song = searchSong()
-        let landed = track(7, title: "Echoes", artist: "Pink Floyd", album: "Meddle")
+        let landed = track(7, title: "Slow Water", artist: "Example Band", album: "Low Tide")
 
         let read = DownloadStandingRead.of(song, latest: job(1, song, .done(landed)), starting: false)
 
@@ -289,7 +289,7 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
 
     @Test func onlyTheSongsWhoseJobsMovedAreToldOfIt() {
         let song = searchSong()
-        let other = searchSong("Fearless")
+        let other = searchSong("Tideline")
         let gone = searchSong("Seamus")
         let before = [job(1, song, .downloading, received: 100, total: 1_000), job(2, other, .waiting), job(3, gone, .cancelled)]
         let after = [job(1, song, .downloading, received: 400, total: 1_000), job(2, other, .waiting)]

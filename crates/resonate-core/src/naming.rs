@@ -84,18 +84,18 @@ mod tests {
 
     #[test]
     fn a_name_handed_back_decomposed_is_composed_and_a_composed_one_is_kept_as_it_was() {
-        let decomposed = PathBuf::from("/Music/Bjo\u{308}rk/Je\u{301}ga.flac");
-        let composed_already = PathBuf::from("/Music/Bj\u{f6}rk/J\u{e9}ga.flac");
+        let decomposed = PathBuf::from("/Music/So\u{308}lvi/Le\u{301}na.flac");
+        let composed_already = PathBuf::from("/Music/S\u{f6}lvi/L\u{e9}na.flac");
 
         let composed = nfc_composed(decomposed);
-        let kept = nfc_composed_text(Cow::Borrowed("Bj\u{f6}rk"));
+        let kept = nfc_composed_text(Cow::Borrowed("S\u{f6}lvi"));
 
         assert_eq!(composed, composed_already);
         assert_eq!(nfc_composed(composed_already.clone()), composed_already);
         assert!(matches!(kept, Cow::Borrowed(_)));
         assert_eq!(
-            nfc_composed_text(Cow::Borrowed("Bjo\u{308}rk")),
-            "Bj\u{f6}rk"
+            nfc_composed_text(Cow::Borrowed("So\u{308}lvi")),
+            "S\u{f6}lvi"
         );
     }
 

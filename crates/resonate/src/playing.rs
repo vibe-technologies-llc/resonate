@@ -773,7 +773,7 @@ mod tests {
             location: None,
             span: None,
             title: Some(title.to_owned()),
-            artist: Some("Low".to_owned()),
+            artist: Some("Third Band".to_owned()),
             album: None,
             length: Some(Duration::from_secs(185)),
             art: None,

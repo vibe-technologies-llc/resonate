@@ -12,8 +12,8 @@ private func servedTrack(_ uri: String = "subsonic:track/7", queueId: UInt64? = 
 
 private func song(
     _ title: String = "Sing",
-    artist: String? = "Air",
-    album: String? = "Moon Safari",
+    artist: String? = "Kestrel",
+    album: String? = "Salt Meadow",
     track: UInt32? = nil,
     durationMs: UInt64? = 215_000
 ) -> ServedSong {
@@ -166,24 +166,24 @@ private func song(
 
 @Suite struct ServedWordsTests {
     @Test func anArtistCountsItsAlbumsWhenTheServerSaysHowMany() {
-        #expect(ServedArtist(uri: "subsonic:artist/1", name: "Air", albums: 1, cover: nil).line == "1 album")
-        #expect(ServedArtist(uri: "subsonic:artist/1", name: "Air", albums: 3, cover: nil).line == "3 albums")
-        #expect(ServedArtist(uri: "subsonic:artist/1", name: "Air", albums: nil, cover: nil).line == nil)
+        #expect(ServedArtist(uri: "subsonic:artist/1", name: "Kestrel", albums: 1, cover: nil).line == "1 album")
+        #expect(ServedArtist(uri: "subsonic:artist/1", name: "Kestrel", albums: 3, cover: nil).line == "3 albums")
+        #expect(ServedArtist(uri: "subsonic:artist/1", name: "Kestrel", albums: nil, cover: nil).line == nil)
         #expect(ServedArtist(uri: "subsonic:artist/1", name: "", albums: nil, cover: nil).shownName == "Unknown artist")
     }
 
     @Test func anAlbumNamesItsArtistYearAndSongsAndSkipsWhatTheServerLeftOut() {
-        let full = ServedAlbum(uri: "subsonic:album/1", name: "Moon Safari", artist: "Air", year: 1998, songs: 10, cover: nil)
+        let full = ServedAlbum(uri: "subsonic:album/1", name: "Salt Meadow", artist: "Kestrel", year: 1998, songs: 10, cover: nil)
         let bare = ServedAlbum(uri: "subsonic:album/2", name: "", artist: " ", year: nil, songs: nil, cover: nil)
 
-        #expect(full.line == "Air · 1998 · 10 songs")
+        #expect(full.line == "Kestrel · 1998 · 10 songs")
         #expect(bare.line == "")
         #expect(bare.shownName == "Unknown album")
     }
 
     @Test func aSongInAnAlbumDropsTheAlbumAndOneFoundElsewhereKeepsIt() {
-        #expect(song().line(withAlbum: false) == "Air · 3:35")
-        #expect(song().line(withAlbum: true) == "Air · Moon Safari · 3:35")
+        #expect(song().line(withAlbum: false) == "Kestrel · 3:35")
+        #expect(song().line(withAlbum: true) == "Kestrel · Salt Meadow · 3:35")
         #expect(song(artist: nil, album: nil, durationMs: nil).line(withAlbum: true) == "")
     }
 
@@ -200,7 +200,7 @@ private func song(
     @Test func aSearchThatFoundNothingIsEmptyAndOneThatFoundSomethingSaysWhat() {
         let nothing = ServedFound(artists: [], albums: [], songs: [])
         let some = ServedFound(
-            artists: [ServedArtist(uri: "subsonic:artist/1", name: "Air", albums: nil, cover: nil)],
+            artists: [ServedArtist(uri: "subsonic:artist/1", name: "Kestrel", albums: nil, cover: nil)],
             albums: [],
             songs: [song(), song()]
         )
@@ -212,14 +212,14 @@ private func song(
 
 @Suite struct ServedPlaceTests {
     @Test func aPlaceIsKeptAndReadBackWhole() throws {
-        let album = ServedPlace(ServedAlbum(uri: "subsonic:album/1", name: "Moon Safari", artist: "Air", year: nil, songs: nil, cover: "al-1"))
+        let album = ServedPlace(ServedAlbum(uri: "subsonic:album/1", name: "Salt Meadow", artist: "Kestrel", year: nil, songs: nil, cover: "al-1"))
         let artist = ServedPlace(ServedArtist(uri: "subsonic:artist/1", name: "", albums: nil, cover: nil))
 
         let kept = try JSONDecoder().decode([ServedPlace].self, from: JSONEncoder().encode([album, artist]))
 
         #expect(kept == [album, artist])
         #expect(kept[0].kind == .album)
-        #expect(kept[0].artist == "Air")
+        #expect(kept[0].artist == "Kestrel")
         #expect(kept[1].name == "Unknown artist")
     }
 }

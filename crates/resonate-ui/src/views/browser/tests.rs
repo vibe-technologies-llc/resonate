@@ -163,7 +163,11 @@ fn an_artists_picture_stands_at_its_side_from_the_first_frame_its_page_draws(
     folder.tagged(
         "short.wav",
         1,
-        &[(b"INAM", "One"), (b"IART", "Air"), (b"IPRD", "Moon Safari")],
+        &[
+            (b"INAM", "One"),
+            (b"IART", "Kestrel"),
+            (b"IPRD", "Salt Meadow"),
+        ],
     );
     folder.tagged(
         "long.wav",

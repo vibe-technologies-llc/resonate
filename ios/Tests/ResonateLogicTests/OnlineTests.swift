@@ -4,11 +4,11 @@ import Testing
 
 @testable import ResonateLogic
 
-func onlineAlbum(_ title: String = "Meddle") -> SearchAlbum {
-    SearchAlbum(id: "id-\(title)", title: title, artist: "Pink Floyd", date: "1971")
+func onlineAlbum(_ title: String = "Low Tide") -> SearchAlbum {
+    SearchAlbum(id: "id-\(title)", title: title, artist: "Example Band", date: "1971")
 }
 
-func onlineArtist(_ name: String = "Pink Floyd") -> SearchArtist {
+func onlineArtist(_ name: String = "Example Band") -> SearchArtist {
     SearchArtist(id: "id-\(name)", name: name, kind: "Group")
 }
 
@@ -20,10 +20,10 @@ func onlineArtist(_ name: String = "Pink Floyd") -> SearchArtist {
 
     @Test func wordsAreAChainOfSongsThenAlbumsThenArtists() {
         #expect(
-            OnlineAsked.chain("echoes") == [
-                OnlineAsked(text: "echoes", mode: .songs),
-                OnlineAsked(text: "echoes", mode: .albums),
-                OnlineAsked(text: "echoes", mode: .artists),
+            OnlineAsked.chain("slow water") == [
+                OnlineAsked(text: "slow water", mode: .songs),
+                OnlineAsked(text: "slow water", mode: .albums),
+                OnlineAsked(text: "slow water", mode: .artists),
             ]
         )
     }
@@ -54,19 +54,19 @@ func onlineArtist(_ name: String = "Pink Floyd") -> SearchArtist {
 
         #expect(!found.isWhole)
         #expect(found.isEmpty)
-        #expect(found.awaited(for: "echoes") == .songs)
+        #expect(found.awaited(for: "slow water") == .songs)
     }
 
     @Test func eachAnswerLandsInItsSectionAndTheNextAwaitedMovesOn() {
-        var found = OnlineFound().landing(.songs([searchSong()]), for: "echoes")
-        #expect(found.awaited(for: "echoes") == .albums)
+        var found = OnlineFound().landing(.songs([searchSong()]), for: "slow water")
+        #expect(found.awaited(for: "slow water") == .albums)
 
-        found = found.landing(.albums([onlineAlbum()]), for: "echoes")
-        #expect(found.awaited(for: "echoes") == .artists)
+        found = found.landing(.albums([onlineAlbum()]), for: "slow water")
+        #expect(found.awaited(for: "slow water") == .artists)
         #expect(!found.isWhole)
 
-        found = found.landing(.artists([onlineArtist()]), for: "echoes")
-        #expect(found.awaited(for: "echoes") == nil)
+        found = found.landing(.artists([onlineArtist()]), for: "slow water")
+        #expect(found.awaited(for: "slow water") == nil)
         #expect(found.isWhole)
         #expect(!found.isEmpty)
     }
@@ -74,19 +74,19 @@ func onlineArtist(_ name: String = "Pink Floyd") -> SearchArtist {
     @Test func anAnswerForNewTextStartsFreshAndDropsTheOldSpellingsSections() {
         let before = OnlineFound().landing(.songs([searchSong()]), for: "echo").landing(.albums([onlineAlbum()]), for: "echo")
 
-        let after = before.landing(.songs([searchSong("Hunter")]), for: "hunter")
+        let after = before.landing(.songs([searchSong("Wavebreak")]), for: "wavebreak")
 
-        #expect(after.text == "hunter")
-        #expect(after.songs?.first?.title == "Hunter")
+        #expect(after.text == "wavebreak")
+        #expect(after.songs?.first?.title == "Wavebreak")
         #expect(after.albums == nil)
-        #expect(after.awaited(for: "hunter") == .albums)
+        #expect(after.awaited(for: "wavebreak") == .albums)
     }
 
     @Test func theSectionsOfOldTextStayUntilNewTextsFirstAnswerLands() {
         let before = OnlineFound().landing(.songs([searchSong()]), for: "echo")
 
-        #expect(before.awaited(for: "echoes") == .songs)
-        #expect(before.songs?.first?.title == "Echoes")
+        #expect(before.awaited(for: "slow water") == .songs)
+        #expect(before.songs?.first?.title == "Slow Water")
     }
 
     @Test func aLinkIsWholeByItself() {
@@ -120,10 +120,10 @@ func onlineArtist(_ name: String = "Pink Floyd") -> SearchArtist {
     @Test func anAnswerKeptIsFoundAgainBySpelling() {
         var answers = OnlineAnswers()
 
-        answers.keep(.songs([searchSong()]), for: asked("echoes"))
+        answers.keep(.songs([searchSong()]), for: asked("slow water"))
 
-        #expect(answers.answer(for: asked("echoes")) != nil)
-        #expect(answers.answer(for: asked("echoes", .albums)) == nil)
+        #expect(answers.answer(for: asked("slow water")) != nil)
+        #expect(answers.answer(for: asked("slow water", .albums)) == nil)
         #expect(answers.answer(for: asked("echo")) == nil)
     }
 

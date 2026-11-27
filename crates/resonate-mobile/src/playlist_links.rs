@@ -349,7 +349,7 @@ mod tests {
                 uri: format!("resonate-folder://local/{name}.flac"),
                 name: format!("{name}.flac"),
                 title: title.into(),
-                artist: "Air".into(),
+                artist: "Kestrel".into(),
                 duration_ms: 215_000,
                 ..Track::default()
             })
@@ -360,7 +360,7 @@ mod tests {
     fn listed(title: &str) -> SearchSong {
         SearchSong {
             title: title.into(),
-            artist: "Air".into(),
+            artist: "Kestrel".into(),
             duration_ms: Some(215_000),
             ..SearchSong::default()
         }
@@ -378,14 +378,14 @@ mod tests {
     #[test]
     fn a_playlist_kept_in_step_takes_the_services_songs_and_order_and_wants_what_is_not_held() {
         let player = player();
-        let first = held(&player, "one", "La femme d'argent");
-        let second = held(&player, "two", "Sexy Boy");
+        let first = held(&player, "one", "La mer d'argent");
+        let second = held(&player, "two", "Slow Boat");
 
         let imported = player
             .import_linked_playlist(
                 LINK.into(),
                 "Night drive".into(),
-                vec![listed("Sexy Boy"), listed("Kelly Watch the Stars")],
+                vec![listed("Slow Boat"), listed("Marta Watch the Tide")],
                 true,
             )
             .expect("a playlist kept in step");
@@ -393,7 +393,7 @@ mod tests {
             .import_linked_playlist(
                 LINK.into(),
                 "Night drive".into(),
-                vec![listed("La femme d'argent"), listed("Sexy Boy")],
+                vec![listed("La mer d'argent"), listed("Slow Boat")],
                 true,
             )
             .expect("the same playlist read again");
@@ -413,7 +413,7 @@ mod tests {
                 .iter()
                 .map(|want| want.song.title.as_str())
                 .collect::<Vec<_>>(),
-            ["Kelly Watch the Stars"]
+            ["Marta Watch the Tide"]
         );
         assert_eq!(
             player.playlists().expect("the listing")[0].link,
@@ -465,14 +465,14 @@ mod tests {
     #[test]
     fn a_playlist_imported_once_only_gains_what_it_lacks_and_wants_nothing() {
         let player = player();
-        let first = held(&player, "one", "La femme d'argent");
-        let second = held(&player, "two", "Sexy Boy");
+        let first = held(&player, "one", "La mer d'argent");
+        let second = held(&player, "two", "Slow Boat");
 
         let imported = player
             .import_linked_playlist(
                 LINK.into(),
                 "Night drive".into(),
-                vec![listed("Sexy Boy"), listed("Kelly Watch the Stars")],
+                vec![listed("Slow Boat"), listed("Marta Watch the Tide")],
                 false,
             )
             .expect("a playlist imported once");
@@ -487,7 +487,7 @@ mod tests {
             player.import_linked_playlist(
                 LINK.into(),
                 "Elsewhere".into(),
-                vec![listed("Kelly Watch the Stars")],
+                vec![listed("Marta Watch the Tide")],
                 false,
             ),
             Err(Error::NoLocalMatches)
@@ -498,13 +498,13 @@ mod tests {
     fn a_link_is_kept_in_step_due_once_its_hours_pass_and_forgotten_on_asking() {
         let player = player();
 
-        held(&player, "one", "La femme d'argent");
+        held(&player, "one", "La mer d'argent");
 
         let imported = player
             .import_linked_playlist(
                 LINK.into(),
                 "Night drive".into(),
-                vec![listed("La femme d'argent")],
+                vec![listed("La mer d'argent")],
                 false,
             )
             .expect("a playlist imported once");

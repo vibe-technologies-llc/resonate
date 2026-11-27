@@ -394,8 +394,8 @@ mod tests {
                 ranked("Slow Water", Some("Example Band")),
                 ranked("Łódź ♪", None),
             ],
-            top_artists: vec![ranked("Björk", None)],
-            top_albums: vec![ranked("Homogenic", Some("Björk"))],
+            top_artists: vec![ranked("Sölvi", None)],
+            top_albums: vec![ranked("Seabrook", Some("Sölvi"))],
             top_genres: vec![ranked("Ambient", None)],
             rhythm,
             first_song: Some(FirstSong {

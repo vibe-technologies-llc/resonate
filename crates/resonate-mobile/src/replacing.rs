@@ -281,17 +281,17 @@ mod tests {
         harness::Harness,
     };
 
-    const JOGA: &str = "0a5c6e2b-8b25-4b9a-9d0f-2f3c2f0e7a11";
+    const LUNA: &str = "0a5c6e2b-8b25-4b9a-9d0f-2f3c2f0e7a11";
     const HUNTER: &str = "1b6d7f3c-9c36-4cab-8e10-3f4d3f1f8b22";
 
     struct Shelf {
         harness: Harness,
         playlist: u64,
-        joga: Track,
-        joga_lossless: Track,
-        hunter: Track,
-        bachelorette: Track,
-        bachelorette_hires: Track,
+        luna: Track,
+        luna_lossless: Track,
+        wavebreak: Track,
+        mooring: Track,
+        mooring_hires: Track,
     }
 
     fn indexed(catalog: &Catalog, name: &str, codec: &str, recording: Option<&str>) -> Track {
@@ -312,8 +312,8 @@ mod tests {
                 uri: format!("content://shelf/{name}"),
                 name: name.into(),
                 title: title.into(),
-                artist: "Björk".into(),
-                album: "Homogenic".into(),
+                artist: "Sölvi".into(),
+                album: "Seabrook".into(),
                 duration_ms: 305_000,
                 rate: 44_100,
                 codec: codec.into(),
@@ -335,34 +335,28 @@ mod tests {
     fn shelf() -> Shelf {
         let harness = Harness::new();
         let catalog = &harness.player.catalog;
-        let joga = indexed(catalog, "Joga.mp3", "MP3", Some(JOGA));
-        let joga_lossless = indexed(catalog, "Joga.flac", "FLAC", None);
-        let hunter = indexed(catalog, "Hunter.m4a", "AAC", Some(HUNTER));
-        let bachelorette = indexed_at(catalog, "Bachelorette.flac", "FLAC", None, Some(16));
-        let bachelorette_hires = indexed_at(
-            catalog,
-            "Bachelorette (hi-res).flac",
-            "FLAC",
-            None,
-            Some(24),
-        );
-        let alike = indexed_at(catalog, "Alarm Call.flac", "FLAC", None, Some(16));
+        let luna = indexed(catalog, "Luna.mp3", "MP3", Some(LUNA));
+        let luna_lossless = indexed(catalog, "Luna.flac", "FLAC", None);
+        let wavebreak = indexed(catalog, "Wavebreak.m4a", "AAC", Some(HUNTER));
+        let mooring = indexed_at(catalog, "Mooring.flac", "FLAC", None, Some(16));
+        let mooring_hires = indexed_at(catalog, "Mooring (hi-res).flac", "FLAC", None, Some(24));
+        let alike = indexed_at(catalog, "Lamp Call.flac", "FLAC", None, Some(16));
 
         let playlist = harness
             .player
             .make_playlist(
-                "Homogenic".into(),
-                vec![joga.id, hunter.id, joga.id, bachelorette.id, alike.id],
+                "Seabrook".into(),
+                vec![luna.id, wavebreak.id, luna.id, mooring.id, alike.id],
             )
             .expect("a playlist");
         Shelf {
             harness,
             playlist,
-            joga,
-            joga_lossless,
-            hunter,
-            bachelorette,
-            bachelorette_hires,
+            luna,
+            luna_lossless,
+            wavebreak,
+            mooring,
+            mooring_hires,
         }
     }
 
@@ -405,18 +399,18 @@ mod tests {
             listed(&found),
             [
                 (
-                    shelf.joga.id,
+                    shelf.luna.id,
                     Some(SongVersion::Held {
-                        id: shelf.joga_lossless.id
+                        id: shelf.luna_lossless.id
                     }),
                     false,
                     false
                 ),
-                (shelf.hunter.id, None, false, false),
+                (shelf.wavebreak.id, None, false, false),
                 (
-                    shelf.bachelorette.id,
+                    shelf.mooring.id,
                     Some(SongVersion::Held {
-                        id: shelf.bachelorette_hires.id
+                        id: shelf.mooring_hires.id
                     }),
                     false,
                     false
@@ -435,20 +429,20 @@ mod tests {
         let kept = player
             .keep_higher_versions(vec![
                 HigherVersionPicked {
-                    song: shelf.joga.id,
+                    song: shelf.luna.id,
                     version: SongVersion::Held {
-                        id: shelf.joga_lossless.id,
+                        id: shelf.luna_lossless.id,
                     },
                 },
                 HigherVersionPicked {
-                    song: shelf.bachelorette.id,
+                    song: shelf.mooring.id,
                     version: SongVersion::Held {
-                        id: shelf.bachelorette_hires.id,
+                        id: shelf.mooring_hires.id,
                     },
                 },
                 HigherVersionPicked {
-                    song: shelf.joga_lossless.id,
-                    version: SongVersion::Held { id: shelf.joga.id },
+                    song: shelf.luna_lossless.id,
+                    version: SongVersion::Held { id: shelf.luna.id },
                 },
             ])
             .expect("the versions kept");
@@ -459,9 +453,9 @@ mod tests {
         );
         assert_eq!(count(&player.catalog, "documents"), documents);
         assert_eq!(
-            player.version_chosen(shelf.joga.id).expect("the choice"),
+            player.version_chosen(shelf.luna.id).expect("the choice"),
             Some(SongVersion::Held {
-                id: shelf.joga_lossless.id
+                id: shelf.luna_lossless.id
             })
         );
         assert!(
@@ -475,7 +469,7 @@ mod tests {
         );
         assert_eq!(
             player
-                .variants_of(shelf.bachelorette.id)
+                .variants_of(shelf.mooring.id)
                 .expect("the variants")
                 .len(),
             2
@@ -489,7 +483,7 @@ mod tests {
 
         let kept = player
             .keep_higher_versions(vec![HigherVersionPicked {
-                song: shelf.hunter.id,
+                song: shelf.wavebreak.id,
                 version: SongVersion::Served {
                     uri: "tidal:track/7".into(),
                 },
@@ -540,11 +534,11 @@ mod tests {
     fn a_lossy_delivery_is_refused_only_where_it_answers_a_lossless_copy_wanted() {
         let harness = Harness::new();
         let player = &harness.player;
-        let lossy = indexed(&player.catalog, "a.mp3", "MP3", Some(JOGA));
+        let lossy = indexed(&player.catalog, "a.mp3", "MP3", Some(LUNA));
         let wanted = SearchSong {
-            recording: JOGA.into(),
+            recording: LUNA.into(),
             title: "a".into(),
-            artist: "Björk".into(),
+            artist: "Sölvi".into(),
             ..SearchSong::default()
         };
 
@@ -594,10 +588,10 @@ mod tests {
     fn a_version_waiting_is_kept_across_a_reopen() {
         let path = unique_path("versions-waiting");
         let catalog = Catalog::open(&path).expect("a catalog");
-        let lossy = indexed(&catalog, "Hunter.m4a", "AAC", Some(HUNTER));
+        let lossy = indexed(&catalog, "Wavebreak.m4a", "AAC", Some(HUNTER));
         let wanted = SearchSong {
-            title: "Hunter".into(),
-            artist: "Björk".into(),
+            title: "Wavebreak".into(),
+            artist: "Sölvi".into(),
             served: Some("tidal:track/7".into()),
             ..SearchSong::default()
         };
@@ -636,13 +630,13 @@ mod tests {
         connection
             .execute_batch(
                 "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec)
-                     VALUES (1, 'content://a/1', 'Joga.mp3', 'Joga', 'Björk', 'Homogenic', 1000, 44100, 'MP3'),
-                            (2, 'content://a/2', 'Joga.flac', 'Joga', 'Björk', 'Homogenic', 1000, 44100, 'FLAC'),
-                            (3, 'content://a/3', 'Hunter.m4a', 'Hunter', 'Björk', 'Homogenic', 1000, 44100, 'AAC'),
-                            (4, 'content://a/4', 'Alarm.ogg', 'Alarm Call', 'Björk', 'Homogenic', 1000, 44100, 'Vorbis');
+                     VALUES (1, 'content://a/1', 'Luna.mp3', 'Luna', 'Sölvi', 'Seabrook', 1000, 44100, 'MP3'),
+                            (2, 'content://a/2', 'Luna.flac', 'Luna', 'Sölvi', 'Seabrook', 1000, 44100, 'FLAC'),
+                            (3, 'content://a/3', 'Wavebreak.m4a', 'Wavebreak', 'Sölvi', 'Seabrook', 1000, 44100, 'AAC'),
+                            (4, 'content://a/4', 'Alarm.ogg', 'Lamp Call', 'Sölvi', 'Seabrook', 1000, 44100, 'Vorbis');
                  INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, 2, NULL, 5), (4, NULL, 'tidal:track/7', 6);
                  INSERT INTO wanted (id, identity, recording, title, artist, album, isrcs)
-                     VALUES (9, 'recording:x', 'x', 'Hunter', 'Björk', 'Homogenic', '');
+                     VALUES (9, 'recording:x', 'x', 'Wavebreak', 'Sölvi', 'Seabrook', '');
                  INSERT INTO replacements (track, want, asked) VALUES (3, 9, 7);",
             )
             .expect("a catalog of before");

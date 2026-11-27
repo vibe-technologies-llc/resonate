@@ -348,15 +348,15 @@ mod tests {
         let player = player();
         let one = song(
             &player,
-            "resonate-folder://local/Air/Moon%20Safari/01%20La%20femme%20d%27argent.flac",
-            "La femme d'argent",
-            "Air",
+            "resonate-folder://local/Kestrel/Salt%20Meadow/01%20La%20mer%20d%27argent.flac",
+            "La mer d'argent",
+            "Kestrel",
         );
         let two = song(
             &player,
-            "resonate-folder://local/Air/Moon%20Safari/02%20Sexy%20Boy.flac",
-            "Sexy Boy",
-            "Air",
+            "resonate-folder://local/Kestrel/Salt%20Meadow/02%20Slow%20Boat.flac",
+            "Slow Boat",
+            "Kestrel",
         );
         let id = player.create_playlist("Evening".into()).expect("a list");
 
@@ -371,7 +371,7 @@ mod tests {
         ] {
             let text = player.export_playlist(id, format).expect("a written list");
 
-            assert!(text.contains("Safari"), "{text}");
+            assert!(text.contains("Meadow"), "{text}");
 
             let imported = player
                 .import_playlist_file(text.into_bytes(), "Evening.file".into())
@@ -393,17 +393,17 @@ mod tests {
         let player = player();
         let first = song(
             &player,
-            "resonate-folder://local/Air/Moon%20Safari/01%20Intro.flac",
+            "resonate-folder://local/Kestrel/Salt%20Meadow/01%20Intro.flac",
             "Intro",
-            "Air",
+            "Kestrel",
         );
         let second = song(
             &player,
-            "resonate-folder://local/Beck/Odelay/01%20Intro.flac",
+            "resonate-folder://local/Brook%20Act/Evening/01%20Intro.flac",
             "Intro",
-            "Beck",
+            "Brook Act",
         );
-        let sheet = "#EXTM3U\nAir/Moon Safari/01 Intro.flac\n01 Intro.flac\nGone/Elsewhere.flac\nhttp://radio.example/stream\n";
+        let sheet = "#EXTM3U\nKestrel/Salt Meadow/01 Intro.flac\n01 Intro.flac\nGone/Elsewhere.flac\nhttp://radio.example/stream\n";
 
         let imported = player
             .import_playlist_file(sheet.as_bytes().to_vec(), "Mixed.m3u8".into())

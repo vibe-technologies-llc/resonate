@@ -114,13 +114,13 @@ mod tests {
     const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 
     const NAMES_FOLDED_BOTH_WAYS: [&str; 24] = [
-        "Guns N' Roses",
-        "  Guns  N Roses ",
-        "AC/DC",
-        "Sigur Rós",
-        "Björk",
-        "Mötley Crüe",
-        "Beyoncé",
+        "Rum N' Raisin",
+        "  Rum  N Raisin ",
+        "AB/CD",
+        "Silvo Mór",
+        "Sölvi",
+        "Nöble Crüe",
+        "Céleste",
         "Ænima",
         "Die Straße",
         "Œuvres complètes",
@@ -173,32 +173,28 @@ mod tests {
 
     #[test]
     fn a_recording_without_an_mbid_is_keyed_by_its_folded_names() {
-        let typed = song("Héroes", "David  Bowie", "Heroes");
-        let shouted = song("HEROES!", "david  bowie", " HEROES ");
+        let typed = song("Faról", "Another  Band", "Farol");
+        let shouted = song("FAROL!", "another  band", " FAROL ");
 
         assert_eq!(typed.key(), shouted.key());
-        assert_ne!(typed.key(), song("Heroes", "David Bowie", "Low").key());
+        assert_ne!(typed.key(), song("Farol", "Another Band", "Tide").key());
     }
 
     #[test]
     fn a_recording_is_keyed_alike_whatever_punctuation_and_spacing_its_names_carry() {
-        let quoted = song("Paradise City", "Guns N' Roses", "Appetite for Destruction");
-        let plain = song("Paradise City", "Guns N Roses", "Appetite for Destruction!");
-        let spaced = song(
-            "Paradise City",
-            "  guns  n'  roses ",
-            "Appetite  for Destruction",
-        );
+        let quoted = song("Harbour City", "Rum N' Raisin", "Hunger for Reasons");
+        let plain = song("Harbour City", "Rum N Raisin", "Hunger for Reasons!");
+        let spaced = song("Harbour City", "  rum  n'  raisin ", "Hunger  for Reasons");
 
         assert_eq!(quoted.named_key(), plain.named_key());
         assert_eq!(quoted.named_key(), spaced.named_key());
         assert_eq!(
-            song("Thunderstruck", "AC/DC", "").key(),
-            song("Thunderstruck", "AC DC", "").key()
+            song("Lightning Rod", "AB/CD", "").key(),
+            song("Lightning Rod", "AB CD", "").key()
         );
         assert_ne!(
             quoted.named_key(),
-            song("Paradise City", "Guns N Roses", "Lies").named_key()
+            song("Harbour City", "Rum N Raisin", "Lies").named_key()
         );
     }
 
@@ -206,7 +202,7 @@ mod tests {
     fn a_key_kept_under_the_earlier_fold_is_refolded_to_the_key_its_names_make_now() {
         for artist in NAMES_FOLDED_BOTH_WAYS {
             for album in NAMES_FOLDED_BOTH_WAYS {
-                let recording = song("Héroes!", artist, album);
+                let recording = song("Faról!", artist, album);
 
                 let kept = kept_under_the_earlier_fold(&recording);
 
@@ -268,14 +264,10 @@ mod tests {
 
     #[test]
     fn a_deletion_surely_names_a_copy_whose_artist_and_album_differ_only_in_punctuation() {
-        let told = song("Paradise City", "Guns N' Roses", "Appetite for Destruction");
+        let told = song("Harbour City", "Rum N' Raisin", "Hunger for Reasons");
 
-        assert!(told.surely_names(&song(
-            "Paradise City",
-            "Guns N Roses",
-            "Appetite For Destruction!"
-        )));
-        assert!(!told.surely_names(&song("Paradise City", "Guns N Roses", "Lies")));
+        assert!(told.surely_names(&song("Harbour City", "Rum N Raisin", "Hunger For Reasons!")));
+        assert!(!told.surely_names(&song("Harbour City", "Rum N Raisin", "Lies")));
     }
 
     #[test]

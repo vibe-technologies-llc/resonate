@@ -739,10 +739,10 @@ mod tests {
         let player = player(&folder);
 
         let documents = documents_of(&player, &folder);
-        let timed = song(&player, "content://a/timed", "Joga", Some(RECORDING));
-        let plain = song(&player, "content://a/plain", "Hunter", None);
-        let missed = song(&player, "content://a/missed", "Bachelorette", None);
-        let long = song(&player, "content://a/long", "Pluto", None);
+        let timed = song(&player, "content://a/timed", "Luna", Some(RECORDING));
+        let plain = song(&player, "content://a/plain", "Wavebreak", None);
+        let missed = song(&player, "content://a/missed", "Mooring", None);
+        let long = song(&player, "content://a/long", "Pebble", None);
         let oversized = "la ".repeat(11_000);
 
         for (track, text) in [
@@ -790,8 +790,8 @@ mod tests {
         assert_eq!(
             told,
             vec![
-                ("Hunter".to_owned(), false, false),
-                ("Joga".to_owned(), true, true),
+                ("Luna".to_owned(), true, true),
+                ("Wavebreak".to_owned(), false, false),
             ]
         );
         assert_eq!(listed.len(), 3);
@@ -807,8 +807,8 @@ mod tests {
         let player = player(&folder);
 
         let documents = documents_of(&player, &folder);
-        let old = song(&player, "content://a/old", "Joga", Some(RECORDING));
-        let new = song(&player, "content://a/new", "Hunter", None);
+        let old = song(&player, "content://a/old", "Luna", Some(RECORDING));
+        let new = song(&player, "content://a/new", "Wavebreak", None);
 
         {
             let connection = player.catalog.0.lock();
@@ -842,7 +842,7 @@ mod tests {
 
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].at, 200);
-        assert_eq!(listed[0].recording.title, "Hunter");
+        assert_eq!(listed[0].recording.title, "Wavebreak");
         assert_eq!(listed[0].received_under, ["named:asked"]);
         assert_eq!(every.len(), 2);
 
@@ -855,7 +855,7 @@ mod tests {
         let player = player(&folder);
 
         let documents = documents_of(&player, &folder);
-        let tied = ["Joga", "Hunter", "Bachelorette"].map(|title| {
+        let tied = ["Luna", "Wavebreak", "Mooring"].map(|title| {
             song(&player, &format!("content://a/{title}"), title, None)
                 .id
                 .cast_signed()
@@ -903,8 +903,8 @@ mod tests {
         let player = player(&folder);
 
         let documents = documents_of(&player, &folder);
-        let held = song(&player, "content://a/joga", "Joga", Some(RECORDING));
-        let by_name = named("Joga", "Björk", 305);
+        let held = song(&player, "content://a/luna", "Luna", Some(RECORDING));
+        let by_name = named("Luna", "Sölvi", 305);
         let by_recording = Recording {
             mbid: Mbid::new(RECORDING).ok(),
             length: None,
@@ -912,10 +912,10 @@ mod tests {
         };
         let without_length = Recording {
             length: None,
-            ..named("Joga", "Björk", 305)
+            ..named("Luna", "Sölvi", 305)
         };
-        let too_long_apart = named("Joga", "Björk", 320);
-        let not_held = named("Hunter", "Björk", 305);
+        let too_long_apart = named("Luna", "Sölvi", 320);
+        let not_held = named("Wavebreak", "Sölvi", 305);
 
         let strangers = [&without_length, &too_long_apart, &not_held]
             .map(|recording| documents.take_lyrics(recording, &lyrics_of(TIMED, true)));
@@ -950,10 +950,10 @@ mod tests {
 
         let documents = documents_of(&player, &folder);
 
-        song(&player, "content://a/joga", "Joga", Some(RECORDING));
+        song(&player, "content://a/luna", "Luna", Some(RECORDING));
 
         documents
-            .take_lyrics(&named("Joga", "Björk", 305), &lyrics_of(TIMED, true))
+            .take_lyrics(&named("Luna", "Sölvi", 305), &lyrics_of(TIMED, true))
             .expect("landed");
 
         let listed = documents

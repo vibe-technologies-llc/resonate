@@ -1808,8 +1808,8 @@ mod tests {
         let mapped_by_the_container = absorb(&[
             mapped(
                 "TSOP",
-                "Beatles, The",
-                StandardTag::SortArtist(text("Beatles, The")),
+                "Bell Ringers, The",
+                StandardTag::SortArtist(text("Bell Ringers, The")),
             ),
             mapped(
                 "TSO2",
@@ -1818,14 +1818,14 @@ mod tests {
             ),
         ]);
         let named_as_vorbis_comments = absorb(&[
-            keyed("ALBUMARTIST", "The Beatles"),
-            keyed("ARTISTSORT", "Beatles, The"),
-            keyed("ALBUMARTISTSORT", "  Beatles, The  "),
+            keyed("ALBUMARTIST", "The Bell Ringers"),
+            keyed("ARTISTSORT", "Bell Ringers, The"),
+            keyed("ALBUMARTISTSORT", "  Bell Ringers, The  "),
         ]);
 
         assert_eq!(
             mapped_by_the_container.artist_sort.as_deref(),
-            Some("Beatles, The")
+            Some("Bell Ringers, The")
         );
         assert_eq!(
             mapped_by_the_container.album_artist_sort.as_deref(),
@@ -1833,11 +1833,11 @@ mod tests {
         );
         assert_eq!(
             named_as_vorbis_comments.artist_sort.as_deref(),
-            Some("Beatles, The")
+            Some("Bell Ringers, The")
         );
         assert_eq!(
             named_as_vorbis_comments.album_artist_sort.as_deref(),
-            Some("Beatles, The")
+            Some("Bell Ringers, The")
         );
     }
 
@@ -1846,8 +1846,8 @@ mod tests {
         let mapped_by_the_container = absorb(&[
             mapped(
                 "TSOT",
-                "Hey Jude",
-                StandardTag::SortTrackTitle(text("Hey Jude")),
+                "Paper Boats",
+                StandardTag::SortTrackTitle(text("Paper Boats")),
             ),
             mapped(
                 "TSOA",
@@ -1857,13 +1857,13 @@ mod tests {
         ]);
         let named_as_vorbis_comments = absorb(&[
             keyed("ALBUM", "The White Album"),
-            keyed("TITLESORT", "  Hey Jude  "),
+            keyed("TITLESORT", "  Paper Boats  "),
             keyed("ALBUMSORT", "White Album, The"),
         ]);
 
         assert_eq!(
             mapped_by_the_container.title_sort.as_deref(),
-            Some("Hey Jude")
+            Some("Paper Boats")
         );
         assert_eq!(
             mapped_by_the_container.album_sort.as_deref(),
@@ -1871,7 +1871,7 @@ mod tests {
         );
         assert_eq!(
             named_as_vorbis_comments.title_sort.as_deref(),
-            Some("Hey Jude")
+            Some("Paper Boats")
         );
         assert_eq!(
             named_as_vorbis_comments.album_sort.as_deref(),
@@ -2127,35 +2127,32 @@ mod tests {
     #[test]
     fn a_name_a_revision_gives_twice_keeps_both_and_a_newer_revision_replaces_them() {
         let listed = absorb(&[
-            tag(StandardTag::Artist(text("Daft Punk"))),
+            tag(StandardTag::Artist(text("Another Band"))),
             tag(StandardTag::Genre(text("House"))),
-            tag(StandardTag::Artist(text("Pharrell Williams"))),
+            tag(StandardTag::Artist(text("Third Band"))),
             tag(StandardTag::Genre(text("Disco"))),
             tag(StandardTag::Genre(text("House"))),
             tag(StandardTag::Composer(text("Thomas Bangalter"))),
             tag(StandardTag::Composer(text("Nile Rodgers"))),
-            tag(StandardTag::TrackTitle(text("Get Lucky"))),
-            tag(StandardTag::TrackTitle(text("Get Lucky (Radio Edit)"))),
+            tag(StandardTag::TrackTitle(text("Foxglove"))),
+            tag(StandardTag::TrackTitle(text("Foxglove (Radio Edit)"))),
         ]);
 
-        assert_eq!(
-            listed.artist.as_deref(),
-            Some("Daft Punk; Pharrell Williams")
-        );
+        assert_eq!(listed.artist.as_deref(), Some("Another Band; Third Band"));
         assert_eq!(listed.genre.as_deref(), Some("House; Disco"));
         assert_eq!(
             listed.credits.composer.as_deref(),
             Some("Thomas Bangalter; Nile Rodgers")
         );
-        assert_eq!(listed.title.as_deref(), Some("Get Lucky (Radio Edit)"));
+        assert_eq!(listed.title.as_deref(), Some("Foxglove (Radio Edit)"));
 
         let mut builder = Builder::default();
         let older = [
-            tag(StandardTag::Artist(text("Daft Punk"))),
-            tag(StandardTag::Artist(text("Pharrell Williams"))),
+            tag(StandardTag::Artist(text("Another Band"))),
+            tag(StandardTag::Artist(text("Third Band"))),
         ];
         let newer = [tag(StandardTag::Artist(text(
-            "Daft Punk feat. Pharrell Williams",
+            "Another Band feat. Third Band",
         )))];
 
         builder.absorb(&older.iter().collect::<Vec<_>>());
@@ -2163,7 +2160,7 @@ mod tests {
 
         assert_eq!(
             builder.finish().artist.as_deref(),
-            Some("Daft Punk feat. Pharrell Williams")
+            Some("Another Band feat. Third Band")
         );
     }
 
@@ -2172,15 +2169,12 @@ mod tests {
         let listed = absorb(&[Tag::new(RawTag::new(
             "TPE1",
             RawValue::StringList(Arc::new(vec![
-                "Daft Punk".to_owned(),
-                "Pharrell Williams".to_owned(),
+                "Another Band".to_owned(),
+                "Third Band".to_owned(),
             ])),
         ))]);
 
-        assert_eq!(
-            listed.artist.as_deref(),
-            Some("Daft Punk; Pharrell Williams")
-        );
+        assert_eq!(listed.artist.as_deref(), Some("Another Band; Third Band"));
     }
 
     #[test]

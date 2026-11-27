@@ -2139,9 +2139,9 @@ mod tests {
         let root = scratch("offered-search");
 
         for (file, title, artist, album, genre) in [
-            ("a.wav", "Human Behaviour", "Björk", "Debut", "Pop"),
-            ("b.wav", "Army of Me", "Bjork", "Post", "Electronic"),
-            ("c.wav", "Hyperballad", "Other", "Rest", "Pop"),
+            ("a.wav", "Harbour Wind", "Sölvi", "Early Days", "Pop"),
+            ("b.wav", "Anchor Hymn", "Solvi", "Tidewater", "Electronic"),
+            ("c.wav", "Hush Signal", "Other", "Rest", "Pop"),
         ] {
             fs::write(
                 root.join(file),
@@ -2166,24 +2166,24 @@ mod tests {
 
         let by_the_artist = titles(searched(
             Kind::Song,
-            &text(Field::Artist, Test::Is, "BJORK"),
+            &text(Field::Artist, Test::Is, "SOLVI"),
             every,
         ));
         let second_page = titles(searched(
             Kind::Song,
-            &text(Field::Artist, Test::Is, "björk"),
+            &text(Field::Artist, Test::Is, "sölvi"),
             Page { from: 1, most: 1 },
         ));
         let begun = titles(searched(
             Kind::Song,
-            &text(Field::Title, Test::Contains, "behav"),
+            &text(Field::Title, Test::Contains, "wind"),
             every,
         ));
         let but_not = titles(searched(
             Kind::Song,
             &Query::All(vec![
-                text(Field::Artist, Test::Contains, "bjork"),
-                text(Field::Title, Test::Lacks, "army"),
+                text(Field::Artist, Test::Contains, "solvi"),
+                text(Field::Title, Test::Lacks, "anchor"),
             ]),
             every,
         ));
@@ -2198,12 +2198,12 @@ mod tests {
         let everything = titles(searched(Kind::Song, &Query::Everything, Page::counting()));
         let albums = titles(searched(
             Kind::Album,
-            &text(Field::Title, Test::Contains, "post"),
+            &text(Field::Title, Test::Contains, "tidewater"),
             every,
         ));
         let artists = titles(searched(
             Kind::Artist,
-            &text(Field::Title, Test::Contains, "bjo"),
+            &text(Field::Title, Test::Contains, "sol"),
             every,
         ));
         let unanswered = [
@@ -2215,22 +2215,22 @@ mod tests {
                 },
             ),
             (Kind::Song, text(Field::Title, Test::Contains, "!!!")),
-            (Kind::Album, text(Field::Title, Test::Lacks, "post")),
+            (Kind::Album, text(Field::Title, Test::Lacks, "tidewater")),
             (Kind::Artist, text(Field::Title, Test::IsNot, "other")),
-            (Kind::Artist, text(Field::Album, Test::Is, "post")),
+            (Kind::Artist, text(Field::Album, Test::Is, "tidewater")),
             (Kind::Playlist, text(Field::Title, Test::Is, "mix")),
         ]
         .map(|(kind, query)| searched(kind, &query, every));
         let _ = fs::remove_dir_all(&root);
 
         assert_eq!(by_the_artist.1, 2);
-        assert_eq!(by_the_artist.0, ["Army of Me", "Human Behaviour"]);
-        assert_eq!(second_page, (vec!["Human Behaviour".to_owned()], 2));
-        assert_eq!(begun.0, ["Human Behaviour"]);
-        assert_eq!(but_not.0, ["Human Behaviour"]);
-        assert_eq!(either.0, ["Army of Me", "Hyperballad"]);
+        assert_eq!(by_the_artist.0, ["Anchor Hymn", "Harbour Wind"]);
+        assert_eq!(second_page, (vec!["Harbour Wind".to_owned()], 2));
+        assert_eq!(begun.0, ["Harbour Wind"]);
+        assert_eq!(but_not.0, ["Harbour Wind"]);
+        assert_eq!(either.0, ["Anchor Hymn", "Hush Signal"]);
         assert_eq!(everything, (Vec::new(), 3));
-        assert_eq!(albums.0, ["Post"]);
+        assert_eq!(albums.0, ["Tidewater"]);
         assert_eq!(artists.1, 1);
         assert!(
             unanswered
@@ -2260,10 +2260,10 @@ mod tests {
         let root = scratch("offered-within");
 
         for (file, title, artist, album, number) in [
-            ("a.wav", "Human Behaviour", "Björk", "Debut", "1"),
-            ("b.wav", "Venus as a Boy", "Björk", "Debut", "2"),
-            ("c.wav", "Army of Me", "Bjork", "Post", "1"),
-            ("d.wav", "Hyperballad", "Other", "Rest", "1"),
+            ("a.wav", "Harbour Wind", "Sölvi", "Early Days", "1"),
+            ("b.wav", "Violet Morning", "Sölvi", "Early Days", "2"),
+            ("c.wav", "Anchor Hymn", "Solvi", "Tidewater", "1"),
+            ("d.wav", "Hush Signal", "Other", "Rest", "1"),
         ] {
             fs::write(
                 root.join(file),
@@ -2287,51 +2287,51 @@ mod tests {
                 .expect("a song")
         };
         let artist_of = |title: &str| row(title).artist_id.expect("an artist");
-        let bjork = artist_of("Army of Me");
-        let other = artist_of("Hyperballad");
-        let debut = row("Human Behaviour").album_id.expect("an album");
+        let solvi = artist_of("Anchor Hymn");
+        let other = artist_of("Hush Signal");
+        let debut = row("Harbour Wind").album_id.expect("an album");
         let mix = library.create_playlist("Mix").expect("a playlist");
 
         library
             .add_to_playlist(
                 mix,
-                &["Hyperballad", "Army of Me", "Human Behaviour"].map(|title| Cut::of(row(title))),
+                &["Hush Signal", "Anchor Hymn", "Harbour Wind"].map(|title| Cut::of(row(title))),
             )
             .expect("listed");
 
         let every = Page::first(10);
-        let army = text(Field::Title, Test::Contains, "army");
-        let by_bjork = text(Field::Artist, Test::Is, "björk");
+        let army = text(Field::Title, Test::Contains, "anchor");
+        let by_solvi = text(Field::Artist, Test::Is, "sölvi");
 
         let her_albums = found(
             &shelves,
             Kind::Album,
-            Within::Artist(bjork),
+            Within::Artist(solvi),
             &Query::Everything,
             every,
         );
         let her_post = found(
             &shelves,
             Kind::Album,
-            Within::Artist(bjork),
-            &text(Field::Title, Test::Contains, "post"),
+            Within::Artist(solvi),
+            &text(Field::Title, Test::Contains, "tidewater"),
             every,
         );
         let her_songs = found(
             &shelves,
             Kind::Song,
-            Within::Artist(bjork),
+            Within::Artist(solvi),
             &Query::Everything,
             every,
         );
         let her_second_song = found(
             &shelves,
             Kind::Song,
-            Within::Artist(bjork),
+            Within::Artist(solvi),
             &Query::Everything,
             Page { from: 1, most: 1 },
         );
-        let her_army = found(&shelves, Kind::Song, Within::Artist(bjork), &army, every);
+        let her_army = found(&shelves, Kind::Song, Within::Artist(solvi), &army, every);
         let others_army = found(&shelves, Kind::Song, Within::Artist(other), &army, every);
         let on_debut = found(
             &shelves,
@@ -2351,7 +2351,7 @@ mod tests {
             &shelves,
             Kind::Song,
             Within::Album(debut),
-            &text(Field::Title, Test::Contains, "venus"),
+            &text(Field::Title, Test::Contains, "violet"),
             every,
         );
         let army_on_debut = found(&shelves, Kind::Song, Within::Album(debut), &army, every);
@@ -2366,21 +2366,21 @@ mod tests {
             &shelves,
             Kind::Song,
             Within::Playlist(mix),
-            &by_bjork,
+            &by_solvi,
             every,
         );
         let second_of_hers_in_the_mix = found(
             &shelves,
             Kind::Song,
             Within::Playlist(mix),
-            &by_bjork,
+            &by_solvi,
             Page { from: 1, most: 1 },
         );
         let counted_in_the_mix = found(
             &shelves,
             Kind::Song,
             Within::Playlist(mix),
-            &by_bjork,
+            &by_solvi,
             Page::counting(),
         );
         let no_artist_on_debut = found(
@@ -2399,51 +2399,50 @@ mod tests {
         );
         let _ = fs::remove_dir_all(&root);
 
-        assert_eq!(bjork, artist_of("Human Behaviour"));
-        assert_ne!(bjork, other);
+        assert_eq!(solvi, artist_of("Harbour Wind"));
+        assert_ne!(solvi, other);
         assert_eq!(her_albums.1, 2);
         assert_eq!(
             her_albums.0.iter().collect::<BTreeSet<_>>(),
-            ["Debut".to_owned(), "Post".to_owned()].iter().collect()
+            ["Early Days".to_owned(), "Tidewater".to_owned()]
+                .iter()
+                .collect()
         );
-        assert_eq!(her_post, (vec!["Post".to_owned()], 1));
+        assert_eq!(her_post, (vec!["Tidewater".to_owned()], 1));
         assert_eq!(her_songs.1, 3);
         assert_eq!(her_songs.0.len(), 3);
-        assert!(!her_songs.0.contains(&"Hyperballad".to_owned()));
+        assert!(!her_songs.0.contains(&"Hush Signal".to_owned()));
         assert_eq!(her_second_song, (vec![her_songs.0[1].clone()], 3));
-        assert_eq!(her_army, (vec!["Army of Me".to_owned()], 1));
+        assert_eq!(her_army, (vec!["Anchor Hymn".to_owned()], 1));
         assert_eq!(others_army, (Vec::new(), 0));
         assert_eq!(
             on_debut,
             (
-                vec!["Human Behaviour".to_owned(), "Venus as a Boy".to_owned()],
+                vec!["Harbour Wind".to_owned(), "Violet Morning".to_owned()],
                 2
             )
         );
-        assert_eq!(second_on_debut, (vec!["Venus as a Boy".to_owned()], 2));
-        assert_eq!(venus_on_debut, (vec!["Venus as a Boy".to_owned()], 1));
+        assert_eq!(second_on_debut, (vec!["Violet Morning".to_owned()], 2));
+        assert_eq!(venus_on_debut, (vec!["Violet Morning".to_owned()], 1));
         assert_eq!(army_on_debut, (Vec::new(), 0));
         assert_eq!(
             in_the_mix,
             (
                 vec![
-                    "Hyperballad".to_owned(),
-                    "Army of Me".to_owned(),
-                    "Human Behaviour".to_owned()
+                    "Hush Signal".to_owned(),
+                    "Anchor Hymn".to_owned(),
+                    "Harbour Wind".to_owned()
                 ],
                 3
             )
         );
         assert_eq!(
             hers_in_the_mix,
-            (
-                vec!["Army of Me".to_owned(), "Human Behaviour".to_owned()],
-                2
-            )
+            (vec!["Anchor Hymn".to_owned(), "Harbour Wind".to_owned()], 2)
         );
         assert_eq!(
             second_of_hers_in_the_mix,
-            (vec!["Human Behaviour".to_owned()], 2)
+            (vec!["Harbour Wind".to_owned()], 2)
         );
         assert_eq!(counted_in_the_mix, (Vec::new(), 2));
         assert_eq!(no_artist_on_debut, (Vec::new(), 0));
@@ -2458,16 +2457,20 @@ mod tests {
             (
                 "a.wav",
                 &[
-                    (TITLE, "Human Behaviour"),
-                    (ARTIST, "Björk"),
-                    (ALBUM, "Debut"),
+                    (TITLE, "Harbour Wind"),
+                    (ARTIST, "Sölvi"),
+                    (ALBUM, "Early Days"),
                 ][..],
             ),
             (
                 "b.wav",
-                &[(TITLE, "Army of Me"), (ARTIST, "Björk"), (ALBUM, "Post")][..],
+                &[
+                    (TITLE, "Anchor Hymn"),
+                    (ARTIST, "Sölvi"),
+                    (ALBUM, "Tidewater"),
+                ][..],
             ),
-            ("c.wav", &[(TITLE, "Demo"), (ARTIST, "Björk")][..]),
+            ("c.wav", &[(TITLE, "Demo"), (ARTIST, "Sölvi")][..]),
             ("d.wav", &[(TITLE, "Stray"), (ALBUM, "Loose Ends")][..]),
             ("e.wav", &[(TITLE, "Nobody")][..]),
         ] {
@@ -2478,7 +2481,7 @@ mod tests {
         let shelves = Shelves::over(Arc::clone(&library));
         let every = Page::first(10);
         let everything = Query::Everything;
-        let army = text(Field::Title, Test::Contains, "army");
+        let army = text(Field::Title, Test::Contains, "anchor");
 
         let artists = found(&shelves, Kind::Artist, Within::Artists, &everything, every);
         let albums_under_the_artists =
@@ -2510,18 +2513,18 @@ mod tests {
         let every_song = found(&shelves, Kind::Song, Within::Catalog, &everything, every);
         let _ = fs::remove_dir_all(&root);
 
-        assert_eq!(artists, (vec!["Björk".to_owned()], 1));
+        assert_eq!(artists, (vec!["Sölvi".to_owned()], 1));
         assert_eq!(
             albums_under_the_artists,
-            (vec!["Debut".to_owned(), "Post".to_owned()], 2)
+            (vec!["Early Days".to_owned(), "Tidewater".to_owned()], 2)
         );
         assert_eq!(
             songs_under_the_artists,
             (
                 vec![
-                    "Army of Me".to_owned(),
+                    "Anchor Hymn".to_owned(),
                     "Demo".to_owned(),
-                    "Human Behaviour".to_owned()
+                    "Harbour Wind".to_owned()
                 ],
                 3
             )
@@ -2530,9 +2533,9 @@ mod tests {
             albums,
             (
                 vec![
-                    "Debut".to_owned(),
+                    "Early Days".to_owned(),
                     "Loose Ends".to_owned(),
-                    "Post".to_owned()
+                    "Tidewater".to_owned()
                 ],
                 3
             )
@@ -2541,8 +2544,8 @@ mod tests {
             songs_under_the_albums,
             (
                 vec![
-                    "Army of Me".to_owned(),
-                    "Human Behaviour".to_owned(),
+                    "Anchor Hymn".to_owned(),
+                    "Harbour Wind".to_owned(),
                     "Stray".to_owned()
                 ],
                 3
@@ -2550,9 +2553,9 @@ mod tests {
         );
         assert_eq!(
             second_song_under_the_albums,
-            (vec!["Human Behaviour".to_owned()], 3)
+            (vec!["Harbour Wind".to_owned()], 3)
         );
-        assert_eq!(army_under_the_albums, (vec!["Army of Me".to_owned()], 1));
+        assert_eq!(army_under_the_albums, (vec!["Anchor Hymn".to_owned()], 1));
         assert_eq!(counted_under_the_artists, (Vec::new(), 3));
         assert_eq!(no_playlist_under_the_albums, (Vec::new(), 0));
         assert_eq!(no_artist_under_the_albums, (Vec::new(), 0));
@@ -2563,7 +2566,7 @@ mod tests {
     fn a_query_from_the_network_is_written_as_a_search_that_reads_back_as_itself() {
         for query in [
             text(Field::Title, Test::Contains, "Say \"hi\" =now"),
-            text(Field::Artist, Test::Is, "AC/DC \"live\""),
+            text(Field::Artist, Test::Is, "AB/CD \"live\""),
             Query::Any(vec![
                 text(Field::Title, Test::Lacks, "one two"),
                 Query::All(vec![

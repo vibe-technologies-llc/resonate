@@ -24,7 +24,7 @@ const FIELDS: [SheetField; 10] = [
     SheetField::DiscNumber,
     SheetField::DiscTotal,
 ];
-const VALUES: [Option<&str>; 4] = [None, Some("Echoes"), Some("Ça Ira – Ω"), Some("")];
+const VALUES: [Option<&str>; 4] = [None, Some("Slow Water"), Some("Ça Ira – Ω"), Some("")];
 
 fn listed_beside(named: &str) -> Vec<String> {
     let alone = named.rsplit(['/', '\\']).next().unwrap_or(named);

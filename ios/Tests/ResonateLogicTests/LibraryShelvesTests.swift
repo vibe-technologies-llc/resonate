@@ -50,13 +50,13 @@ import Testing
     }
 
     @Test func anAlbumsBylineIsItsArtistAndYearOrVariousArtists() {
-        let dated = AlbumHit(key: "k", title: "Meddle", artist: "Pink Floyd", year: 1971, songs: 6, durationMs: 0, artworkTrack: 0)
-        let undated = AlbumHit(key: "k", title: "Meddle", artist: "", year: nil, songs: 6, durationMs: 0, artworkTrack: 0)
+        let dated = AlbumHit(key: "k", title: "Low Tide", artist: "Example Band", year: 1971, songs: 6, durationMs: 0, artworkTrack: 0)
+        let undated = AlbumHit(key: "k", title: "Low Tide", artist: "", year: nil, songs: 6, durationMs: 0, artworkTrack: 0)
         let gathered = AlbumHit(
             key: "k", title: "Hits", artist: "Someone", year: 1999, songs: 6, durationMs: 0, artworkTrack: 0, variousArtists: true
         )
 
-        #expect(dated.byline == "Pink Floyd · 1971")
+        #expect(dated.byline == "Example Band · 1971")
         #expect(undated.byline == "Unknown artist")
         #expect(gathered.byline == "Various artists · 1999")
     }

@@ -4332,10 +4332,10 @@ mod tests {
         let layout = read("{artist}/{title}");
         let mut named = gently_adrift();
 
-        named.artist = Some("AC/DC");
+        named.artist = Some("AB/CD");
         named.title = "Ba\u{7}ck in Bla\u{7f}ck\nAgain";
 
-        assert_eq!(rendered(&layout, &named), "AC-DC/Back in BlackAgain.flac");
+        assert_eq!(rendered(&layout, &named), "AB-CD/Back in BlackAgain.flac");
     }
 
     #[test]

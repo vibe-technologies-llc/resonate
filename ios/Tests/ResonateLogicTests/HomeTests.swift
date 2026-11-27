@@ -28,14 +28,14 @@ import Testing
 
     @Test func eachAlbumStandsOnceAtTheSongHeardLast() {
         let heard = [
-            track(1, title: "One", artist: "Low", album: "Things We Lost"),
-            track(2, title: "Two", artist: "Björk", album: "Vespertine"),
-            track(3, title: "Three", artist: "Low", album: "Things We Lost"),
+            track(1, title: "One", artist: "Third Band", album: "Things We Kept"),
+            track(2, title: "Two", artist: "Sölvi", album: "Evensong"),
+            track(3, title: "Three", artist: "Third Band", album: "Things We Kept"),
         ]
         let tiles = JumpBackIn.albums(heard: heard)
 
-        #expect(tiles.map(\.title) == ["Things We Lost", "Vespertine"])
-        #expect(tiles.map(\.detail) == ["Low", "Björk"])
+        #expect(tiles.map(\.title) == ["Things We Kept", "Evensong"])
+        #expect(tiles.map(\.detail) == ["Third Band", "Sölvi"])
         #expect(tiles.first?.cover?.id == 1)
     }
 
@@ -93,10 +93,10 @@ import Testing
     }
 
     @Test func aTileOpensItsAlbumOrTheFavouritesAndSpeaksItsAlbumAndArtist() {
-        let album = JumpBackIn.albums(heard: [track(1, artist: "Low", album: "Trust")])[0]
+        let album = JumpBackIn.albums(heard: [track(1, artist: "Third Band", album: "Anchor")])[0]
 
-        #expect(album.destination == .album(albumKey(album: "Trust", artist: "Low", albumArtist: "Low") ?? ""))
-        #expect(album.spoken == "Trust, Low")
+        #expect(album.destination == .album(albumKey(album: "Anchor", artist: "Third Band", albumArtist: "Third Band") ?? ""))
+        #expect(album.spoken == "Anchor, Third Band")
         #expect(JumpBackTile.favourites.destination == .favourites)
         #expect(JumpBackTile.favourites.spoken == "Favourites")
     }

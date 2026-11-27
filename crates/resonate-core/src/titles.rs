@@ -318,10 +318,7 @@ mod tests {
 
     #[test]
     fn a_bare_title_drops_versions_guests_and_a_dashed_version_but_not_a_live_take() {
-        assert_eq!(
-            bare("Bohemian Rhapsody - Remastered 2011"),
-            "Bohemian Rhapsody"
-        );
+        assert_eq!(bare("Harbour Lights - Remastered 2011"), "Harbour Lights");
         assert_eq!(bare("Stand By Me - Remastered"), "Stand By Me");
         assert_eq!(bare("Blinding Lights - Radio Edit"), "Blinding Lights");
         assert_eq!(
@@ -334,8 +331,8 @@ mod tests {
         );
         assert_eq!(bare("Hot [Remix] (feat. Gunna)"), "Hot [Remix]");
         assert_eq!(
-            bare("Bohemian Rhapsody - Live at Wembley"),
-            "Bohemian Rhapsody - Live at Wembley"
+            bare("Harbour Lights - Live at the Quay"),
+            "Harbour Lights - Live at the Quay"
         );
         assert_eq!(bare("Wait - (Remastered)"), "Wait -");
         assert_eq!(bare("Remastered"), "Remastered");

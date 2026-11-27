@@ -163,7 +163,7 @@ so `editing` sees it.
 
 ## Chrome and input
 
-- **Title names what plays.** `RootView::name_the_window` sets *Echoes — Pink Floyd · Resonate*
+- **Title names what plays.** `RootView::name_the_window` sets *Slow Water — Example Band · Resonate*
   (artist omitted if blank), else *Resonate*; only when the text moved
   (`the_window_is_titled_by_what_plays_and_by_the_app_where_nothing_does`).
 - **The window is its own titlebar.** `WindowDecorations::Client`; the header draws

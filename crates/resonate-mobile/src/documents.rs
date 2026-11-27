@@ -232,7 +232,7 @@ mod tests {
     fn a_folder_uri_staying_within_its_root_is_kept_exactly_as_given() {
         for staying in [
             "resonate-folder://local",
-            "resonate-folder://abc/Bj%C3%B6rk/Homogenic/01%20Hunter.flac",
+            "resonate-folder://abc/S%C3%B6lvi/Seabrook/01%20Wavebreak.flac",
             "resonate-folder://abc/a../b..c/..d.flac",
         ] {
             let at = location(staying).expect("a location");

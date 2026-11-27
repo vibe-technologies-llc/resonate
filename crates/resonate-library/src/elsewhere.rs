@@ -951,16 +951,16 @@ mod tests {
     #[test]
     fn a_found_song_is_performed_by_the_first_credited_artist_musicbrainz_identifies() {
         let released = || vec![issued(ONE, "2015-06-15", "Single", &[], "Official")];
-        let mut collaboration = matched(ONE, "Heroes Tonight", "Janji", released());
+        let mut collaboration = matched(ONE, "Lantern Tonight", "Another Band", released());
 
         collaboration.credit = vec![
             Credit {
-                name: "Janji".to_owned(),
+                name: "Another Band".to_owned(),
                 joined_by: " & ".to_owned(),
                 mbid: None,
             },
             Credit {
-                name: "Johnning".to_owned(),
+                name: "Third Band".to_owned(),
                 joined_by: String::new(),
                 mbid: Some(mbid(TWO)),
             },
@@ -970,12 +970,12 @@ mod tests {
 
         let found = found_among(vec![collaboration, unidentified], None, |_| false);
 
-        assert_eq!(found[0].artist, "Janji & Johnning");
+        assert_eq!(found[0].artist, "Another Band & Third Band");
         assert_eq!(
             found[0].performer,
             Some(Performer::Elsewhere(ArtistFound {
                 mbid: mbid(TWO),
-                name: "Johnning".to_owned(),
+                name: "Third Band".to_owned(),
             }))
         );
         assert_eq!(found[1].performer, None);
@@ -1007,20 +1007,20 @@ mod tests {
         let compiled = matched(
             ONE,
             "Teardrop",
-            "Massive Attack",
+            "Another Band",
             vec![issued(ONE, "2001", "Album", &["Compilation"], "Official")],
         );
         let bootlegged = matched(
             TWO,
             "Teardrop (live)",
-            "Massive Attack",
+            "Another Band",
             vec![issued(TWO, "1998", "Album", &["Live"], "Bootleg")],
         );
-        let unreleased = matched(THREE, "Angel", "Massive Attack", Vec::new());
+        let unreleased = matched(THREE, "Angel", "Another Band", Vec::new());
         let mut on_the_album = matched(
             FOUR,
             "Teardrop",
-            "Massive Attack",
+            "Another Band",
             vec![
                 issued(FOUR, "2006", "Album", &["Compilation"], "Official"),
                 issued(FOUR, "1998-04-20", "Album", &[], "Official"),
@@ -1032,7 +1032,7 @@ mod tests {
         let mut coded_live = matched(
             FIVE,
             "Teardrop (live)",
-            "Massive Attack",
+            "Another Band",
             vec![issued(FIVE, "2006", "Album", &["Live"], "Bootleg")],
         );
 
@@ -1161,24 +1161,17 @@ mod tests {
 
     #[test]
     fn a_song_on_the_most_releases_leads_a_hundred_answers_however_far_down_they_put_it() {
-        let asked = songs_asked("bohemian rapsody").expect("words worth asking");
+        let asked = songs_asked("harbour lights").expect("words worth asking");
         let mut answer: Vec<RecordingMatch> = (0..99)
-            .map(|n| {
-                on_releases(
-                    n,
-                    "Bohemian Rhapsody",
-                    &format!("Cover Band {n}"),
-                    1 + n % 3,
-                )
-            })
+            .map(|n| on_releases(n, "Harbour Lights", &format!("Cover Band {n}"), 1 + n % 3))
             .collect();
 
-        answer.insert(63, on_releases(500, "Bohemian Rhapsody", "Queen", 354));
+        answer.insert(63, on_releases(500, "Harbour Lights", "Third Band", 354));
 
         let found = found_among(answer, Some(&asked), |_| false);
 
         assert_eq!(found.len(), FOUND_ELSEWHERE_AT_MOST);
-        assert_eq!(found[0].artist, "Queen");
+        assert_eq!(found[0].artist, "Third Band");
     }
 
     #[test]
@@ -1199,25 +1192,25 @@ mod tests {
         let found = found_among(
             vec![
                 on_releases(1, "Can’t Stop Me Now", "Pitbull", 11),
-                on_releases(2, "Don’t Stop Me Now", "Queen", 249),
+                on_releases(2, "Keep Rowing Now", "Third Band", 249),
             ],
             Some(&dont),
             |_| false,
         );
 
-        assert_eq!(found[0].artist, "Queen");
+        assert_eq!(found[0].artist, "Third Band");
 
-        let mistyped = songs_asked("bohemian rapsody").expect("words worth asking");
+        let mistyped = songs_asked("harbour lights").expect("words worth asking");
         let found = found_among(
             vec![
-                on_releases(1, "Bohemian Trapsody", "Logic", 2),
-                on_releases(2, "Bohemian Rhapsody", "Queen", 353),
+                on_releases(1, "Harbour Slights", "Fourth Band", 2),
+                on_releases(2, "Harbour Lights", "Third Band", 353),
             ],
             Some(&mistyped),
             |_| false,
         );
 
-        assert_eq!(found[0].artist, "Queen");
+        assert_eq!(found[0].artist, "Third Band");
 
         assert_eq!(
             still_answering(
@@ -1232,17 +1225,17 @@ mod tests {
     #[test]
     fn a_found_song_carries_the_codes_of_every_take_of_it_as_long_as_it() {
         let isrc = |code: &str| resonate_core::Isrc::new(code).expect("an isrc");
-        let mut album = on_releases(1, "Bohemian Rhapsody", "Queen", 3);
+        let mut album = on_releases(1, "Harbour Lights", "Third Band", 3);
 
         album.length = Some(Duration::from_secs(355));
         album.isrcs = vec![isrc("GBUM71029604"), isrc("GBCEE0400076")];
 
-        let mut remaster = on_releases(2, "Bohemian Rhapsody", "Queen", 2);
+        let mut remaster = on_releases(2, "Harbour Lights", "Third Band", 2);
 
         remaster.length = Some(Duration::from_secs(358));
         remaster.isrcs = vec![isrc("GBCEG7900018")];
 
-        let mut live = on_releases(3, "Bohemian Rhapsody", "Queen", 1);
+        let mut live = on_releases(3, "Harbour Lights", "Third Band", 1);
 
         live.length = Some(Duration::from_secs(301));
         live.isrcs = vec![isrc("GBCEE0500364")];

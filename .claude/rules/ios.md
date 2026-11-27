@@ -1192,7 +1192,7 @@ every route change (a pair of headphones at the same rate included), not from th
   `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
   the index's own arithmetic, `nil` without an album, which hides *Go to album*). `AlbumView` reads
   `album(key)` and `album_tracks(key)`, `ArtistView` `albums_by(name)` (newest first, year captions),
-  `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page) and `most_played_by(name, 5)`,
+  `artist_tracks(name)` (folded, so *Solvi* and *Sölvi* are one page) and `most_played_by(name, 5)`,
   shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.onScreen` in a
   `.task` keyed by `Library.collectionGeneration`, which steps only when a reload of the albums and
   artists reads something other than what is shown (`CollectionsListed`, compared on `Work.onScreen`), and `catalogEpoch`, which steps whenever a catalog read lands that differs from the one shown (the

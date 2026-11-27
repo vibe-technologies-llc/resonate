@@ -508,7 +508,7 @@ mod tests {
     fn a_stalled_lastfm_leaves_listenbrainz_told_what_was_heard() {
         let root = scratch("submitting-lanes");
 
-        for (title, artist) in [("Words", "Low"), ("Slow Water", "Example Band")] {
+        for (title, artist) in [("Words", "Third Band"), ("Slow Water", "Example Band")] {
             fs::write(
                 root.join(format!("{title}.wav")),
                 tagged_wave(&[(TITLE, title), (ARTIST, artist)]),

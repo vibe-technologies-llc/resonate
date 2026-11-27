@@ -766,7 +766,7 @@ mod tests {
     fn a_whole_file_sheet_by_another_artist_than_the_files_is_passed_over() {
         let (_tree, mut wanted) = a_cut_of_the_low_tide_file();
 
-        wanted.file_artist = Some("Led Zeppelin".to_owned());
+        wanted.file_artist = Some("Third Band".to_owned());
 
         assert_eq!(found(&wanted), None);
     }
@@ -937,8 +937,8 @@ mod tests {
             "every lamp you lit\neach road I know\nevery bell I heard\nwhat we kept\nTime: 3:41\n",
         );
         tree.write(
-            "Breathe.txt",
-            "Breathe, breathe in the air\nDon't be afraid to care\n",
+            "Rowing.txt",
+            "Row, row to the pier\nThe tide will not wait\n",
         );
 
         let titled = |file: &str, title: &str| Wanted {
@@ -949,7 +949,7 @@ mod tests {
         assert!(found(&tree.track("Slow Water.flac")).is_none());
         assert!(found(&titled("01.flac", "Info")).is_none());
         assert!(found(&tree.track("Coda.flac")).is_some());
-        assert!(found(&tree.track("Breathe.flac")).is_some());
+        assert!(found(&tree.track("Rowing.flac")).is_some());
     }
 
     #[test]

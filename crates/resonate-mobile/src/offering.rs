@@ -1230,37 +1230,37 @@ mod tests {
 
     const FILED: [Filed; 5] = [
         Filed {
-            name: "blue-train.flac",
-            title: "Blue Train",
-            artist: "John Coltrane",
-            album: "Blue Train",
+            name: "brook-river.flac",
+            title: "Brook River",
+            artist: "Jon Carrow",
+            album: "Brook River",
             track: 1,
             genre: "Jazz",
             codec: "FLAC",
         },
         Filed {
             name: "moments-notice.flac",
-            title: "Moment's Notice",
-            artist: "John Coltrane",
-            album: "Blue Train",
+            title: "Quiet Notice",
+            artist: "Jon Carrow",
+            album: "Brook River",
             track: 2,
             genre: "Jazz",
             codec: "FLAC",
         },
         Filed {
-            name: "so-what.mp3",
-            title: "So What",
-            artist: "Miles Davis",
-            album: "Kind of Blue",
+            name: "salt-road.mp3",
+            title: "Salt Road",
+            artist: "Mira Dale",
+            album: "Kelp River",
             track: 1,
             genre: "",
             codec: "MP3",
         },
         Filed {
-            name: "freddie-freeloader.mp3",
-            title: "Freddie Freeloader",
-            artist: "Miles Davis",
-            album: "Kind of Blue",
+            name: "fair-weather.mp3",
+            title: "Fair Weather",
+            artist: "Mira Dale",
+            album: "Kelp River",
             track: 2,
             genre: "",
             codec: "MP3",
@@ -1268,8 +1268,8 @@ mod tests {
         Filed {
             name: "liner-notes.txt",
             title: "Liner Notes",
-            artist: "Miles Davis",
-            album: "Kind of Blue",
+            artist: "Mira Dale",
+            album: "Kelp River",
             track: 3,
             genre: "",
             codec: "",
@@ -1386,15 +1386,15 @@ mod tests {
             .player
             .make_playlist(
                 "Evening".to_owned(),
-                vec![ids["So What"], ids["Liner Notes"], ids["Blue Train"]],
+                vec![ids["Salt Road"], ids["Liner Notes"], ids["Brook River"]],
             )
             .expect("a playlist");
         let shelves = shelves(&harness);
 
         let artists = shelved(&shelves, Shelf::Artists, 0, 10);
-        let coltrane = shelved(&shelves, first_shelf(&artists), 0, 10);
+        let carrow = shelved(&shelves, first_shelf(&artists), 0, 10);
         let albums = shelved(&shelves, Shelf::Albums, 0, 10);
-        let kind_of_blue = shelved(
+        let kelp_river = shelved(
             &shelves,
             Shelf::Album(match &albums.held[1] {
                 Entry::Shelf(held) => match held.shelf {
@@ -1417,24 +1417,24 @@ mod tests {
             10,
         );
 
-        assert_eq!(titled(&artists), ["John Coltrane (1)", "Miles Davis (1)"]);
+        assert_eq!(titled(&artists), ["Jon Carrow (1)", "Mira Dale (1)"]);
         assert_eq!(artists.total, 2);
-        assert_eq!(titled(&coltrane), ["Blue Train (2)"]);
-        assert_eq!(titled(&albums), ["Blue Train (2)", "Kind of Blue (2)"]);
-        assert_eq!(titled(&kind_of_blue), ["So What", "Freddie Freeloader"]);
-        assert_eq!(titled(&first_songs), ["a", "b", "Blue Train"]);
-        assert_eq!(titled(&next_songs), ["c", "d", "Freddie Freeloader"]);
+        assert_eq!(titled(&carrow), ["Brook River (2)"]);
+        assert_eq!(titled(&albums), ["Brook River (2)", "Kelp River (2)"]);
+        assert_eq!(titled(&kelp_river), ["Salt Road", "Fair Weather"]);
+        assert_eq!(titled(&first_songs), ["a", "b", "Brook River"]);
+        assert_eq!(titled(&next_songs), ["c", "d", "Fair Weather"]);
         assert_eq!(first_songs.total, 8);
         assert!(counted.held.is_empty());
         assert_eq!(counted.total, 8);
         assert_eq!(titled(&playlists), ["Evening (2)"]);
-        assert_eq!(titled(&listed), ["So What", "Blue Train"]);
+        assert_eq!(titled(&listed), ["Salt Road", "Brook River"]);
         assert_eq!(
             shelves
                 .shelf(first_shelf(&artists))
                 .expect("read")
                 .map(|held| held.title),
-            Some("John Coltrane".to_owned())
+            Some("Jon Carrow".to_owned())
         );
         assert!(
             shelves
@@ -1466,7 +1466,7 @@ mod tests {
         harness
             .player
             .catalog
-            .keep_artwork_of(&[ids["Blue Train"]], PNG, "folder", false)
+            .keep_artwork_of(&[ids["Brook River"]], PNG, "folder", false)
             .expect("a cover kept");
         harness
             .player
@@ -1475,19 +1475,19 @@ mod tests {
             .lock()
             .execute(
                 "UPDATE documents SET size = NULL WHERE id = ?1",
-                [ids["Moment's Notice"] as i64],
+                [ids["Quiet Notice"] as i64],
             )
             .expect("a size forgotten");
 
         let shelves = shelves(&harness);
-        let blue_train = TrackId::new(ids["Blue Train"]).expect("an id");
+        let brook_river = TrackId::new(ids["Brook River"]).expect("an id");
 
-        let song = shelves.song(blue_train).expect("read").expect("a song");
+        let song = shelves.song(brook_river).expect("read").expect("a song");
         let unsized_song = shelves
-            .song(TrackId::new(ids["Moment's Notice"]).expect("an id"))
+            .song(TrackId::new(ids["Quiet Notice"]).expect("an id"))
             .expect("read")
             .expect("a song");
-        let mut opened = shelves.bytes_of(blue_train).expect("read").expect("bytes");
+        let mut opened = shelves.bytes_of(brook_river).expect("read").expect("bytes");
         let mut served = Vec::new();
 
         opened.bytes.read_to_end(&mut served).expect("the bytes");
@@ -1497,15 +1497,15 @@ mod tests {
             .expect("read")
             .expect("a cover");
 
-        fs::remove_file(harness.folder.join("so-what.mp3")).expect("removed");
+        fs::remove_file(harness.folder.join("salt-road.mp3")).expect("removed");
 
         let gone = shelves
-            .bytes_of(TrackId::new(ids["So What"]).expect("an id"))
+            .bytes_of(TrackId::new(ids["Salt Road"]).expect("an id"))
             .expect("read");
 
-        assert_eq!(song.title, "Blue Train");
-        assert_eq!(song.artist.as_deref(), Some("John Coltrane"));
-        assert_eq!(song.album.as_deref(), Some("Blue Train"));
+        assert_eq!(song.title, "Brook River");
+        assert_eq!(song.artist.as_deref(), Some("Jon Carrow"));
+        assert_eq!(song.album.as_deref(), Some("Brook River"));
         assert_eq!(song.genre.as_deref(), Some("Jazz"));
         assert_eq!(song.track_number, Some(1));
         assert_eq!(song.kind, AudioKind::Flac);
@@ -1514,7 +1514,7 @@ mod tests {
         assert_eq!(song.duration, Some(Duration::from_secs(300)));
         assert_eq!((song.rate, song.channels, song.bits), (44_100, 2, Some(16)));
         assert_eq!(opened.kind, AudioKind::Flac);
-        assert_eq!(served, written_for("blue-train.flac"));
+        assert_eq!(served, written_for("brook-river.flac"));
         assert_eq!(cover.bytes, PNG);
         assert_eq!(cover.mime, "image/png");
         assert!(gone.is_none());
@@ -1529,9 +1529,9 @@ mod tests {
         harness
             .player
             .save_search(
-                "Coltrane".to_owned(),
+                "Carrow".to_owned(),
                 SavedSearch {
-                    text: "artist:coltrane".to_owned(),
+                    text: "artist:carrow".to_owned(),
                     order: SearchOrder::Title,
                     descending: false,
                     rows: None,
@@ -1541,17 +1541,17 @@ mod tests {
 
         let shelves = shelves(&harness);
 
-        let by_coltrane = found(
+        let by_carrow = found(
             &shelves,
             Kind::Song,
-            &text(Field::Artist, Test::Contains, "colt"),
+            &text(Field::Artist, Test::Contains, "carr"),
             0,
             10,
         );
-        let so_what = found(
+        let salt_road = found(
             &shelves,
             Kind::Song,
-            &text(Field::Title, Test::Is, "SO WHAT"),
+            &text(Field::Title, Test::Is, "SALT ROAD"),
             0,
             10,
         );
@@ -1559,8 +1559,8 @@ mod tests {
             &shelves,
             Kind::Song,
             &Query::All(vec![
-                text(Field::Album, Test::Contains, "blue"),
-                text(Field::Title, Test::IsNot, "blue train"),
+                text(Field::Album, Test::Contains, "river"),
+                text(Field::Title, Test::IsNot, "brook river"),
             ]),
             1,
             1,
@@ -1578,7 +1578,7 @@ mod tests {
         let albums = found(
             &shelves,
             Kind::Album,
-            &text(Field::Artist, Test::Is, "miles davis"),
+            &text(Field::Artist, Test::Is, "mira dale"),
             0,
             10,
         );
@@ -1586,8 +1586,8 @@ mod tests {
             &shelves,
             Kind::Artist,
             &Query::Any(vec![
-                text(Field::Title, Test::Contains, "mil"),
-                text(Field::Album, Test::Contains, "blue"),
+                text(Field::Title, Test::Contains, "mir"),
+                text(Field::Album, Test::Contains, "river"),
             ]),
             0,
             10,
@@ -1608,14 +1608,14 @@ mod tests {
             )
             .expect("searched");
 
-        assert_eq!(titled(&by_coltrane), ["Blue Train", "Moment's Notice"]);
-        assert_eq!(titled(&so_what), ["So What"]);
-        assert_eq!(titled(&paged), ["Moment's Notice"]);
+        assert_eq!(titled(&by_carrow), ["Brook River", "Quiet Notice"]);
+        assert_eq!(titled(&salt_road), ["Salt Road"]);
+        assert_eq!(titled(&paged), ["Quiet Notice"]);
         assert_eq!(paged.total, 3);
-        assert_eq!(titled(&jazz), ["Blue Train", "Moment's Notice"]);
-        assert_eq!(titled(&albums), ["Kind of Blue (2)"]);
-        assert_eq!(titled(&artists), ["Miles Davis (1)"]);
-        assert_eq!(titled(&playlists), ["Coltrane (2)"]);
+        assert_eq!(titled(&jazz), ["Brook River", "Quiet Notice"]);
+        assert_eq!(titled(&albums), ["Kelp River (2)"]);
+        assert_eq!(titled(&artists), ["Mira Dale (1)"]);
+        assert_eq!(titled(&playlists), ["Carrow (2)"]);
         assert_eq!(unreadable, Searched::Unanswered);
     }
 
@@ -1629,7 +1629,7 @@ mod tests {
                 .player
                 .make_playlist(
                     "Evening".to_owned(),
-                    vec![ids["So What"], ids["Liner Notes"], ids["Blue Train"]],
+                    vec![ids["Salt Road"], ids["Liner Notes"], ids["Brook River"]],
                 )
                 .expect("a playlist"),
         )
@@ -1637,14 +1637,13 @@ mod tests {
         let shelves = shelves(&harness);
 
         let artists = shelved(&shelves, Shelf::Artists, 0, 10);
-        let Shelf::Artist(coltrane) = first_shelf(&artists) else {
+        let Shelf::Artist(carrow) = first_shelf(&artists) else {
             panic!("not an artist");
         };
-        let Shelf::Artist(miles) = first_shelf(&shelved(&shelves, Shelf::Artists, 1, 1)) else {
+        let Shelf::Artist(mira) = first_shelf(&shelved(&shelves, Shelf::Artists, 1, 1)) else {
             panic!("not an artist");
         };
-        let Shelf::Album(kind_of_blue) = first_shelf(&shelved(&shelves, Shelf::Albums, 1, 1))
-        else {
+        let Shelf::Album(kelp_river) = first_shelf(&shelved(&shelves, Shelf::Albums, 1, 1)) else {
             panic!("not an album");
         };
         let everything = Query::Everything;
@@ -1652,7 +1651,7 @@ mod tests {
         let his_albums = found_within(
             &shelves,
             Kind::Album,
-            Within::Artist(miles),
+            Within::Artist(mira),
             &everything,
             0,
             10,
@@ -1660,7 +1659,7 @@ mod tests {
         let his_songs = found_within(
             &shelves,
             Kind::Song,
-            Within::Artist(miles),
+            Within::Artist(mira),
             &everything,
             0,
             10,
@@ -1668,40 +1667,40 @@ mod tests {
         let his_second = found_within(
             &shelves,
             Kind::Song,
-            Within::Artist(miles),
+            Within::Artist(mira),
             &everything,
             1,
             1,
         );
-        let his_freddie = found_within(
+        let his_fair = found_within(
             &shelves,
             Kind::Song,
-            Within::Artist(miles),
-            &text(Field::Title, Test::Contains, "fred"),
+            Within::Artist(mira),
+            &text(Field::Title, Test::Contains, "fair"),
             0,
             10,
         );
-        let not_coltranes = found_within(
+        let not_carrows = found_within(
             &shelves,
             Kind::Song,
-            Within::Artist(coltrane),
-            &text(Field::Title, Test::Contains, "what"),
+            Within::Artist(carrow),
+            &text(Field::Title, Test::Contains, "salt"),
             0,
             10,
         );
         let on_the_album = found_within(
             &shelves,
             Kind::Song,
-            Within::Album(kind_of_blue),
+            Within::Album(kelp_river),
             &everything,
             0,
             10,
         );
-        let what_on_the_album = found_within(
+        let salt_on_the_album = found_within(
             &shelves,
             Kind::Song,
-            Within::Album(kind_of_blue),
-            &text(Field::Title, Test::Contains, "what"),
+            Within::Album(kelp_river),
+            &text(Field::Title, Test::Contains, "salt"),
             0,
             10,
         );
@@ -1713,18 +1712,18 @@ mod tests {
             0,
             10,
         );
-        let coltrane_in_the_evening = found_within(
+        let carrow_in_the_evening = found_within(
             &shelves,
             Kind::Song,
             Within::Playlist(evening),
-            &text(Field::Artist, Test::Contains, "colt"),
+            &text(Field::Artist, Test::Contains, "carr"),
             0,
             10,
         );
         let no_artist_on_the_album = found_within(
             &shelves,
             Kind::Artist,
-            Within::Album(kind_of_blue),
+            Within::Album(kelp_river),
             &everything,
             0,
             10,
@@ -1746,23 +1745,23 @@ mod tests {
             10,
         );
 
-        assert_eq!(titled(&his_albums), ["Kind of Blue (2)"]);
-        assert_eq!(titled(&his_songs), ["So What", "Freddie Freeloader"]);
+        assert_eq!(titled(&his_albums), ["Kelp River (2)"]);
+        assert_eq!(titled(&his_songs), ["Salt Road", "Fair Weather"]);
         assert_eq!(his_songs.total, 2);
-        assert_eq!(titled(&his_second), ["Freddie Freeloader"]);
+        assert_eq!(titled(&his_second), ["Fair Weather"]);
         assert_eq!(his_second.total, 2);
-        assert_eq!(titled(&his_freddie), ["Freddie Freeloader"]);
-        assert_eq!(his_freddie.total, 1);
+        assert_eq!(titled(&his_fair), ["Fair Weather"]);
+        assert_eq!(his_fair.total, 1);
         assert_eq!(
-            (titled(&not_coltranes), not_coltranes.total),
+            (titled(&not_carrows), not_carrows.total),
             (Vec::<String>::new(), 0)
         );
-        assert_eq!(titled(&on_the_album), ["So What", "Freddie Freeloader"]);
-        assert_eq!(titled(&what_on_the_album), ["So What"]);
-        assert_eq!(titled(&in_the_evening), ["So What", "Blue Train"]);
+        assert_eq!(titled(&on_the_album), ["Salt Road", "Fair Weather"]);
+        assert_eq!(titled(&salt_on_the_album), ["Salt Road"]);
+        assert_eq!(titled(&in_the_evening), ["Salt Road", "Brook River"]);
         assert_eq!(in_the_evening.total, 2);
-        assert_eq!(titled(&coltrane_in_the_evening), ["Blue Train"]);
-        assert_eq!(coltrane_in_the_evening.total, 1);
+        assert_eq!(titled(&carrow_in_the_evening), ["Brook River"]);
+        assert_eq!(carrow_in_the_evening.total, 1);
         for nothing in [no_artist_on_the_album, no_album_in_the_evening, unheld] {
             assert!(nothing.held.is_empty());
             assert_eq!(nothing.total, 0);
@@ -1778,7 +1777,7 @@ mod tests {
             Filed {
                 name: "demo.flac",
                 title: "Demo",
-                artist: "Miles Davis",
+                artist: "Mira Dale",
                 album: "",
                 track: 1,
                 genre: "",
@@ -1799,7 +1798,7 @@ mod tests {
 
         let shelves = shelves(&harness);
         let everything = Query::Everything;
-        let blue = text(Field::Title, Test::Contains, "blue");
+        let river = text(Field::Title, Test::Contains, "river");
 
         let artists = found_within(&shelves, Kind::Artist, Within::Artists, &everything, 0, 10);
         let albums_under_the_artists =
@@ -1811,10 +1810,10 @@ mod tests {
         let albums = found_within(&shelves, Kind::Album, Within::Albums, &everything, 0, 10);
         let songs_under_the_albums =
             found_within(&shelves, Kind::Song, Within::Albums, &everything, 0, 10);
-        let blue_under_the_albums =
-            found_within(&shelves, Kind::Album, Within::Albums, &blue, 0, 10);
-        let blue_songs_under_the_albums =
-            found_within(&shelves, Kind::Song, Within::Albums, &blue, 0, 10);
+        let river_under_the_albums =
+            found_within(&shelves, Kind::Album, Within::Albums, &river, 0, 10);
+        let river_songs_under_the_albums =
+            found_within(&shelves, Kind::Song, Within::Albums, &river, 0, 10);
         let no_playlist_under_the_artists = found_within(
             &shelves,
             Kind::Playlist,
@@ -1827,19 +1826,19 @@ mod tests {
             found_within(&shelves, Kind::Artist, Within::Albums, &everything, 0, 10);
         let every_song = found(&shelves, Kind::Song, &everything, 0, 10);
 
-        assert_eq!(titled(&artists), ["John Coltrane (1)", "Miles Davis (1)"]);
+        assert_eq!(titled(&artists), ["Jon Carrow (1)", "Mira Dale (1)"]);
         assert_eq!(
             titled(&albums_under_the_artists),
-            ["Blue Train (2)", "Kind of Blue (2)"]
+            ["Brook River (2)", "Kelp River (2)"]
         );
         assert_eq!(
             titled(&songs_under_the_artists),
             [
-                "Blue Train",
+                "Brook River",
                 "Demo",
-                "Freddie Freeloader",
-                "Moment's Notice",
-                "So What"
+                "Fair Weather",
+                "Quiet Notice",
+                "Salt Road"
             ]
         );
         assert_eq!(songs_under_the_artists.total, 5);
@@ -1847,24 +1846,24 @@ mod tests {
         assert_eq!(second_song_under_the_artists.total, 5);
         assert_eq!(
             titled(&albums),
-            ["Blue Train (2)", "Kind of Blue (2)", "Loose Ends (1)"]
+            ["Brook River (2)", "Kelp River (2)", "Loose Ends (1)"]
         );
         assert_eq!(
             titled(&songs_under_the_albums),
             [
-                "Blue Train",
-                "Freddie Freeloader",
-                "Moment's Notice",
-                "So What",
+                "Brook River",
+                "Fair Weather",
+                "Quiet Notice",
+                "Salt Road",
                 "Stray"
             ]
         );
         assert_eq!(songs_under_the_albums.total, 5);
         assert_eq!(
-            titled(&blue_under_the_albums),
-            ["Blue Train (2)", "Kind of Blue (2)"]
+            titled(&river_under_the_albums),
+            ["Brook River (2)", "Kelp River (2)"]
         );
-        assert_eq!(titled(&blue_songs_under_the_albums), ["Blue Train"]);
+        assert_eq!(titled(&river_songs_under_the_albums), ["Brook River"]);
         assert_eq!(every_song.total, 10);
         assert!(
             ["Demo", "Stray", "a"]
@@ -1967,7 +1966,7 @@ mod tests {
 
         let (described_head, described) = got(port, "/description.xml");
         let albums = browsed(port, "albums");
-        let (song_head, song) = got(port, &format!("/resonate/song-{}.flac", ids["Blue Train"]));
+        let (song_head, song) = got(port, &format!("/resonate/song-{}.flac", ids["Brook River"]));
         let kept = fs::read_to_string(harness.folder.join(UDN_KEPT_IN)).expect("a kept name");
         let shared = harness.player.catalog_shared_on_network();
         let same_port = harness.player.offered.port();
@@ -2004,10 +2003,10 @@ mod tests {
         assert!(String::from_utf8_lossy(&described).contains(&kept));
         assert!(String::from_utf8_lossy(&described_again).contains(&kept));
         assert!(described_head.starts_with("HTTP/1.1 200"));
-        assert!(albums.contains("Blue Train"), "{albums}");
-        assert!(albums.contains("Kind of Blue"), "{albums}");
+        assert!(albums.contains("Brook River"), "{albums}");
+        assert!(albums.contains("Kelp River"), "{albums}");
         assert!(song_head.starts_with("HTTP/1.1 200"), "{song_head}");
-        assert_eq!(song, written_for("blue-train.flac"));
+        assert_eq!(song, written_for("brook-river.flac"));
         assert!(!harness.player.catalog_shared_on_network());
     }
 
@@ -2171,14 +2170,14 @@ mod tests {
             &harness,
             "file:///elsewhere/elsewhere.flac",
             "elsewhere.flac",
-            ("Elsewhere", "Miles Davis", "Kind of Blue"),
+            ("Elsewhere", "Mira Dale", "Kelp River"),
             false,
         );
         let gone = document(
             &harness,
             &format!("{}gone.flac", crate::harness::FOLDER),
             "gone.flac",
-            ("Gone", "John Coltrane", "Blue Train"),
+            ("Gone", "Jon Carrow", "Brook River"),
             false,
         );
 
@@ -2187,21 +2186,21 @@ mod tests {
             .make_playlist(
                 "Everything".to_owned(),
                 vec![
-                    ids["So What"],
+                    ids["Salt Road"],
                     ids["Liner Notes"],
                     elsewhere,
                     gone,
-                    ids["Blue Train"],
-                    ids["Freddie Freeloader"],
+                    ids["Brook River"],
+                    ids["Fair Weather"],
                 ],
             )
             .expect("a playlist");
-        let miles = harness
+        let mira = harness
             .player
             .save_search(
-                "Miles".to_owned(),
+                "Mira".to_owned(),
                 SavedSearch {
-                    text: "artist:miles".to_owned(),
+                    text: "artist:mira".to_owned(),
                     order: SearchOrder::Title,
                     descending: false,
                     rows: None,
@@ -2222,7 +2221,7 @@ mod tests {
 
         let shelves = shelves(&harness);
         let everything = Shelf::Playlist(PlaylistId::new(everything).expect("an id"));
-        let miles = Shelf::Playlist(PlaylistId::new(miles).expect("an id"));
+        let mira = Shelf::Playlist(PlaylistId::new(mira).expect("an id"));
         let albums = shelved(&shelves, Shelf::Albums, 0, 10);
 
         let children = |shelf: Shelf| {
@@ -2235,7 +2234,7 @@ mod tests {
         let every_song = found(&shelves, Kind::Song, &Query::Everything, 0, 100);
         let (songs, songs_total) = paged_by(&shelves, Shelf::Songs, 1);
         let (everything_by_ones, everything_total) = paged_by(&shelves, everything, 1);
-        let (miles_by_twos, miles_total) = paged_by(&shelves, miles, 2);
+        let (mira_by_twos, mira_total) = paged_by(&shelves, mira, 2);
         let in_everything = found_within(
             &shelves,
             Kind::Song,
@@ -2253,21 +2252,21 @@ mod tests {
         assert_eq!(every_song.total, 8);
         assert!(!songs.contains(&"Elsewhere".to_owned()));
         assert!(!songs.contains(&"Gone".to_owned()));
-        assert_eq!(titled(&albums), ["Blue Train (2)", "Kind of Blue (2)"]);
+        assert_eq!(titled(&albums), ["Brook River (2)", "Kelp River (2)"]);
         assert_eq!(
             everything_by_ones,
-            ["So What", "Blue Train", "Freddie Freeloader"]
+            ["Salt Road", "Brook River", "Fair Weather"]
         );
         assert_eq!(everything_total, 3);
         assert_eq!(children(everything), 3);
-        assert_eq!(titled(&in_everything), ["Blue Train"]);
+        assert_eq!(titled(&in_everything), ["Brook River"]);
         assert_eq!(in_everything.total, 3);
-        assert_eq!(miles_by_twos, ["Freddie Freeloader", "So What"]);
-        assert_eq!(miles_total, 2);
-        assert_eq!(children(miles), 2);
+        assert_eq!(mira_by_twos, ["Fair Weather", "Salt Road"]);
+        assert_eq!(mira_total, 2);
+        assert_eq!(children(mira), 2);
         assert_eq!(
             titled(&shelved(&shelves, Shelf::Playlists, 0, 10)),
-            ["Everything (3)", "Miles (2)"]
+            ["Everything (3)", "Mira (2)"]
         );
     }
 
@@ -2280,7 +2279,7 @@ mod tests {
             .player
             .make_playlist(
                 "Twice".to_owned(),
-                vec![ids["Blue Train"], ids["So What"], ids["Blue Train"]],
+                vec![ids["Brook River"], ids["Salt Road"], ids["Brook River"]],
             )
             .expect("a playlist");
         let twice = Shelf::Playlist(PlaylistId::new(twice).expect("an id"));
@@ -2290,11 +2289,11 @@ mod tests {
         let first_page = shelved(&shelves, twice, 0, 2);
         let second_page = shelved(&shelves, twice, 2, 2);
 
-        assert_eq!(titled(&whole), ["Blue Train", "So What", "Blue Train"]);
+        assert_eq!(titled(&whole), ["Brook River", "Salt Road", "Brook River"]);
         assert_eq!(whole.total, 3);
-        assert_eq!(titled(&first_page), ["Blue Train", "So What"]);
+        assert_eq!(titled(&first_page), ["Brook River", "Salt Road"]);
         assert_eq!(first_page.total, 3);
-        assert_eq!(titled(&second_page), ["Blue Train"]);
+        assert_eq!(titled(&second_page), ["Brook River"]);
         assert_eq!(second_page.total, 3);
         assert_eq!(
             shelves
@@ -2440,7 +2439,7 @@ mod tests {
             .expect("a playlist");
 
         let shelves = shelves(&harness);
-        let asked = text(Field::Title, Test::Contains, "so");
+        let asked = text(Field::Title, Test::Contains, "sa");
 
         let (slowest, searched) = thread::scope(|scope| {
             let searchers: Vec<_> = (0..SEARCHES_AT_ONCE)
@@ -2511,15 +2510,15 @@ mod tests {
 
         let one_letter = [Kind::Song, Kind::Album, Kind::Artist, Kind::Playlist]
             .map(|kind| searched(kind, &text(Field::Title, Test::Contains, "s")));
-        let one_beside_two = searched(Kind::Song, &text(Field::Title, Test::Contains, "so w"));
+        let one_beside_two = searched(Kind::Song, &text(Field::Title, Test::Contains, "sa r"));
         let denied_one = searched(Kind::Song, &text(Field::Title, Test::Lacks, "x"));
         let two_letters = titles_found(searched(
             Kind::Song,
-            &text(Field::Title, Test::Contains, "so"),
+            &text(Field::Title, Test::Contains, "sa"),
         ));
         let one_whole = titles_found(searched(
             Kind::Song,
-            &text(Field::Title, Test::Is, "so what"),
+            &text(Field::Title, Test::Is, "salt road"),
         ));
         let one_letter_whole =
             titles_found(searched(Kind::Song, &text(Field::Title, Test::Is, "a")));
@@ -2531,8 +2530,8 @@ mod tests {
         );
         assert_eq!(one_beside_two, Searched::Unanswered);
         assert_eq!(denied_one, Searched::Unanswered);
-        assert_eq!(two_letters, (vec!["So What".to_owned()], 1));
-        assert_eq!(one_whole, (vec!["So What".to_owned()], 1));
+        assert_eq!(two_letters, (vec!["Salt Road".to_owned()], 1));
+        assert_eq!(one_whole, (vec!["Salt Road".to_owned()], 1));
         assert_eq!(one_letter_whole, (vec!["a".to_owned()], 1));
     }
 }

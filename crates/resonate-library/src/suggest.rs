@@ -1474,7 +1474,7 @@ mod tests {
         assert!(!fits_in_a_phrase("?"));
         assert!(!fits_in_a_phrase("say \"hi\""));
         assert!(fits_in_a_phrase("!!! (Chk Chk Chk)"));
-        assert!(fits_in_a_phrase("Sigur Rós"));
+        assert!(fits_in_a_phrase("Silvo Mór"));
     }
 
     #[test]
@@ -1611,8 +1611,8 @@ mod tests {
     fn a_kindred_artist_is_one_artist_however_spelled() {
         let shelf = filed(&[
             ("Seed", "Rock"),
-            ("Sigur Rós", "Rock"),
-            ("SIGUR ROS", "Rock"),
+            ("Silvo Mór", "Rock"),
+            ("SILVO MOR", "Rock"),
         ]);
 
         assert_eq!(kindred_to(&shelf.kin, "seed", &AHashSet::new()).len(), 1);
@@ -1712,9 +1712,9 @@ mod tests {
     #[test]
     fn artists_heard_lately_are_one_artist_however_spelled_most_heard_first_and_few() {
         let lately = artists_heard_lately([
-            ("Sigur Rós".to_owned(), 100),
-            ("Air".to_owned(), 500),
-            ("SIGUR ROS".to_owned(), 450),
+            ("Silvo Mór".to_owned(), 100),
+            ("Kestrel".to_owned(), 500),
+            ("SILVO MOR".to_owned(), 450),
             ("a".to_owned(), 1),
             ("b".to_owned(), 1),
             ("c".to_owned(), 1),
@@ -1723,8 +1723,8 @@ mod tests {
         ]);
 
         assert_eq!(lately.len(), ARTISTS_OF_LATE_AT_MOST as usize);
-        assert_eq!(lately[0], "Sigur Rós");
-        assert_eq!(lately[1], "Air");
+        assert_eq!(lately[0], "Silvo Mór");
+        assert_eq!(lately[1], "Kestrel");
     }
 
     #[test]
@@ -2028,7 +2028,7 @@ mod tests {
         );
         assert_eq!(the_whole_name(Column::Genre, "rock").reach, Reach::Whole);
         assert_eq!(
-            the_whole_name(Column::Artist, "Nirvana").reach,
+            the_whole_name(Column::Artist, "Another Band").reach,
             Reach::Whole
         );
         assert!(!fits_in_a_phrase("a \"name\""));

@@ -1029,22 +1029,22 @@ mod tests {
     #[test]
     fn a_hosted_listing_is_weighed_by_its_title_version_artists_and_length() {
         let listed: WebListed = serde_json::from_str(
-            r#"{"items": [{"id": 77, "isrc": "GBN9Y1100089", "title": "Heroes Tonight",
+            r#"{"items": [{"id": 77, "isrc": "GBN9Y1100089", "title": "Lantern Tonight",
                 "version": "Remastered", "duration": 208,
-                "artists": [{"name": "Janji"}, {"name": "Johnning"}]}]}"#,
+                "artists": [{"name": "Another Band"}, {"name": "Third Band"}]}]}"#,
         )
         .expect("a listing");
         let weighed = listed.items[0].weighed();
 
         assert_eq!(weighed.isrcs, ["GBN9Y1100089"]);
         assert_eq!(weighed.version, Some("Remastered"));
-        assert_eq!(weighed.artists, ["Janji", "Johnning"]);
+        assert_eq!(weighed.artists, ["Another Band", "Third Band"]);
         assert_eq!(weighed.length, Some(Duration::from_secs(208)));
         assert!(
             Identity {
-                artist: Some("Janji & Johnning".to_owned()),
+                artist: Some("Another Band & Third Band".to_owned()),
                 length: Some(Duration::from_secs(209)),
-                ..Identity::named("Heroes Tonight")
+                ..Identity::named("Lantern Tonight")
             }
             .named_alike(&weighed)
         );

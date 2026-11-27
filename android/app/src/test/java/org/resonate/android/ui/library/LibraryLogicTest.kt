@@ -76,10 +76,10 @@ class LibraryLogicTest {
 
     @Test
     fun blankTextIsNoPartAndTypedTextIsTrimmed() {
-        val typed = plain.copy(artist = "  Air ", album = "   ")
+        val typed = plain.copy(artist = "  Arbor ", album = "   ")
 
         assertEquals(listOf(FilterPart.ARTIST), typed.parts())
-        assertEquals("Air", typed.trimmed().artist)
+        assertEquals("Arbor", typed.trimmed().artist)
         assertEquals("", typed.trimmed().album)
     }
 
@@ -95,10 +95,10 @@ class LibraryLogicTest {
 
     @Test
     fun suggestionsPutNamesBeginningWithTheTextFirstAndSkipAnExactMatch() {
-        val names = sequenceOf("The Air Show", "Air", "Airiel", "airiel", "Bob", "")
+        val names = sequenceOf("The Arbor Show", "Arbor", "Arborel", "arborel", "Bob", "")
 
-        assertEquals(listOf("Airiel", "The Air Show"), suggestions(names, "Air"))
-        assertEquals(listOf("Air", "Airiel", "Bob", "The Air Show"), suggestions(names, ""))
+        assertEquals(listOf("Arborel", "The Arbor Show"), suggestions(names, "Arbor"))
+        assertEquals(listOf("Arbor", "Arborel", "Bob", "The Arbor Show"), suggestions(names, ""))
     }
 
     @Test

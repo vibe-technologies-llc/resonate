@@ -520,7 +520,7 @@ fn an_isrc_tag_is_stored_in_the_one_spelling_a_recording_code_has() -> Result<()
 fn a_stem_is_never_read_over_a_tag_the_file_already_carried() -> Result<()> {
     let tree = Tree::new();
     let tagged = tree.write(
-        "03 - Miles Davis - So What.wav",
+        "03 - Mira Dale - Salt Road.wav",
         &Wav::new()
             .text(TITLE, "Blue in Green")
             .text(ARTIST, "Bill Evans")
@@ -570,12 +570,12 @@ fn an_artist_is_taken_from_a_stem_only_where_the_title_it_parsed_is_the_title_ta
 {
     let tree = Tree::new();
     let agreeing = tree.write(
-        "03 - Miles Davis - So What.wav",
-        &Wav::new().text(TITLE, "So What").build(),
+        "03 - Mira Dale - Salt Road.wav",
+        &Wav::new().text(TITLE, "Salt Road").build(),
     );
     let disagreeing = tree.write(
-        "So What (Remastered 2011) - Live Version.wav",
-        &Wav::new().text(TITLE, "So What").build(),
+        "Salt Road (Remastered 2011) - Live Version.wav",
+        &Wav::new().text(TITLE, "Salt Road").build(),
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
@@ -584,12 +584,12 @@ fn an_artist_is_taken_from_a_stem_only_where_the_title_it_parsed_is_the_title_ta
 
     let taken = stored(&database, &agreeing);
 
-    assert_eq!(taken.tagged_title.as_deref(), Some("So What"));
-    assert_eq!(taken.tagged_artist.as_deref(), Some("Miles Davis"));
+    assert_eq!(taken.tagged_title.as_deref(), Some("Salt Road"));
+    assert_eq!(taken.tagged_artist.as_deref(), Some("Mira Dale"));
 
     let refused = stored(&database, &disagreeing);
 
-    assert_eq!(refused.tagged_title.as_deref(), Some("So What"));
+    assert_eq!(refused.tagged_title.as_deref(), Some("Salt Road"));
     assert_eq!(
         refused.tagged_artist, None,
         "a stem whose title is not the one tagged gave up its artist"

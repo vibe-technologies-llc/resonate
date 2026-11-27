@@ -91,15 +91,15 @@ class JumpBackInTest {
     fun eachAlbumStandsOnceAtTheSongHeardLast() {
         val heard =
             listOf(
-                track(1u, title = "One", artist = "Low", album = "Things We Lost"),
-                track(2u, title = "Two", artist = "Björk", album = "Vespertine"),
-                track(3u, title = "Three", artist = "Low", album = "Things We Lost"),
+                track(1u, title = "One", artist = "Third Band", album = "Things We Kept"),
+                track(2u, title = "Two", artist = "Sölvi", album = "Evensong"),
+                track(3u, title = "Three", artist = "Third Band", album = "Things We Kept"),
             )
 
         val tiles = albums(heard)
 
-        assertEquals(listOf("Things We Lost", "Vespertine"), tiles.map { it.title })
-        assertEquals(listOf("Low", "Björk"), tiles.map { it.artist })
+        assertEquals(listOf("Things We Kept", "Evensong"), tiles.map { it.title })
+        assertEquals(listOf("Third Band", "Sölvi"), tiles.map { it.artist })
         assertEquals(1uL, tiles.first().cover)
     }
 
@@ -177,10 +177,10 @@ class JumpBackInTest {
 
     @Test
     fun aTileOpensItsAlbumOrTheFavouritesAndSpeaksItsAlbumAndArtist() {
-        val album = albums(listOf(track(1u, artist = "Low", album = "Trust"))).first()
+        val album = albums(listOf(track(1u, artist = "Third Band", album = "Anchor"))).first()
 
-        assertEquals(Screen.Album("trust|low", "Trust", "Low", 1uL), album.screen)
-        assertEquals("Trust, Low", album.spoken(English))
+        assertEquals(Screen.Album("anchor|third band", "Anchor", "Third Band", 1uL), album.screen)
+        assertEquals("Anchor, Third Band", album.spoken(English))
         assertEquals(Screen.Favourites, JumpBackTile.Favourites.screen)
         assertEquals("Favourites", JumpBackTile.Favourites.spoken(English))
     }

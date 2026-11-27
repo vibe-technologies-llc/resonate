@@ -2312,8 +2312,8 @@ mod tests {
                 uri: uri.into(),
                 name: format!("{title}.flac"),
                 title: title.into(),
-                artist: "Björk".into(),
-                album: "Homogenic".into(),
+                artist: "Sölvi".into(),
+                album: "Seabrook".into(),
                 duration_ms: 305_000,
                 rate: 44_100,
                 codec: "FLAC".into(),
@@ -2342,13 +2342,13 @@ mod tests {
     fn a_synced_playlist_resolves_its_songs_by_identity_or_name_and_ends_the_undo_under_it() {
         let folder = folder("playlist");
         let player = player(&folder);
-        let joga = song(&player, "content://test/joga.flac", "Jóga", Some(RECORDING));
-        let bachelorette = song(&player, "content://test/b.flac", "Bachelorette", None);
+        let luna = song(&player, "content://test/luna.flac", "Lúna", Some(RECORDING));
+        let mooring = song(&player, "content://test/b.flac", "Mooring", None);
 
         let documents = documents_of(&player, &folder);
 
         let id = player
-            .make_playlist("Evening".into(), vec![joga.id])
+            .make_playlist("Evening".into(), vec![luna.id])
             .expect("a playlist");
         let at = player.synced_playlist(id).expect("its sync identity");
         let revision_before = documents.revision();
@@ -2357,13 +2357,13 @@ mod tests {
                 Some(at),
                 "Evening",
                 &[
-                    named("bachelorette", "BJORK", 306),
+                    named("mooring", "SOLVI", 306),
                     Recording {
                         mbid: Mbid::new(RECORDING).ok(),
                         ..named("Another name", "Someone", 1)
                     },
-                    named("Bachelorette", "Björk", 400),
-                    named("Hunter", "Björk", 255),
+                    named("Mooring", "Sölvi", 400),
+                    named("Wavebreak", "Sölvi", 255),
                 ],
             )
             .expect("a synced write");
@@ -2377,7 +2377,7 @@ mod tests {
                 .iter()
                 .map(|track| track.id)
                 .collect::<Vec<_>>(),
-            vec![bachelorette.id, joga.id]
+            vec![mooring.id, luna.id]
         );
         assert!(documents.revision() > revision_before);
         assert!(matches!(
@@ -2386,7 +2386,7 @@ mod tests {
         ));
 
         let made = documents
-            .write_playlist(None, "EVENING", &[named("Jóga", "Björk", 305)])
+            .write_playlist(None, "EVENING", &[named("Lúna", "Sölvi", 305)])
             .expect("a playlist made by another device");
 
         assert_eq!(made.name, "EVENING (2)");
@@ -2403,7 +2403,7 @@ mod tests {
     fn a_listen_from_another_device_counts_here_but_is_neither_sent_back_nor_scrobbled() {
         let folder = folder("listens");
         let player = player(&folder);
-        let joga = song(&player, "content://test/joga.flac", "Jóga", Some(RECORDING));
+        let luna = song(&player, "content://test/luna.flac", "Lúna", Some(RECORDING));
 
         let documents = documents_of(&player, &folder);
         let an_hour_ago = unix_seconds(SystemTime::now()) - 3600;
@@ -2414,7 +2414,7 @@ mod tests {
             .lock()
             .execute(
                 "INSERT INTO listens(track, began, heard_ms, counted) VALUES (?1, ?2, 300000, 1), (?1, ?3, 1000, 1)",
-                params![joga.id as i64, an_hour_ago, unix_seconds(SystemTime::now())],
+                params![luna.id as i64, an_hour_ago, unix_seconds(SystemTime::now())],
             )
             .expect("two of this device's listens");
 
@@ -2422,7 +2422,7 @@ mod tests {
             .credit(&RemoteListen {
                 from: DeviceId([1; 16]),
                 id: 7,
-                recording: named("Joga", "Bjork", 305),
+                recording: named("Luna", "Solvi", 305),
                 at: an_hour_ago * NANOS_A_SECOND,
                 heard: Duration::from_secs(300),
             })
@@ -2431,7 +2431,7 @@ mod tests {
             .credit(&RemoteListen {
                 from: DeviceId([1; 16]),
                 id: 8,
-                recording: named("Hunter", "Björk", 255),
+                recording: named("Wavebreak", "Sölvi", 255),
                 at: an_hour_ago * NANOS_A_SECOND,
                 heard: Duration::from_secs(250),
             })
@@ -2466,14 +2466,14 @@ mod tests {
         let folder = folder("credited-twice");
         let player = player(&folder);
 
-        song(&player, "content://test/joga.flac", "Jóga", Some(RECORDING));
+        song(&player, "content://test/luna.flac", "Lúna", Some(RECORDING));
 
         let documents = documents_of(&player, &folder);
         let at = unix_seconds(SystemTime::now()) * NANOS_A_SECOND;
         let from = |device: u8, id: u64| RemoteListen {
             from: DeviceId([device; 16]),
             id,
-            recording: named("Joga", "Bjork", 305),
+            recording: named("Luna", "Solvi", 305),
             at,
             heard: Duration::from_secs(300),
         };
@@ -2496,12 +2496,12 @@ mod tests {
 
         let documents = documents_of(&player, &folder);
 
-        song(&player, "content://test/joga.flac", "Jóga", None);
+        song(&player, "content://test/luna.flac", "Lúna", None);
 
         let list = player.create_playlist("Mix".into()).expect("a list");
         let body = |name: &str, sort: u8| QueryBody {
             name: name.into(),
-            text: Some("artist:bjork".into()),
+            text: Some("artist:solvi".into()),
             sort,
             reading: 1,
             rows: Some(10),
@@ -2540,7 +2540,7 @@ mod tests {
         assert_eq!(held.songs, 1);
         assert_eq!(
             held.search.as_ref().map(|search| search.text.as_str()),
-            Some("artist:bjork")
+            Some("artist:solvi")
         );
         assert_eq!(
             documents.write_query(None, &body("Later", u8::MAX)),
@@ -2678,28 +2678,28 @@ mod tests {
 
         fs::write(&staged, b"fLaC").expect("a staged song");
 
-        let hunter = Recording {
+        let wavebreak = Recording {
             mbid: Mbid::new(RECORDING).ok(),
-            ..named("Hunter", "Björk", 255)
+            ..named("Wavebreak", "Sölvi", 255)
         };
 
-        assert!(!documents.holds(&hunter).expect("an unheld song"));
+        assert!(!documents.holds(&wavebreak).expect("an unheld song"));
         assert!(matches!(
-            documents.land(&hunter, &SongTags::default(), "exe", &staged),
+            documents.land(&wavebreak, &SongTags::default(), "exe", &staged),
             Err(Refused::Unwritable)
         ));
         assert!(
             documents
-                .land(&hunter, &SongTags::default(), "FLAC", &staged)
+                .land(&wavebreak, &SongTags::default(), "FLAC", &staged)
                 .expect("a landing")
         );
 
         let waiting = player.sync_received().expect("the waiting songs");
 
         assert!(!staged.exists());
-        assert!(documents.holds(&hunter).expect("a waiting song"));
+        assert!(documents.holds(&wavebreak).expect("a waiting song"));
         assert_eq!(waiting.len(), 1);
-        assert_eq!(waiting[0].name, "Björk - Hunter.flac");
+        assert_eq!(waiting[0].name, "Sölvi - Wavebreak.flac");
         assert_eq!(waiting[0].song.recording, RECORDING);
         assert_eq!(waiting[0].song.duration_ms, Some(255_000));
         assert!(
@@ -2718,7 +2718,7 @@ mod tests {
 
         assert!(
             documents
-                .land(&hunter, &SongTags::default(), "flac", &staged)
+                .land(&wavebreak, &SongTags::default(), "flac", &staged)
                 .expect("a second landing")
         );
 
@@ -2762,10 +2762,10 @@ mod tests {
 
         fs::write(&staged, b"fLaC").expect("a damaged song");
 
-        let hunter = named("Hunter", "Björk", 255);
+        let wavebreak = named("Wavebreak", "Sölvi", 255);
 
         documents
-            .land(&hunter, &SongTags::default(), "flac", &staged)
+            .land(&wavebreak, &SongTags::default(), "flac", &staged)
             .expect("a landing");
 
         let waiting = player.sync_received().expect("the waiting songs");
@@ -2782,7 +2782,7 @@ mod tests {
 
         assert!(landed.is_err());
         assert_eq!(still.len(), 1);
-        assert!(documents.holds(&hunter).expect("a waiting song"));
+        assert!(documents.holds(&wavebreak).expect("a waiting song"));
 
         player.sync_refuse_received(still[0].id).expect("given up");
 
@@ -2812,34 +2812,34 @@ mod tests {
         let landed = song(
             &player,
             "content://test/landed.flac",
-            "Hunter (2015 Remaster)",
+            "Wavebreak (2015 Remaster)",
             None,
         );
         let asked = SearchSong {
-            title: "Hunter".into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            title: "Wavebreak".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             recording: RECORDING.into(),
             duration_ms: Some(305_000),
             ..SearchSong::default()
         };
-        let hunter = recording_of(&asked);
-        let another = named("Joga", "Björk", 305);
+        let wavebreak = recording_of(&asked);
+        let another = named("Luna", "Sölvi", 305);
 
-        assert!(!documents.holds(&hunter).expect("before it was noted"));
-        assert!(documents.open(&hunter).expect("an answer").is_none());
+        assert!(!documents.holds(&wavebreak).expect("before it was noted"));
+        assert!(documents.open(&wavebreak).expect("an answer").is_none());
 
         player
             .note_received_as(&asked, landed.id)
             .expect("noted as the one asked for");
 
-        assert!(documents.holds(&hunter).expect("after it was noted"));
-        assert!(documents.open(&hunter).expect("an answer").is_some());
+        assert!(documents.holds(&wavebreak).expect("after it was noted"));
+        assert!(documents.open(&wavebreak).expect("an answer").is_some());
         assert!(!documents.holds(&another).expect("another song"));
 
         fs::remove_file(folder.join("landed.flac")).expect("deleted by hand");
 
-        assert!(!documents.holds(&hunter).expect("once the file is gone"));
+        assert!(!documents.holds(&wavebreak).expect("once the file is gone"));
 
         let _ = fs::remove_dir_all(folder);
     }
@@ -2851,12 +2851,12 @@ mod tests {
 
         let there = folder("sender");
         let sender = player(&there);
-        let hunter = song(&sender, "content://test/hunter.flac", "Hunter", None);
+        let wavebreak = song(&sender, "content://test/wavebreak.flac", "Wavebreak", None);
 
         sender
-            .make_playlist("Evening".into(), vec![hunter.id])
+            .make_playlist("Evening".into(), vec![wavebreak.id])
             .expect("a playlist");
-        sender.favourite(hunter.id, true).expect("a favourite");
+        sender.favourite(wavebreak.id, true).expect("a favourite");
 
         let sending_documents = documents_of(&sender, &there);
 
@@ -2878,16 +2878,16 @@ mod tests {
         let landed = song(
             &receiver,
             "content://test/landed.flac",
-            "Hunter (2015 Remaster)",
+            "Wavebreak (2015 Remaster)",
             None,
         );
 
         receiver
             .note_received_as(
                 &SearchSong {
-                    title: "Hunter".into(),
-                    artist: "Björk".into(),
-                    album: "Homogenic".into(),
+                    title: "Wavebreak".into(),
+                    artist: "Sölvi".into(),
+                    album: "Seabrook".into(),
                     duration_ms: Some(305_000),
                     ..SearchSong::default()
                 },
@@ -2953,7 +2953,7 @@ mod tests {
                 .iter()
                 .map(|recording| recording.title.as_str())
                 .collect::<Vec<_>>(),
-            ["Hunter (2015 Remaster)"]
+            ["Wavebreak (2015 Remaster)"]
         );
         assert!(
             !echoed
@@ -2991,9 +2991,9 @@ mod tests {
         fs::write(&tagged, crate::harness::silence()).expect("a song");
 
         let edits = [
-            (TagField::Title, "Hunter (2015 Remaster)"),
-            (TagField::Artist, "Björk"),
-            (TagField::Album, "Homogenic"),
+            (TagField::Title, "Wavebreak (2015 Remaster)"),
+            (TagField::Artist, "Sölvi"),
+            (TagField::Album, "Seabrook"),
         ]
         .map(|(field, value)| TagEdit {
             field,
@@ -3017,18 +3017,18 @@ mod tests {
 
         fs::copy(&tagged, &staged).expect("a staged song");
 
-        let hunter = Recording {
+        let wavebreak = Recording {
             mbid: None,
-            title: "Hunter".into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            title: "Wavebreak".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             length: Some(Duration::from_secs(2)),
         };
 
-        assert!(!documents.holds(&hunter).expect("before it landed"));
+        assert!(!documents.holds(&wavebreak).expect("before it landed"));
         assert!(
             documents
-                .land(&hunter, &SongTags::default(), "wav", &staged)
+                .land(&wavebreak, &SongTags::default(), "wav", &staged)
                 .expect("a landing")
         );
 
@@ -3050,13 +3050,13 @@ mod tests {
             Indexed::read(&connection)
                 .expect("an index")
                 .visible
-                .resolved(&hunter)
+                .resolved(&wavebreak)
         };
 
         assert!(by_name.is_empty());
         assert!(player.sync_received().expect("none waiting").is_empty());
-        assert!(documents.holds(&hunter).expect("held once landed"));
-        assert!(documents.open(&hunter).expect("an answer").is_some());
+        assert!(documents.holds(&wavebreak).expect("held once landed"));
+        assert!(documents.open(&wavebreak).expect("an answer").is_some());
 
         let _ = fs::remove_dir_all(folder);
     }
@@ -3101,32 +3101,32 @@ mod tests {
 
     pub(super) fn two_seconds_of(title: &str) -> Recording {
         Recording {
-            album: "Homogenic".into(),
-            ..named(title, "Björk", 2)
+            album: "Seabrook".into(),
+            ..named(title, "Sölvi", 2)
         }
     }
 
     #[test]
     fn a_landing_name_is_alike_only_to_itself_and_its_numbered_copies() {
-        let name = "Björk - Hunter.flac";
+        let name = "Sölvi - Wavebreak.flac";
 
-        assert!(named_alike(name, "Björk - Hunter.flac"));
-        assert!(named_alike(name, "Björk - Hunter (1).flac"));
-        assert!(named_alike(name, "Björk - Hunter (12).flac"));
-        assert!(!named_alike(name, "Björk - Hunter ().flac"));
-        assert!(!named_alike(name, "Björk - Hunter (one).flac"));
-        assert!(!named_alike(name, "Björk - Hunter (1).wav"));
-        assert!(!named_alike(name, "Björk - Hunter Live.flac"));
-        assert!(!named_alike(name, "Björk - Jóga.flac"));
+        assert!(named_alike(name, "Sölvi - Wavebreak.flac"));
+        assert!(named_alike(name, "Sölvi - Wavebreak (1).flac"));
+        assert!(named_alike(name, "Sölvi - Wavebreak (12).flac"));
+        assert!(!named_alike(name, "Sölvi - Wavebreak ().flac"));
+        assert!(!named_alike(name, "Sölvi - Wavebreak (one).flac"));
+        assert!(!named_alike(name, "Sölvi - Wavebreak (1).wav"));
+        assert!(!named_alike(name, "Sölvi - Wavebreak Live.flac"));
+        assert!(!named_alike(name, "Sölvi - Lúna.flac"));
     }
 
     #[test]
     fn a_song_whose_bytes_stand_at_its_name_already_is_taken_as_that_file_and_not_copied_again() {
         let folder = folder("standing");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let waiting = player.sync_received().expect("the waiting songs");
         let name = waiting[0].name.clone();
@@ -3163,7 +3163,7 @@ mod tests {
             )
             .expect("compared")
             .expect("the standing file");
-        let held = documents.holds(&hunter).expect("held once taken");
+        let held = documents.holds(&wavebreak).expect("held once taken");
 
         let _ = fs::remove_dir_all(&folder);
 
@@ -3308,26 +3308,26 @@ mod tests {
     fn a_song_landed_again_where_it_was_deleted_before_the_deletion_was_forgotten_stays_held() {
         let folder = folder("landed-again");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let first = landed_by_the_front_end(&player, &folder);
 
         fs::remove_file(folder.join(&first[0].name)).expect("deleted by the front end");
 
-        let lacked = !documents.holds(&hunter).expect("an answer");
+        let lacked = !documents.holds(&wavebreak).expect("an answer");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let again = landed_by_the_front_end(&player, &folder);
         let forgotten = player
             .forget_deleted_songs(vec![first[0].id])
             .expect("a deletion");
-        let held = documents.holds(&hunter).expect("an answer");
-        let marked = documents.deleted_here(&hunter).expect("an answer");
+        let held = documents.holds(&wavebreak).expect("an answer");
+        let marked = documents.deleted_here(&wavebreak).expect("an answer");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let spread_again = player.sync_received().expect("the waiting songs");
         let songs = player.song_uris().expect("the songs");
@@ -3352,9 +3352,9 @@ mod tests {
     fn a_song_whose_audio_stands_at_its_name_in_other_bytes_is_taken_as_that_file() {
         let folder = folder("standing-audio");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let name = player.sync_received().expect("the waiting songs")[0]
             .name
@@ -3364,7 +3364,7 @@ mod tests {
             .expect("the same audio retagged");
 
         let landed = landed_by_the_front_end(&player, &folder);
-        let held = documents.holds(&hunter).expect("an answer");
+        let held = documents.holds(&wavebreak).expect("an answer");
         let files = files_in(&folder);
 
         let _ = fs::remove_dir_all(&folder);
@@ -3380,22 +3380,22 @@ mod tests {
      {
         let folder = folder("standing-filed");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
-        let filed = folder.join("Björk").join("Homogenic");
+        let filed = folder.join("Sölvi").join("Seabrook");
 
         fs::create_dir_all(&filed).expect("an album folder");
         fs::write(
-            filed.join("02 Hunter.wav"),
+            filed.join("02 Wavebreak.wav"),
             retagged(crate::harness::silence()),
         )
         .expect("the same audio filed and retagged");
-        fs::write(filed.join("01 Jóga.wav"), b"RIFF of another song").expect("another song");
+        fs::write(filed.join("01 Lúna.wav"), b"RIFF of another song").expect("another song");
 
         let landed = landed_by_the_front_end(&player, &folder);
-        let held = documents.holds(&hunter).expect("an answer");
+        let held = documents.holds(&wavebreak).expect("an answer");
         let files = files_in(&folder);
         let songs = player.song_uris().expect("the songs");
 
@@ -3404,9 +3404,9 @@ mod tests {
         assert_eq!(landed.len(), 1);
         assert_eq!(
             landed[0].uri,
-            "content://test/Björk/Homogenic/02 Hunter.wav"
+            "content://test/Sölvi/Seabrook/02 Wavebreak.wav"
         );
-        assert_eq!(landed[0].name, "02 Hunter.wav");
+        assert_eq!(landed[0].name, "02 Wavebreak.wav");
         assert!(held);
         assert_eq!(files, 0);
         assert_eq!(songs, vec![landed[0].uri.clone()]);
@@ -3505,15 +3505,15 @@ mod tests {
         let folder = folder("standing-desk-filed");
         let desk_folder = self::folder("standing-desk-ledger");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
-        let filed = folder.join("Björk - Homogenic");
+        let filed = folder.join("Sölvi - Seabrook");
 
         fs::create_dir_all(&filed).expect("the desk's album folder");
         fs::write(
-            filed.join("Hunter.wav"),
+            filed.join("Wavebreak.wav"),
             retagged(crate::harness::silence()),
         )
         .expect("the same audio filed by the desk and retagged");
@@ -3587,7 +3587,7 @@ mod tests {
             .sync_standing_folders(received[0].id, DEFAULT_LAYOUT.to_owned())
             .expect("the folders a copy may be filed in");
         let landed = landed_by_the_front_end(&player, &folder);
-        let held = documents.holds(&hunter).expect("an answer");
+        let held = documents.holds(&wavebreak).expect("an answer");
         let wavs = wavs_in(&folder);
 
         eventually("the phone's own layout on the desk", || {
@@ -3603,13 +3603,16 @@ mod tests {
 
         let _ = fs::remove_dir_all(&folder);
         let _ = fs::remove_dir_all(&desk_folder);
-        let desk_album = vec!["Björk - Homogenic".to_owned()];
+        let desk_album = vec!["Sölvi - Seabrook".to_owned()];
 
         assert!(!before.contains(&desk_album));
         assert!(after.contains(&desk_album));
-        assert!(after.contains(&vec!["Björk".to_owned(), "Homogenic".to_owned()]));
+        assert!(after.contains(&vec!["Sölvi".to_owned(), "Seabrook".to_owned()]));
         assert_eq!(landed.len(), 1);
-        assert_eq!(landed[0].uri, "content://test/Björk - Homogenic/Hunter.wav");
+        assert_eq!(
+            landed[0].uri,
+            "content://test/Sölvi - Seabrook/Wavebreak.wav"
+        );
         assert!(held);
         assert_eq!(wavs, 0);
     }
@@ -3618,15 +3621,15 @@ mod tests {
     fn a_copy_in_a_folder_the_song_would_not_be_filed_under_is_not_looked_at() {
         let folder = folder("standing-elsewhere");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let received = player.sync_received().expect("the waiting songs");
-        let elsewhere = folder.join("Björk").join("Debut");
+        let elsewhere = folder.join("Sölvi").join("Early Days");
 
         fs::create_dir_all(&elsewhere).expect("another album's folder");
-        fs::write(elsewhere.join("Hunter.wav"), crate::harness::silence())
+        fs::write(elsewhere.join("Wavebreak.wav"), crate::harness::silence())
             .expect("the same bytes in another album's folder");
 
         let folders = player
@@ -3637,9 +3640,9 @@ mod tests {
 
         let _ = fs::remove_dir_all(&folder);
 
-        assert!(folders.contains(&vec!["Björk".to_owned(), "Homogenic".to_owned()]));
-        assert!(folders.contains(&vec!["Homogenic".to_owned()]));
-        assert!(!folders.contains(&vec!["Björk".to_owned(), "Debut".to_owned()]));
+        assert!(folders.contains(&vec!["Sölvi".to_owned(), "Seabrook".to_owned()]));
+        assert!(folders.contains(&vec!["Seabrook".to_owned()]));
+        assert!(!folders.contains(&vec!["Sölvi".to_owned(), "Early Days".to_owned()]));
         assert!(folders.iter().all(|filed| !filed.is_empty()));
         assert_eq!(landed.len(), 1);
         assert_eq!(
@@ -3656,23 +3659,23 @@ mod tests {
 
         song(
             &player,
-            "content://card/hunter.flac",
-            "Hunter",
+            "content://card/wavebreak.flac",
+            "Wavebreak",
             Some(RECORDING),
         );
-        song(&player, "content://test/joga.flac", "Jóga", None);
+        song(&player, "content://test/luna.flac", "Lúna", None);
 
-        let hunter = Recording {
+        let wavebreak = Recording {
             mbid: Mbid::new(RECORDING).ok(),
-            ..named("Hunter", "Björk", 305)
+            ..named("Wavebreak", "Sölvi", 305)
         };
-        let joga = Recording {
-            album: "Homogenic".into(),
-            ..named("Jóga", "Björk", 305)
+        let luna = Recording {
+            album: "Seabrook".into(),
+            ..named("Lúna", "Sölvi", 305)
         };
 
-        let away = documents.holds(&hunter).expect("an answer");
-        let gone = documents.holds(&joga).expect("an answer");
+        let away = documents.holds(&wavebreak).expect("an answer");
+        let gone = documents.holds(&luna).expect("an answer");
 
         let _ = fs::remove_dir_all(&folder);
 
@@ -3687,9 +3690,9 @@ mod tests {
         fs::write(at, crate::harness::silence()).expect("a song");
 
         let edits = [
-            (TagField::Title, "Hunter"),
-            (TagField::Artist, "Björk"),
-            (TagField::Album, "Homogenic"),
+            (TagField::Title, "Wavebreak"),
+            (TagField::Artist, "Sölvi"),
+            (TagField::Album, "Seabrook"),
         ]
         .map(|(field, value)| TagEdit {
             field,
@@ -3715,21 +3718,24 @@ mod tests {
         let folder = folder("withdrawn");
         let (player, documents) = granted(&folder);
 
-        for place in ["a/hunter.wav", "b/hunter.wav", "landed/hunter.wav"] {
+        for place in ["a/wavebreak.wav", "b/wavebreak.wav", "landed/wavebreak.wav"] {
             tagged_silence(&folder.join(place));
         }
 
         let held = player
-            .index_document("content://test/a/hunter.wav".into(), "hunter.wav".into())
+            .index_document(
+                "content://test/a/wavebreak.wav".into(),
+                "wavebreak.wav".into(),
+            )
             .expect("a scanned song");
 
         player.favourite(held.id, true).expect("a favourite");
 
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
         let asked = SearchSong {
-            title: "Hunter".into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            title: "Wavebreak".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             duration_ms: Some(2_000),
             ..SearchSong::default()
         };
@@ -3751,17 +3757,20 @@ mod tests {
             .hide_songs_under("content://test/a/".into())
             .expect("withdrawn");
 
-        let withdrawn_held = documents.holds(&hunter).expect("an answer");
+        let withdrawn_held = documents.holds(&wavebreak).expect("an answer");
         let landed = player
             .indexed_download(
-                "content://test/landed/hunter.wav".into(),
-                "hunter.wav".into(),
+                "content://test/landed/wavebreak.wav".into(),
+                "wavebreak.wav".into(),
                 &asked,
             )
             .expect("a landing");
         let after_landing = still_withdrawn(&player);
         let scanned = player
-            .index_document("content://test/b/hunter.wav".into(), "hunter.wav".into())
+            .index_document(
+                "content://test/b/wavebreak.wav".into(),
+                "wavebreak.wav".into(),
+            )
             .expect("a scan of another folder");
         let after_scan = still_withdrawn(&player);
 
@@ -3848,11 +3857,11 @@ mod tests {
             .services
             .files
             .reach_through(Arc::new(Here(folder.clone())));
-        tagged_silence(&folder.join("landed/hunter.wav"));
+        tagged_silence(&folder.join("landed/wavebreak.wav"));
 
         let asked = SearchSong {
-            title: "Hunter".into(),
-            artist: "Björk".into(),
+            title: "Wavebreak".into(),
+            artist: "Sölvi".into(),
             duration_ms: Some(2_000),
             ..SearchSong::default()
         };
@@ -3867,23 +3876,23 @@ mod tests {
 
         let landed = player
             .indexed_download(
-                "content://test/landed/hunter.wav".into(),
-                "hunter.wav".into(),
+                "content://test/landed/wavebreak.wav".into(),
+                "wavebreak.wav".into(),
                 &asked,
             )
             .expect("a landing");
         let landed_again = player
             .indexed_download(
-                "content://test/./landed/hunter.wav".into(),
-                "hunter.wav".into(),
+                "content://test/./landed/wavebreak.wav".into(),
+                "wavebreak.wav".into(),
                 &asked,
             )
             .expect("a landing on the standing file");
         let after_landing = rows(&player);
         let scanned = player
             .scan_document(
-                "content://test/landed/./hunter.wav".into(),
-                "hunter.wav".into(),
+                "content://test/landed/./wavebreak.wav".into(),
+                "wavebreak.wav".into(),
                 0,
                 0,
             )
@@ -3893,26 +3902,26 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
 
         assert_eq!(landed_again.id, landed.id);
-        assert_eq!(landed_again.uri, "content://test/landed/hunter.wav");
+        assert_eq!(landed_again.uri, "content://test/landed/wavebreak.wav");
         assert_eq!(after_landing, 1);
         assert_eq!(scanned.id, landed.id);
-        assert_eq!(scanned.uri, "content://test/landed/./hunter.wav");
+        assert_eq!(scanned.uri, "content://test/landed/./wavebreak.wav");
         assert_eq!(after_scan, 1);
     }
 
     #[test]
     fn a_standing_name_spelled_decomposed_is_the_composed_name_a_landing_gives() {
-        let composed = "Björk - Jóga.flac";
+        let composed = "Sölvi - Lúna.flac";
         let decomposed = composed.nfd().collect::<String>();
         let song = SearchSong {
-            title: "Jóga".nfd().collect(),
-            artist: "Björk".into(),
+            title: "Lúna".nfd().collect(),
+            artist: "Sölvi".into(),
             ..SearchSong::default()
         };
 
         assert_ne!(decomposed, composed);
         assert!(named_alike(composed, &decomposed));
-        assert!(named_alike(&decomposed, "Björk - Jóga (2).flac"));
+        assert!(named_alike(&decomposed, "Sölvi - Lúna (2).flac"));
         assert_eq!(file_name_for(&song, "flac"), composed);
     }
 
@@ -3922,8 +3931,8 @@ mod tests {
         let player = player(&folder);
         let held = song(
             &player,
-            "content://test/tree/document/hunter.flac",
-            "Hunter",
+            "content://test/tree/document/wavebreak.flac",
+            "Wavebreak",
             None,
         );
 
@@ -3935,8 +3944,8 @@ mod tests {
 
         let regranted = song(
             &player,
-            "content://test/tree/document/hunter.flac",
-            "Hunter",
+            "content://test/tree/document/wavebreak.flac",
+            "Wavebreak",
             None,
         );
         let withdrawn: bool = player
@@ -3965,36 +3974,36 @@ mod tests {
         song(
             &player,
             "content://test/gone.flac",
-            "Hunter",
+            "Wavebreak",
             Some(RECORDING),
         );
         song(
             &player,
             "content://test/kept.flac",
-            "Hunter",
+            "Wavebreak",
             Some(RECORDING),
         );
-        song(&player, "content://test/gone-joga.flac", "Jóga", None);
-        song(&player, "content://test/kept-joga.flac", "Jóga", None);
+        song(&player, "content://test/gone-luna.flac", "Lúna", None);
+        song(&player, "content://test/kept-luna.flac", "Lúna", None);
         fs::write(folder.join("kept.flac"), b"fLaC").expect("a kept file");
-        fs::write(folder.join("kept-joga.flac"), b"fLaC").expect("a kept file");
+        fs::write(folder.join("kept-luna.flac"), b"fLaC").expect("a kept file");
 
-        let hunter = Recording {
+        let wavebreak = Recording {
             mbid: Mbid::new(RECORDING).ok(),
-            ..named("Hunter", "Björk", 305)
+            ..named("Wavebreak", "Sölvi", 305)
         };
-        let joga = Recording {
-            album: "Homogenic".into(),
-            ..named("Jóga", "Björk", 305)
+        let luna = Recording {
+            album: "Seabrook".into(),
+            ..named("Lúna", "Sölvi", 305)
         };
 
         let held = (
-            documents.holds(&hunter).expect("an answer"),
-            documents.holds(&joga).expect("an answer"),
+            documents.holds(&wavebreak).expect("an answer"),
+            documents.holds(&luna).expect("an answer"),
         );
         let opened = (
-            documents.open(&hunter).expect("an answer").is_some(),
-            documents.open(&joga).expect("an answer").is_some(),
+            documents.open(&wavebreak).expect("an answer").is_some(),
+            documents.open(&luna).expect("an answer").is_some(),
         );
 
         let _ = fs::remove_dir_all(&folder);
@@ -4010,11 +4019,11 @@ mod tests {
         let first = folder("spelling");
         let second = folder("spelling-waiting");
         let (player, documents) = granted(&first);
-        let hunter = two_seconds_of("Hunter");
-        let renamed = two_seconds_of("Hunter (Remastered)");
-        let elsewhere = two_seconds_of("Hunter (Live at Shepherd's Bush)");
+        let wavebreak = two_seconds_of("Wavebreak");
+        let renamed = two_seconds_of("Wavebreak (Remastered)");
+        let elsewhere = two_seconds_of("Wavebreak (Live at Shepherd's Bush)");
 
-        landed_waiting(&documents, &first, &hunter);
+        landed_waiting(&documents, &first, &wavebreak);
 
         let waiting = player.sync_received().expect("the waiting songs");
         let descriptor = File::create(first.join("landed.wav"))
@@ -4038,7 +4047,7 @@ mod tests {
 
         let (waiting_player, waiting_documents) = granted(&second);
 
-        landed_waiting(&waiting_documents, &second, &hunter);
+        landed_waiting(&waiting_documents, &second, &wavebreak);
         landed_waiting(&waiting_documents, &second, &elsewhere);
 
         let folded = waiting_player.sync_received().expect("the waiting songs");
@@ -4052,7 +4061,7 @@ mod tests {
             .expect("a landed song");
 
         let held_once_landed = (
-            waiting_documents.holds(&hunter).expect("an answer"),
+            waiting_documents.holds(&wavebreak).expect("an answer"),
             waiting_documents.holds(&elsewhere).expect("an answer"),
         );
 
@@ -4078,9 +4087,9 @@ mod tests {
     fn a_waiting_song_another_encode_of_which_was_indexed_meanwhile_settles_onto_that_row() {
         let folder = folder("another-encode");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let waiting = player.sync_received().expect("the waiting songs");
         let kept = player.waiting_song(waiting[0].id).expect("its file").path;
@@ -4091,10 +4100,10 @@ mod tests {
             .catalog
             .upsert(Track {
                 uri: "content://test/downloaded.flac".into(),
-                name: "Björk - Hunter.flac".into(),
-                title: hunter.title.clone(),
-                artist: hunter.artist.clone(),
-                album: hunter.album.clone(),
+                name: "Sölvi - Wavebreak.flac".into(),
+                title: wavebreak.title.clone(),
+                artist: wavebreak.artist.clone(),
+                album: wavebreak.album.clone(),
                 duration_ms: 2_000,
                 rate: 44_100,
                 codec: "FLAC".into(),
@@ -4104,7 +4113,7 @@ mod tests {
 
         let still = player.sync_received().expect("the waiting songs");
         let settled = documents
-            .resolved_in(&player.catalog.0.lock(), &hunter)
+            .resolved_in(&player.catalog.0.lock(), &wavebreak)
             .expect("an answer");
 
         let _ = fs::remove_dir_all(&folder);
@@ -4121,9 +4130,9 @@ mod tests {
     fn a_song_indexed_before_its_waiting_row_was_forgotten_is_not_landed_twice() {
         let folder = folder("killed");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
+        let wavebreak = two_seconds_of("Wavebreak");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
 
         let waiting = player.sync_received().expect("the waiting songs");
         let kept = player.waiting_song(waiting[0].id).expect("its file").path;
@@ -4138,7 +4147,7 @@ mod tests {
             .expect("indexed");
 
         let still = player.sync_received().expect("the waiting songs");
-        let held = documents.holds(&hunter).expect("an answer");
+        let held = documents.holds(&wavebreak).expect("an answer");
 
         let _ = fs::remove_dir_all(&folder);
 
@@ -4160,12 +4169,12 @@ mod tests {
         }
     }
 
-    fn received_as_hunter(player: &MobilePlayer, uri: &str) -> (Track, Recording) {
-        let landed = song(player, uri, "Hunter (2015 Remaster)", None);
+    fn received_as_wavebreak(player: &MobilePlayer, uri: &str) -> (Track, Recording) {
+        let landed = song(player, uri, "Wavebreak (2015 Remaster)", None);
         let asked = SearchSong {
-            title: "Hunter".into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            title: "Wavebreak".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             duration_ms: Some(305_000),
             ..SearchSong::default()
         };
@@ -4181,16 +4190,16 @@ mod tests {
      {
         let folder = folder("handoff-alias");
         let player = player(&folder);
-        let (landed, hunter) = received_as_hunter(&player, "content://test/landed.flac");
-        let joga = song(&player, "content://test/joga.flac", "Jóga", None);
+        let (landed, wavebreak) = received_as_wavebreak(&player, "content://test/landed.flac");
+        let luna = song(&player, "content://test/luna.flac", "Lúna", None);
         let handoff = handed(
             vec![
                 named("Unknown", "Nobody", 100),
-                hunter,
+                wavebreak,
                 recording_of(&SearchSong {
-                    title: "Jóga".into(),
-                    artist: "Björk".into(),
-                    album: "Homogenic".into(),
+                    title: "Lúna".into(),
+                    artist: "Sölvi".into(),
+                    album: "Seabrook".into(),
                     duration_ms: Some(305_000),
                     ..SearchSong::default()
                 }),
@@ -4211,7 +4220,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 Some(TrackId::new(landed.id).expect("an id")),
-                Some(TrackId::new(joga.id).expect("an id")),
+                Some(TrackId::new(luna.id).expect("an id")),
             ]
         );
         assert_eq!(resumption.row, 0);
@@ -4228,8 +4237,8 @@ mod tests {
     fn a_handoff_whose_every_row_is_a_received_file_with_other_tags_is_not_empty() {
         let folder = folder("handoff-all-aliases");
         let player = player(&folder);
-        let (landed, hunter) = received_as_hunter(&player, "content://test/landed.flac");
-        let handoff = handed(vec![hunter], 0, 12);
+        let (landed, wavebreak) = received_as_wavebreak(&player, "content://test/landed.flac");
+        let handoff = handed(vec![wavebreak], 0, 12);
 
         let resumption = player.handed_resumption(&handoff).expect("a resumption");
 

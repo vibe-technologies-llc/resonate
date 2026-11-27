@@ -396,11 +396,11 @@ mod tests {
     fn a_failed_alias_write_after_the_rename_leaves_the_received_file_tracked_or_reclaimed() {
         let folder = folder("alias-refused");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
-        let renamed = two_seconds_of("Hunter (Remastered)");
-        let live = two_seconds_of("Hunter (Live)");
+        let wavebreak = two_seconds_of("Wavebreak");
+        let renamed = two_seconds_of("Wavebreak (Remastered)");
+        let live = two_seconds_of("Wavebreak (Live)");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
         refusing_aliases(&player, true);
 
         let folded = landed_again(&documents, &folder, &renamed);
@@ -452,10 +452,10 @@ mod tests {
     fn a_failed_unlink_keeps_a_row_the_next_sweep_removes_with_its_file() {
         let folder = folder("unlink-refused");
         let (player, documents) = granted(&folder);
-        let hunter = two_seconds_of("Hunter");
-        let joga = two_seconds_of("Jóga");
+        let wavebreak = two_seconds_of("Wavebreak");
+        let luna = two_seconds_of("Lúna");
 
-        landed_waiting(&documents, &folder, &hunter);
+        landed_waiting(&documents, &folder, &wavebreak);
         UNLINKS_REFUSED.set(true);
         landed_by_the_front_end(&player, &folder);
 
@@ -463,13 +463,13 @@ mod tests {
         let waiting_after_landing = player.sync_received().expect("the waiting").len();
 
         UNLINKS_REFUSED.set(false);
-        fs::write(folder.join("Jóga.part"), b"fLaC").expect("a damaged song");
+        fs::write(folder.join("Lúna.part"), b"fLaC").expect("a damaged song");
         documents
             .land(
-                &joga,
+                &luna,
                 &SongTags::default(),
                 "flac",
-                &folder.join("Jóga.part"),
+                &folder.join("Lúna.part"),
             )
             .expect("a landing");
         UNLINKS_REFUSED.set(true);
@@ -513,7 +513,7 @@ mod tests {
         let (player, documents) = granted(&folder);
         let documents = Arc::new(documents);
         let spellings = (0..SPELLINGS)
-            .map(|nth| two_seconds_of(&format!("Hunter {nth}")))
+            .map(|nth| two_seconds_of(&format!("Wavebreak {nth}")))
             .collect::<Vec<_>>();
 
         let landings = spellings
@@ -577,7 +577,7 @@ mod tests {
             laid.execute_batch(step).expect("an earlier step");
         }
         laid.execute(
-            "INSERT INTO received (id, path, extension, title, artist, album) VALUES (4, ?1, 'flac', 'Hunter', 'Björk', 'Homogenic')",
+            "INSERT INTO received (id, path, extension, title, artist, album) VALUES (4, ?1, 'flac', 'Wavebreak', 'Sölvi', 'Seabrook')",
             [moved_from
                 .join("1700000000000000000-0.flac")
                 .to_str()

@@ -3783,23 +3783,26 @@ mod tests {
     #[test]
     fn a_remaster_year_reads_as_a_qualifier_whichever_way_round_it_is_written() {
         for spelling in [
-            "So What (Remastered 2011)",
-            "So What (2011 Remaster)",
-            "So What (Remaster)",
-            "So What [Remastered]",
-            "So What (2011 Remastered)",
-            "So What (Remaster 2011)",
+            "Salt Road (Remastered 2011)",
+            "Salt Road (2011 Remaster)",
+            "Salt Road (Remaster)",
+            "Salt Road [Remastered]",
+            "Salt Road (2011 Remastered)",
+            "Salt Road (Remaster 2011)",
         ] {
             assert_eq!(
-                same_name(Some("So What"), spelling),
+                same_name(Some("Salt Road"), spelling),
                 Some(Spelling::Dequalified),
-                "{spelling} was not read as a remaster of So What"
+                "{spelling} was not read as a remaster of Salt Road"
             );
         }
 
-        assert_eq!(same_name(Some("So What"), "So What (Remastered 20)"), None);
         assert_eq!(
-            same_name(Some("So What"), "So What (Remastered by Ada)"),
+            same_name(Some("Salt Road"), "Salt Road (Remastered 20)"),
+            None
+        );
+        assert_eq!(
+            same_name(Some("Salt Road"), "Salt Road (Remastered by Ada)"),
             None
         );
     }

@@ -338,7 +338,7 @@ mod tests {
             name: path.rsplit('/').next().unwrap_or(path).to_owned(),
             title: title.to_owned(),
             artist: "Example Band".into(),
-            album: "The Wall".into(),
+            album: "The Pier".into(),
             album_artist: "Example Band".into(),
             track_number: Some(track_number),
             disc_number: disc,
@@ -352,15 +352,15 @@ mod tests {
         let held = [
             song(
                 1,
-                "Downloads/in%20the%20flesh.flac",
-                "In the Flesh?",
+                "Downloads/in%20the%20pier.flac",
+                "In the Pier?",
                 1,
                 Some(1),
             ),
             song(
                 2,
-                "Example%20Band/The%20Wall/2-01%20Hey%20You.flac",
-                "Hey You",
+                "Example%20Band/The%20Pier/2-01%20Small%20Mercies.flac",
+                "Small Mercies",
                 1,
                 Some(2),
             ),
@@ -376,8 +376,8 @@ mod tests {
                 from: held[0].uri.clone(),
                 to: vec![
                     "Example Band".into(),
-                    "The Wall".into(),
-                    "1-01 In the Flesh?.flac".into()
+                    "The Pier".into(),
+                    "1-01 In the Pier?.flac".into()
                 ],
             }]
         );
@@ -391,7 +391,7 @@ mod tests {
             song(2, "b.flac", "Mother", 5, None),
             song(
                 3,
-                "Example%20Band/The%20Wall/06%20Goodbye.flac",
+                "Example%20Band/The%20Pier/06%20Goodbye.flac",
                 "Goodbye",
                 6,
                 None,
@@ -415,11 +415,11 @@ mod tests {
         let layout = Layout::default();
         let held = [
             Track {
-                uri: format!("{within}in%20the%20flesh.flac"),
-                ..song(1, "in the flesh.flac", "In the Flesh?", 1, None)
+                uri: format!("{within}in%20the%20pier.flac"),
+                ..song(1, "in the pier.flac", "In the Pier?", 1, None)
             },
             Track {
-                uri: format!("{within}Example%20Band%2FThe%20Wall%2F06%20Goodbye.flac"),
+                uri: format!("{within}Example%20Band%2FThe%20Pier%2F06%20Goodbye.flac"),
                 ..song(2, "06 Goodbye.flac", "Goodbye", 6, None)
             },
         ];
@@ -435,8 +435,8 @@ mod tests {
                 from: held[0].uri.clone(),
                 to: vec![
                     "Example Band".into(),
-                    "The Wall".into(),
-                    "01 In the Flesh?.flac".into()
+                    "The Pier".into(),
+                    "01 In the Pier?.flac".into()
                 ],
             }]
         );
@@ -470,7 +470,7 @@ mod tests {
                 name: path.into(),
                 title: title.into(),
                 artist: "Example Band".into(),
-                album: "The Wall".into(),
+                album: "The Pier".into(),
                 duration_ms: 200_000,
                 ..Track::default()
             })
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn a_move_onto_the_place_a_hidden_other_song_holds_succeeds_and_keeps_that_song_hidden() {
         let (folder, catalog) = catalogued("other");
-        let gone = filed(&catalog, "Example%20Band/The%20Wall/01.flac", "Mother");
+        let gone = filed(&catalog, "Example%20Band/The%20Pier/01.flac", "Mother");
         let moving = filed(&catalog, "a.flac", "Goodbye");
 
         catalog.favourite(gone.id, true).expect("favoured");
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn a_move_onto_the_place_the_same_song_held_hidden_takes_over_its_history() {
         let (folder, catalog) = catalogued("same");
-        let gone = filed(&catalog, "Example%20Band/The%20Wall/01.flac", "Mother");
+        let gone = filed(&catalog, "Example%20Band/The%20Pier/01.flac", "Mother");
         let moving = filed(&catalog, "a.flac", "Mother");
 
         catalog.favourite(gone.id, true).expect("favoured");

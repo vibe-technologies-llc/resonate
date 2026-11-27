@@ -279,7 +279,7 @@ mod tests {
             recording: Recording {
                 mbid: None,
                 title: "Words".to_owned(),
-                artist: "Low".to_owned(),
+                artist: "Third Band".to_owned(),
                 album: String::new(),
                 length: None,
             },
@@ -339,7 +339,7 @@ mod tests {
             .expect("the lines");
         let named = lines.replace(
             "\"track_metadata\":{",
-            "\"track_metadata\":{\"artist_name\":\"Low\",\"track_name\":\"Words\",",
+            "\"track_metadata\":{\"artist_name\":\"Third Band\",\"track_name\":\"Words\",",
         );
 
         let brought = bring_in_lines(&kept, named.as_bytes(), &mut |_| {}).expect("brought in");
@@ -351,8 +351,7 @@ mod tests {
         );
     }
 
-    const LISTENED: &str =
-        r#"{"listened_at":1700000000,"track_metadata":{"artist_name":"Low","track_name":"Words"}}"#;
+    const LISTENED: &str = r#"{"listened_at":1700000000,"track_metadata":{"artist_name":"Third Band","track_name":"Words"}}"#;
 
     struct OneLineAtATime {
         lines: usize,

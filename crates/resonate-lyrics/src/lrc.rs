@@ -1309,12 +1309,12 @@ mod tests {
                 .names_another_track(&about(Some("Don't Stop Believin'"), None))
         );
 
-        let glued = sheet("[ti:ACDC]\n[00:01.00]la");
+        let glued = sheet("[ti:ABCD]\n[00:01.00]la");
 
         assert!(
             !glued
                 .declared
-                .names_another_track(&about(Some("AC/DC"), None))
+                .names_another_track(&about(Some("AB/CD"), None))
         );
     }
 

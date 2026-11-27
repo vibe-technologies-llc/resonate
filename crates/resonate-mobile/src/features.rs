@@ -1040,19 +1040,19 @@ mod tests {
 
     #[test]
     fn a_song_is_misnamed_only_where_audio_heard_as_another_song_meets_a_name_the_file_gave() {
-        let heard = [joga()];
+        let heard = [luna()];
 
         let same = agreement(
             &heard,
-            &named_on_the_phone(1, &filed("Jóga", "Björk")).unwrap(),
+            &named_on_the_phone(1, &filed("Lúna", "Sölvi")).unwrap(),
         );
         let other = agreement(
             &heard,
-            &named_on_the_phone(1, &filed("Army of Me", "Björk")).unwrap(),
+            &named_on_the_phone(1, &filed("Anchor Hymn", "Sölvi")).unwrap(),
         );
         let by_another = agreement(
             &heard,
-            &named_on_the_phone(1, &filed("Jóga", "Air")).unwrap(),
+            &named_on_the_phone(1, &filed("Lúna", "Kestrel")).unwrap(),
         );
         let untagged = agreement(
             &heard,
@@ -1060,7 +1060,7 @@ mod tests {
         );
         let unheard = agreement(
             &[],
-            &named_on_the_phone(1, &filed("Jóga", "Björk")).unwrap(),
+            &named_on_the_phone(1, &filed("Lúna", "Sölvi")).unwrap(),
         );
 
         assert_eq!(same, Agreement::Agrees);
@@ -1070,20 +1070,20 @@ mod tests {
         assert_eq!(unheard, Agreement::Unheard);
     }
 
-    fn joga() -> RecordingMatch {
+    fn luna() -> RecordingMatch {
         RecordingMatch {
             recording: Mbid::new("1b5b8f5d-6c3f-4f8b-8d3e-2d1f0a6b9c11").expect("an mbid"),
             score: 100,
-            title: "Jóga".to_owned(),
+            title: "Lúna".to_owned(),
             credit: vec![Credit {
-                name: "Björk".to_owned(),
+                name: "Sölvi".to_owned(),
                 joined_by: String::new(),
                 mbid: Some(Mbid::new("87c5dedd-371d-4a53-9f7f-80522fb7f3cb").expect("an mbid")),
             }],
             length: Some(Duration::from_secs(305)),
             isrcs: Vec::new(),
             releases: vec![
-                pressed("2a1c4e6b-1111-4c8f-9d2e-3b4a5c6d7e8f", "Jóga", "Single", 1),
+                pressed("2a1c4e6b-1111-4c8f-9d2e-3b4a5c6d7e8f", "Lúna", "Single", 1),
                 pressed(
                     "3b2d5f7c-2222-4d9a-8e3f-4c5b6d7e8f9a",
                     "Greatest Hits",
@@ -1092,7 +1092,7 @@ mod tests {
                 ),
                 pressed(
                     "4c3e6a8d-3333-4eab-9f4a-5d6c7e8f9a0b",
-                    "Homogenic",
+                    "Seabrook",
                     "Album",
                     2,
                 ),
@@ -1106,7 +1106,7 @@ mod tests {
             ("promiscious", "Promiscuous", "Nelly Furtado"),
             ("morning after dark", "Morning After Dark", "Timbaland"),
         ] {
-            let mut original = joga();
+            let mut original = luna();
 
             original.title = title.to_owned();
             original.credit[0].name = artist.to_owned();
@@ -1152,16 +1152,16 @@ mod tests {
 
     #[test]
     fn a_found_song_is_placed_on_the_album_asked_for_else_on_the_one_worth_offering() {
-        let typed = words_of_a_name("joga bjork homogenic");
+        let typed = words_of_a_name("luna solvi seabrook");
 
-        let asked = search_song(joga(), &album_words_asked(&typed, &joga()));
-        let unasked = search_song(joga(), &[]);
+        let asked = search_song(luna(), &album_words_asked(&typed, &luna()));
+        let unasked = search_song(luna(), &[]);
 
-        assert_eq!(asked.album, "Homogenic");
+        assert_eq!(asked.album, "Seabrook");
         assert_eq!(asked.release, "4c3e6a8d-3333-4eab-9f4a-5d6c7e8f9a0b");
         assert_eq!((asked.disc, asked.position), (Some(1), Some(2)));
         assert_eq!(asked.artist_id, "87c5dedd-371d-4a53-9f7f-80522fb7f3cb");
-        assert_ne!(unasked.album, "Jóga");
+        assert_ne!(unasked.album, "Lúna");
     }
 
     mod counting {

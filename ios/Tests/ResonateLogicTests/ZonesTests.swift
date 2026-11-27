@@ -45,9 +45,9 @@ import Testing
     }
 
     @Test func aZoneSaysWhatItIsDoing() {
-        #expect(ZonePlan.line(.playing, playing: "Echoes") == "Playing Echoes")
+        #expect(ZonePlan.line(.playing, playing: "Slow Water") == "Playing Slow Water")
         #expect(ZonePlan.line(.paused, playing: nil) == "Paused")
-        #expect(ZonePlan.line(.stopped, playing: "Echoes") == "Stopped")
+        #expect(ZonePlan.line(.stopped, playing: "Slow Water") == "Stopped")
     }
 
     @Test func aCastReceiverIsNamedAsOneBesideItsHostAndAStreamerByItsHostAlone() {
@@ -56,7 +56,7 @@ import Testing
     }
 
     @Test func aZoneOnARendererNamesItBeforeWhatItIsDoing() {
-        #expect(ZonePlan.line(.playing, playing: "Echoes", on: "Living room streamer") == "Living room streamer · Playing Echoes")
+        #expect(ZonePlan.line(.playing, playing: "Slow Water", on: "Living room streamer") == "Living room streamer · Playing Slow Water")
         #expect(ZonePlan.line(.paused, playing: nil, on: nil) == "Paused")
     }
 }

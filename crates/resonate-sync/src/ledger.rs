@@ -4897,9 +4897,9 @@ mod tests {
 
         let song = Recording {
             mbid: None,
-            title: "Hunter".into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            title: "Wavebreak".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             length: None,
         };
 

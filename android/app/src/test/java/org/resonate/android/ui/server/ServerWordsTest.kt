@@ -12,8 +12,8 @@ import org.resonate.android.nativecore.ServedSong
 class ServerWordsTest {
     private fun song(
         title: String = "Sing",
-        artist: String? = "Air",
-        album: String? = "Moon Safari",
+        artist: String? = "Kestrel",
+        album: String? = "Salt Meadow",
         track: UInt? = null,
         milliseconds: ULong? = 215_000uL,
     ) = ServedSong("subsonic:track/1", title, artist, album, track, milliseconds, null, null, null)
@@ -22,32 +22,32 @@ class ServerWordsTest {
     fun anArtistCountsItsAlbumsWhenTheServerSaysHowMany() {
         assertEquals(
             "1 album",
-            artistLine(English, ServedArtist("subsonic:artist/1", "Air", 1u, null)),
+            artistLine(English, ServedArtist("subsonic:artist/1", "Kestrel", 1u, null)),
         )
         assertEquals(
             "3 albums",
-            artistLine(English, ServedArtist("subsonic:artist/1", "Air", 3u, null)),
+            artistLine(English, ServedArtist("subsonic:artist/1", "Kestrel", 3u, null)),
         )
         assertEquals(
             null,
-            artistLine(English, ServedArtist("subsonic:artist/1", "Air", null, null)),
+            artistLine(English, ServedArtist("subsonic:artist/1", "Kestrel", null, null)),
         )
     }
 
     @Test
     fun anAlbumNamesItsArtistYearAndSongsAndSkipsWhatTheServerLeftOut() {
-        val full = ServedAlbum("subsonic:album/1", "Moon Safari", "Air", 1998.toUShort(), 10u, null)
+        val full = ServedAlbum("subsonic:album/1", "Salt Meadow", "Kestrel", 1998.toUShort(), 10u, null)
         val bare = ServedAlbum("subsonic:album/2", "", " ", null, null, null)
 
-        assertEquals("Air · 1998 · 10 songs", albumLine(English, full))
+        assertEquals("Kestrel · 1998 · 10 songs", albumLine(English, full))
         assertEquals("", albumLine(English, bare))
         assertEquals("Unknown album", bare.shownName(English))
     }
 
     @Test
     fun aSongInAnAlbumDropsTheAlbumAndOneFoundElsewhereKeepsIt() {
-        assertEquals("Air · 3:35", songLine(song(), withAlbum = false))
-        assertEquals("Air · Moon Safari · 3:35", songLine(song(), withAlbum = true))
+        assertEquals("Kestrel · 3:35", songLine(song(), withAlbum = false))
+        assertEquals("Kestrel · Salt Meadow · 3:35", songLine(song(), withAlbum = true))
         assertEquals("", songLine(song(artist = null, album = null, milliseconds = null), withAlbum = true))
     }
 
@@ -68,7 +68,7 @@ class ServerWordsTest {
         val nothing = ServedFound(emptyList(), emptyList(), emptyList())
         val some =
             ServedFound(
-                listOf(ServedArtist("subsonic:artist/1", "Air", null, null)),
+                listOf(ServedArtist("subsonic:artist/1", "Kestrel", null, null)),
                 emptyList(),
                 listOf(song(), song()),
             )

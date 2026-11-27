@@ -664,9 +664,9 @@ mod tests {
     fn saved_wants_are_idempotent_and_local_matches_use_identity_or_folded_names_and_length() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = SearchSong {
-            title: "Joga".into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            title: "Luna".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             duration_ms: Some(30000),
             isrcs: vec!["GBN9Y1100089".into()],
             ..SearchSong::default()
@@ -689,8 +689,8 @@ mod tests {
         catalog
             .upsert(Track {
                 uri: "content://test/song.flac".into(),
-                title: "JÓGA".into(),
-                artist: "BJORK".into(),
+                title: "LÚNA".into(),
+                artist: "SOLVI".into(),
                 duration_ms: 30000,
                 ..Track::default()
             })
@@ -706,9 +706,9 @@ mod tests {
     fn a_saved_want_keeps_the_release_disc_and_position_it_was_found_on() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = SearchSong {
-            title: "Joga".into(),
-            artist: "Björk".into(),
-            album: "Homogenic".into(),
+            title: "Luna".into(),
+            artist: "Sölvi".into(),
+            album: "Seabrook".into(),
             release: "b1a9c0e9-d987-4042-ae91-78d6a3267d69".into(),
             release_group: "0c3c3f0a-0000-4000-8000-000000000001".into(),
             artist_id: "87c5dedd-371d-4a53-9f7f-80522fb7f3cb".into(),
@@ -734,7 +734,7 @@ mod tests {
         SearchSong {
             recording: recording.to_owned(),
             title: title.to_owned(),
-            artist: "Björk".to_owned(),
+            artist: "Sölvi".to_owned(),
             duration_ms: Some(duration_ms),
             ..SearchSong::default()
         }
@@ -747,21 +747,21 @@ mod tests {
 
         catalog
             .upsert(Track {
-                uri: "content://test/hunter.flac".into(),
-                title: "Hunter".into(),
-                artist: "Bjork".into(),
+                uri: "content://test/wavebreak.flac".into(),
+                title: "Wavebreak".into(),
+                artist: "Solvi".into(),
                 duration_ms: 255_000,
                 ..Track::default()
             })
             .expect("a local song");
 
-        let joga = "1b5b8f5d-6c3f-4f8b-8d3e-2d1f0a6b9c11";
+        let luna = "1b5b8f5d-6c3f-4f8b-8d3e-2d1f0a6b9c11";
         let songs = vec![
-            take("Jóga", 305_000, ""),
-            take("Hunter", 255_000, ""),
-            take("JOGA", 306_500, joga),
-            take("Jóga", 330_000, ""),
-            take("Hunter", 255_000, ""),
+            take("Lúna", 305_000, ""),
+            take("Wavebreak", 255_000, ""),
+            take("LUNA", 306_500, luna),
+            take("Lúna", 330_000, ""),
+            take("Wavebreak", 255_000, ""),
         ];
 
         let searched = offered(&catalog.0.lock(), songs.clone(), Listing::Searched)
@@ -774,12 +774,12 @@ mod tests {
                 .map(|song| (song.title.as_str(), song.duration_ms, song.held))
                 .collect::<Vec<_>>(),
             vec![
-                ("JOGA", Some(306_500), false),
-                ("Hunter", Some(255_000), true),
-                ("Jóga", Some(330_000), false),
+                ("LUNA", Some(306_500), false),
+                ("Wavebreak", Some(255_000), true),
+                ("Lúna", Some(330_000), false),
             ]
         );
-        assert_eq!(searched[0].recording, joga);
+        assert_eq!(searched[0].recording, luna);
         assert_eq!(listed.len(), 5);
         assert!(listed[1].held && listed[4].held);
     }
@@ -793,8 +793,8 @@ mod tests {
                 .expect("a clock")
                 .as_nanos()
         ));
-        let song = take("Jóga", 305_000, "");
-        let other = take("Hunter", 255_000, "");
+        let song = take("Lúna", 305_000, "");
+        let other = take("Wavebreak", 255_000, "");
         let taken_from = "monochrome:track/1";
         let catalog = Catalog::open(&path).expect("a catalog");
 
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     fn a_want_missed_waits_its_turn_and_one_missed_every_time_is_given_up() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
-        let song = take("Jóga", 305_000, "");
+        let song = take("Lúna", 305_000, "");
 
         catalog
             .save_wanted(std::slice::from_ref(&song))

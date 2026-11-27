@@ -472,7 +472,7 @@ pub(crate) mod tests {
 
     const SONGS: [(&str, &str, &str); 2] = [
         ("Slow Water", "Example Band", "Low Tide"),
-        ("Say", "Low", "Words"),
+        ("Say", "Third Band", "Words"),
     ];
 
     const MOMENTS: [i64; 3] = [1_700_000_000, 1_700_100_000, 1_700_200_000];
@@ -724,7 +724,7 @@ pub(crate) mod tests {
         (0..count)
             .map(|index| {
                 format!(
-                    "{{\"listened_at\":{},\"track_metadata\":{{\"artist_name\":\"Low\",\"track_name\":\"Say\"}}}}\n",
+                    "{{\"listened_at\":{},\"track_metadata\":{{\"artist_name\":\"Third Band\",\"track_name\":\"Say\"}}}}\n",
                     MOMENTS[0] + i64::try_from(index).expect("an index") * 10
                 )
             })
@@ -920,7 +920,7 @@ pub(crate) mod tests {
 
         fs::write(
             &file,
-            "{\"listened_at\":1700000000,\"track_metadata\":{\"artist_name\":\"Low\",\"track_name\":\"Say\"}}\n\nnot a listen\n",
+            "{\"listened_at\":1700000000,\"track_metadata\":{\"artist_name\":\"Third Band\",\"track_name\":\"Say\"}}\n\nnot a listen\n",
         )
         .expect("a file");
 
@@ -1001,7 +1001,7 @@ pub(crate) mod tests {
                 HeardPage {
                     heard: vec![
                         scrobbled("Slow Water", "Example Band", MOMENTS[0], None),
-                        scrobbled("Say", "Low", MOMENTS[1], None),
+                        scrobbled("Say", "Third Band", MOMENTS[1], None),
                     ],
                     next: Some(2),
                 },

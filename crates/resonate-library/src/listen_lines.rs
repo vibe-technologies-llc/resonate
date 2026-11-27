@@ -258,7 +258,7 @@ mod tests {
     fn billed_as(title: &str) -> Billed {
         Billed {
             title: title.to_owned(),
-            artist: "Low".to_owned(),
+            artist: "Third Band".to_owned(),
             album: Some("Words".to_owned()),
             recording: Some(Mbid::new("0a1b2c3d-1111-4222-8333-444455556666").expect("an mbid")),
             release: None,
@@ -275,7 +275,7 @@ mod tests {
         let line = line_of(&heard(Some(billed_as("Say \"hi\"\n"))));
 
         assert!(line.starts_with("{\"listened_at\":1700000000,\"track_metadata\":{"));
-        assert!(line.contains("\"artist_name\":\"Low\",\"track_name\":\"Say \\\"hi\\\"\\n\",\"release_name\":\"Words\""));
+        assert!(line.contains("\"artist_name\":\"Third Band\",\"track_name\":\"Say \\\"hi\\\"\\n\",\"release_name\":\"Words\""));
         assert!(line.contains("\"recording_mbid\":\"0a1b2c3d-1111-4222-8333-444455556666\""));
         assert!(line.contains("\"tracknumber\":3,\"duration_ms\":185000,\"listened_ms\":61500"));
         assert!(line.contains("\"heard_elsewhere\":false"));
@@ -314,7 +314,7 @@ mod tests {
         assert!(read[0].recording.mbid.is_some());
     }
 
-    const ONE: &str = r#"{"listened_at":1700000000,"track_metadata":{"artist_name":"Low","track_name":"Say \"hi\"","release_name":"Words","additional_info":{"recording_mbid":"0a1b2c3d-1111-4222-8333-444455556666","duration_ms":185000}}}"#;
+    const ONE: &str = r#"{"listened_at":1700000000,"track_metadata":{"artist_name":"Third Band","track_name":"Say \"hi\"","release_name":"Words","additional_info":{"recording_mbid":"0a1b2c3d-1111-4222-8333-444455556666","duration_ms":185000}}}"#;
 
     #[test]
     fn a_line_is_a_listen_with_its_names_id_and_length() {
@@ -323,7 +323,7 @@ mod tests {
         assert_eq!(heard.len(), 1);
         assert_eq!(heard[0].at, UNIX_EPOCH + Duration::from_secs(1_700_000_000));
         assert_eq!(heard[0].recording.title, "Say \"hi\"");
-        assert_eq!(heard[0].recording.artist, "Low");
+        assert_eq!(heard[0].recording.artist, "Third Band");
         assert_eq!(heard[0].recording.album, "Words");
         assert_eq!(heard[0].recording.length, Some(Duration::from_secs(185)));
         assert_eq!(
@@ -342,9 +342,9 @@ mod tests {
     #[test]
     fn a_listen_naming_no_song_or_no_artist_is_passed_over() {
         let text = concat!(
-            r#"{"listened_at":1,"track_metadata":{"artist_name":"Low"}}"#,
+            r#"{"listened_at":1,"track_metadata":{"artist_name":"Third Band"}}"#,
             "\n",
-            r#"{"listened_at":2,"track_metadata":{"track_name":" ","artist_name":"Low"}}"#,
+            r#"{"listened_at":2,"track_metadata":{"track_name":" ","artist_name":"Third Band"}}"#,
             "\n",
             r#"{"listened_at":3,"track_metadata":{"track_name":"A"}}"#,
             "\n",

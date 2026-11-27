@@ -1060,7 +1060,7 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("artist:the artist:great artist:gig artist:in artist:teh                                     artist:sky"),
+            spellings.did_you_mean("artist:the artist:long artist:walk artist:in artist:teh                                     artist:rain"),
             None,
             "a title was offered for a run scoped to the artist"
         );
@@ -1107,10 +1107,10 @@ mod tests {
 
         let mut marked = Spellings::default();
 
-        marked.taking(Column::Artist, "Bjork");
-        marked.taking(Column::Artist, "Björk");
+        marked.taking(Column::Artist, "Solvi");
+        marked.taking(Column::Artist, "Sölvi");
 
-        assert_eq!(marked.did_you_mean("bjorc"), Some("Björk".to_owned()));
+        assert_eq!(marked.did_you_mean("solvu"), Some("Sölvi".to_owned()));
     }
 
     #[test]

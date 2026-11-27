@@ -452,14 +452,14 @@ mod tests {
         let row = node_of(
             &div()
                 .id("row")
-                .listed_as(|| song("Echoes", Some("Pink Floyd")))
+                .listed_as(|| song("Slow Water", Some("Example Band")))
                 .placed(Placed { at: 2, of: 9 })
                 .chosen(true),
         )
         .expect("a heard row is a node");
 
         assert_eq!(row.role(), Role::ListItem);
-        assert_eq!(row.label(), Some("Echoes, Pink Floyd"));
+        assert_eq!(row.label(), Some("Slow Water, Example Band"));
         assert_eq!(row.position_in_set(), Some(3));
         assert_eq!(row.size_of_set(), Some(9));
         assert_eq!(row.is_selected(), Some(true));
@@ -468,8 +468,8 @@ mod tests {
     #[test]
     fn parts_are_joined_by_commas_and_an_empty_part_says_nothing() {
         assert_eq!(
-            joined(["Echoes", "", "Pink Floyd", "3 missing"]),
-            "Echoes, Pink Floyd, 3 missing"
+            joined(["Slow Water", "", "Example Band", "3 missing"]),
+            "Slow Water, Example Band, 3 missing"
         );
         assert_eq!(joined(["", ""]), "");
     }
@@ -523,15 +523,14 @@ mod tests {
     fn a_link_is_named_by_the_words_it_draws_and_described_by_where_it_goes() {
         listened_to(true);
 
-        let link = node_of(
-            &div()
-                .id("artist")
-                .linked_as(&SharedString::new_static("Pink Floyd"), "Open this artist"),
-        )
+        let link = node_of(&div().id("artist").linked_as(
+            &SharedString::new_static("Example Band"),
+            "Open this artist",
+        ))
         .expect("a heard link is a node");
 
         assert_eq!(link.role(), Role::Link);
-        assert_eq!(link.label(), Some("Pink Floyd"));
+        assert_eq!(link.label(), Some("Example Band"));
         assert_eq!(link.description(), Some("Open this artist"));
     }
 
@@ -575,9 +574,10 @@ mod tests {
     fn nothing_new_is_spoken_while_no_reader_listens() {
         listened_to(false);
 
-        let link = div()
-            .id("artist")
-            .linked_as(&SharedString::new_static("Pink Floyd"), "Open this artist");
+        let link = div().id("artist").linked_as(
+            &SharedString::new_static("Example Band"),
+            "Open this artist",
+        );
         let plot = div()
             .id("plot")
             .pictured_as("Waveform", || unreachable!("no reader asked"));
@@ -725,15 +725,18 @@ mod tests {
     #[test]
     fn an_artist_is_spoken_by_its_name_and_what_it_holds() {
         assert_eq!(
-            artist("Pink Floyd", 15, 1),
-            "Pink Floyd, 15 albums, 1 track"
+            artist("Example Band", 15, 1),
+            "Example Band, 15 albums, 1 track"
         );
     }
 
     #[test]
     fn a_song_is_spoken_as_its_title_then_its_artist() {
-        assert_eq!(song("Echoes", Some("Pink Floyd")), "Echoes, Pink Floyd");
-        assert_eq!(song("Echoes", Some("")), "Echoes");
-        assert_eq!(song("Echoes", None), "Echoes");
+        assert_eq!(
+            song("Slow Water", Some("Example Band")),
+            "Slow Water, Example Band"
+        );
+        assert_eq!(song("Slow Water", Some("")), "Slow Water");
+        assert_eq!(song("Slow Water", None), "Slow Water");
     }
 }

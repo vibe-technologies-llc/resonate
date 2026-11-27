@@ -48,7 +48,7 @@ class TagEditingTest {
 
     @Test
     fun onlyTheFieldsThatMovedAreSent() {
-        val read = mapOf(TagName.Title to "Echoes", TagName.Album to "Meddle")
+        val read = mapOf(TagName.Title to "Slow Water", TagName.Album to "Low Tide")
         val shown = read + (TagName.Album to "Obscured by Clouds")
 
         val changed = TagDiff.changed(shown, read, emptySet())
@@ -64,12 +64,12 @@ class TagEditingTest {
         val shared =
             TagDiff.common(
                 listOf(
-                    SongTags(title = "One", album = "Meddle", genre = "Rock"),
-                    SongTags(title = "Two", album = "Meddle", genre = null),
+                    SongTags(title = "One", album = "Low Tide", genre = "Rock"),
+                    SongTags(title = "Two", album = "Low Tide", genre = null),
                 )
             )
 
-        assertEquals("Meddle", shared.common[TagName.Album])
+        assertEquals("Low Tide", shared.common[TagName.Album])
         assertEquals(setOf(TagName.Title, TagName.Genre), shared.differing)
         assertEquals("", shared.common[TagName.Composer])
     }
@@ -145,7 +145,7 @@ class TagEditingTest {
 
     @Test
     fun aKindIsTheLowercaseExtensionOfTheName() {
-        assertEquals("flac", TagFiles.extensionOf("Echoes.FLAC"))
-        assertEquals("", TagFiles.extensionOf("Echoes"))
+        assertEquals("flac", TagFiles.extensionOf("Slow Water.FLAC"))
+        assertEquals("", TagFiles.extensionOf("Slow Water"))
     }
 }

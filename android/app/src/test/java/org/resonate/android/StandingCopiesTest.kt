@@ -4,10 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class StandingCopiesTest {
-    private val homogenic = listOf("Björk", "Homogenic")
+    private val seabrook = listOf("Sölvi", "Seabrook")
 
     private fun standingIn(tree: FakeTree, filed: List<List<String>>) =
-        StandingCopies(tree).standing("Björk - Hunter.flac", filed).map {
+        StandingCopies(tree).standing("Sölvi - Wavebreak.flac", filed).map {
             it.uri.removePrefix(FakeTree.SCHEME + FakeTree.ROOT + "/") to it.folder
         }
 
@@ -16,22 +16,22 @@ class StandingCopiesTest {
         val tree =
             FakeTree().apply {
                 add(
-                    "Björk - Hunter.flac",
-                    "Björk - Hunter (1).flac",
-                    "Björk - Jóga.flac",
-                    "Björk/Homogenic/02 Hunter.flac",
-                    "Björk/Homogenic/cover.jpg",
+                    "Sölvi - Wavebreak.flac",
+                    "Sölvi - Wavebreak (1).flac",
+                    "Sölvi - Lúna.flac",
+                    "Sölvi/Seabrook/02 Wavebreak.flac",
+                    "Sölvi/Seabrook/cover.jpg",
                 )
             }
 
-        val standing = standingIn(tree, listOf(homogenic)).toSet()
+        val standing = standingIn(tree, listOf(seabrook)).toSet()
 
         assertEquals(
             setOf(
-                "Björk - Hunter.flac" to emptyList(),
-                "Björk - Hunter (1).flac" to emptyList(),
-                "Björk/Homogenic/02 Hunter.flac" to homogenic,
-                "Björk/Homogenic/cover.jpg" to homogenic,
+                "Sölvi - Wavebreak.flac" to emptyList(),
+                "Sölvi - Wavebreak (1).flac" to emptyList(),
+                "Sölvi/Seabrook/02 Wavebreak.flac" to seabrook,
+                "Sölvi/Seabrook/cover.jpg" to seabrook,
             ),
             standing,
         )
@@ -40,26 +40,26 @@ class StandingCopiesTest {
     @Test
     fun aFolderNotNamedIsNeverWalked() {
         val tree =
-            FakeTree().apply { add("Björk/Debut/Hunter.flac", "Björk/Hunter.flac", "Other/Hunter.flac") }
+            FakeTree().apply { add("Sölvi/Early Days/Wavebreak.flac", "Sölvi/Wavebreak.flac", "Other/Wavebreak.flac") }
 
-        assertEquals(emptyList<Pair<String, List<String>>>(), standingIn(tree, listOf(homogenic)))
+        assertEquals(emptyList<Pair<String, List<String>>>(), standingIn(tree, listOf(seabrook)))
         assertEquals(emptyList<Pair<String, List<String>>>(), standingIn(tree, emptyList()))
     }
 
     @Test
     fun aFolderSpelledDecomposedIsTheFolderNamedComposed() {
-        val decomposed = "Björk"
-        val tree = FakeTree().apply { add("$decomposed/Homogenic/02 Hunter.flac") }
+        val decomposed = "Sölvi"
+        val tree = FakeTree().apply { add("$decomposed/Seabrook/02 Wavebreak.flac") }
 
         assertEquals(
-            listOf("$decomposed/Homogenic/02 Hunter.flac" to homogenic),
-            standingIn(tree, listOf(homogenic)),
+            listOf("$decomposed/Seabrook/02 Wavebreak.flac" to seabrook),
+            standingIn(tree, listOf(seabrook)),
         )
     }
 
     @Test
     fun aFolderLeavingTheTreeIsRefusedBeforeAnythingIsListed() {
-        val tree = FakeTree().apply { add("Hunter.flac") }
+        val tree = FakeTree().apply { add("Wavebreak.flac") }
 
         assertEquals(
             emptyList<Pair<String, List<String>>>(),
@@ -70,8 +70,8 @@ class StandingCopiesTest {
     @Test
     fun aFiledFolderInDownloadsIsItsRelativePath() {
         assertEquals(
-            "Download/Björk/Homogenic/",
-            StandingCopies.relativePath("Download", homogenic),
+            "Download/Sölvi/Seabrook/",
+            StandingCopies.relativePath("Download", seabrook),
         )
     }
 }

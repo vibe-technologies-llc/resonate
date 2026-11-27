@@ -3125,8 +3125,8 @@ mod tests {
         let tx = connection.transaction().expect("a transaction");
 
         tx.execute_batch(
-            "INSERT INTO artists (id, key, name) VALUES (1, 'sigur ros', 'Sigur Ros');
-             INSERT INTO artists (id, key, name) VALUES (2, 'sigur rós', 'Sigur Rós');
+            "INSERT INTO artists (id, key, name) VALUES (1, 'silvo mor', 'Silvo Mor');
+             INSERT INTO artists (id, key, name) VALUES (2, 'silvo mór', 'Silvo Mór');
              INSERT INTO dismissed_releases (artist_id, mbid)
                   VALUES (1, 'b0a5a0e4-0000-4000-8000-000000000001');",
         )
@@ -3222,9 +3222,9 @@ mod tests {
     fn a_name_is_folded_to_its_letters_with_the_marks_taken_off_and_the_rest_spelled_out() {
         assert_eq!(folded_letters("Marcin Przybyłowicz"), "marcin przybylowicz");
         assert_eq!(folded_letters("Marcin Przybylowicz"), "marcin przybylowicz");
-        assert_eq!(folded_letters("Björk"), "bjork");
-        assert_eq!(folded_letters("Mötley Crüe"), "motley crue");
-        assert_eq!(folded_letters("Sigur Rós"), "sigur ros");
+        assert_eq!(folded_letters("Sölvi"), "solvi");
+        assert_eq!(folded_letters("Nöble Crüe"), "noble crue");
+        assert_eq!(folded_letters("Silvo Mór"), "silvo mor");
         assert_eq!(folded_letters("Blue Öyster Cult"), "blue oyster cult");
         assert_eq!(folded_letters("Æther"), "aether");
         assert_eq!(folded_letters("Straße"), "strasse");
@@ -3242,7 +3242,7 @@ mod tests {
 
     #[test]
     fn folding_a_name_twice_says_what_folding_it_once_said() {
-        for name in ["Marcin Przybyłowicz", "Björk", "Straße", "細野晴臣", "ΑΒΓ"] {
+        for name in ["Marcin Przybyłowicz", "Sölvi", "Straße", "細野晴臣", "ΑΒΓ"] {
             let once = folded_letters(name);
 
             assert_eq!(

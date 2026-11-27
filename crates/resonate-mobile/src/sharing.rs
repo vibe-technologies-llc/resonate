@@ -93,7 +93,7 @@ mod tests {
                 name: "one.flac".into(),
                 title: "One".into(),
                 artist: "Artist".into(),
-                album: "Début".into(),
+                album: "Prélude".into(),
                 duration_ms: 30000,
                 ..Track::default()
             })
@@ -119,7 +119,7 @@ mod tests {
 
         assert_eq!(shared.title, "One");
         assert_eq!(shared.artist.as_deref(), Some("Artist"));
-        assert_eq!(shared.album.as_deref(), Some("Début"));
+        assert_eq!(shared.album.as_deref(), Some("Prélude"));
         assert_eq!(shared.year, Some(1999));
         assert_eq!(shared.length, Some(Duration::from_secs(30)));
         assert_eq!(shared.isrc.as_ref().map(Isrc::as_str), Some(ISRC));

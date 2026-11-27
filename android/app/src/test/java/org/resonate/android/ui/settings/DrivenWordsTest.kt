@@ -28,13 +28,13 @@ class DrivenWordsTest {
             queueLength = 4u,
             firstRow = 2u,
             queueRevision = 7uL,
-            rows = listOf(RemoteSong("Echoes", "Pink Floyd", null), RemoteSong("Time", "", null)),
+            rows = listOf(RemoteSong("Slow Water", "Example Band", null), RemoteSong("Time", "", null)),
         )
 
     @Test
     fun aZoneSaysItsSongPlaceAndVolumeAndStepsTheVolumeWithinItsBounds() {
         assertEquals("Time", DrivenWords.song(English, zone(640u, 3u)))
-        assertEquals("Echoes — Pink Floyd", DrivenWords.song(English, zone(640u, 2u)))
+        assertEquals("Slow Water — Example Band", DrivenWords.song(English, zone(640u, 2u)))
         assertEquals("Nothing playing", DrivenWords.song(English, zone(640u, null)))
         assertEquals("1:02 / 1:02:05", DrivenWords.place(zone(640u, 2u)))
         assertEquals("64%", DrivenWords.volume(zone(640u, 2u)))
