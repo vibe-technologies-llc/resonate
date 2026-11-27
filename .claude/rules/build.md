@@ -19,7 +19,10 @@ paths:
 **`cargo xtask` runs the checks the way CI runs them**, so the lines are written once
 (`crates/xtask`, a workspace member reaching no workspace crate and only `thiserror` outside it,
 run through the `xtask` alias in `.cargo/config.toml`). `plan.rs` holds every line: `lint` is the
-default-feature workspace, the headless workspace without `resonate-ui`, and the binary with
+default-feature workspace, that same line again with `--cfg fuzzing` in a target directory of its own
+(`target/fuzzing`, `FUZZING_CFG`; on Linux only, so the crates' `fuzzing` modules that
+`cargo +nightly fuzz build` compiles are linted as it compiles them and the main build cache is not
+evicted), the headless workspace without `resonate-ui`, and the binary with
 `BINARY_FEATURES_TOGETHER` and each of `BINARY_FEATURES_ALONE`, so a feature added to the binary is
 added there, and `SYNC` alone without its default features, the crate as `resonate-server` links it
 (every other line unifies `device` back on through the binary, `resonate-driven` or a
@@ -82,7 +85,7 @@ Linux, a Windows or Mac host) it is left out.
 - **`.github/workflows/ci.yml` runs what `CLAUDE.md`'s command list runs, and nothing it does not**
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers; the token reads
   the repository and nothing more, `permissions: contents: read`): clippy through `cargo xtask lint
-  --locked --verbose` (default features, the workspace headless, the binary without `ui` and with each feature alone, and
+  --locked --verbose` (default features, the same with `--cfg fuzzing`, the workspace headless, the binary without `ui` and with each feature alone, and
   `resonate-sync` without `device`, so code dead without a feature is warned), headless tests of every crate but the window (built and run
   by `headless` under `dbus-run-session` so the MPRIS bus tests run) and, in
   the whole-workspace job, only the tests of `resonate` and `resonate-ui`, two of the three crates whose

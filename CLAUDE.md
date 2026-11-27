@@ -265,7 +265,8 @@ Invariants the layering protects (the rules files have the rest):
   one test; a crate's integration tests are one binary, `suite`, a module a file (`bus::`,
   `keeps::`), so `-p resonate-mpris bus::` runs one file of them.
 - `cargo xtask lint` runs every clippy line, each `--all-targets -- -D warnings`: the workspace,
-  the workspace with `--exclude resonate-ui --no-default-features`, and `-p resonate
+  the workspace again with `--cfg fuzzing` in `target/fuzzing` (the crates' `fuzzing` modules, as the
+  fuzz build compiles them; Linux only), the workspace with `--exclude resonate-ui --no-default-features`, and `-p resonate
   --no-default-features` with `--features online,mcp,discord,sync` and with each of `ui`, `online`,
   `mcp`, `discord`, `sync` alone, so code dead without a feature is warned; off Linux (`--target`,
   or a Windows or Mac host) the phones' boundary, its binding tool and PipeWire are left out.

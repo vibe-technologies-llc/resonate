@@ -32,33 +32,54 @@ fn the_whole_workspace_is_linted_by_every_line_ci_runs() {
 
     let lines: Vec<String> = steps.iter().map(line).collect();
 
-    assert_eq!(steps.len(), 10);
+    assert_eq!(steps.len(), 11);
     assert_eq!(
         lines[0],
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --workspace --all-targets -- -D warnings"
     );
     assert_eq!(
         lines[1],
-        "cargo clippy --locked --target x86_64-unknown-linux-gnu --workspace --exclude resonate-ui --all-targets --no-default-features -- -D warnings"
+        "cargo clippy --locked --target x86_64-unknown-linux-gnu --workspace --all-targets --target-dir target/fuzzing -- -D warnings --cfg fuzzing"
     );
     assert_eq!(
         lines[2],
+        "cargo clippy --locked --target x86_64-unknown-linux-gnu --workspace --exclude resonate-ui --all-targets --no-default-features -- -D warnings"
+    );
+    assert_eq!(
+        lines[3],
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --package resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings"
     );
     assert!(
-        lines[3..8]
+        lines[4..9]
             .iter()
             .zip(["ui", "online", "mcp", "discord", "sync"])
             .all(|(line, feature)| line.contains(&format!("--features {feature} --")))
     );
     assert_eq!(
-        lines[8],
+        lines[9],
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --package resonate-sync --all-targets --no-default-features -- -D warnings"
     );
     assert_eq!(
-        lines[9],
+        lines[10],
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --manifest-path dsp-lab/Cargo.toml --all-targets --no-default-features -- -D warnings"
     );
+}
+
+#[test]
+fn the_fuzzing_seams_are_linted_with_the_cfg_the_fuzz_build_sets_in_a_target_directory_of_their_own()
+ {
+    let steps = lint(&Selection::Workspace, Some(LINUX_TARGET), false);
+    let fuzzing = steps
+        .iter()
+        .filter(|step| line(step).contains("--cfg fuzzing"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(fuzzing.len(), 1);
+    assert_eq!(
+        fuzzing[0].name,
+        "clippy fuzzing seams (x86_64-unknown-linux-gnu)"
+    );
+    assert!(line(fuzzing[0]).ends_with("--target-dir target/fuzzing -- -D warnings --cfg fuzzing"));
 }
 
 #[test]
@@ -82,39 +103,58 @@ fn off_linux_the_phones_boundary_its_binding_tool_and_pipewire_are_left_out() {
     ));
     assert!(changed.is_empty());
     assert!(steps.iter().all(|step| !line(step).contains("dsp-lab")));
+    assert!(steps.iter().all(|step| !line(step).contains("fuzzing")));
 }
 
 #[test]
 fn changed_packages_are_linted_alone_and_the_binary_lines_come_only_with_the_binary() {
-    let library = lint(&these(&["resonate-library", "resonate-ui"]), None, false);
-    let window = lint(&these(&["resonate-ui"]), None, false);
-    let binary = lint(&these(&["resonate"]), None, false);
+    let library = lint(
+        &these(&["resonate-library", "resonate-ui"]),
+        Some(LINUX_TARGET),
+        false,
+    );
+    let window = lint(&these(&["resonate-ui"]), Some(LINUX_TARGET), false);
+    let binary = lint(&these(&["resonate"]), Some(LINUX_TARGET), false);
 
-    assert_eq!(library.len(), 2);
+    assert_eq!(library.len(), 3);
     assert!(
         line(&library[0])
             .contains("--package resonate-library --package resonate-ui --all-targets")
     );
+    assert!(line(&library[1]).contains(
+        "--package resonate-library --package resonate-ui --all-targets --target-dir target/fuzzing"
+    ));
     assert!(
-        line(&library[1])
+        line(&library[2])
             .contains("--package resonate-library --all-targets --no-default-features")
     );
-    assert_eq!(window.len(), 1);
-    assert_eq!(binary.len(), 8);
-    assert!(lint(&Selection::These(BTreeSet::new()), None, false).is_empty());
+    assert_eq!(window.len(), 2);
+    assert_eq!(binary.len(), 9);
+    assert!(
+        lint(
+            &Selection::These(BTreeSet::new()),
+            Some(LINUX_TARGET),
+            false
+        )
+        .is_empty()
+    );
 }
 
 #[test]
 fn the_sync_crate_is_linted_again_as_the_server_links_it_without_its_device_feature() {
-    let sync = lint(&these(&["resonate-server", "resonate-sync"]), None, false);
-    let server = lint(&these(&["resonate-server"]), None, false);
-
-    assert_eq!(sync.len(), 3);
-    assert_eq!(
-        line(&sync[2]),
-        "cargo clippy --package resonate-sync --all-targets --no-default-features -- -D warnings"
+    let sync = lint(
+        &these(&["resonate-server", "resonate-sync"]),
+        Some(LINUX_TARGET),
+        false,
     );
-    assert_eq!(server.len(), 2);
+    let server = lint(&these(&["resonate-server"]), Some(LINUX_TARGET), false);
+
+    assert_eq!(sync.len(), 4);
+    assert_eq!(
+        line(&sync[3]),
+        "cargo clippy --target x86_64-unknown-linux-gnu --package resonate-sync --all-targets --no-default-features -- -D warnings"
+    );
+    assert_eq!(server.len(), 3);
 }
 
 #[test]

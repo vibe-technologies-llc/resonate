@@ -16,6 +16,8 @@ pub const DSP_LAB_FOLDER: &str = "dsp-lab";
 const DSP_LAB_MANIFEST: &str = "dsp-lab/Cargo.toml";
 const DSP_LAB_NEEDS: [&str; 2] = ["resonate-dsp", "resonate-engine"];
 const NO_REFERENCES: &str = "--no-default-features";
+const FUZZING_TARGET_DIR: &str = "target/fuzzing";
+const FUZZING_CFG: [&str; 2] = ["--cfg", "fuzzing"];
 
 const DETACHED: [&str; 2] = ["fuzz", DSP_LAB_FOLDER];
 const SESSION_BUS: &str = "dbus-run-session";
@@ -220,6 +222,17 @@ pub fn lint(selection: &Selection, target: Option<&str>, locked: bool) -> Vec<St
 
     if let Some(every) = &linted.every {
         steps.push(clippy("default features", every, &[]));
+
+        if linux {
+            let mut fuzzing = clippy(
+                "fuzzing seams",
+                every,
+                &["--target-dir", FUZZING_TARGET_DIR],
+            );
+
+            fuzzing.args.extend(FUZZING_CFG.map(str::to_owned));
+            steps.push(fuzzing);
+        }
     }
 
     if let Some(headless) = &linted.headless {

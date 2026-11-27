@@ -180,9 +180,9 @@ pub fn edit_through_an_overlay(bytes: &[u8]) {
     let mut overlay = Overlay::over(&file).expect("an overlay");
     let mut at = 0_u64;
 
-    for operation in operations.chunks_exact(OPERATION_BYTES) {
-        let [kind, high, low, extra] = [operation[0], operation[1], operation[2], operation[3]];
+    let (operations, _) = operations.as_chunks::<OPERATION_BYTES>();
 
+    for &[kind, high, low, extra] in operations {
         let offset = (u64::from(u16::from_be_bytes([high, low])) * 2).min(LARGEST_OVERLAID_OFFSET);
         match kind % 5 {
             0 => {
