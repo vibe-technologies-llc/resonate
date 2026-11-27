@@ -11,16 +11,8 @@ use std::{
 
 use resonate_listen::{Hearing, Listener, Listening};
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_LISTEN_HOSTED_TESTS";
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
-const THIS_TEST: &str =
-    "a_capture_whose_daemon_restarts_is_opened_again_on_the_graph_that_comes_back";
 const LISTENER: &str = "resonate-listen-reconnect-test";
 const SOCKET: &str = "pipewire-0";
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -143,7 +135,7 @@ fn runs_under_a_hosted_daemon() -> bool {
         return false;
     };
     let Some(hosted) = Hosted::start(&folder) else {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
+        passed_over!("no pipewire binary to host a daemon with");
         return true;
     };
 
@@ -193,18 +185,30 @@ fn a_capture_whose_daemon_restarts_is_opened_again_on_the_graph_that_comes_back(
     });
 
     if !tools {
-        eprintln!("skipped: no pipewire and pw-cli to host a daemon with");
+        passed_over!("no pipewire and pw-cli to host a daemon with");
         return;
     }
 
+    let this_test = crate::this_test();
     let folder = a_folder_of_its_own();
+
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([in_this_suite(THIS_TEST).as_str(), "--exact", "--nocapture"])
+        .args([this_test.as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
-        .status()
+        .output()
         .expect("the test binary runs again under the hosted daemon");
     let _ = fs::remove_dir_all(&folder);
+    let said = String::from_utf8_lossy(&ran.stdout);
 
-    assert!(ran.success(), "the run under the hosted daemon failed");
+    print!("{said}");
+
+    assert!(
+        ran.status.success(),
+        "the run under the hosted daemon failed"
+    );
+    assert!(
+        crate::ran_one_test(&said),
+        "{this_test} was not found to run under the hosted daemon"
+    );
 }

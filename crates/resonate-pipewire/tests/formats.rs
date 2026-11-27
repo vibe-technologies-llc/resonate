@@ -16,13 +16,7 @@ use resonate_pipewire::{
     StreamEvent, StreamRequest, StreamState, StreamVolume, Unreshapable, Words,
 };
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_PIPEWIRE_HOSTED_TESTS";
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const SOCKET: &str = "pipewire-0";
 const STREAM: &str = "resonate-formats-test";
@@ -994,35 +988,22 @@ impl LastVolume for Vec<StreamEvent> {
 
 #[test]
 fn a_stream_another_client_turns_or_mutes_is_heard_as_scaled_until_it_is_back_at_unity() {
-    hosted_as(
-        "a_stream_another_client_turns_or_mutes_is_heard_as_scaled_until_it_is_back_at_unity",
-        "v",
-        a_stream_turned_by_another_client,
-    );
+    hosted_as("v", a_stream_turned_by_another_client);
 }
 
 #[test]
 fn one_client_plays_two_streams_at_once_each_steered_and_closed_on_its_own() {
-    hosted_as(
-        "one_client_plays_two_streams_at_once_each_steered_and_closed_on_its_own",
-        "t",
-        two_streams_on_one_client,
-    );
+    hosted_as("t", two_streams_on_one_client);
 }
 
 #[test]
 fn every_word_and_channel_map_a_sink_advertises_is_read_as_it_names_it() {
-    hosted_as(
-        "every_word_and_channel_map_a_sink_advertises_is_read_as_it_names_it",
-        "w",
-        every_word_and_map_is_read_as_the_sink_names_it,
-    );
+    hosted_as("w", every_word_and_map_is_read_as_the_sink_names_it);
 }
 
 #[test]
 fn a_stream_in_every_word_and_channel_map_is_taken_by_the_daemon_with_nothing_converting() {
     hosted_as(
-        "a_stream_in_every_word_and_channel_map_is_taken_by_the_daemon_with_nothing_converting",
         "s",
         every_word_and_map_is_taken_by_the_daemon_with_nothing_converting,
     );
@@ -1031,7 +1012,6 @@ fn a_stream_in_every_word_and_channel_map_is_taken_by_the_daemon_with_nothing_co
 #[test]
 fn frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked() {
     hosted_as(
-        "frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked",
         "f",
         frames_flow_through_every_word_and_map_once_the_stream_is_linked,
     );
@@ -1039,35 +1019,23 @@ fn frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked(
 
 #[test]
 fn a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening() {
-    hosted_as(
-        "a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening",
-        "r",
-        a_live_stream_handed_a_new_source_and_format,
-    );
+    hosted_as("r", a_live_stream_handed_a_new_source_and_format);
 }
 
 #[test]
 fn a_live_stream_takes_a_turn_between_converted_and_not_and_a_new_source_once_drained() {
-    hosted_as(
-        "a_live_stream_takes_a_turn_between_converted_and_not_and_a_new_source_once_drained",
-        "d",
-        a_stream_drained_or_turned_between_converted_and_not,
-    );
+    hosted_as("d", a_stream_drained_or_turned_between_converted_and_not);
 }
 
 #[test]
 fn a_sink_leaving_under_an_open_stream_is_announced_and_the_stream_still_closes() {
-    hosted_as(
-        "a_sink_leaving_under_an_open_stream_is_announced_and_the_stream_still_closes",
-        "l",
-        a_sink_leaving_under_an_open_stream,
-    );
+    hosted_as("l", a_sink_leaving_under_an_open_stream);
 }
 
-fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
+fn hosted_as(tag: &str, under: fn(&Path)) {
     if let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) {
         let Some(_hosted) = Hosted::start(&folder) else {
-            eprintln!("skipped: no pipewire binary to host a daemon with");
+            passed_over!("no pipewire binary to host a daemon with");
             return;
         };
 
@@ -1081,7 +1049,7 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
         .status()
         .is_err()
     {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
+        passed_over!("no pipewire binary to host a daemon with");
         return;
     }
 
@@ -1090,13 +1058,24 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
 
+    let this_test = crate::this_test();
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
+        .args([this_test.as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
-        .status()
+        .output()
         .expect("the test binary runs again under the hosted daemon");
     let _ = fs::remove_dir_all(&folder);
+    let said = String::from_utf8_lossy(&ran.stdout);
 
-    assert!(ran.success(), "the run under the hosted daemon failed");
+    print!("{said}");
+
+    assert!(
+        ran.status.success(),
+        "the run under the hosted daemon failed"
+    );
+    assert!(
+        crate::ran_one_test(&said),
+        "{this_test} was not found to run under the hosted daemon"
+    );
 }

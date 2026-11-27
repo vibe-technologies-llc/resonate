@@ -11,13 +11,7 @@ use resonate_pipewire::{
     AudioSource, Error, LatencyRequest, MediaRole, PipeWire, SinkInfo, StreamRequest,
 };
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_PIPEWIRE_HOSTED_TESTS";
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const SINK: &str = "resonate-hosted-sink";
 const SOCKET: &str = "pipewire-0";
@@ -187,7 +181,7 @@ fn a_folder_of_its_own(tag: &str) -> PathBuf {
 
 fn a_daemon_restarting_under_the_client(folder: &Path) {
     let Some(hosted) = Hosted::start(folder) else {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
+        passed_over!("no pipewire binary to host a daemon with");
         return;
     };
 
@@ -227,7 +221,7 @@ fn a_daemon_restarting_under_the_client(folder: &Path) {
 
 fn a_daemon_hanging_under_the_client(folder: &Path) {
     let Some(hosted) = Hosted::start(folder) else {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
+        passed_over!("no pipewire binary to host a daemon with");
         return;
     };
 
@@ -262,7 +256,7 @@ fn a_daemon_coming_after_the_client(folder: &Path) {
         .expect("the client starts with no daemon to reach");
     let gone_at_first = told_it_is_disconnected(&pipewire);
     let Some(hosted) = Hosted::start(folder) else {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
+        passed_over!("no pipewire binary to host a daemon with");
         return;
     };
 
@@ -289,32 +283,20 @@ fn a_daemon_coming_after_the_client(folder: &Path) {
 
 #[test]
 fn a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it() {
-    hosted_as(
-        "a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it",
-        "r",
-        a_daemon_restarting_under_the_client,
-    );
+    hosted_as("r", a_daemon_restarting_under_the_client);
 }
 
 #[test]
 fn a_client_whose_daemon_stops_answering_takes_it_as_gone_and_finds_it_again() {
-    hosted_as(
-        "a_client_whose_daemon_stops_answering_takes_it_as_gone_and_finds_it_again",
-        "h",
-        a_daemon_hanging_under_the_client,
-    );
+    hosted_as("h", a_daemon_hanging_under_the_client);
 }
 
 #[test]
 fn a_client_started_before_its_daemon_finds_the_graph_once_it_comes() {
-    hosted_as(
-        "a_client_started_before_its_daemon_finds_the_graph_once_it_comes",
-        "b",
-        a_daemon_coming_after_the_client,
-    );
+    hosted_as("b", a_daemon_coming_after_the_client);
 }
 
-fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
+fn hosted_as(tag: &str, under: fn(&Path)) {
     if let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) {
         under(&folder);
         return;
@@ -326,18 +308,30 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
         .status()
         .is_err()
     {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
+        passed_over!("no pipewire binary to host a daemon with");
         return;
     }
 
     let folder = a_folder_of_its_own(tag);
+    let this_test = crate::this_test();
+
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
+        .args([this_test.as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
-        .status()
+        .output()
         .expect("the test binary runs again under the hosted daemon");
     let _ = fs::remove_dir_all(&folder);
+    let said = String::from_utf8_lossy(&ran.stdout);
 
-    assert!(ran.success(), "the run under the hosted daemon failed");
+    print!("{said}");
+
+    assert!(
+        ran.status.success(),
+        "the run under the hosted daemon failed"
+    );
+    assert!(
+        crate::ran_one_test(&said),
+        "{this_test} was not found to run under the hosted daemon"
+    );
 }

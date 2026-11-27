@@ -35,6 +35,7 @@ use rustls::{
 };
 use serde_json::{Value, json};
 
+const REQUIRED_BY: &str = "RESONATE_CAST_MULTICAST_TESTS";
 const ID: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
 const NAME: &str = "Fake speaker";
@@ -1427,11 +1428,20 @@ fn multicast_answers(daemon: &ServiceDaemon) -> bool {
     false
 }
 
+fn passed_over(why: &str) {
+    assert!(
+        env::var(REQUIRED_BY).as_deref() != Ok("required"),
+        "{why}, and {REQUIRED_BY} asks for it"
+    );
+
+    eprintln!("skipped: {why}");
+}
+
 #[test]
 fn a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn() {
     let fake = Fake::start();
     let Ok(advertiser) = ServiceDaemon::new() else {
-        eprintln!("skipped: mDNS cannot start here");
+        passed_over("mDNS cannot start here");
         return;
     };
     let record = ServiceInfo::new(
@@ -1452,7 +1462,7 @@ fn a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn() {
 
     advertiser.register(record).expect("advertises");
     if !multicast_answers(&advertiser) {
-        eprintln!("skipped: no multicast answers here");
+        passed_over("no multicast answers here");
 
         let _ = advertiser.shutdown();
 

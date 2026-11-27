@@ -10,6 +10,7 @@ use resonate_analysis::{Watch, excerpt, print, study};
 use resonate_codec::Sources;
 use resonate_core::MediaLocation;
 
+const REQUIRED_BY: &str = "RESONATE_ANALYSIS_REFERENCES_TESTS";
 const OPENING_RATE: u32 = 44_100;
 const TURNED_RATE: u32 = 48_000;
 const LINK_SECONDS: u32 = 2;
@@ -81,7 +82,7 @@ fn chained(tree: &Tree, name: &str, links: &[Link]) -> Option<PathBuf> {
             .is_ok_and(|status| status.success());
 
         if !made {
-            eprintln!("skipped: no ffmpeg with libvorbis to write a link of {name}");
+            passed_over!("no ffmpeg with libvorbis to write a link of {name}");
             return None;
         }
         whole.extend_from_slice(&fs::read(&part).ok()?);

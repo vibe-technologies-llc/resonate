@@ -4782,10 +4782,15 @@ mod tests {
         || exit 77; \
         export RESONATE_CASEFOLD_AT=\"$1\"; shift; exec \"$@\"";
 
-    fn ran_on_a_casefold_volume(this_test: &str) -> bool {
+    fn ran_on_a_casefold_volume() -> bool {
         if env::var_os(CASEFOLD_AT).is_some() {
             return false;
         }
+
+        let this_test = std::thread::current()
+            .name()
+            .expect("a test runs on a thread named for it")
+            .to_owned();
 
         let volume = a_folder_of_its_own();
         let ran = std::process::Command::new("unshare")
@@ -4794,17 +4799,29 @@ mod tests {
             .arg("sh")
             .arg(&volume)
             .arg(env::current_exe().expect("the test binary"))
-            .args([this_test, "--exact", "--nocapture"])
-            .status();
+            .args([this_test.as_str(), "--exact", "--nocapture"])
+            .output();
 
         fs::remove_dir_all(&volume).expect("the mount point goes");
         match ran {
-            Ok(status) if status.code() == Some(0) => true,
-            Ok(status) if status.code() == Some(NO_CASEFOLD_VOLUME) => {
+            Ok(ran) if ran.status.code() == Some(0) => {
+                let said = String::from_utf8_lossy(&ran.stdout);
+
+                print!("{said}");
+
+                assert!(
+                    said.contains(" 1 passed;"),
+                    "{this_test} was not found to run on a casefold volume"
+                );
+                true
+            }
+            Ok(ran) if ran.status.code() == Some(NO_CASEFOLD_VOLUME) => {
                 eprintln!("skipped: no casefold tmpfs to mount in a user namespace");
                 true
             }
-            Ok(status) => {
+            Ok(ran) => {
+                let status = ran.status;
+
                 let refused = std::process::Command::new("unshare")
                     .args(["--user", "--map-root-user", "--mount", "true"])
                     .status()
@@ -4836,9 +4853,7 @@ mod tests {
 
     #[test]
     fn a_casefold_folder_collides_names_differing_in_case_beside_one_that_does_not() {
-        if ran_on_a_casefold_volume(
-            "organise::tests::a_casefold_folder_collides_names_differing_in_case_beside_one_that_does_not",
-        ) {
+        if ran_on_a_casefold_volume() {
             return;
         }
 
@@ -5324,9 +5339,7 @@ mod tests {
 
     #[test]
     fn a_casefold_folder_renames_a_track_only_in_case_in_place_and_files_a_second_name_elsewhere() {
-        if ran_on_a_casefold_volume(
-            "organise::tests::a_casefold_folder_renames_a_track_only_in_case_in_place_and_files_a_second_name_elsewhere",
-        ) {
+        if ran_on_a_casefold_volume() {
             return;
         }
 

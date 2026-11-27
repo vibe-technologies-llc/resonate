@@ -228,8 +228,34 @@ Linux sound server or GUI libraries are needed.
   (`resonate-words-build`'s `suites.rs`) refuses a second binary and a file the suite never
   compiles. A test runs within its file's module, so its name is `bus::…`, `keeps::…`; a test
   that starts its own binary again (a hosted daemon, a bus of its own, a process killed part way)
-  names the test through `in_this_suite`, which prefixes `module_path!()`'s module, since a bare
-  name under `--exact` runs nothing and the parent would read the child's emptiness as a pass.
+  asks its own thread for the name (`this_test`: libtest names each test's thread by the test, so
+  no typed string can outlive a rename) and names another test through the function itself
+  (`named(&the_function)`, which a rename breaks at compile time). The parent reads the child's
+  report for one test run (`ran_one_test`), since a name under `--exact` that matches nothing runs
+  nothing and exits 0, and fails when the child was not found to run one.
+- **A skip fails where its requirement is meant to be present.** A suite that prints
+  `skipped: <the missing requirement>` and passes says so through `passed_over!` (a macro in its
+  `suite.rs`; a single-file crate holds it itself), which panics when the file's `REQUIRED_BY`
+  switch is `required`, as `RESONATE_COREAUDIO_TESTS` and `RESONATE_SYNC_NEARBY_TESTS` already did.
+  The switches: `RESONATE_MPRIS_BUS_TESTS` (a session bus, and `dbus-run-session` for the tests that
+  host their own), `RESONATE_MPRIS_PORTAL_TESTS` (`trash::`'s portal, `bwrap`, `xdg-dbus-proxy`),
+  `RESONATE_TERMINAL_TESTS` (`setsid`, a pseudo-terminal, `/dev/full`), `RESONATE_CONSOLE_TESTS` (Windows:
+  ConPTY and an audio endpoint), `RESONATE_PIPEWIRE_STREAM_TESTS` (a running PipeWire daemon with a
+  sink), `RESONATE_PIPEWIRE_HOSTED_TESTS` and `RESONATE_LISTEN_HOSTED_TESTS` (`pipewire`, `pw-cli`,
+  `pw-link` to host a daemon), `RESONATE_LISTEN_CAPTURE_TESTS` (a running daemon `pactl` can load a
+  null sink into), `RESONATE_CODEC_ENCODED_TESTS` (ffmpeg, `flac`, `metaflac`, `wavpack`, `mac`,
+  `lame`), `RESONATE_ANALYSIS_REFERENCES_TESTS` (ffmpeg with libvorbis, `fpcalc`, `lame`; `faac`,
+  `fdkaac`, `twolame` and ffmpeg's libopus stay optional), `RESONATE_DSP_RESTORATION_TESTS`,
+  `RESONATE_LIBRARY_FFMPEG_TESTS`, `RESONATE_VAULT_TESTS` and `RESONATE_ENGINE_FFMPEG_TESTS`
+  (ffmpeg, and `flac` for the vault), `RESONATE_CAST_MULTICAST_TESTS` (mDNS answered over multicast),
+  with `RESONATE_COREAUDIO_TESTS` and `RESONATE_SYNC_NEARBY_TESTS`. A skip that is the machine's
+  doing and no tool's (a user who writes through a read-only mode, no second filesystem, no user
+  namespace) stays a skip. A suite behind an opt-in gate (`RESONATE_ONLINE_TESTS`,
+  `RESONATE_DRAG_TESTS`) skips only while the gate is closed: past it, a missing tool fails.
+  The `headless` job sets the switches for what `ARCH_PACKAGES` installs and a hosted daemon needs
+  (the bus, terminal, hosted PipeWire, ffmpeg and encoder switches) and the `workspace` job sets
+  `RESONATE_TERMINAL_TESTS`; the rest name something CI has no way to provide (a running
+  daemon, a portal, `bwrap`, multicast, a sound device) and are set by hand where it exists.
   A lib or bin target holding no test sets `test = false` (`resonate-driven`, the server's and the
   sign-in window's binaries, `resonate-bindgen`), so no empty harness is linked.
 

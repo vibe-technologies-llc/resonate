@@ -15,6 +15,8 @@ use crate::support::{
     scanned_sheet, scanned_two_discs, the_row_of,
 };
 
+const REQUIRED_BY: &str = "RESONATE_LIBRARY_FFMPEG_TESTS";
+
 #[test]
 fn a_file_a_cue_sheet_cuts_is_scanned_as_the_tracks_the_sheet_names() -> Result<()> {
     let (tree, library) = scanned_sheet();
@@ -748,7 +750,7 @@ FILE "Meddle.flac" WAVE
 
 fn flac_embedding(tree: &Tree, name: &str, sheet: &str) -> Option<PathBuf> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a {name} carrying a cue sheet");
+        passed_over!("no ffmpeg to build a {name} carrying a cue sheet");
         return None;
     }
 
@@ -767,7 +769,7 @@ fn flac_embedding(tree: &Tree, name: &str, sheet: &str) -> Option<PathBuf> {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) || !target.exists() {
-        eprintln!("skipped: ffmpeg would not encode {name}");
+        passed_over!("ffmpeg would not encode {name}");
         return None;
     }
     Some(target)
@@ -816,7 +818,7 @@ fn a_file_carrying_its_own_cue_sheet_is_scanned_as_the_tracks_that_sheet_names()
 #[test]
 fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a chaptered book");
+        passed_over!("no ffmpeg to build a chaptered book");
         return Ok(());
     }
 
@@ -852,7 +854,7 @@ fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) {
-        eprintln!("skipped: ffmpeg would not write a chaptered book");
+        passed_over!("ffmpeg would not write a chaptered book");
         return Ok(());
     }
 

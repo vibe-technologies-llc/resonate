@@ -41,13 +41,7 @@ use zbus::{
 
 use crate::blocking::{Connection, Proxy, connection, fdo::DBusProxy};
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_MPRIS_BUS_TESTS";
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 const SECONDS: usize = 30;
@@ -696,7 +690,7 @@ impl Harness {
         let connection = match Connection::session() {
             Ok(connection) => connection,
             Err(error) => {
-                eprintln!("skipped: no session bus to talk to ({error})");
+                passed_over!("no session bus to talk to ({error})");
                 return None;
             }
         };
@@ -3825,13 +3819,15 @@ fn flag(fields: &HashMap<String, OwnedVariant>, key: &str) -> Option<bool> {
     bool::try_from(fields.get(key)?.try_clone().ok()?).ok()
 }
 
-fn on_a_bus_of_its_own(test: &str) -> bool {
+fn on_a_bus_of_its_own() -> bool {
     if env::var_os(ON_A_BUS_OF_ITS_OWN).is_some() {
         return true;
     }
 
+    let test = crate::this_test();
     let tree = Tree::new();
     let config = tree.root.join("session.conf");
+    let report = tree.root.join("report.txt");
 
     fs::write(&config, A_BUS_WITH_NOTHING_TO_ACTIVATE).expect("a writable bus configuration");
 
@@ -3839,13 +3835,14 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
         .arg(format!("--config-file={}", config.display()))
         .args(["--", "sh", "-c", SYSTEM_BUS_TOO, "sh"])
         .arg(env::current_exe().expect("the test binary names itself"))
-        .args(["--exact", in_this_suite(test).as_str(), "--nocapture"])
+        .args(["--exact", test.as_str(), "--nocapture"])
         .env(ON_A_BUS_OF_ITS_OWN, "1")
+        .stdout(fs::File::create(&report).expect("a report to write"))
         .spawn();
     let mut running = match started {
         Ok(running) => running,
         Err(error) => {
-            eprintln!("skipped: no dbus-run-session to host a bus ({error})");
+            passed_over!("no dbus-run-session to host a bus ({error})");
             return false;
         }
     };
@@ -3857,7 +3854,15 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
             .try_wait()
             .expect("the run on its own bus is watched")
         {
+            let said = fs::read_to_string(&report).unwrap_or_default();
+
+            print!("{said}");
+
             assert!(status.success(), "{test} failed on a bus of its own");
+            assert!(
+                crate::ran_one_test(&said),
+                "{test} was not found to run on a bus of its own"
+            );
 
             break;
         }
@@ -3873,7 +3878,7 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
 
 #[test]
 fn a_press_on_a_notification_button_reaches_the_transport() {
-    if !on_a_bus_of_its_own("a_press_on_a_notification_button_reaches_the_transport") {
+    if !on_a_bus_of_its_own() {
         return;
     }
 
@@ -3944,9 +3949,7 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
 
 #[test]
 fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up() {
-    if !on_a_bus_of_its_own(
-        "a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up",
-    ) {
+    if !on_a_bus_of_its_own() {
         return;
     }
 
@@ -4025,9 +4028,7 @@ fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up()
 
 #[test]
 fn a_player_whose_connection_the_bus_closed_claims_its_name_again_and_answers_on_it() {
-    if !on_a_bus_of_its_own(
-        "a_player_whose_connection_the_bus_closed_claims_its_name_again_and_answers_on_it",
-    ) {
+    if !on_a_bus_of_its_own() {
         return;
     }
 
@@ -4093,9 +4094,7 @@ fn a_player_whose_connection_the_bus_closed_claims_its_name_again_and_answers_on
 
 #[test]
 fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_bluez() {
-    if !on_a_bus_of_its_own(
-        "a_headsets_press_reaches_the_transport_through_the_player_registered_with_bluez",
-    ) {
+    if !on_a_bus_of_its_own() {
         return;
     }
 
@@ -4319,7 +4318,7 @@ fn becomes(metering: &Metering, wanted: Meter) {
 
 #[test]
 fn the_meter_follows_what_network_manager_says_of_the_connection() {
-    if !on_a_bus_of_its_own("the_meter_follows_what_network_manager_says_of_the_connection") {
+    if !on_a_bus_of_its_own() {
         return;
     }
 
@@ -4349,7 +4348,7 @@ fn the_meter_follows_what_network_manager_says_of_the_connection() {
 
 #[test]
 fn a_connection_is_not_metered_where_no_network_manager_answers() {
-    if !on_a_bus_of_its_own("a_connection_is_not_metered_where_no_network_manager_answers") {
+    if !on_a_bus_of_its_own() {
         return;
     }
 

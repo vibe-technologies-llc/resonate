@@ -10,17 +10,8 @@ use std::{
 
 use resonate_mpris::{Trashing, trash_through_the_portal};
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_MPRIS_PORTAL_TESTS";
 const ON_A_BUS_OF_ITS_OWN: &str = "RESONATE_PORTAL_ON_A_BUS_OF_ITS_OWN";
-const THIS_TEST: &str = "a_file_is_taken_to_the_trash_by_a_portal_hosted_on_a_bus_of_its_own";
-const SANDBOXED_TEST: &str =
-    "a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id";
 const TRASH_THIS_FILE: &str = "RESONATE_TRASH_THIS_FILE_FROM_A_SANDBOX";
 const APP_ID: &str = "org.resonate.Resonate";
 const INSTANCE_ID: &str = "4242424242";
@@ -125,10 +116,12 @@ fn trashed_names(folder: &Path) -> Vec<String> {
         .collect()
 }
 
-fn on_a_bus_of_its_own(tree: &Tree, test: &str) -> bool {
+fn on_a_bus_of_its_own(tree: &Tree) -> bool {
     if env::var_os(ON_A_BUS_OF_ITS_OWN).is_some() {
         return true;
     }
+
+    let test = crate::this_test();
 
     let config = tree.root.join("session.conf");
 
@@ -138,13 +131,23 @@ fn on_a_bus_of_its_own(tree: &Tree, test: &str) -> bool {
         .arg(format!("--config-file={}", config.display()))
         .arg("--")
         .arg(env::current_exe().expect("the test binary names itself"))
-        .args(["--exact", in_this_suite(test).as_str(), "--nocapture"])
+        .args(["--exact", test.as_str(), "--nocapture"])
         .env(ON_A_BUS_OF_ITS_OWN, "1")
-        .status();
+        .output();
 
     match ran {
-        Ok(status) => assert!(status.success(), "the run on a bus of its own failed"),
-        Err(error) => eprintln!("skipped: no dbus-run-session to host a bus ({error})"),
+        Ok(ran) => {
+            let said = String::from_utf8_lossy(&ran.stdout);
+
+            print!("{said}");
+
+            assert!(ran.status.success(), "the run on a bus of its own failed");
+            assert!(
+                crate::ran_one_test(&said),
+                "{test} was not found to run on a bus of its own"
+            );
+        }
+        Err(error) => passed_over!("no dbus-run-session to host a bus ({error})"),
     }
     false
 }
@@ -152,12 +155,12 @@ fn on_a_bus_of_its_own(tree: &Tree, test: &str) -> bool {
 #[test]
 fn a_file_is_taken_to_the_trash_by_a_portal_hosted_on_a_bus_of_its_own() {
     let Some(binary) = the_portal_installed() else {
-        eprintln!("skipped: no xdg-desktop-portal to host");
+        passed_over!("no xdg-desktop-portal to host");
         return;
     };
     let tree = Tree::new();
 
-    if !on_a_bus_of_its_own(&tree, THIS_TEST) {
+    if !on_a_bus_of_its_own(&tree) {
         return;
     }
 
@@ -272,7 +275,7 @@ fn wait_for(path: &Path) {
 #[test]
 fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() {
     let Some(binary) = the_portal_installed() else {
-        eprintln!("skipped: no xdg-desktop-portal to host");
+        passed_over!("no xdg-desktop-portal to host");
         return;
     };
     let tree = Tree::new();
@@ -280,10 +283,10 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
 
     fs::write(&info, flatpak_info(&tree)).expect("a flatpak-info");
     if !can_sandbox(&info) {
-        eprintln!("skipped: no bwrap and xdg-dbus-proxy to build a sandbox with");
+        passed_over!("no bwrap and xdg-dbus-proxy to build a sandbox with");
         return;
     }
-    if !on_a_bus_of_its_own(&tree, SANDBOXED_TEST) {
+    if !on_a_bus_of_its_own(&tree) {
         return;
     }
 
@@ -330,6 +333,7 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
 
     let executable = env::current_exe().expect("the test binary names itself");
     let folder = executable.parent().expect("a folder holding the binary");
+    let child_test = crate::named(&the_trash_asked_for_from_inside_a_sandbox);
     let mut child = bound(
         bound(bound(sandbox(&info), true, &proxied), false, folder),
         true,
@@ -338,7 +342,7 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
 
     child.args(["--info-fd", "3"]).arg(&executable).args([
         "--exact",
-        in_this_suite(CHILD_TEST).as_str(),
+        child_test.as_str(),
         "--nocapture",
     ]);
 
@@ -351,10 +355,17 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
             format!("unix:path={}", socket.display()),
         )
         .env(TRASH_THIS_FILE, &file)
-        .status()
+        .output()
         .expect("the sandbox runs");
+    let said = String::from_utf8_lossy(&ran.stdout);
 
-    assert!(ran.success(), "the sandboxed trash failed");
+    print!("{said}");
+
+    assert!(ran.status.success(), "the sandboxed trash failed");
+    assert!(
+        crate::ran_one_test(&said),
+        "{child_test} was not found to run in the sandbox"
+    );
     assert!(!file.exists(), "the file stayed where it was");
 
     let record = trashed_names(&data.join("Trash/info")).remove(0);
@@ -365,8 +376,6 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
         "{recorded}"
     );
 }
-
-const CHILD_TEST: &str = "the_trash_asked_for_from_inside_a_sandbox";
 
 #[test]
 fn the_trash_asked_for_from_inside_a_sandbox() {

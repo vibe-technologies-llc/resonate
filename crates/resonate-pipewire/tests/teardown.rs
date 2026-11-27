@@ -16,13 +16,7 @@ use resonate_pipewire::{
     PipeWire, SinkInfo, SinkStream, StreamEvent, StreamRequest, StreamState,
 };
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_PIPEWIRE_HOSTED_TESTS";
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const SOCKET: &str = "pipewire-0";
 const SINK: &str = "resonate-teardown-sink";
@@ -660,62 +654,38 @@ fn start_given_up_on(folder: &Path, _: Hosted) {
 
 #[test]
 fn a_client_shut_down_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out() {
-    hosted_as(
-        "a_client_shut_down_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out",
-        "s",
-        shut_down_inside_a_fill,
-    );
+    hosted_as("s", shut_down_inside_a_fill);
 }
 
 #[test]
 fn a_stream_closed_while_linked_hears_itself_disconnected_and_leaves_the_graph() {
-    hosted_as(
-        "a_stream_closed_while_linked_hears_itself_disconnected_and_leaves_the_graph",
-        "x",
-        closed_while_linked,
-    );
+    hosted_as("x", closed_while_linked);
 }
 
 #[test]
 fn a_graph_lost_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out() {
-    hosted_as(
-        "a_graph_lost_while_the_data_thread_fills_lets_the_source_go_only_once_it_is_out",
-        "l",
-        graph_lost_inside_a_fill,
-    );
+    hosted_as("l", graph_lost_inside_a_fill);
 }
 
 #[test]
 fn a_graph_gone_silent_disconnects_its_stream_before_letting_the_listener_go() {
-    hosted_as(
-        "a_graph_gone_silent_disconnects_its_stream_before_letting_the_listener_go",
-        "q",
-        graph_gone_silent,
-    );
+    hosted_as("q", graph_gone_silent);
 }
 
 #[test]
 fn a_capture_answered_after_its_asker_gave_up_is_dropped_and_never_stands_in_the_graph() {
-    hosted_as(
-        "a_capture_answered_after_its_asker_gave_up_is_dropped_and_never_stands_in_the_graph",
-        "c",
-        capture_given_up_on,
-    );
+    hosted_as("c", capture_given_up_on);
 }
 
 #[test]
 fn a_start_given_up_on_leaves_no_thread_and_no_client_behind() {
-    hosted_as(
-        "a_start_given_up_on_leaves_no_thread_and_no_client_behind",
-        "t",
-        start_given_up_on,
-    );
+    hosted_as("t", start_given_up_on);
 }
 
-fn hosted_as(this_test: &str, tag: &str, under: fn(&Path, Hosted)) {
+fn hosted_as(tag: &str, under: fn(&Path, Hosted)) {
     if let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) {
         let Some(hosted) = Hosted::start(&folder) else {
-            eprintln!("skipped: no pipewire binary to host a daemon with");
+            passed_over!("no pipewire binary to host a daemon with");
             return;
         };
 
@@ -729,7 +699,7 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path, Hosted)) {
         .status()
         .is_err()
     {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
+        passed_over!("no pipewire binary to host a daemon with");
         return;
     }
 
@@ -738,13 +708,24 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path, Hosted)) {
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
 
+    let this_test = crate::this_test();
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
+        .args([this_test.as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
-        .status()
+        .output()
         .expect("the test binary runs again under the hosted daemon");
     let _ = fs::remove_dir_all(&folder);
+    let said = String::from_utf8_lossy(&ran.stdout);
 
-    assert!(ran.success(), "the run under the hosted daemon failed");
+    print!("{said}");
+
+    assert!(
+        ran.status.success(),
+        "the run under the hosted daemon failed"
+    );
+    assert!(
+        crate::ran_one_test(&said),
+        "{this_test} was not found to run under the hosted daemon"
+    );
 }

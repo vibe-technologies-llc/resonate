@@ -26,7 +26,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
 `scanned.rs`, `search.rs`, `studies.rs` and `synced.rs`). A fixture two files need is written once under
 `tests/support/` (`files.rs`, `identities.rs`, `albums.rs`, `fakes.rs`, `setups.rs`), `pub(crate)` through
 `support`'s glob re-exports; a helper only one file uses stays beside its tests. A test is named by its
-file's module (`keeps::…`), and a test that starts its own binary again names itself through `in_this_suite`.
+file's module (`keeps::…`), and a test that starts its own binary again asks its thread for its name (`this_test`).
 
 ## Schema and grouping
 

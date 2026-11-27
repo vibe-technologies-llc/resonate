@@ -12,13 +12,7 @@ use std::{
 use resonate_listen::{Hearing, Listener, Listening};
 use resonate_pipewire::NodeName;
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_LISTEN_HOSTED_TESTS";
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const LISTENER: &str = "resonate-listen-microphone-test";
 const MICROPHONE: &str = "resonate-hosted-microphone";
@@ -291,10 +285,10 @@ fn until(mut done: impl FnMut() -> bool) -> bool {
     false
 }
 
-fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
+fn hosted_as(tag: &str, under: fn(&Path)) {
     if let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) {
         let Some(_hosted) = Hosted::start(&folder) else {
-            eprintln!("skipped: no pipewire binary to host a daemon with");
+            passed_over!("no pipewire binary to host a daemon with");
             return;
         };
 
@@ -312,7 +306,7 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
     });
 
     if !tools {
-        eprintln!("skipped: no pipewire, pw-cli and pw-link to host a daemon with");
+        passed_over!("no pipewire, pw-cli and pw-link to host a daemon with");
         return;
     }
 
@@ -321,31 +315,34 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
 
+    let this_test = crate::this_test();
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
+        .args([this_test.as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
-        .status()
+        .output()
         .expect("the test binary runs again under the hosted daemon");
     let _ = fs::remove_dir_all(&folder);
+    let said = String::from_utf8_lossy(&ran.stdout);
 
-    assert!(ran.success(), "the run under the hosted daemon failed");
+    print!("{said}");
+
+    assert!(
+        ran.status.success(),
+        "the run under the hosted daemon failed"
+    );
+    assert!(
+        crate::ran_one_test(&said),
+        "{this_test} was not found to run under the hosted daemon"
+    );
 }
 
 #[test]
 fn a_recording_from_a_named_microphone_is_opened_on_that_microphone() {
-    hosted_as(
-        "a_recording_from_a_named_microphone_is_opened_on_that_microphone",
-        "m",
-        the_microphone_is_aimed_at,
-    );
+    hosted_as("m", the_microphone_is_aimed_at);
 }
 
 #[test]
 fn a_recording_from_a_microphone_hears_the_tone_that_reaches_it() {
-    hosted_as(
-        "a_recording_from_a_microphone_hears_the_tone_that_reaches_it",
-        "t",
-        the_tone_is_heard,
-    );
+    hosted_as("t", the_tone_is_heard);
 }

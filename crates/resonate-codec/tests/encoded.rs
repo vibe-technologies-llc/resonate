@@ -30,6 +30,7 @@ use resonate_core::{
     Places, SampleFormat, SampleRate, SourceId, StreamSpec,
 };
 
+const REQUIRED_BY: &str = "RESONATE_CODEC_ENCODED_TESTS";
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 const SECONDS: usize = 2;
@@ -654,7 +655,7 @@ fn rms(samples: &[i32]) -> f64 {
 
 fn two_audio_tracks(tree: &Tree, name: &str) -> Option<PathBuf> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a {name} fixture");
+        passed_over!("no ffmpeg to build a {name} fixture");
         return None;
     }
 
@@ -676,7 +677,7 @@ fn two_audio_tracks(tree: &Tree, name: &str) -> Option<PathBuf> {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) || !target.exists() {
-        eprintln!("skipped: ffmpeg would not encode {name}");
+        passed_over!("ffmpeg would not encode {name}");
         return None;
     }
     Some(target)
@@ -688,7 +689,7 @@ fn fixture(tree: &Tree, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i32>
 
 fn tagged(tree: &Tree, name: &str, codec: &[&str], tags: &[&str]) -> Option<PathBuf> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a {name} fixture");
+        passed_over!("no ffmpeg to build a {name} fixture");
         return None;
     }
 
@@ -712,7 +713,7 @@ fn tagged(tree: &Tree, name: &str, codec: &[&str], tags: &[&str]) -> Option<Path
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) || !target.exists() {
-        eprintln!("skipped: ffmpeg would not encode {name}");
+        passed_over!("ffmpeg would not encode {name}");
         return None;
     }
     Some(target)
@@ -720,7 +721,7 @@ fn tagged(tree: &Tree, name: &str, codec: &[&str], tags: &[&str]) -> Option<Path
 
 fn shaped(tree: &Tree, shape: Shape, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i32>)> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a {name} fixture");
+        passed_over!("no ffmpeg to build a {name} fixture");
         return None;
     }
 
@@ -732,7 +733,7 @@ fn shaped(tree: &Tree, shape: Shape, name: &str, codec: &[&str]) -> Option<(Path
     let target = tree.at(name);
 
     if !encode(&source, &target, codec) {
-        eprintln!("skipped: ffmpeg would not encode {name}");
+        passed_over!("ffmpeg would not encode {name}");
         return None;
     }
     Some((target, samples))
@@ -974,7 +975,7 @@ const CHAPTERS: &str = ";FFMETADATA1\ntitle=Meddle\nartist=Pink Floyd\n\
 
 fn chaptered(tree: &Tree, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i32>)> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a chaptered {name}");
+        passed_over!("no ffmpeg to build a chaptered {name}");
         return None;
     }
 
@@ -1002,7 +1003,7 @@ fn chaptered(tree: &Tree, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i3
         .is_ok_and(|status| status.success());
 
     if !made {
-        eprintln!("skipped: ffmpeg would not write a chaptered {name}");
+        passed_over!("ffmpeg would not write a chaptered {name}");
         return None;
     }
     Some((target, samples))
@@ -1280,7 +1281,7 @@ fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted_and_count
     let mut bytes = fs::read(&pristine).expect("the encoded file");
 
     let Some(header) = frame_at(&bytes, SPOILED) else {
-        eprintln!("skipped: ffmpeg wrote frames this walk does not read");
+        passed_over!("ffmpeg wrote frames this walk does not read");
         return;
     };
 
@@ -1316,7 +1317,7 @@ fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted_and_count
 #[test]
 fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_its_end() {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a VBR fixture");
+        passed_over!("no ffmpeg to build a VBR fixture");
         return;
     }
 
@@ -1346,7 +1347,7 @@ fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_it
         ];
 
         if !encode(&source, &target, &vbr) {
-            eprintln!("skipped: ffmpeg would not encode a VBR MP3");
+            passed_over!("ffmpeg would not encode a VBR MP3");
             return;
         }
 
@@ -1461,7 +1462,7 @@ fn an_mp3_whose_gapless_note_itunes_wrote_plays_without_its_delay_and_padding() 
     let music = heard.len() / usize::from(CHANNELS);
 
     if told.encoder_delay <= MP3_DECODER_DELAY {
-        eprintln!("skipped: ffmpeg wrote no LAME tag to take the delay from");
+        passed_over!("ffmpeg wrote no LAME tag to take the delay from");
         return;
     }
 
@@ -2124,7 +2125,7 @@ fn seeking_a_real_container_lands_where_it_was_asked_to() {
 #[test]
 fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
     if !ffmpeg() || !tool("flac", "--version") || !tool("metaflac", "--version") {
-        eprintln!("skipped: no flac and metaflac to build a rip the way a ripper does");
+        passed_over!("no flac and metaflac to build a rip the way a ripper does");
         return;
     }
 
@@ -2161,7 +2162,7 @@ fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
     );
 
     if !encoded || !described {
-        eprintln!("skipped: flac would not build the rip");
+        passed_over!("flac would not build the rip");
         return;
     }
 
@@ -2203,7 +2204,7 @@ fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
 #[test]
 fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
     if !ffmpeg() || !tool("lame", "--version") {
-        eprintln!("skipped: no lame to build an mp3 the way a ripper does");
+        passed_over!("no lame to build an mp3 the way a ripper does");
         return;
     }
 
@@ -2231,7 +2232,7 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
     );
 
     if !encoded {
-        eprintln!("skipped: lame would not build the rip");
+        passed_over!("lame would not build the rip");
         return;
     }
 
@@ -2281,7 +2282,7 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
 #[test]
 fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pages_declare() {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build an ogg the way an encoder does");
+        passed_over!("no ffmpeg to build an ogg the way an encoder does");
         return;
     }
 
@@ -2310,7 +2311,7 @@ fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pag
     );
 
     if !encoded {
-        eprintln!("skipped: ffmpeg would not build the rip");
+        passed_over!("ffmpeg would not build the rip");
         return;
     }
 
@@ -2360,7 +2361,7 @@ fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pag
 #[test]
 fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build the aac a caf carries");
+        passed_over!("no ffmpeg to build the aac a caf carries");
         return;
     }
 
@@ -2389,13 +2390,13 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
     );
 
     if !encoded {
-        eprintln!("skipped: ffmpeg would not build the rip");
+        passed_over!("ffmpeg would not build the rip");
         return;
     }
 
     let held = fs::read(&stream).expect("the rip reads back");
     let Some(packets) = adts_packets(&held) else {
-        eprintln!("skipped: ffmpeg wrote an adts stream this test cannot repack");
+        passed_over!("ffmpeg wrote an adts stream this test cannot repack");
         return;
     };
 
@@ -2408,7 +2409,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
         .and_then(|held| held.checked_sub(music))
         .and_then(|held| u32::try_from(held).ok())
     else {
-        eprintln!("skipped: ffmpeg primed the rip by something other than one block");
+        passed_over!("ffmpeg primed the rip by something other than one block");
         return;
     };
 
@@ -2457,7 +2458,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
 #[test]
 fn an_aac_rip_drops_the_priming_and_the_padding_its_edit_list_declares() {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build an m4a the way a store does");
+        passed_over!("no ffmpeg to build an m4a the way a store does");
         return;
     }
 
@@ -2486,7 +2487,7 @@ fn an_aac_rip_drops_the_priming_and_the_padding_its_edit_list_declares() {
     );
 
     if !encoded {
-        eprintln!("skipped: ffmpeg would not build the rip");
+        passed_over!("ffmpeg would not build the rip");
         return;
     }
 
@@ -3126,7 +3127,7 @@ fn import_cuesheet(sheet: &Path, target: &Path) -> bool {
 #[test]
 fn a_cuesheet_block_a_ripper_embedded_cuts_the_file_into_the_tracks_it_names() {
     if !ffmpeg() || !tool("metaflac", "--version") {
-        eprintln!("skipped: no metaflac to embed a cue sheet the way a ripper does");
+        passed_over!("no metaflac to embed a cue sheet the way a ripper does");
         return;
     }
 
@@ -3139,7 +3140,7 @@ fn a_cuesheet_block_a_ripper_embedded_cuts_the_file_into_the_tracks_it_names() {
     fs::write(&sheet, CUT_SHEET).expect("a writable temporary file");
 
     if !import_cuesheet(&sheet, &target) {
-        eprintln!("skipped: metaflac would not embed the sheet");
+        passed_over!("metaflac would not embed the sheet");
         return;
     }
 
@@ -3198,7 +3199,7 @@ fn a_cuesheet_comment_names_its_tracks_and_wins_over_the_block_beside_it() {
     assert_eq!(spans_of(&target), cut_spans());
 
     if !tool("metaflac", "--version") {
-        eprintln!("skipped: no metaflac to embed a block beside the comment");
+        passed_over!("no metaflac to embed a block beside the comment");
         return;
     }
 
@@ -3206,7 +3207,7 @@ fn a_cuesheet_comment_names_its_tracks_and_wins_over_the_block_beside_it() {
 
     fs::write(&sheet, CUT_SHEET).expect("a writable temporary file");
     if !import_cuesheet(&sheet, &target) {
-        eprintln!("skipped: metaflac would not embed the sheet");
+        passed_over!("metaflac would not embed the sheet");
         return;
     }
 
@@ -3562,7 +3563,7 @@ fn switching_between_mono_and_stereo_packets(tree: &Tree) -> Option<PathBuf> {
     let mono = tree.at("mono.opus");
 
     if !encode(&tree.at("source.wav"), &mono, &laid_out_with("1")) {
-        eprintln!("skipped: ffmpeg would not encode mono.opus");
+        passed_over!("ffmpeg would not encode mono.opus");
         return None;
     }
 
@@ -4117,7 +4118,7 @@ fn a_play_count_and_a_favourite_read_back_out_of_every_tag_this_build_writes() {
 #[test]
 fn a_favourite_reaches_a_monkeys_audio_file_as_its_ape_tag_says_one() {
     if !monkeys() {
-        eprintln!("skipped: no mac to build the fixture");
+        passed_over!("no mac to build the fixture");
         return;
     }
 
@@ -4243,7 +4244,7 @@ fn a_wavpack_files_fractional_rating_outlasts_a_count_and_still_takes_a_favourit
 #[test]
 fn a_monkeys_audio_files_fractional_rating_outlasts_a_count_and_still_takes_a_favourite() {
     if !monkeys() {
-        eprintln!("skipped: no mac to build the fixture");
+        passed_over!("no mac to build the fixture");
         return;
     }
 
@@ -4422,7 +4423,7 @@ fn drain_floats(decoder: &mut Decoder, spec: StreamSpec) -> Vec<u32> {
 #[test]
 fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
     if !wavpack() {
-        eprintln!("skipped: no wavpack to build the fixtures");
+        passed_over!("no wavpack to build the fixtures");
         return;
     }
 
@@ -4485,7 +4486,7 @@ fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
 #[test]
 fn a_floating_wavpack_decodes_to_every_bit_that_went_in() {
     if !wavpack() {
-        eprintln!("skipped: no wavpack to build the fixtures");
+        passed_over!("no wavpack to build the fixtures");
         return;
     }
 
@@ -4524,7 +4525,7 @@ fn a_floating_wavpack_decodes_to_every_bit_that_went_in() {
 #[test]
 fn a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it() {
     if !wavpack() || !tool("wvunpack", "--version") {
-        eprintln!("skipped: no wavpack and wvunpack to build the fixture");
+        passed_over!("no wavpack and wvunpack to build the fixture");
         return;
     }
 
@@ -4573,7 +4574,7 @@ fn a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it() {
 #[test]
 fn a_hybrid_wavpack_in_matroska_is_billed_as_hybrid_and_a_lossless_one_is_not() {
     if !wavpack() || !ffmpeg() {
-        eprintln!("skipped: no wavpack and ffmpeg to build the fixture");
+        passed_over!("no wavpack and ffmpeg to build the fixture");
         return;
     }
 
@@ -4627,7 +4628,7 @@ fn a_hybrid_wavpack_in_matroska_is_billed_as_hybrid_and_a_lossless_one_is_not() 
 #[test]
 fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
     if !wavpack() {
-        eprintln!("skipped: no wavpack to build the fixture");
+        passed_over!("no wavpack to build the fixture");
         return;
     }
 
@@ -4701,7 +4702,7 @@ fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
 #[test]
 fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alone() {
     if !wavpack() {
-        eprintln!("skipped: no wavpack to build the fixture");
+        passed_over!("no wavpack to build the fixture");
         return;
     }
 
@@ -4789,7 +4790,7 @@ fn monkeyed(source: &Path, target: &Path, level: &str) -> bool {
 #[test]
 fn monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in() {
     if !monkeys() {
-        eprintln!("skipped: no mac to build the fixtures");
+        passed_over!("no mac to build the fixtures");
         return;
     }
 
@@ -4857,7 +4858,7 @@ fn monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in() {
 #[test]
 fn a_floating_monkeys_audio_decodes_to_every_bit_that_went_in() {
     if !monkeys() {
-        eprintln!("skipped: no mac to build the fixture");
+        passed_over!("no mac to build the fixture");
         return;
     }
 
@@ -4904,7 +4905,7 @@ fn a_floating_monkeys_audio_decodes_to_every_bit_that_went_in() {
 #[test]
 fn a_32_bit_stereo_monkeys_audio_is_refused_rather_than_heard_wrong() {
     if !monkeys() {
-        eprintln!("skipped: no mac to build the fixture");
+        passed_over!("no mac to build the fixture");
         return;
     }
 
@@ -4933,7 +4934,7 @@ fn a_32_bit_stereo_monkeys_audio_is_refused_rather_than_heard_wrong() {
 #[test]
 fn a_monkeys_audio_made_from_an_aiff_decodes_to_the_same_samples() {
     if !monkeys() || !ffmpeg() {
-        eprintln!("skipped: no mac and ffmpeg to build the fixture");
+        passed_over!("no mac and ffmpeg to build the fixture");
         return;
     }
 
@@ -4963,7 +4964,7 @@ fn a_monkeys_audio_made_from_an_aiff_decodes_to_the_same_samples() {
 #[test]
 fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
     if !monkeys() {
-        eprintln!("skipped: no mac to build the fixture");
+        passed_over!("no mac to build the fixture");
         return;
     }
 
@@ -5122,7 +5123,7 @@ const BARE_MP3: [&str; 10] = [
 
 fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<PathBuf> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build {name}");
+        passed_over!("no ffmpeg to build {name}");
         return None;
     }
 
@@ -5148,7 +5149,7 @@ fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<Pat
             .status()
             .is_ok_and(|status| status.success());
         let Some(bytes) = made.then(|| fs::read(&part).ok()).flatten() else {
-            eprintln!("skipped: ffmpeg would not encode a link of {name}");
+            passed_over!("ffmpeg would not encode a link of {name}");
             return None;
         };
 

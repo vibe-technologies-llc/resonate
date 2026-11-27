@@ -37,6 +37,20 @@ use resonate_engine::{
     Surveyor, TakenUp, Tapped, Unreshapable, Until, Words, Zone, ZoneId, ZoneName, Zones, stamp_of,
 };
 
+const REQUIRED_BY: &str = "RESONATE_ENGINE_FFMPEG_TESTS";
+
+macro_rules! passed_over {
+    ($($why:tt)*) => {{
+        let why = format!($($why)*);
+
+        assert!(
+            std::env::var(REQUIRED_BY).as_deref() != Ok("required"),
+            "{why}, and {REQUIRED_BY} asks for it"
+        );
+
+        eprintln!("skipped: {why}");
+    }};
+}
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 const FRAMES: usize = 20_000;
@@ -14244,7 +14258,7 @@ fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<Pat
             .status()
             .is_ok_and(|status| status.success());
         let Some(bytes) = made.then(|| fs::read(&part).ok()).flatten() else {
-            eprintln!("skipped: no ffmpeg to encode a link of {name}");
+            passed_over!("no ffmpeg to encode a link of {name}");
             return None;
         };
 
@@ -14905,7 +14919,7 @@ fn tones_in_an_mp3(tree: &Tree) -> Option<PathBuf> {
         .is_ok_and(|status| status.success());
 
     if !made {
-        eprintln!("skipped: no ffmpeg with libmp3lame to encode the tones");
+        passed_over!("no ffmpeg with libmp3lame to encode the tones");
         return None;
     }
     Some(path)
@@ -15058,7 +15072,7 @@ fn noise_in_an_mp3(tree: &Tree, encoded: &Encoded) -> Option<PathBuf> {
         .is_ok_and(|status| status.success());
 
     if !made {
-        eprintln!("skipped: no ffmpeg with libmp3lame to encode the noise");
+        passed_over!("no ffmpeg with libmp3lame to encode the noise");
         return None;
     }
     Some(path)

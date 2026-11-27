@@ -9,6 +9,7 @@ use resonate_pipewire::{
     AudioSource, LatencyRequest, MediaRole, NodeName, PipeWire, SinkInfo, StreamRequest,
 };
 
+const REQUIRED_BY: &str = "RESONATE_LISTEN_CAPTURE_TESTS";
 const DISCOVERY: Duration = Duration::from_secs(2);
 const TONE_HZ: f64 = 997.0;
 const ELSEWHERE_HZ: f64 = 3_100.0;
@@ -72,7 +73,7 @@ impl Drop for Output {
 
 fn daemon(name: &str) -> Option<(PipeWire, SinkInfo, Output)> {
     let Some(output) = Output::new(name) else {
-        eprintln!("skipped: an isolated PipeWire output could not be created");
+        passed_over!("an isolated PipeWire output could not be created");
         return None;
     };
     let pipewire = PipeWire::start("resonate-listen-tests")

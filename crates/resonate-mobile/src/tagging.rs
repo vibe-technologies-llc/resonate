@@ -1212,12 +1212,12 @@ mod tests {
         let song = wave("ended");
         let before = fs::read(&song).expect("the wave");
 
+        let this_test = std::thread::current()
+            .name()
+            .expect("a test runs on a thread named for it")
+            .to_owned();
         let ended = Command::new(env::current_exe().expect("the test binary"))
-            .args([
-                "tagging::tests::a_rewrite_ended_mid_write_is_put_back_by_the_next_run",
-                "--exact",
-                "--nocapture",
-            ])
+            .args([this_test.as_str(), "--exact", "--nocapture"])
             .env(ENDING_UNDER, song.parent().expect("a folder"))
             .status()
             .expect("a run that ends mid-write");

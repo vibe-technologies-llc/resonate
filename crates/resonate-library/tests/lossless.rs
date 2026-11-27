@@ -32,6 +32,8 @@ use crate::support::{
 #[cfg(unix)]
 use crate::support::{HOURS, opened_with_a_vault, png_art, vaulted};
 
+const REQUIRED_BY: &str = "RESONATE_LIBRARY_FFMPEG_TESTS";
+
 #[test]
 fn one_song_in_two_formats_is_listed_once_as_the_better_of_the_two() -> Result<()> {
     let tree = Tree::new();
@@ -123,7 +125,7 @@ fn encoded_lasting(
     shaped: &[&str],
 ) -> Option<PathBuf> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a {name}");
+        passed_over!("no ffmpeg to build a {name}");
         return None;
     }
 
@@ -159,7 +161,7 @@ fn encoded_lasting(
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) || !target.exists() {
-        eprintln!("skipped: ffmpeg would not encode {name}");
+        passed_over!("ffmpeg would not encode {name}");
         return None;
     }
     Some(target)

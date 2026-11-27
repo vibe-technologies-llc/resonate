@@ -503,10 +503,15 @@ mod tests {
     const WATCHES_LEFT: usize = 8;
     const FOLDERS_PAST_THE_CAP: usize = 3 * WATCHES_LEFT;
 
-    fn ran_under_a_capped_namespace(this_test: &str) -> bool {
+    fn ran_under_a_capped_namespace() -> bool {
         if env::var_os(CAPPED_AT).is_some() {
             return false;
         }
+
+        let this_test = std::thread::current()
+            .name()
+            .expect("a test runs on a thread named for it")
+            .to_owned();
 
         let capped = format!(
             "echo {WATCHES_LEFT} > /proc/sys/user/max_inotify_watches && exec \"$0\" \"$@\""
@@ -514,12 +519,24 @@ mod tests {
         let ran = process::Command::new("unshare")
             .args(["--user", "--map-root-user", "sh", "-c", &capped])
             .arg(env::current_exe().expect("the test binary"))
-            .args([this_test, "--exact", "--nocapture"])
+            .args([this_test.as_str(), "--exact", "--nocapture"])
             .env(CAPPED_AT, "1")
-            .status();
+            .output();
         match ran {
-            Ok(status) if status.code() == Some(0) => true,
-            Ok(status) => {
+            Ok(ran) if ran.status.code() == Some(0) => {
+                let said = String::from_utf8_lossy(&ran.stdout);
+
+                print!("{said}");
+
+                assert!(
+                    said.contains(" 1 passed;"),
+                    "{this_test} was not found to run under a capped namespace"
+                );
+                true
+            }
+            Ok(ran) => {
+                let status = ran.status;
+
                 assert!(
                     status.code().is_some(),
                     "the run under a capped namespace died: {status}"
@@ -545,9 +562,7 @@ mod tests {
     #[test]
     fn a_root_past_the_inotify_limit_is_said_uncovered_and_the_root_watched_before_it_still_hears()
     {
-        if ran_under_a_capped_namespace(
-            "watch::tests::a_root_past_the_inotify_limit_is_said_uncovered_and_the_root_watched_before_it_still_hears",
-        ) {
+        if ran_under_a_capped_namespace() {
             return;
         }
 

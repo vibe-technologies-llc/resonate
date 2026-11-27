@@ -17,6 +17,7 @@ use rustix::{
     termios::{LocalModes, tcgetattr},
 };
 
+const REQUIRED_BY: &str = "RESONATE_TERMINAL_TESTS";
 const PATIENCE: Duration = Duration::from_secs(15);
 const POLL_EVERY: Duration = Duration::from_millis(20);
 const SETTLED_FOR: Duration = Duration::from_millis(500);
@@ -166,12 +167,12 @@ fn told_to_leave_by(signal: &str) {
         .status()
         .is_err()
     {
-        eprintln!("skipped: no setsid to give play a terminal of its own");
+        passed_over!("no setsid to give play a terminal of its own");
         return;
     }
 
     let Some((terminal, controller)) = Terminal::open() else {
-        eprintln!("skipped: no pseudo-terminal to give play");
+        passed_over!("no pseudo-terminal to give play");
         return;
     };
     let home = Home::new(&format!("terminal-{signal}"));
@@ -254,7 +255,7 @@ fn listing_playlists(home: &Home) -> Command {
 #[test]
 fn a_listing_written_to_a_full_disk_fails() {
     let Ok(full) = OpenOptions::new().write(true).open("/dev/full") else {
-        eprintln!("skipped: no /dev/full to write to");
+        passed_over!("no /dev/full to write to");
         return;
     };
     let home = Home::new("terminal-full");

@@ -20,6 +20,20 @@ use resonate_vault::{
     VaultFiles, VaultKey,
 };
 
+const REQUIRED_BY: &str = "RESONATE_VAULT_TESTS";
+
+macro_rules! passed_over {
+    ($($why:tt)*) => {{
+        let why = format!($($why)*);
+
+        assert!(
+            std::env::var(REQUIRED_BY).as_deref() != Ok("required"),
+            "{why}, and {REQUIRED_BY} asks for it"
+        );
+
+        eprintln!("skipped: {why}");
+    }};
+}
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 const FRAMES: usize = 40_000;
@@ -1901,7 +1915,7 @@ fn reference_tools() -> bool {
         .is_ok_and(|answered| answered.status.success());
 
     if !found {
-        eprintln!("skipped: no flac to weigh what this build wrote");
+        passed_over!("no flac to weigh what this build wrote");
     }
     found
 }
@@ -2429,14 +2443,14 @@ fn a_source_with_a_packet_that_will_not_decode_is_not_kept() {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) {
-        eprintln!("skipped: no ffmpeg with libmp3lame to write an MP3");
+        passed_over!("no ffmpeg with libmp3lame to write an MP3");
         return;
     }
 
     let mut bytes = fs::read(&path).expect("the encoded file");
 
     let Some(header) = frame_at(&bytes, SPOILED) else {
-        eprintln!("skipped: ffmpeg wrote frames this walk does not read");
+        passed_over!("ffmpeg wrote frames this walk does not read");
         return;
     };
     let protected = bytes[header + 1] & 1 == 0;
@@ -2491,7 +2505,7 @@ fn a_kept_mp3_sheds_its_tags_and_keeps_every_frame_it_decodes_to() {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) {
-        eprintln!("skipped: no ffmpeg with libmp3lame to write a tagged MP3");
+        passed_over!("no ffmpeg with libmp3lame to write a tagged MP3");
         return;
     }
 
@@ -2600,7 +2614,7 @@ fn ogg_sequences_and_checksums_hold(bytes: &[u8]) -> bool {
 fn sheds_its_comments_and_decodes_alike(codec: &str, named: &str) {
     let tree = Tree::new();
     let Some(path) = a_tagged_ogg(&tree, codec, named) else {
-        eprintln!("skipped: no ffmpeg with {codec} to write a tagged Ogg stream");
+        passed_over!("no ffmpeg with {codec} to write a tagged Ogg stream");
         return;
     };
     let before = fs::read(&path).expect("the tagged file");
@@ -2666,7 +2680,7 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) {
-        eprintln!("skipped: no ffmpeg with {codec} to write a tagged {named}");
+        passed_over!("no ffmpeg with {codec} to write a tagged {named}");
         return;
     }
 
@@ -2732,7 +2746,7 @@ fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) {
-        eprintln!("skipped: no ffmpeg to write a tagged Ogg FLAC stream");
+        passed_over!("no ffmpeg to write a tagged Ogg FLAC stream");
         return;
     }
 
@@ -2925,7 +2939,7 @@ fn turning_ogg(tree: &Tree, name: &str, codec: &[&str]) -> Option<PathBuf> {
             .is_ok_and(|status| status.success());
 
         if !made {
-            eprintln!("skipped: no ffmpeg to write a link of {name}");
+            passed_over!("no ffmpeg to write a link of {name}");
             return None;
         }
         whole.extend_from_slice(&fs::read(&part).expect("a written link"));

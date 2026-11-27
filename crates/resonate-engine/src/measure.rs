@@ -152,10 +152,20 @@ mod tests {
 
     use super::*;
 
+    const REQUIRED_BY: &str = "RESONATE_ENGINE_FFMPEG_TESTS";
     const SINE_SOURCE_AMPLITUDE: f32 = 0.125;
     const QUIET: f32 = 0.1;
     const LOUD: f32 = 0.8;
     const PEAK_AGREES_WITHIN: f32 = 0.08;
+
+    fn passed_over(why: &str) {
+        assert!(
+            env::var(REQUIRED_BY).as_deref() != Ok("required"),
+            "{why}, and {REQUIRED_BY} asks for it"
+        );
+
+        eprintln!("skipped: {why}");
+    }
 
     struct Link {
         rate: u32,
@@ -198,7 +208,7 @@ mod tests {
                 .is_ok_and(|status| status.success());
 
             if !made {
-                eprintln!("skipped: no ffmpeg with libvorbis to write a link");
+                passed_over("no ffmpeg with libvorbis to write a link");
                 return None;
             }
             whole.extend_from_slice(&fs::read(&part).ok()?);

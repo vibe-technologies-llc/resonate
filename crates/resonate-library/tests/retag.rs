@@ -29,6 +29,8 @@ use crate::support::{
     words,
 };
 
+const REQUIRED_BY: &str = "RESONATE_LIBRARY_FFMPEG_TESTS";
+
 const MEDDLE_AIFF_SHEET: &str = r#"PERFORMER "Pink Floyd"
 TITLE "Meddle"
 FILE "Meddle.aiff" AIFF
@@ -2050,7 +2052,7 @@ fn a_cover_the_catalog_holds_is_written_into_a_file_that_carries_none() -> Resul
 
 fn matroska_named(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build a {name}");
+        passed_over!("no ffmpeg to build a {name}");
         return None;
     }
 
@@ -2074,7 +2076,7 @@ fn matroska_named(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) || !target.exists() {
-        eprintln!("skipped: ffmpeg would not encode {name}");
+        passed_over!("ffmpeg would not encode {name}");
         return None;
     }
     Some(target)

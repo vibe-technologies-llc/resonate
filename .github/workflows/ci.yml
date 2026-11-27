@@ -57,6 +57,17 @@ jobs:
           cache-on-failure: "true"
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - run: dbus-run-session -- cargo nextest run --locked --profile ci --workspace --exclude resonate-ui --no-default-features
+        env:
+          RESONATE_MPRIS_BUS_TESTS: required
+          RESONATE_TERMINAL_TESTS: required
+          RESONATE_PIPEWIRE_HOSTED_TESTS: required
+          RESONATE_LISTEN_HOSTED_TESTS: required
+          RESONATE_CODEC_ENCODED_TESTS: required
+          RESONATE_ANALYSIS_REFERENCES_TESTS: required
+          RESONATE_DSP_RESTORATION_TESTS: required
+          RESONATE_LIBRARY_FFMPEG_TESTS: required
+          RESONATE_VAULT_TESTS: required
+          RESONATE_ENGINE_FFMPEG_TESTS: required
 
   workspace:
     name: Tests with everything
@@ -75,6 +86,8 @@ jobs:
           cache-on-failure: "true"
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - run: cargo nextest run --locked --profile ci -p resonate -p resonate-ui
+        env:
+          RESONATE_TERMINAL_TESTS: required
 
   costs:
     name: DSP costs under their ceilings

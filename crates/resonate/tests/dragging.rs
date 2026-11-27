@@ -176,13 +176,13 @@ fn a_file_dragged_from_another_client_onto_a_hosted_kwin_is_copied_into_the_musi
         return;
     }
     if let Some(missing) = TOOLS.into_iter().find(|tool| !on_the_path(tool)) {
-        eprintln!("skipped: no {missing} to host a compositor with");
-        return;
+        panic!("no {missing} to host a compositor with, and {OPTED_IN} asks for it");
     }
-    if !python_has_gtk() {
-        eprintln!("skipped: no GTK 4 in python3 to offer the file with");
-        return;
-    }
+
+    assert!(
+        python_has_gtk(),
+        "no GTK 4 in python3 to offer the file with, and {OPTED_IN} asks for it"
+    );
 
     let output = Output::new();
 

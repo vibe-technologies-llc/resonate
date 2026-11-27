@@ -283,20 +283,32 @@ Invariants the layering protects (the rules files have the rest):
   `cargo bench -p resonate-analysis --bench through` times `peak_through`, `print`, `excerpt` and
   `loudest_through` over `RESONATE_BENCH_SONGS=<folder>`, each the best of fifteen (`analysis.md`).
   `cargo build --profile profiling`: release with symbols.
-- Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
-  `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), `resonate-coreaudio`'s `stream` (macOS, an output device; `RESONATE_COREAUDIO_TESTS=required` makes a skip a failure), the reconnect, `formats` and
-  `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris`'s `bus::` (session
-  bus; notification and headset presses run under `dbus-run-session`); `resonate-sync`'s `nearby::` (a LAN
-  interface, IPv6 loopback, multicast delivery; `RESONATE_SYNC_NEARBY_TESTS=required` makes a skip a failure); `resonate-codec`'s
-  `encoded::` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp`'s `restoration::`
-  (ffmpeg); `resonate-library`'s `cues::`, `keeps::`, `lossless::` and `retag::`
-  (ffmpeg); `resonate-analysis`'s `references::` (ffmpeg with libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each skipped without); `resonate-online`'s `live` (`RESONATE_ONLINE_TESTS`); `resonate`'s `terminal::`
-  (`setsid`, a pseudo-terminal) and, on Windows, `resonate`'s `console::` (ConPTY, an audio
-  endpoint `sinks` lists); `resonate`'s `dragging::` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
-  in python3, `spectacle`); `resonate-mpris`'s `trash::` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
-  sandboxed case); `resonate-server`'s `shared::` page tests (`node`, and a headless `firefox` driven over
-  Marionette for the pages' policy). `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers
-  on loopback (`-ytmusic` a fake `yt-dlp` too, on Unix).
+- Tests needing the outside world skip without it, and each suite's `RESONATE_*_TESTS=required` makes a
+  skip a failure (`build.md`; CI sets the ones marked CI): `resonate-pipewire` (`stream`,
+  `RESONATE_PIPEWIRE_STREAM_TESTS`; `reconnect`, `formats` and `teardown` host their own daemon with
+  `pipewire` and `pw-cli`, `RESONATE_PIPEWIRE_HOSTED_TESTS`, CI), `resonate-listen` (`capture`,
+  `RESONATE_LISTEN_CAPTURE_TESTS`; `reconnect` and `microphone`, `RESONATE_LISTEN_HOSTED_TESTS`, CI),
+  `resonate-coreaudio`'s `stream` (macOS, an output device; `RESONATE_COREAUDIO_TESTS`);
+  `resonate-mpris`'s `bus::` (session bus; notification and headset presses run under
+  `dbus-run-session`; `RESONATE_MPRIS_BUS_TESTS`, CI); `resonate-sync`'s `nearby::` (a LAN interface,
+  IPv6 loopback, multicast delivery; `RESONATE_SYNC_NEARBY_TESTS`); `resonate-cast`'s mDNS test
+  (multicast; `RESONATE_CAST_MULTICAST_TESTS`); `resonate-codec`'s `encoded::` (ffmpeg, `metaflac`,
+  `wavpack`, `mac`, `lame`; `RESONATE_CODEC_ENCODED_TESTS`, CI); `resonate-dsp`'s `restoration::`
+  (ffmpeg; `RESONATE_DSP_RESTORATION_TESTS`, CI); `resonate-library`'s `cues::`, `keeps::`,
+  `lossless::` and `retag::` (ffmpeg; `RESONATE_LIBRARY_FFMPEG_TESTS`, CI); `resonate-vault`
+  (ffmpeg, `flac`; `RESONATE_VAULT_TESTS`, CI); `resonate-engine`'s ffmpeg tests
+  (`RESONATE_ENGINE_FFMPEG_TESTS`, CI); `resonate-analysis`'s `references::` and `turns::` (ffmpeg with
+  libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each
+  skipped without; `RESONATE_ANALYSIS_REFERENCES_TESTS`, CI); `resonate-online`'s `live`
+  (`RESONATE_ONLINE_TESTS`, the opt-in gate itself); `resonate`'s `terminal::` (`setsid`, a
+  pseudo-terminal; `RESONATE_TERMINAL_TESTS`, CI) and, on Windows, `resonate`'s `console::` (ConPTY, an
+  audio endpoint `sinks` lists; `RESONATE_CONSOLE_TESTS`); `resonate`'s `dragging::`
+  (`RESONATE_DRAG_TESTS`, the opt-in gate, past which a missing hosted KWin, GTK 4 in python3 or
+  `spectacle` fails); `resonate-mpris`'s `trash::` (`xdg-desktop-portal`, and `bwrap` with
+  `xdg-dbus-proxy` for the sandboxed case; `RESONATE_MPRIS_PORTAL_TESTS`); `resonate-server`'s `shared::`
+  page tests (`node`, and a headless `firefox` driven over Marionette for the pages' policy).
+  `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers on
+  loopback (`-ytmusic` a fake `yt-dlp` too, on Unix).
 - `cargo run -p resonate-server -- --help`: the sync server. `cargo nextest run -p resonate-server` runs
   it in-process with two clients over loopback (playlists, favourites, a peer fetch, a stranger's
   key); `cargo nextest run -p resonate-sync` holds the ledger, wire and sealing.

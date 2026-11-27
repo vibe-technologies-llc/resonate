@@ -13,6 +13,7 @@ use resonate_analysis::{Coding, Finding, Loudness, Study, Tell, Verdict, Watch, 
 use resonate_codec::Sources;
 use resonate_core::MediaLocation;
 
+const REQUIRED_BY: &str = "RESONATE_ANALYSIS_REFERENCES_TESTS";
 const STEREO: u32 = 0b11;
 const FIVE_ONE_WITH_REARS: u32 = 0x3F;
 const FIVE_ONE_WITH_SIDES: u32 = 0x60F;
@@ -330,7 +331,7 @@ fn agrees_with_ebur128(tree: &Tree, name: &str, rate: u32, mask: u32) {
     let channels = mask.count_ones() as usize;
     let path = tree.wave(name, rate, mask, &programme(rate, channels));
     let Some(reference) = ebur128_of(&path) else {
-        eprintln!("skipped: no ffmpeg to measure {name} against");
+        passed_over!("no ffmpeg to measure {name} against");
         return;
     };
     let loudness = loudness_of(&path);
@@ -427,7 +428,7 @@ fn a_print_of_a_clip_at_chromaprints_own_rate_is_the_one_fpcalc_makes() {
     let path = tree.wave("print.wav", PRINT_RATE, STEREO, &interleaved);
 
     let Some(reference) = fpcalc_print_of(&path) else {
-        eprintln!("skipped: no fpcalc to print against");
+        passed_over!("no fpcalc to print against");
         return;
     };
     let printed = studied(&path).print.expect("a print");
@@ -503,7 +504,7 @@ fn the_committed_print_at_chromaprints_own_rate_is_the_one_fpcalc_makes_of_the_s
     let path = seeded_print_file(&tree, PRINT_RATE);
 
     let Some(reference) = fpcalc_print_of(&path) else {
-        eprintln!("skipped: no fpcalc to print against");
+        passed_over!("no fpcalc to print against");
         return;
     };
 
@@ -750,7 +751,7 @@ fn cut_decode() -> Option<String> {
 #[test]
 fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_steps() {
     let Some(Sourced { tree, source, .. }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to encode AAC with");
+        passed_over!("no ffmpeg to encode AAC with");
         return;
     };
     let mut expected = Expectations::default();
@@ -777,7 +778,7 @@ fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_s
 #[test]
 fn faacs_and_fdk_aacs_decoded_back_to_flac_land_on_aacs_steps_whatever_blocks_they_choose() {
     let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to write FLAC with");
+        passed_over!("no ffmpeg to write FLAC with");
         return;
     };
     let mut expected = Expectations::default();
@@ -818,7 +819,7 @@ fn faacs_and_fdk_aacs_decoded_back_to_flac_land_on_aacs_steps_whatever_blocks_th
 #[test]
 fn a_lossy_decode_dithered_or_taken_to_a_hi_res_rate_still_lands_on_the_steps() {
     let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to encode AAC with");
+        passed_over!("no ffmpeg to encode AAC with");
         return;
     };
     let aac = tree.root.join("256k.m4a");
@@ -861,7 +862,7 @@ fn an_aac_decode_resampled_to_the_other_cd_rate_lands_on_aacs_steps_once_brought
 
     for (rate, other) in [(MUSIC_RATE, 48_000), (48_000, MUSIC_RATE)] {
         let Some(Sourced { tree, source, .. }) = music_source(rate) else {
-            eprintln!("skipped: no ffmpeg to encode AAC with");
+            passed_over!("no ffmpeg to encode AAC with");
             return;
         };
         let resampled_source = tree.root.join("resampled-source.flac");
@@ -892,7 +893,7 @@ fn an_aac_decode_resampled_to_the_other_cd_rate_lands_on_aacs_steps_once_brought
 #[test]
 fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules() {
     let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to encode MP3 with");
+        passed_over!("no ffmpeg to encode MP3 with");
         return;
     };
     let probe = tree.root.join("probe.mp3");
@@ -905,7 +906,7 @@ fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules() {
     ])
     .is_none()
     {
-        eprintln!("skipped: no lame to encode MP3 with");
+        passed_over!("no lame to encode MP3 with");
         return;
     }
 
@@ -938,7 +939,7 @@ fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules() {
 #[test]
 fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels() {
     let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to encode MP2 with");
+        passed_over!("no ffmpeg to encode MP2 with");
         return;
     };
 
@@ -991,7 +992,7 @@ fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels(
 #[test]
 fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor() {
     let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to encode Vorbis with");
+        passed_over!("no ffmpeg to encode Vorbis with");
         return;
     };
     let mut expected = Expectations::default();
@@ -1010,7 +1011,7 @@ fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor() {
         ])
         .is_none()
         {
-            eprintln!("skipped: no libvorbis in ffmpeg");
+            passed_over!("no libvorbis in ffmpeg");
             return;
         }
 
@@ -1031,7 +1032,7 @@ fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor() {
 #[test]
 fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies() {
     let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to encode Opus with");
+        passed_over!("no ffmpeg to encode Opus with");
         return;
     };
     let mut expected = Expectations::default();
@@ -1079,7 +1080,7 @@ fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies()
 #[test]
 fn a_lossy_decode_downsampled_below_its_coded_rate_lands_on_the_steps_once_brought_back() {
     let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
-        eprintln!("skipped: no ffmpeg to encode AAC with");
+        passed_over!("no ffmpeg to encode AAC with");
         return;
     };
     let downsampled_source = tree.root.join("downsampled-source.flac");
@@ -1155,7 +1156,7 @@ fn loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps() {
             let flac = made.with_extension("flac");
 
             if as_flac(&made, &flac, None).is_none() {
-                eprintln!("skipped: no ffmpeg to write FLAC with");
+                passed_over!("no ffmpeg to write FLAC with");
                 return;
             }
 

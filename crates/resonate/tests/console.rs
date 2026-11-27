@@ -20,13 +20,7 @@ use resonate_win32::{
     ConsoleEvent, ConsoleMode, Process, PseudoConsole, console_input_mode, tell_the_console,
 };
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
-
+const REQUIRED_BY: &str = "RESONATE_CONSOLE_TESTS";
 const PATIENCE: Duration = Duration::from_secs(15);
 const POLL_EVERY: Duration = Duration::from_millis(200);
 const SETTLED_FOR: Duration = Duration::from_millis(500);
@@ -37,7 +31,6 @@ const ROWS: i16 = 50;
 
 const ERRAND: &str = "RESONATE_CONSOLE_ERRAND";
 const ASKED: &str = "RESONATE_CONSOLE_ASKED";
-const ERRAND_TEST: &str = "an_errand_run_inside_the_console";
 const MODE_SAID: &str = "console-mode-";
 const READ_THE_MODE: &str = "mode";
 const INTERRUPT: &str = "interrupt";
@@ -200,7 +193,7 @@ impl Console {
     fn errand(&self, home: &Home, errand: &str, asked: usize) -> Process {
         let asked = asked.to_string();
         let test = env::current_exe().expect("this test's own executable");
-        let errand_test = in_this_suite(ERRAND_TEST);
+        let errand_test = crate::named(&an_errand_run_inside_the_console);
         let arguments = [
             errand_test.as_str(),
             "--exact",
@@ -298,12 +291,12 @@ enum Telling {
 
 fn told_to_leave(told: Telling) {
     if !has_an_audio_endpoint() {
-        eprintln!("skipped: no audio endpoint for play to play to");
+        passed_over!("no audio endpoint for play to play to");
         return;
     }
 
     let Some(mut console) = Console::open() else {
-        eprintln!("skipped: no pseudo console to give play");
+        passed_over!("no pseudo console to give play");
         return;
     };
     let home = Home::new("console");
@@ -364,12 +357,12 @@ fn a_break_leaves_play_with_the_console_as_it_found_it() {
 #[test]
 fn a_console_closed_under_play_leaves_it() {
     if !has_an_audio_endpoint() {
-        eprintln!("skipped: no audio endpoint for play to play to");
+        passed_over!("no audio endpoint for play to play to");
         return;
     }
 
     let Some(console) = Console::open() else {
-        eprintln!("skipped: no pseudo console to give play");
+        passed_over!("no pseudo console to give play");
         return;
     };
     let home = Home::new("closed");

@@ -33,12 +33,7 @@ use crate::support::{
     scan, scanned_orbits, songs_under, source, waited_for,
 };
 
-fn in_this_suite(test: &str) -> String {
-    let (_, module) = module_path!()
-        .split_once("::")
-        .expect("a module of the suite");
-    format!("{module}::{test}")
-}
+const REQUIRED_BY: &str = "RESONATE_LIBRARY_FFMPEG_TESTS";
 
 fn left_long_ago(path: &Path) {
     let long_ago = SystemTime::now() - writer::UNHELD_AND_UNTOUCHED_FOR * 2;
@@ -1033,12 +1028,9 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
     delivering_into(&library, &tree);
     library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "San Tropez")]))?;
 
+    let this_test = crate::this_test();
     let mut killed = Command::new(env::current_exe().expect("the test binary"))
-        .args([
-            in_this_suite("a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept")
-                .as_str(),
-            "--exact",
-        ])
+        .args([this_test.as_str(), "--exact"])
         .env(KILLED_KEEP_FOLDER, tree.path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1418,7 +1410,7 @@ fn a_video_a_keep_landed_is_declined_by_the_poll_while_its_file_stands() -> Resu
 
 fn opus_in_webm() -> Option<Vec<u8>> {
     if !ffmpeg() {
-        eprintln!("skipped: no ffmpeg to build an Opus WebM");
+        passed_over!("no ffmpeg to build an Opus WebM");
         return None;
     }
 
@@ -1436,7 +1428,7 @@ fn opus_in_webm() -> Option<Vec<u8>> {
         .status();
 
     if !encoded.is_ok_and(|status| status.success()) {
-        eprintln!("skipped: ffmpeg would not encode Opus into WebM");
+        passed_over!("ffmpeg would not encode Opus into WebM");
         return None;
     }
     fs::read(target).ok()
@@ -2392,14 +2384,9 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
 
     let walk = walk_held_by_another_process(&database);
 
+    let this_test = crate::this_test();
     let mut killed = Command::new(env::current_exe().expect("the test binary"))
-        .args([
-            in_this_suite(
-                "a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_landing",
-            )
-            .as_str(),
-            "--exact",
-        ])
+        .args([this_test.as_str(), "--exact"])
         .env(UNREAD_KEEP_FOLDER, tree.path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

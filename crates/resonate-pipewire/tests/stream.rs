@@ -13,6 +13,7 @@ use resonate_pipewire::{
     StreamState,
 };
 
+const REQUIRED_BY: &str = "RESONATE_PIPEWIRE_STREAM_TESTS";
 const DISCOVERY: Duration = Duration::from_secs(2);
 const PATIENCE: Duration = Duration::from_secs(5);
 const SAME_EVERY_RATE: Duration = Duration::from_millis(20);
@@ -48,7 +49,7 @@ fn daemon() -> Option<(PipeWire, SinkInfo)> {
     let pipewire = match PipeWire::start("resonate-tests") {
         Ok(pipewire) => pipewire,
         Err(error) => {
-            eprintln!("skipped: no PipeWire daemon to talk to ({error})");
+            passed_over!("no PipeWire daemon to talk to ({error})");
             return None;
         }
     };
@@ -56,11 +57,11 @@ fn daemon() -> Option<(PipeWire, SinkInfo)> {
     match pipewire.default_sink(DISCOVERY) {
         Ok(Some(sink)) => Some((pipewire, sink)),
         Err(Error::Disconnected) => {
-            eprintln!("skipped: no PipeWire daemon to talk to");
+            passed_over!("no PipeWire daemon to talk to");
             None
         }
         Ok(None) | Err(Error::NoSink) => {
-            eprintln!("skipped: the daemon advertises no sink");
+            passed_over!("the daemon advertises no sink");
             None
         }
         Err(error) => panic!("the daemon would not enumerate its sinks: {error}"),

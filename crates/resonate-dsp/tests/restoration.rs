@@ -10,6 +10,7 @@ use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 use resonate_dsp::{Processor, Restoration, Restore, RestoreConfig, Tuning};
 use rustfft::{FftPlanner, num_complex::Complex};
 
+const REQUIRED_BY: &str = "RESONATE_DSP_RESTORATION_TESTS";
 const RATE: f64 = 44_100.0;
 const FRAMES: usize = 4 * 44_100;
 const BLOCK: usize = 1_024;
@@ -320,7 +321,7 @@ fn every_lossy_codec_is_extended_from_its_first_half_second() {
     let source = tones(100.0, 21_000.0, 400);
     for encoding in &ENCODINGS {
         let Some(decoded) = encoded_and_decoded(encoding, &source) else {
-            eprintln!("skipped: no ffmpeg to encode {}", encoding.name);
+            passed_over!("no ffmpeg to encode {}", encoding.name);
             return;
         };
         let (extended, stage) = through(Restoration::Extend, encoding.tuning, &decoded);
@@ -371,7 +372,7 @@ fn a_band_one_granule_missing_from_every_lossy_codec_is_filled() {
     let without = HOLE_TO_HZ - 300.0;
     for encoding in &ENCODINGS {
         let Some(decoded) = encoded_and_decoded(encoding, &source) else {
-            eprintln!("skipped: no ffmpeg to encode {}", encoding.name);
+            passed_over!("no ffmpeg to encode {}", encoding.name);
             return;
         };
         let (repaired, _) = through(Restoration::Repair, encoding.tuning, &decoded);
@@ -466,7 +467,7 @@ fn every_bitrate_of_every_lossy_codec_is_extended_only_where_the_encoder_cut() {
     let source = music(MUSIC_SECONDS, MUSIC_SEED);
     for encoding in &BREADTH {
         let Some(decoded) = encoded_and_decoded(encoding, &source) else {
-            eprintln!("skipped: no ffmpeg to encode {}", encoding.name);
+            passed_over!("no ffmpeg to encode {}", encoding.name);
             return;
         };
         let (extended, stage) = through(Restoration::Extend, encoding.tuning, &decoded);
@@ -541,7 +542,7 @@ fn a_hole_an_encoder_kept_deep_is_filled_at_every_bitrate() {
     let without = HOLE_TO_HZ - 300.0;
     for encoding in &BREADTH {
         let Some(decoded) = encoded_and_decoded(encoding, &source) else {
-            eprintln!("skipped: no ffmpeg to encode {}", encoding.name);
+            passed_over!("no ffmpeg to encode {}", encoding.name);
             return;
         };
         let (repaired, _) = through(Restoration::Repair, encoding.tuning, &decoded);
@@ -592,7 +593,7 @@ fn level_in_a_short_block(samples: &[f64], at: usize, to_hz: f64) -> f64 {
 fn holes_an_aac_encoder_left_in_its_short_blocks_are_filled() {
     let source = music(TRANSIENT_MUSIC_SECONDS, TRANSIENT_MUSIC_SEED);
     let Some(decoded) = encoded_and_decoded(&SHORT_BLOCK_ENCODING, &source) else {
-        eprintln!("skipped: no ffmpeg to encode {}", SHORT_BLOCK_ENCODING.name);
+        passed_over!("no ffmpeg to encode {}", SHORT_BLOCK_ENCODING.name);
         return;
     };
     let (repaired, stage) = through(Restoration::Repair, Tuning::Aac, &decoded);
