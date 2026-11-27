@@ -113,14 +113,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.18.1] Hold the sentences the named catalog fields fixed to their whole output. **Low,
-  builder.** Naming every variable at the call (`language.md`) put right sixteen calls passing
-  values in the wrong place, which no test had seen because none read the whole sentence: the
-  window's delete notice, the duplicate fold's two counts, cover compaction's counts, the local
-  MusicBrainz copy's note; the terminal's `sync --fetch`, a followed profile left unread, the
-  MusicBrainz copy's replicated and amended lines, a learnt sink's save and a lyric sheet left
-  unwritten (the phones' versions sentences have one now). Add a test reading each whole. Done when
-  each of those sentences is pinned by a test.
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
