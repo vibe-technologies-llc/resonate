@@ -87,10 +87,10 @@ never measured), the layering refusals, the fuzz build, the sync server's packag
   `windows-tests` runs, with its excludes, `resonate-engine`'s tests taken apart and run one at a time, `macos.md`) and `macos-window` (the tests of `resonate` and `resonate-ui`, since
   the window builds for macOS on a Mac alone), each test step run whatever the one before
   answered, so one run names every failure of a build no machine here can run (`macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the DSP lab aside); a crate added to the
-  layering refusals gets a line. The layering job has seven shapes: `refuse`, `refuse_headless` (no
+  layering refusals gets a line. Every `cargo tree` result is captured into `held` on a line of its own, so a crate that does not exist or a target that stops resolving fails the job under `set -e`, never a refusal that checks nothing. The layering job has eight shapes: `refuse`, `refuse_headless` (no
   default features), `refuse_shipped` (normal edges alone, so a dev-dependency's features stay out:
   `resonate-server` and `resonate-sync`'s `device` stack, `sync.md`), `only` (the workspace crates a crate may reach), `only_on` (the same in one
-  target's tree), `reached_by_the_binary_alone` (`cargo tree -i`; `online`, `mcp`, `discord`),
+  target's tree), `reached_only_by` (`cargo tree -i`: the workspace crates that may reach a crate, `resonate-cast`, `resonate-online`, `resonate-sync`), `reached_by_the_binary_alone` (`reached_only_by` with the binary; `mcp`, `discord`),
   `reached_directly_on` (the workspace crates that may name a crate, in one target's tree), and one `cargo tree --target x86_64-pc-windows-msvc`
   refusal that holds PipeWire, Wayland and `rustix` out of the binary's Windows tree; `resonate-mpris`'s direct normal edges are checked
   for `resonate-codec`, and `resonate-win32`'s Windows tree reaches no workspace crate while only the
