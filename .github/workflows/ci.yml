@@ -114,7 +114,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Install what cargo tree needs
-        run: pacman -Syu --noconfirm --needed git rustup
+        run: pacman -Syu --noconfirm --needed git python rustup
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
@@ -123,6 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
+          packages=$(cargo metadata --locked --format-version 1 | python3 -I -c 'import json, sys; print("\n".join(sorted({package["name"] for package in json.load(sys.stdin)["packages"]})))')
           held_by() {
             cargo tree --locked "$@" --prefix none --format '{p}' | awk '{print $1}' | sort -u
           }
@@ -130,7 +131,10 @@ jobs:
             local named=$1 held=$2
             shift 2
             for banned in "$@"; do
-              if grep -qx "$banned" <<<"$held"; then
+              if ! grep -qx "$banned" <<<"$packages"; then
+                echo "::error::$named refuses $banned, which no package is named"
+                failed=1
+              elif grep -qx "$banned" <<<"$held"; then
                 echo "::error::$named depends on $banned"
                 failed=1
               fi

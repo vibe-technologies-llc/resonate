@@ -102,7 +102,7 @@ never measured), the layering refusals, the fuzz build, the sync server's packag
   `windows-tests` runs, with its excludes, `resonate-engine`'s tests taken apart and run one at a time, `macos.md`) and `macos-window` (the tests of `resonate` and `resonate-ui`, since
   the window builds for macOS on a Mac alone), each test step run whatever the one before
   answered, so one run names every failure of a build no machine here can run (`macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the DSP lab aside); a crate added to the
-  layering refusals gets a line. Every `cargo tree` result is captured into `held` on a line of its own, so a crate that does not exist or a target that stops resolving fails the job under `set -e`, never a refusal that checks nothing. The layering job has eight shapes: `refuse`, `refuse_headless` (no
+  layering refusals gets a line. Every `cargo tree` result is captured into `held` on a line of its own, so a crate that does not exist or a target that stops resolving fails the job under `set -e`, never a refusal that checks nothing. A refused name is held to the packages `cargo metadata` knows over every target, read once at the job's start, so a typo or a renamed crate in a refusal fails the job (`check`). The layering job has eight shapes: `refuse`, `refuse_headless` (no
   default features), `refuse_shipped` (normal edges alone, so a dev-dependency's features stay out:
   `resonate-server` and `resonate-sync`'s `device` stack, `sync.md`), `only` (the workspace crates a crate may reach), `only_on` (the same in one
   target's tree), `reached_only_by` (`cargo tree -i`: the workspace crates that may reach a crate, `resonate-cast`, `resonate-online`, `resonate-sync`), `reached_by_the_binary_alone` (`reached_only_by` with the binary; `mcp`, `discord`),
@@ -127,7 +127,7 @@ never measured), the layering refusals, the fuzz build, the sync server's packag
   binaries, and works on a Dev Drive (`samypr100/setup-dev-drive`: ReFS, trusted so Defender does
   not scan each file written, the checkout copied there and every step run in
   `DEV_DRIVE_WORKSPACE`). The `fuzz` job installs `cargo-fuzz` with `cargo install`, and `layering`
-  installs `git` and `rustup` alone, the only things `cargo tree` needs. The formatter is local
+  installs `git`, `python` and `rustup` alone, the only things `cargo tree` and the package list need. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
 - **A push to `master` never cancels the run before it; a pull request's does**
   (`cancel-in-progress` only for `pull_request`): GitHub keeps one run going and the newest one
