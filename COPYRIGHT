@@ -5,4 +5,5 @@ version 3 or later. See LICENSE.
 
 crates/resonate-eq/targets/harman-over-ear-2018.csv and harman-in-ear-2019.csv are AutoEq's
 published target curves, under the MIT License; its notice is
-crates/resonate-eq/targets/LICENSE-AutoEq.
+crates/resonate-eq/targets/LICENSE-AutoEq, which also covers
+crates/resonate-eq/tests/fixtures/autoeq_index_excerpt.md, rows of AutoEq's results/INDEX.md.

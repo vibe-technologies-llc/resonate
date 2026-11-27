@@ -2,18 +2,28 @@ use std::{env, fs};
 
 use resonate_eq::{Catalogue, search, suggest};
 
+const EXCERPT: &str = include_str!("fixtures/autoeq_index_excerpt.md");
+const WHOLE_INDEX_AT_LEAST: usize = 8_000;
+const EXCERPT_AT_LEAST: usize = 500;
+
+fn index_and_floor() -> (String, usize) {
+    match env::var_os("RESONATE_AUTOEQ_INDEX") {
+        Some(path) => (
+            fs::read_to_string(path).expect("the index reads"),
+            WHOLE_INDEX_AT_LEAST,
+        ),
+        None => (EXCERPT.to_owned(), EXCERPT_AT_LEAST),
+    }
+}
+
 #[test]
 fn the_whole_index_reads_and_matches_the_way_the_sample_did() {
-    let Some(path) = env::var_os("RESONATE_AUTOEQ_INDEX") else {
-        eprintln!("skipped: set RESONATE_AUTOEQ_INDEX to a results/INDEX.md to walk it");
-        return;
-    };
-    let text = fs::read_to_string(path).expect("the index reads");
+    let (text, floor) = index_and_floor();
     let catalogue = Catalogue::read(&text);
 
     eprintln!("catalogue holds {} devices", catalogue.len());
 
-    assert!(catalogue.len() > 8_000);
+    assert!(catalogue.len() > floor);
 
     let named = |description: &str| {
         suggest(&catalogue, description)

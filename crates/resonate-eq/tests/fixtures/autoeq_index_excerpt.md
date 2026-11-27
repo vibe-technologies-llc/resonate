@@ -1,0 +1,514 @@
+# Index
+This is a list of all equalization profiles. Target is in parentheses if there are results with multiple targets
+from the same source.
+
+- [64 Audio A12t (m20 Apex module)](./oratory1990/in-ear/64%20Audio%20A12t%20(m20%20Apex%20module)) by oratory1990
+- [64 Audio Tia Fourte Noir](./crinacle/711%20in-ear/64%20Audio%20Tia%20Fourte%20Noir) by crinacle on 711
+- [64 Audio Volur (m20 Apex module)](./ToneDeafMonk/in-ear/64%20Audio%20Volur%20(m20%20Apex%20module)) by ToneDeafMonk
+- [7Hz Timeless AE](./crinacle/Bruel%20&%20Kjaer%204620%20in-ear/7Hz%20Timeless%20AE) by crinacle on Bruel & Kjaer 4620
+- [Abyss AB-1266 Phi](./crinacle/GRAS%2043AG-7%20over-ear/Abyss%20AB-1266%20Phi) by crinacle on GRAS 43AG-7
+- [Advanced M4](./Innerfidelity/in-ear/Advanced%20M4) by Innerfidelity
+- [AKG K240 Studio](./crinacle/GRAS%2043AG-7%20over-ear/AKG%20K240%20Studio) by crinacle on GRAS 43AG-7
+- [AKG K619](./Innerfidelity/over-ear/AKG%20K619) by Innerfidelity
+- [AKG N5005](./oratory1990/in-ear/AKG%20N5005) by oratory1990
+- [Alpha & Delta KS100](./Regan%20Cipher/in-ear/Alpha%20&%20Delta%20KS100) by Regan Cipher
+- [Anker Soundcore Aerofit Pro](./Regan%20Cipher/earbud/Anker%20Soundcore%20Aerofit%20Pro) by Regan Cipher
+- [AOSHIDA E20](./Harpo/in-ear/AOSHIDA%20E20) by Harpo
+- [ARC Pollux](./crinacle/711%20in-ear/ARC%20Pollux) by crinacle on 711
+- [ASTRO Gaming A50 X](./Filk/over-ear/ASTRO%20Gaming%20A50%20X) by Filk
+- [Audeze LCD-2 Classic](./Rtings/HMS%20II.3%20over-ear/Audeze%20LCD-2%20Classic) by Rtings on HMS II.3
+- [Audeze LCD-X (2021)](./oratory1990/over-ear/Audeze%20LCD-X%20(2021)) by oratory1990
+- [Audio Zenith PMx2 (v1)](./oratory1990/over-ear/Audio%20Zenith%20PMx2%20(v1)) by oratory1990
+- [Audio-Technica ATH-AWKT](./oratory1990/over-ear/Audio-Technica%20ATH-AWKT) by oratory1990
+- [Audio-Technica ATH-M50x](./crinacle/EARS%20+%20711%20over-ear/Audio-Technica%20ATH-M50x) by crinacle on EARS + 711
+- [Audiosense AQ4](./crinacle/711%20in-ear/Audiosense%20AQ4) by crinacle on 711
+- [Aurisonics Kicker](./crinacle/711%20in-ear/Aurisonics%20Kicker) by crinacle on 711
+- [Baseus AeQur GH02 (passive)](./Filk/over-ear/Baseus%20AeQur%20GH02%20(passive)) by Filk
+- [Beats Studio3 Wireless](./oratory1990/over-ear/Beats%20Studio3%20Wireless) by oratory1990
+- [Beyerdynamic DT 240 Pro](./Innerfidelity/over-ear/Beyerdynamic%20DT%20240%20Pro) by Innerfidelity
+- [Beyerdynamic DT 770 (Alpha earpads)](./oratory1990/over-ear/Beyerdynamic%20DT%20770%20(Alpha%20earpads)) by oratory1990
+- [Beyerdynamic DT 770 M](./oratory1990/over-ear/Beyerdynamic%20DT%20770%20M) by oratory1990
+- [Beyerdynamic DT 770 Pro](./oratory1990/over-ear/Beyerdynamic%20DT%20770%20Pro) by oratory1990
+- [Beyerdynamic DT 770 Pro](./Auriculares%20Argentina/over-ear/Beyerdynamic%20DT%20770%20Pro) by Auriculares Argentina
+- [Beyerdynamic DT 770 Pro](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Beyerdynamic%20DT%20770%20Pro) by Rtings on Bruel & Kjaer 5128
+- [Beyerdynamic DT 770 Pro (250 Ohm)](./crinacle/GRAS%2043AG-7%20over-ear/Beyerdynamic%20DT%20770%20Pro%20(250%20Ohm)) by crinacle on GRAS 43AG-7
+- [Beyerdynamic DT 770 Pro (250 Ohm)](./Auriculares%20Argentina/over-ear/Beyerdynamic%20DT%20770%20Pro%20(250%20Ohm)) by Auriculares Argentina
+- [Beyerdynamic DT 770 Pro (250 Ohm)](./Headphone.com%20Legacy/over-ear/Beyerdynamic%20DT%20770%20Pro%20(250%20Ohm)) by Headphone.com Legacy
+- [Beyerdynamic DT 770 Pro (32 ohm Limited Edition, pleather earpads)](./Kuulokenurkka/over-ear/Beyerdynamic%20DT%20770%20Pro%20(32%20ohm%20Limited%20Edition,%20pleather%20earpads)) by Kuulokenurkka
+- [Beyerdynamic DT 770 Pro (32 Ohm)](./Headphone.com%20Legacy/over-ear/Beyerdynamic%20DT%20770%20Pro%20(32%20Ohm)) by Headphone.com Legacy
+- [Beyerdynamic DT 770 Pro (32 ohm)](./Super%20Review/over-ear/Beyerdynamic%20DT%20770%20Pro%20(32%20ohm)) by Super Review
+- [Beyerdynamic DT 770 Pro (600 Ohm)](./Innerfidelity/over-ear/Beyerdynamic%20DT%20770%20Pro%20(600%20Ohm)) by Innerfidelity
+- [Beyerdynamic DT 770 Pro (600 Ohm)](./Headphone.com%20Legacy/over-ear/Beyerdynamic%20DT%20770%20Pro%20(600%20Ohm)) by Headphone.com Legacy
+- [Beyerdynamic DT 770 Pro (80 Ohm)](./crinacle/GRAS%2043AG-7%20over-ear/Beyerdynamic%20DT%20770%20Pro%20(80%20Ohm)) by crinacle on GRAS 43AG-7
+- [Beyerdynamic DT 770 Pro (80 Ohm)](./Kuulokenurkka/over-ear/Beyerdynamic%20DT%20770%20Pro%20(80%20Ohm)) by Kuulokenurkka
+- [Beyerdynamic DT 770 Pro (80 Ohm)](./Auriculares%20Argentina/over-ear/Beyerdynamic%20DT%20770%20Pro%20(80%20Ohm)) by Auriculares Argentina
+- [Beyerdynamic DT 770 Pro (Dekoni hybrid earpads)](./oratory1990/over-ear/Beyerdynamic%20DT%20770%20Pro%20(Dekoni%20hybrid%20earpads)) by oratory1990
+- [Beyerdynamic DT 770 Pro (worn earpads)](./oratory1990/over-ear/Beyerdynamic%20DT%20770%20Pro%20(worn%20earpads)) by oratory1990
+- [Beyerdynamic DT 900 Pro X](./Kuulokenurkka/over-ear/Beyerdynamic%20DT%20900%20Pro%20X) by Kuulokenurkka
+- [Beyerdynamic T70](./Headphone.com%20Legacy/over-ear/Beyerdynamic%20T70) by Headphone.com Legacy
+- [BGVP P05 (no filter, standard nozzle)](./Harpo/in-ear/BGVP%20P05%20(no%20filter,%20standard%20nozzle)) by Harpo
+- [BLON BL-05](./Hi%20End%20Portable/in-ear/BLON%20BL-05) by Hi End Portable
+- [Bose QuietComfort](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Bose%20QuietComfort) by Rtings on Bruel & Kjaer 5128
+- [Bose QuietComfort](./HypetheSonics/over-ear/Bose%20QuietComfort) by HypetheSonics
+- [Bose QuietComfort 15](./Innerfidelity/over-ear/Bose%20QuietComfort%2015) by Innerfidelity
+- [Bose QuietComfort 15](./Headphone.com%20Legacy/over-ear/Bose%20QuietComfort%2015) by Headphone.com Legacy
+- [Bose QuietComfort 20](./Innerfidelity/over-ear/Bose%20QuietComfort%2020) by Innerfidelity
+- [Bose QuietComfort 20](./oratory1990/in-ear/Bose%20QuietComfort%2020) by oratory1990
+- [Bose QuietComfort 20](./Rtings/HMS%20II.3%20in-ear/Bose%20QuietComfort%2020) by Rtings on HMS II.3
+- [Bose QuietComfort 20 (passive)](./Innerfidelity/over-ear/Bose%20QuietComfort%2020%20(passive)) by Innerfidelity
+- [Bose QuietComfort 20 (passive)](./oratory1990/in-ear/Bose%20QuietComfort%2020%20(passive)) by oratory1990
+- [Bose QuietComfort 25](./oratory1990/over-ear/Bose%20QuietComfort%2025) by oratory1990
+- [Bose QuietComfort 25](./Rtings/HMS%20II.3%20over-ear/Bose%20QuietComfort%2025) by Rtings on HMS II.3
+- [Bose QuietComfort 25](./Innerfidelity/over-ear/Bose%20QuietComfort%2025) by Innerfidelity
+- [Bose QuietComfort 25 (passive)](./Innerfidelity/over-ear/Bose%20QuietComfort%2025%20(passive)) by Innerfidelity
+- [Bose QuietComfort 3](./Headphone.com%20Legacy/over-ear/Bose%20QuietComfort%203) by Headphone.com Legacy
+- [Bose QuietComfort 35](./Rtings/HMS%20II.3%20over-ear/Bose%20QuietComfort%2035) by Rtings on HMS II.3
+- [Bose QuietComfort 35 (wired, active)](./Innerfidelity/over-ear/Bose%20QuietComfort%2035%20(wired,%20active)) by Innerfidelity
+- [Bose QuietComfort 35 (wired, passive)](./Innerfidelity/over-ear/Bose%20QuietComfort%2035%20(wired,%20passive)) by Innerfidelity
+- [Bose QuietComfort 35 (wireless)](./Innerfidelity/over-ear/Bose%20QuietComfort%2035%20(wireless)) by Innerfidelity
+- [Bose QuietComfort 35 II](./crinacle/GRAS%2043AG-7%20over-ear/Bose%20QuietComfort%2035%20II) by crinacle on GRAS 43AG-7
+- [Bose QuietComfort 35 II](./Rtings/HMS%20II.3%20over-ear/Bose%20QuietComfort%2035%20II) by Rtings on HMS II.3
+- [Bose QuietComfort 35 II (passive)](./crinacle/GRAS%2043AG-7%20over-ear/Bose%20QuietComfort%2035%20II%20(passive)) by crinacle on GRAS 43AG-7
+- [Bose QuietComfort 35 II (passive)](./HypetheSonics/over-ear/Bose%20QuietComfort%2035%20II%20(passive)) by HypetheSonics
+- [Bose QuietComfort 35 II Gaming Headset​](./Rtings/HMS%20II.3%20over-ear/Bose%20QuietComfort%2035%20II%20Gaming%20Headset%E2%80%8B) by Rtings on HMS II.3
+- [Bose QuietComfort 45](./oratory1990/over-ear/Bose%20QuietComfort%2045) by oratory1990
+- [Bose QuietComfort 45](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Bose%20QuietComfort%2045) by Rtings on Bruel & Kjaer 5128
+- [Bose QuietComfort 45 (ANC on)](./Filk/over-ear/Bose%20QuietComfort%2045%20(ANC%20on)) by Filk
+- [Bose QuietComfort 45 (passive)](./Filk/over-ear/Bose%20QuietComfort%2045%20(passive)) by Filk
+- [Bose QuietComfort Earbuds](./Rtings/HMS%20II.3%20in-ear/Bose%20QuietComfort%20Earbuds) by Rtings on HMS II.3
+- [Bose QuietComfort EarBuds 2024](./DHRME/in-ear/Bose%20QuietComfort%20EarBuds%202024) by DHRME
+- [Bose QuietComfort Earbuds II](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Bose%20QuietComfort%20Earbuds%20II) by Rtings on Bruel & Kjaer 5128
+- [Bose QuietComfort II (100dB)](./HypetheSonics/GRAS%20RA0045%20in-ear/Bose%20QuietComfort%20II%20(100dB)) by HypetheSonics on GRAS RA0045
+- [Bose QuietComfort II (80dB)](./HypetheSonics/GRAS%20RA0045%20in-ear/Bose%20QuietComfort%20II%20(80dB)) by HypetheSonics on GRAS RA0045
+- [Bose QuietComfort II (90dB)](./HypetheSonics/GRAS%20RA0045%20in-ear/Bose%20QuietComfort%20II%20(90dB)) by HypetheSonics on GRAS RA0045
+- [Bose QuietComfort SE (ANC on)](./Kuulokenurkka/over-ear/Bose%20QuietComfort%20SE%20(ANC%20on)) by Kuulokenurkka
+- [Bose QuietComfort SE (passive)](./Kuulokenurkka/over-ear/Bose%20QuietComfort%20SE%20(passive)) by Kuulokenurkka
+- [Bose QuietComfort Ultra (ANC on)](./Kuulokenurkka/over-ear/Bose%20QuietComfort%20Ultra%20(ANC%20on)) by Kuulokenurkka
+- [Bose QuietComfort Ultra (ANC on)](./Filk/over-ear/Bose%20QuietComfort%20Ultra%20(ANC%20on)) by Filk
+- [Bose QuietComfort Ultra Earbuds](./DHRME/in-ear/Bose%20QuietComfort%20Ultra%20Earbuds) by DHRME
+- [Bose QuietComfort Ultra Earbuds](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Bose%20QuietComfort%20Ultra%20Earbuds) by Rtings on Bruel & Kjaer 5128
+- [Bose QuietComfort Ultra Headphones](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Bose%20QuietComfort%20Ultra%20Headphones) by Rtings on Bruel & Kjaer 5128
+- [Bose QuietComfort Ultra Headphones](./HypetheSonics/over-ear/Bose%20QuietComfort%20Ultra%20Headphones) by HypetheSonics
+- [Bose QuietControl 30](./Rtings/HMS%20II.3%20over-ear/Bose%20QuietControl%2030) by Rtings on HMS II.3
+- [Bowers & Wilkins C5](./Innerfidelity/in-ear/Bowers%20&%20Wilkins%20C5) by Innerfidelity
+- [BQEYZ Autumn (treble filter)](./RikudouGoku/in-ear/BQEYZ%20Autumn%20(treble%20filter)) by RikudouGoku
+- [Campfire Audio Andromeda 2020](./crinacle/711%20in-ear/Campfire%20Audio%20Andromeda%202020) by crinacle on 711
+- [Canpur CP622B](./Super%20Review/in-ear/Canpur%20CP622B) by Super Review
+- [CCA Polaris (off-off-off-off)](./ToneDeafMonk/in-ear/CCA%20Polaris%20(off-off-off-off)) by ToneDeafMonk
+- [Colorfly Quintet](./crinacle/711%20in-ear/Colorfly%20Quintet) by crinacle on 711
+- [Creative Aurvana Ace 2 (ANC On)](./HypetheSonics/GRAS%20RA0045%20in-ear/Creative%20Aurvana%20Ace%202%20(ANC%20On)) by HypetheSonics on GRAS RA0045
+- [Custom Art Pro330v2](./crinacle/711%20in-ear/Custom%20Art%20Pro330v2) by crinacle on 711
+- [Dan Clark Audio Aeon Flow Closed (black filter)](./crinacle/GRAS%2043AG-7%20over-ear/Dan%20Clark%20Audio%20Aeon%20Flow%20Closed%20(black%20filter)) by crinacle on GRAS 43AG-7
+- [Delta Air complimentary earphones](./crinacle/711%20in-ear/Delta%20Air%20complimentary%20earphones) by crinacle on 711
+- [Diskin DH3](./Rtings/HMS%20II.3%20over-ear/Diskin%20DH3) by Rtings on HMS II.3
+- [DUNU Falcon Pro (Atmospheric Immersion filter)](./Super%20Review/in-ear/DUNU%20Falcon%20Pro%20(Atmospheric%20Immersion%20filter)) by Super Review
+- [DUNU SA6 Ultra (atmospheric immersion mode)](./crinacle/711%20in-ear/DUNU%20SA6%20Ultra%20(atmospheric%20immersion%20mode)) by crinacle on 711
+- [Dyson OnTrac (ANC off, neutral)](./Kuulokenurkka/over-ear/Dyson%20OnTrac%20(ANC%20off,%20neutral)) by Kuulokenurkka
+- [EarSonics ES3](./crinacle/711%20in-ear/EarSonics%20ES3) by crinacle on 711
+- [Edifier X3 Lite](./Regan%20Cipher/in-ear/Edifier%20X3%20Lite) by Regan Cipher
+- [Empire Ears Bravado Mk2](./crinacle/711%20in-ear/Empire%20Ears%20Bravado%20Mk2) by crinacle on 711
+- [EPZ G10](./Super%20Review/in-ear/EPZ%20G10) by Super Review
+- [Etymotic ER2SE](./Jaytiss/in-ear/Etymotic%20ER2SE) by Jaytiss
+- [Etymotic mc3](./Headphone.com%20Legacy/in-ear/Etymotic%20mc3) by Headphone.com Legacy
+- [Fatfreq Scarlet Mini](./crinacle/Bruel%20&%20Kjaer%204620%20in-ear/Fatfreq%20Scarlet%20Mini) by crinacle on Bruel & Kjaer 4620
+- [Fidue A71](./Innerfidelity/in-ear/Fidue%20A71) by Innerfidelity
+- [FiiO FD7](./Kazi/in-ear/FiiO%20FD7) by Kazi
+- [FiiO FH5s (on-on-on)](./RikudouGoku/in-ear/FiiO%20FH5s%20(on-on-on)) by RikudouGoku
+- [Final Audio A4000](./Super%20Review/in-ear/Final%20Audio%20A4000) by Super Review
+- [Final Audio F3100](./oratory1990/in-ear/Final%20Audio%20F3100) by oratory1990
+- [Fir Audio M5](./crinacle/711%20in-ear/Fir%20Audio%20M5) by crinacle on 711
+- [FLC Technology FLC8 (strings-piano, clear LF, clear LF, green HF)](./Innerfidelity/in-ear/FLC%20Technology%20FLC8%20(strings-piano,%20clear%20LF,%20clear%20LF,%20green%20HF)) by Innerfidelity
+- [Focal Bathys (USB)](./Super%20Review/over-ear/Focal%20Bathys%20(USB)) by Super Review
+- [Focal Elear](./crinacle/EARS%20+%20711%20over-ear/Focal%20Elear) by crinacle on EARS + 711
+- [Focusrite HP60 (Scarlett Studio)](./oratory1990/over-ear/Focusrite%20HP60%20(Scarlett%20Studio)) by oratory1990
+- [Fostex T40RP Mk3](./oratory1990/over-ear/Fostex%20T40RP%20Mk3) by oratory1990
+- [Geek Wold GK3](./RikudouGoku/in-ear/Geek%20Wold%20GK3) by RikudouGoku
+- [Google Pixel Buds (2017)](./Rtings/HMS%20II.3%20in-ear/Google%20Pixel%20Buds%20(2017)) by Rtings on HMS II.3
+- [Google Pixel Buds (2020)](./Rtings/HMS%20II.3%20in-ear/Google%20Pixel%20Buds%20(2020)) by Rtings on HMS II.3
+- [Google Pixel Buds A-Series](./Rtings/HMS%20II.3%20in-ear/Google%20Pixel%20Buds%20A-Series) by Rtings on HMS II.3
+- [Google Pixel Buds Pro](./HypetheSonics/GRAS%20RA0045%20in-ear/Google%20Pixel%20Buds%20Pro) by HypetheSonics on GRAS RA0045
+- [Google Pixel Buds Pro](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Google%20Pixel%20Buds%20Pro) by Rtings on Bruel & Kjaer 5128
+- [Google Pixel Buds Pro 2](./DHRME/in-ear/Google%20Pixel%20Buds%20Pro%202) by DHRME
+- [Google Pixel Buds Pro 2](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Google%20Pixel%20Buds%20Pro%202) by Rtings on Bruel & Kjaer 5128
+- [Google Pixel USB-C Earbuds](./Rtings/HMS%20II.3%20earbud/Google%20Pixel%20USB-C%20Earbuds) by Rtings on HMS II.3
+- [Grado PS1000](./Innerfidelity/over-ear/Grado%20PS1000) by Innerfidelity
+- [Grado SR80 (S-Cush earpads)](./Super%20Review/over-ear/Grado%20SR80%20(S-Cush%20earpads)) by Super Review
+- [Heavys H1H (AUX power off)](./Kuulokenurkka/over-ear/Heavys%20H1H%20(AUX%20power%20off)) by Kuulokenurkka
+- [Hidizs MD4 (on-off)](./Hi%20End%20Portable/in-ear/Hidizs%20MD4%20(on-off)) by Hi End Portable
+- [Hidizs ST2 Nebula](./Jaytiss/in-ear/Hidizs%20ST2%20Nebula) by Jaytiss
+- [HIFIMAN Edition XS](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/HIFIMAN%20Edition%20XS) by Rtings on Bruel & Kjaer 5128
+- [HIFIMAN HE4XX](./Innerfidelity/over-ear/HIFIMAN%20HE4XX) by Innerfidelity
+- [HIFIMAN Susvara](./Kuulokenurkka/over-ear/HIFIMAN%20Susvara) by Kuulokenurkka
+- [Huawei Freebuds 5](./Regan%20Cipher/earbud/Huawei%20Freebuds%205) by Regan Cipher
+- [HyperX Cloud](./Filk/over-ear/HyperX%20Cloud) by Filk
+- [HyperX Cloud Alpha](./oratory1990/over-ear/HyperX%20Cloud%20Alpha) by oratory1990
+- [HyperX Cloud Alpha](./Kuulokenurkka/over-ear/HyperX%20Cloud%20Alpha) by Kuulokenurkka
+- [HyperX Cloud Alpha](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Alpha) by Rtings on HMS II.3
+- [HyperX Cloud Alpha S](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Alpha%20S) by Rtings on HMS II.3
+- [HyperX Cloud Alpha Wireless](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Alpha%20Wireless) by Rtings on HMS II.3
+- [HyperX Cloud Core](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Core) by Rtings on HMS II.3
+- [HyperX Cloud Flight](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Flight) by Rtings on HMS II.3
+- [HyperX Cloud Flight S](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Flight%20S) by Rtings on HMS II.3
+- [HyperX Cloud II](./oratory1990/over-ear/HyperX%20Cloud%20II) by oratory1990
+- [HyperX Cloud II](./Filk/over-ear/HyperX%20Cloud%20II) by Filk
+- [HyperX Cloud II](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20II) by Rtings on HMS II.3
+- [HyperX Cloud II Wireless](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20II%20Wireless) by Rtings on HMS II.3
+- [HyperX Cloud III](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20III) by Rtings on HMS II.3
+- [HyperX Cloud III Wireless](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/HyperX%20Cloud%20III%20Wireless) by Rtings on Bruel & Kjaer 5128
+- [HyperX Cloud Mix](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Mix) by Rtings on HMS II.3
+- [HyperX Cloud Revolver](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Revolver) by Rtings on HMS II.3
+- [HyperX Cloud Revolver + 7.1](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Revolver%20+%207.1) by Rtings on HMS II.3
+- [HyperX Cloud Stinger](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Stinger) by Rtings on HMS II.3
+- [HyperX Cloud Stinger 2](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Stinger%202) by Rtings on HMS II.3
+- [HyperX Cloud Stinger S](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20Stinger%20S) by Rtings on HMS II.3
+- [HZSOUND Heart Mirror Zero](./Super%20Review/in-ear/HZSOUND%20Heart%20Mirror%20Zero) by Super Review
+- [IKKO OH2](./Fahryst/in-ear/IKKO%20OH2) by Fahryst
+- [InAwaken Dawn Ms](./Filk/in-ear/InAwaken%20Dawn%20Ms) by Filk
+- [Jabra Elite 10](./DHRME/in-ear/Jabra%20Elite%2010) by DHRME
+- [Jabra Elite 10](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Jabra%20Elite%2010) by Rtings on Bruel & Kjaer 5128
+- [Jabra Elite 10 Gen 2](./DHRME/in-ear/Jabra%20Elite%2010%20Gen%202) by DHRME
+- [Jabra Elite 10 Gen 2](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Jabra%20Elite%2010%20Gen%202) by Rtings on Bruel & Kjaer 5128
+- [Jabra Elite 25e](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%2025e) by Rtings on HMS II.3
+- [Jabra Elite 3](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%203) by Rtings on HMS II.3
+- [Jabra Elite 3 Active](./HypetheSonics/GRAS%20RA0045%20in-ear/Jabra%20Elite%203%20Active) by HypetheSonics on GRAS RA0045
+- [Jabra Elite 4](./DHRME/in-ear/Jabra%20Elite%204) by DHRME
+- [Jabra Elite 4](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%204) by Rtings on HMS II.3
+- [Jabra Elite 4 Active](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%204%20Active) by Rtings on HMS II.3
+- [Jabra Elite 45e](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%2045e) by Rtings on HMS II.3
+- [Jabra Elite 5](./DHRME/in-ear/Jabra%20Elite%205) by DHRME
+- [Jabra Elite 5](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%205) by Rtings on HMS II.3
+- [Jabra Elite 65e](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%2065e) by Rtings on HMS II.3
+- [Jabra Elite 65t](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%2065t) by Rtings on HMS II.3
+- [Jabra Elite 7 Active](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%207%20Active) by Rtings on HMS II.3
+- [Jabra Elite 7 Pro](./oratory1990/in-ear/Jabra%20Elite%207%20Pro) by oratory1990
+- [Jabra Elite 7 Pro](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%207%20Pro) by Rtings on HMS II.3
+- [Jabra Elite 75t](./oratory1990/in-ear/Jabra%20Elite%2075t) by oratory1990
+- [Jabra Elite 75t](./crinacle/711%20in-ear/Jabra%20Elite%2075t) by crinacle on 711
+- [Jabra Elite 75t](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%2075t) by Rtings on HMS II.3
+- [Jabra Elite 8 Active](./DHRME/in-ear/Jabra%20Elite%208%20Active) by DHRME
+- [Jabra Elite 8 Active](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Jabra%20Elite%208%20Active) by Rtings on Bruel & Kjaer 5128
+- [Jabra Elite 8 Active 2](./DHRME/in-ear/Jabra%20Elite%208%20Active%202) by DHRME
+- [Jabra Elite 8 Active Gen 2](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Jabra%20Elite%208%20Active%20Gen%202) by Rtings on Bruel & Kjaer 5128
+- [Jabra Elite 85h](./Rtings/HMS%20II.3%20over-ear/Jabra%20Elite%2085h) by Rtings on HMS II.3
+- [Jabra Elite 85t](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%2085t) by Rtings on HMS II.3
+- [Jabra Elite 85t (ANC Off)](./HypetheSonics/GRAS%20RA0045%20in-ear/Jabra%20Elite%2085t%20(ANC%20Off)) by HypetheSonics on GRAS RA0045
+- [Jabra Elite 85t (ANC On)](./HypetheSonics/GRAS%20RA0045%20in-ear/Jabra%20Elite%2085t%20(ANC%20On)) by HypetheSonics on GRAS RA0045
+- [Jabra Elite Active 45e](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%20Active%2045e) by Rtings on HMS II.3
+- [Jabra Elite Active 65t](./crinacle/711%20in-ear/Jabra%20Elite%20Active%2065t) by crinacle on 711
+- [Jabra Elite Active 65t](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%20Active%2065t) by Rtings on HMS II.3
+- [Jabra Elite Active 75t](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%20Active%2075t) by Rtings on HMS II.3
+- [Jabra Elite Sport](./Rtings/HMS%20II.3%20in-ear/Jabra%20Elite%20Sport) by Rtings on HMS II.3
+- [Jaybird Vista](./crinacle/711%20in-ear/Jaybird%20Vista) by crinacle on 711
+- [JBL Live 770NC](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/JBL%20Live%20770NC) by Rtings on Bruel & Kjaer 5128
+- [JBL Vibe 100TWS](./Rtings/HMS%20II.3%20in-ear/JBL%20Vibe%20100TWS) by Rtings on HMS II.3
+- [JLab Audio JBuds ANC 3](./Rtings/HMS%20II.3%20in-ear/JLab%20Audio%20JBuds%20ANC%203) by Rtings on HMS II.3
+- [Juzear Clear](./Jaytiss/in-ear/Juzear%20Clear) by Jaytiss
+- [KBEAR Believe](./Super%20Review/in-ear/KBEAR%20Believe) by Super Review
+- [KEFINE Klean (silver filter)](./Hi%20End%20Portable/in-ear/KEFINE%20Klean%20(silver%20filter)) by Hi End Portable
+- [Kinera Freya](./crinacle/711%20in-ear/Kinera%20Freya) by crinacle on 711
+- [Kiwi Ears Aventus (ANC on, thick foam)](./Kuulokenurkka/over-ear/Kiwi%20Ears%20Aventus%20(ANC%20on,%20thick%20foam)) by Kuulokenurkka
+- [Kiwi Ears Quartet (off-on)](./Super%20Review/in-ear/Kiwi%20Ears%20Quartet%20(off-on)) by Super Review
+- [Klipsch X-10i](./Headphone.com%20Legacy/in-ear/Klipsch%20X-10i) by Headphone.com Legacy
+- [Koss Porta Pro (Yaxi earpads)](./Kuulokenurkka/over-ear/Koss%20Porta%20Pro%20(Yaxi%20earpads)) by Kuulokenurkka
+- [KZ AS10](./crinacle/711%20in-ear/KZ%20AS10) by crinacle on 711
+- [KZ D-FI (on-off-off-off)](./Super%20Review/in-ear/KZ%20D-FI%20(on-off-off-off)) by Super Review
+- [KZ S4](./crinacle/711%20in-ear/KZ%20S4) by crinacle on 711
+- [KZ ZEX](./crinacle/711%20in-ear/KZ%20ZEX) by crinacle on 711
+- [KZ ZVX](./Fahryst/in-ear/KZ%20ZVX) by Fahryst
+- [Logitech G Pro X (USB)](./Filk/over-ear/Logitech%20G%20Pro%20X%20(USB)) by Filk
+- [Logitech G PRO X 2 LIGHTSPEED](./Filk/over-ear/Logitech%20G%20PRO%20X%202%20LIGHTSPEED) by Filk
+- [LZ Hi-Fi Audio A4 Pro (blue nozzle, black vent)](./crinacle/711%20in-ear/LZ%20Hi-Fi%20Audio%20A4%20Pro%20(blue%20nozzle,%20black%20vent)) by crinacle on 711
+- [Magaosi K5 (15 ohm adapter, iFi IEMatch, ultra)](./Super%20Review/in-ear/Magaosi%20K5%20(15%20ohm%20adapter,%20iFi%20IEMatch,%20ultra)) by Super Review
+- [MEE Audio X6 Plus](./Rtings/HMS%20II.3%20in-ear/MEE%20Audio%20X6%20Plus) by Rtings on HMS II.3
+- [Meze Empyrean](./crinacle/EARS%20+%20711%20over-ear/Meze%20Empyrean) by crinacle on EARS + 711
+- [Mofasest M14 (off-off)](./crinacle/711%20in-ear/Mofasest%20M14%20(off-off)) by crinacle on 711
+- [Moondrop Aria](./oratory1990/in-ear/Moondrop%20Aria) by oratory1990
+- [Moondrop Aria](./Super%20Review/in-ear/Moondrop%20Aria) by Super Review
+- [Moondrop Aria](./Harpo/in-ear/Moondrop%20Aria) by Harpo
+- [Moondrop Aria](./kr0mka/in-ear/Moondrop%20Aria) by kr0mka
+- [Moondrop Aria](./Bakkwatan/in-ear/Moondrop%20Aria) by Bakkwatan
+- [Moondrop Aria](./Jaytiss/in-ear/Moondrop%20Aria) by Jaytiss
+- [Moondrop Aria](./crinacle/Bruel%20&%20Kjaer%204620%20in-ear/Moondrop%20Aria) by crinacle on Bruel & Kjaer 4620
+- [Moondrop Aria](./Rtings/HMS%20II.3%20in-ear/Moondrop%20Aria) by Rtings on HMS II.3
+- [Moondrop Aria (2021)](./crinacle/711%20in-ear/Moondrop%20Aria%20(2021)) by crinacle on 711
+- [Moondrop Aria 2](./Super%20Review/in-ear/Moondrop%20Aria%202) by Super Review
+- [Moondrop Aria 2](./Harpo/in-ear/Moondrop%20Aria%202) by Harpo
+- [Moondrop Aria 2](./Jaytiss/in-ear/Moondrop%20Aria%202) by Jaytiss
+- [Moondrop Aria Elven Maiden](./freeryder05/in-ear/Moondrop%20Aria%20Elven%20Maiden) by freeryder05
+- [Moondrop Aria Elven Maiden](./Fahryst/in-ear/Moondrop%20Aria%20Elven%20Maiden) by Fahryst
+- [Moondrop Aria Snow Edition](./crinacle/711%20in-ear/Moondrop%20Aria%20Snow%20Edition) by crinacle on 711
+- [Moondrop Aria Snow Edition](./Super%20Review/in-ear/Moondrop%20Aria%20Snow%20Edition) by Super Review
+- [Moondrop Aria Snow Edition](./Fahryst/in-ear/Moondrop%20Aria%20Snow%20Edition) by Fahryst
+- [Moondrop Aria Snow Edition](./Auriculares%20Argentina/in-ear/Moondrop%20Aria%20Snow%20Edition) by Auriculares Argentina
+- [Moondrop Aria Snow Edition](./crinacle/Bruel%20&%20Kjaer%204620%20in-ear/Moondrop%20Aria%20Snow%20Edition) by crinacle on Bruel & Kjaer 4620
+- [Moondrop Darksaber](./Jaytiss/in-ear/Moondrop%20Darksaber) by Jaytiss
+- [Moondrop May](./Jaytiss/in-ear/Moondrop%20May) by Jaytiss
+- [Moondrop Space Travel](./Kazi/in-ear/Moondrop%20Space%20Travel) by Kazi
+- [Moondrop U2 (foams)](./Super%20Review/earbud/Moondrop%20U2%20(foams)) by Super Review
+- [Moondrop x Singer Edge (ANC on)](./Kuulokenurkka/over-ear/Moondrop%20x%20Singer%20Edge%20(ANC%20on)) by Kuulokenurkka
+- [MYER-AUDIO SLIIVO SL41 MKII](./ToneDeafMonk/in-ear/MYER-AUDIO%20SLIIVO%20SL41%20MKII) by ToneDeafMonk
+- [NF ACOUS NM2](./Hi%20End%20Portable/in-ear/NF%20ACOUS%20NM2) by Hi End Portable
+- [NF Audio RG15 (USB)](./Fahryst/in-ear/NF%20Audio%20RG15%20(USB)) by Fahryst
+- [NiceHCK M5 (red filter)](./Hi%20End%20Portable/in-ear/NiceHCK%20M5%20(red%20filter)) by Hi End Portable
+- [Noble Audio Katana](./crinacle/711%20in-ear/Noble%20Audio%20Katana) by crinacle on 711
+- [Nothing ear (a)](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Nothing%20ear%20(a)) by Rtings on Bruel & Kjaer 5128
+- [OneOdio OpenRock S](./Regan%20Cipher/earbud/OneOdio%20OpenRock%20S) by Regan Cipher
+- [Oriolus Finschi Hifi](./crinacle/711%20in-ear/Oriolus%20Finschi%20Hifi) by crinacle on 711
+- [Panasonic RP-HJE125E](./kr0mka/in-ear/Panasonic%20RP-HJE125E) by kr0mka
+- [Periodic Audio Carbon](./oratory1990/in-ear/Periodic%20Audio%20Carbon) by oratory1990
+- [Philips SBC HP910](./Innerfidelity/over-ear/Philips%20SBC%20HP910) by Innerfidelity
+- [Plantronics BackBeat Pro 2](./Rtings/HMS%20II.3%20over-ear/Plantronics%20BackBeat%20Pro%202) by Rtings on HMS II.3
+- [Prisma Audio Azul (SpinFit eartips)](./Super%20Review/in-ear/Prisma%20Audio%20Azul%20(SpinFit%20eartips)) by Super Review
+- [qdc 8SS](./crinacle/711%20in-ear/qdc%208SS) by crinacle on 711
+- [QKZ ZXD](./Harpo/in-ear/QKZ%20ZXD) by Harpo
+- [Razer Barracuda X (2021)](./Rtings/HMS%20II.3%20over-ear/Razer%20Barracuda%20X%20(2021)) by Rtings on HMS II.3
+- [Razer Hammerhead USB-C ANC](./Rtings/HMS%20II.3%20in-ear/Razer%20Hammerhead%20USB-C%20ANC) by Rtings on HMS II.3
+- [Razer Kraken USB](./Rtings/HMS%20II.3%20over-ear/Razer%20Kraken%20USB) by Rtings on HMS II.3
+- [realme Buds Air6 Pro (Nature Balance eq)](./DHRME/in-ear/realme%20Buds%20Air6%20Pro%20(Nature%20Balance%20eq)) by DHRME
+- [Rose Ceramics](./Hi%20End%20Portable/in-ear/Rose%20Ceramics) by Hi End Portable
+- [Samsung Galaxy Buds](./oratory1990/in-ear/Samsung%20Galaxy%20Buds) by oratory1990
+- [Samsung Galaxy Buds](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds) by crinacle on 711
+- [Samsung Galaxy Buds](./Rtings/HMS%20II.3%20in-ear/Samsung%20Galaxy%20Buds) by Rtings on HMS II.3
+- [Samsung Galaxy Buds 3 (ANC off)](./Regan%20Cipher/earbud/Samsung%20Galaxy%20Buds%203%20(ANC%20off)) by Regan Cipher
+- [Samsung Galaxy Buds 3 (ANC on)](./Regan%20Cipher/earbud/Samsung%20Galaxy%20Buds%203%20(ANC%20on)) by Regan Cipher
+- [Samsung Galaxy Buds FE](./Regan%20Cipher/in-ear/Samsung%20Galaxy%20Buds%20FE) by Regan Cipher
+- [Samsung Galaxy Buds FE](./DHRME/in-ear/Samsung%20Galaxy%20Buds%20FE) by DHRME
+- [Samsung Galaxy Buds FE](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Samsung%20Galaxy%20Buds%20FE) by Rtings on Bruel & Kjaer 5128
+- [Samsung Galaxy Buds FE (ANC on, balanced)](./Regan%20Cipher/in-ear/Samsung%20Galaxy%20Buds%20FE%20(ANC%20on,%20balanced)) by Regan Cipher
+- [Samsung Galaxy Buds Live](./HypetheSonics/earbud/Samsung%20Galaxy%20Buds%20Live) by HypetheSonics
+- [Samsung Galaxy Buds Live](./Regan%20Cipher/earbud/Samsung%20Galaxy%20Buds%20Live) by Regan Cipher
+- [Samsung Galaxy Buds Live](./Rtings/HMS%20II.3%20earbud/Samsung%20Galaxy%20Buds%20Live) by Rtings on HMS II.3
+- [Samsung Galaxy Buds Plus](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds%20Plus) by crinacle on 711
+- [Samsung Galaxy Buds Plus](./Super%20Review/in-ear/Samsung%20Galaxy%20Buds%20Plus) by Super Review
+- [Samsung Galaxy Buds Plus](./Rtings/HMS%20II.3%20in-ear/Samsung%20Galaxy%20Buds%20Plus) by Rtings on HMS II.3
+- [Samsung Galaxy Buds Pro](./oratory1990/in-ear/Samsung%20Galaxy%20Buds%20Pro) by oratory1990
+- [Samsung Galaxy Buds Pro](./HypetheSonics/GRAS%20RA0045%20in-ear/Samsung%20Galaxy%20Buds%20Pro) by HypetheSonics on GRAS RA0045
+- [Samsung Galaxy Buds Pro](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds%20Pro) by crinacle on 711
+- [Samsung Galaxy Buds Pro](./kr0mka/in-ear/Samsung%20Galaxy%20Buds%20Pro) by kr0mka
+- [Samsung Galaxy Buds Pro](./RikudouGoku/in-ear/Samsung%20Galaxy%20Buds%20Pro) by RikudouGoku
+- [Samsung Galaxy Buds Pro](./Rtings/HMS%20II.3%20in-ear/Samsung%20Galaxy%20Buds%20Pro) by Rtings on HMS II.3
+- [Samsung Galaxy Buds2](./oratory1990/in-ear/Samsung%20Galaxy%20Buds2) by oratory1990
+- [Samsung Galaxy Buds2](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds2) by crinacle on 711
+- [Samsung Galaxy Buds2](./Kazi/in-ear/Samsung%20Galaxy%20Buds2) by Kazi
+- [Samsung Galaxy Buds2](./Rtings/HMS%20II.3%20in-ear/Samsung%20Galaxy%20Buds2) by Rtings on HMS II.3
+- [Samsung Galaxy Buds2 Pro](./oratory1990/in-ear/Samsung%20Galaxy%20Buds2%20Pro) by oratory1990
+- [Samsung Galaxy Buds2 Pro](./HypetheSonics/GRAS%20RA0045%20in-ear/Samsung%20Galaxy%20Buds2%20Pro) by HypetheSonics on GRAS RA0045
+- [Samsung Galaxy Buds2 Pro](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds2%20Pro) by crinacle on 711
+- [Samsung Galaxy Buds2 Pro](./Super%20Review/in-ear/Samsung%20Galaxy%20Buds2%20Pro) by Super Review
+- [Samsung Galaxy Buds2 Pro](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Samsung%20Galaxy%20Buds2%20Pro) by Rtings on Bruel & Kjaer 5128
+- [Samsung Galaxy Buds2 Pro (Ambient mode)](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds2%20Pro%20(Ambient%20mode)) by crinacle on 711
+- [Samsung Galaxy Buds2 Pro (ANC mode)](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds2%20Pro%20(ANC%20mode)) by crinacle on 711
+- [Samsung Galaxy Buds2 Pro (passive mode)](./crinacle/711%20in-ear/Samsung%20Galaxy%20Buds2%20Pro%20(passive%20mode)) by crinacle on 711
+- [Samsung Galaxy Buds3](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Samsung%20Galaxy%20Buds3) by Rtings on Bruel & Kjaer 5128
+- [Samsung Galaxy Buds3 Pro](./DHRME/in-ear/Samsung%20Galaxy%20Buds3%20Pro) by DHRME
+- [Samsung Galaxy Buds3 Pro](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Samsung%20Galaxy%20Buds3%20Pro) by Rtings on Bruel & Kjaer 5128
+- [Sash Tres Second Edition (suede earpads)](./Kuulokenurkka/over-ear/Sash%20Tres%20Second%20Edition%20(suede%20earpads)) by Kuulokenurkka
+- [Sennheiser CX 400BT](./Rtings/HMS%20II.3%20over-ear/Sennheiser%20CX%20400BT) by Rtings on HMS II.3
+- [Sennheiser HD 280 Pro](./Filk/over-ear/Sennheiser%20HD%20280%20Pro) by Filk
+- [Sennheiser HD 559](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20559) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 600](./oratory1990/over-ear/Sennheiser%20HD%20600) by oratory1990
+- [Sennheiser HD 600](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20600) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 600](./Super%20Review/over-ear/Sennheiser%20HD%20600) by Super Review
+- [Sennheiser HD 600](./Auriculares%20Argentina/over-ear/Sennheiser%20HD%20600) by Auriculares Argentina
+- [Sennheiser HD 600](./Filk/over-ear/Sennheiser%20HD%20600) by Filk
+- [Sennheiser HD 600](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Sennheiser%20HD%20600) by Rtings on Bruel & Kjaer 5128
+- [Sennheiser HD 600](./Innerfidelity/over-ear/Sennheiser%20HD%20600) by Innerfidelity
+- [Sennheiser HD 600](./Headphone.com%20Legacy/over-ear/Sennheiser%20HD%20600) by Headphone.com Legacy
+- [Sennheiser HD 600 (2020)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20600%20(2020)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 600 (2020)](./Kuulokenurkka/over-ear/Sennheiser%20HD%20600%20(2020)) by Kuulokenurkka
+- [Sennheiser HD 600 (2020, worn earpads)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20600%20(2020,%20worn%20earpads)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 600 (pre-2020, semi-worn earpads)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20600%20(pre-2020,%20semi-worn%20earpads)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 600 (pre-2020, worn earpads)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20600%20(pre-2020,%20worn%20earpads)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 620S](./oratory1990/over-ear/Sennheiser%20HD%20620S) by oratory1990
+- [Sennheiser HD 620S](./Kuulokenurkka/over-ear/Sennheiser%20HD%20620S) by Kuulokenurkka
+- [Sennheiser HD 620S](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Sennheiser%20HD%20620S) by Rtings on Bruel & Kjaer 5128
+- [Sennheiser HD 630VB](./oratory1990/over-ear/Sennheiser%20HD%20630VB) by oratory1990
+- [Sennheiser HD 650](./oratory1990/over-ear/Sennheiser%20HD%20650) by oratory1990
+- [Sennheiser HD 650](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20650) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 650](./Kuulokenurkka/over-ear/Sennheiser%20HD%20650) by Kuulokenurkka
+- [Sennheiser HD 650](./Auriculares%20Argentina/over-ear/Sennheiser%20HD%20650) by Auriculares Argentina
+- [Sennheiser HD 650](./Rtings/HMS%20II.3%20over-ear/Sennheiser%20HD%20650) by Rtings on HMS II.3
+- [Sennheiser HD 650](./Innerfidelity/over-ear/Sennheiser%20HD%20650) by Innerfidelity
+- [Sennheiser HD 650](./Headphone.com%20Legacy/over-ear/Sennheiser%20HD%20650) by Headphone.com Legacy
+- [Sennheiser HD 650 (2020)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20650%20(2020)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 650 (2020, worn earpads)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20650%20(2020,%20worn%20earpads)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 650 (balanced)](./Headphone.com%20Legacy/over-ear/Sennheiser%20HD%20650%20(balanced)) by Headphone.com Legacy
+- [Sennheiser HD 650 (pre-2020, semi-worn earpads)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20650%20(pre-2020,%20semi-worn%20earpads)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 650 (pre-2020, worn earpads)](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20650%20(pre-2020,%20worn%20earpads)) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 660 S](./oratory1990/over-ear/Sennheiser%20HD%20660%20S) by oratory1990
+- [Sennheiser HD 660 S](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20660%20S) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 660 S](./Super%20Review/over-ear/Sennheiser%20HD%20660%20S) by Super Review
+- [Sennheiser HD 660 S](./HypetheSonics/over-ear/Sennheiser%20HD%20660%20S) by HypetheSonics
+- [Sennheiser HD 660 S](./Rtings/HMS%20II.3%20over-ear/Sennheiser%20HD%20660%20S) by Rtings on HMS II.3
+- [Sennheiser HD 660 S](./Innerfidelity/over-ear/Sennheiser%20HD%20660%20S) by Innerfidelity
+- [Sennheiser HD 660 S](./crinacle/EARS%20+%20711%20over-ear/Sennheiser%20HD%20660%20S) by crinacle on EARS + 711
+- [Sennheiser HD 660S (Dekoni Fenestrated Sheepskin Earpads)](./oratory1990/over-ear/Sennheiser%20HD%20660S%20(Dekoni%20Fenestrated%20Sheepskin%20Earpads)) by oratory1990
+- [Sennheiser HD 660S2](./oratory1990/over-ear/Sennheiser%20HD%20660S2) by oratory1990
+- [Sennheiser HD 660S2](./Kuulokenurkka/over-ear/Sennheiser%20HD%20660S2) by Kuulokenurkka
+- [Sennheiser HD 660S2](./Filk/over-ear/Sennheiser%20HD%20660S2) by Filk
+- [Sennheiser HD 660S2](./Rtings/HMS%20II.3%20over-ear/Sennheiser%20HD%20660S2) by Rtings on HMS II.3
+- [Sennheiser HD 800](./oratory1990/over-ear/Sennheiser%20HD%20800) by oratory1990
+- [Sennheiser HD 800](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20800) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 800](./Super%20Review/over-ear/Sennheiser%20HD%20800) by Super Review
+- [Sennheiser HD 800](./Innerfidelity/over-ear/Sennheiser%20HD%20800) by Innerfidelity
+- [Sennheiser HD 800](./Headphone.com%20Legacy/over-ear/Sennheiser%20HD%20800) by Headphone.com Legacy
+- [Sennheiser HD 800 (sample 1)](./Headphone.com%20Legacy/over-ear/Sennheiser%20HD%20800%20(sample%201)) by Headphone.com Legacy
+- [Sennheiser HD 800 (sample 2)](./Headphone.com%20Legacy/over-ear/Sennheiser%20HD%20800%20(sample%202)) by Headphone.com Legacy
+- [Sennheiser HD 800 (SDR mod)](./oratory1990/over-ear/Sennheiser%20HD%20800%20(SDR%20mod)) by oratory1990
+- [Sennheiser HD 800 (SDR mod)](./Kuulokenurkka/over-ear/Sennheiser%20HD%20800%20(SDR%20mod)) by Kuulokenurkka
+- [Sennheiser HD 800 (SDR mod)](./crinacle/EARS%20+%20711%20over-ear/Sennheiser%20HD%20800%20(SDR%20mod)) by crinacle on EARS + 711
+- [Sennheiser HD 800 (SDR mod, Dekoni fenestrated sheepskin earpads)](./oratory1990/over-ear/Sennheiser%20HD%20800%20(SDR%20mod,%20Dekoni%20fenestrated%20sheepskin%20earpads)) by oratory1990
+- [Sennheiser HD 800 S](./oratory1990/over-ear/Sennheiser%20HD%20800%20S) by oratory1990
+- [Sennheiser HD 800 S](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20800%20S) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 800 S](./Auriculares%20Argentina/over-ear/Sennheiser%20HD%20800%20S) by Auriculares Argentina
+- [Sennheiser HD 800 S](./kr0mka/over-ear/Sennheiser%20HD%20800%20S) by kr0mka
+- [Sennheiser HD 800 S](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Sennheiser%20HD%20800%20S) by Rtings on Bruel & Kjaer 5128
+- [Sennheiser HD 800 S](./HypetheSonics/over-ear/Sennheiser%20HD%20800%20S) by HypetheSonics
+- [Sennheiser HD 800 S](./Innerfidelity/over-ear/Sennheiser%20HD%20800%20S) by Innerfidelity
+- [Sennheiser HD 800 S](./crinacle/EARS%20+%20711%20over-ear/Sennheiser%20HD%20800%20S) by crinacle on EARS + 711
+- [Sennheiser HD 800 S (Dekoni fenestrated sheepskin earpads)](./oratory1990/over-ear/Sennheiser%20HD%20800%20S%20(Dekoni%20fenestrated%20sheepskin%20earpads)) by oratory1990
+- [Sennheiser HD 800 S (sample 1)](./Innerfidelity/over-ear/Sennheiser%20HD%20800%20S%20(sample%201)) by Innerfidelity
+- [Sennheiser HD 800 S (serial number 01067)](./Innerfidelity/over-ear/Sennheiser%20HD%20800%20S%20(serial%20number%2001067)) by Innerfidelity
+- [Sennheiser HD 800 S (serial number 01070)](./Innerfidelity/over-ear/Sennheiser%20HD%20800%20S%20(serial%20number%2001070)) by Innerfidelity
+- [Sennheiser HD 800 S (ZMF sheepskin earpads)](./oratory1990/over-ear/Sennheiser%20HD%20800%20S%20(ZMF%20sheepskin%20earpads)) by oratory1990
+- [Sennheiser HD 820](./oratory1990/over-ear/Sennheiser%20HD%20820) by oratory1990
+- [Sennheiser HD 820](./crinacle/GRAS%2043AG-7%20over-ear/Sennheiser%20HD%20820) by crinacle on GRAS 43AG-7
+- [Sennheiser HD 820](./Super%20Review/over-ear/Sennheiser%20HD%20820) by Super Review
+- [Sennheiser HD 820](./HypetheSonics/over-ear/Sennheiser%20HD%20820) by HypetheSonics
+- [Sennheiser HD 820](./Rtings/HMS%20II.3%20over-ear/Sennheiser%20HD%20820) by Rtings on HMS II.3
+- [Sennheiser HD 820](./crinacle/EARS%20+%20711%20over-ear/Sennheiser%20HD%20820) by crinacle on EARS + 711
+- [Sennheiser IE 200](./Bakkwatan/in-ear/Sennheiser%20IE%20200) by Bakkwatan
+- [Sennheiser IE 80 S](./oratory1990/in-ear/Sennheiser%20IE%2080%20S) by oratory1990
+- [Sennheiser Momentum True Wireless 2](./HypetheSonics/GRAS%20RA0045%20in-ear/Sennheiser%20Momentum%20True%20Wireless%202) by HypetheSonics on GRAS RA0045
+- [Sennheiser PXC 550 Wireless (wireless, ANC on)](./Innerfidelity/over-ear/Sennheiser%20PXC%20550%20Wireless%20(wireless,%20ANC%20on)) by Innerfidelity
+- [Sennheiser SC 160 USB-C](./Rtings/HMS%20II.3%20over-ear/Sennheiser%20SC%20160%20USB-C) by Rtings on HMS II.3
+- [Shanling TINO (USB cable)](./ToneDeafMonk/in-ear/Shanling%20TINO%20(USB%20cable)) by ToneDeafMonk
+- [Shokz OpenRun](./Rtings/HMS%20II.3%20earbud/Shokz%20OpenRun) by Rtings on HMS II.3
+- [Shuoer D13 (gold nozzle)](./crinacle/711%20in-ear/Shuoer%20D13%20(gold%20nozzle)) by crinacle on 711
+- [Shuoer S08](./ToneDeafMonk/in-ear/Shuoer%20S08) by ToneDeafMonk
+- [Shure SE215](./Headphone.com%20Legacy/in-ear/Shure%20SE215) by Headphone.com Legacy
+- [Shure SRH750DJ](./Innerfidelity/over-ear/Shure%20SRH750DJ) by Innerfidelity
+- [Simgot Audio EA500 (red nozzle)](./Fahryst/in-ear/Simgot%20Audio%20EA500%20(red%20nozzle)) by Fahryst
+- [Simgot Audio EN1000 (black plug)](./Kazi/in-ear/Simgot%20Audio%20EN1000%20(black%20plug)) by Kazi
+- [Simgot Audio SuperMix 4](./Kazi/in-ear/Simgot%20Audio%20SuperMix%204) by Kazi
+- [Skullcandy Hesh NBA](./Headphone.com%20Legacy/over-ear/Skullcandy%20Hesh%20NBA) by Headphone.com Legacy
+- [Skullcandy Navigator](./Innerfidelity/over-ear/Skullcandy%20Navigator) by Innerfidelity
+- [SoftEars RSV](./Super%20Review/in-ear/SoftEars%20RSV) by Super Review
+- [Sony IER-NW510N](./Super%20Review/in-ear/Sony%20IER-NW510N) by Super Review
+- [Sony MDR-AS800](./crinacle/711%20in-ear/Sony%20MDR-AS800) by crinacle on 711
+- [Sony MDR-V6 (Yaxi earpads)](./Super%20Review/over-ear/Sony%20MDR-V6%20(Yaxi%20earpads)) by Super Review
+- [Sony PULSE 3D](./Rtings/HMS%20II.3%20over-ear/Sony%20PULSE%203D) by Rtings on HMS II.3
+- [Sony WF-1000X](./oratory1990/in-ear/Sony%20WF-1000X) by oratory1990
+- [Sony WF-1000X](./Rtings/HMS%20II.3%20in-ear/Sony%20WF-1000X) by Rtings on HMS II.3
+- [Sony WF-1000XM3](./oratory1990/in-ear/Sony%20WF-1000XM3) by oratory1990
+- [Sony WF-1000XM3](./HypetheSonics/GRAS%20RA0045%20in-ear/Sony%20WF-1000XM3) by HypetheSonics on GRAS RA0045
+- [Sony WF-1000XM3](./crinacle/711%20in-ear/Sony%20WF-1000XM3) by crinacle on 711
+- [Sony WF-1000XM3](./Super%20Review/in-ear/Sony%20WF-1000XM3) by Super Review
+- [Sony WF-1000XM3](./RikudouGoku/in-ear/Sony%20WF-1000XM3) by RikudouGoku
+- [Sony WF-1000XM3](./Rtings/HMS%20II.3%20in-ear/Sony%20WF-1000XM3) by Rtings on HMS II.3
+- [Sony WF-1000XM3 (ANC on)](./crinacle/711%20in-ear/Sony%20WF-1000XM3%20(ANC%20on)) by crinacle on 711
+- [Sony WF-1000XM4](./oratory1990/in-ear/Sony%20WF-1000XM4) by oratory1990
+- [Sony WF-1000XM4](./HypetheSonics/GRAS%20RA0045%20in-ear/Sony%20WF-1000XM4) by HypetheSonics on GRAS RA0045
+- [Sony WF-1000XM4](./crinacle/711%20in-ear/Sony%20WF-1000XM4) by crinacle on 711
+- [Sony WF-1000XM4](./Auriculares%20Argentina/in-ear/Sony%20WF-1000XM4) by Auriculares Argentina
+- [Sony WF-1000XM4](./Rtings/HMS%20II.3%20in-ear/Sony%20WF-1000XM4) by Rtings on HMS II.3
+- [Sony WF-1000XM4 (ANC off)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(ANC%20off)) by Super Review
+- [Sony WF-1000XM4 (ANC on)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(ANC%20on)) by Super Review
+- [Sony WF-1000XM4 (AZLA Sedna Light Short eartips)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(AZLA%20Sedna%20Light%20Short%20eartips)) by Super Review
+- [Sony WF-1000XM4 (Bass Boost preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Bass%20Boost%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Bass Boost preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Bass%20Boost%20preset)) by Super Review
+- [Sony WF-1000XM4 (Bright preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Bright%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Bright preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Bright%20preset)) by Super Review
+- [Sony WF-1000XM4 (EQ off)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(EQ%20off)) by Super Review
+- [Sony WF-1000XM4 (Excited preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Excited%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Excited preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Excited%20preset)) by Super Review
+- [Sony WF-1000XM4 (Final Audio Type E eartips)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Final%20Audio%20Type%20E%20eartips)) by Super Review
+- [Sony WF-1000XM4 (Mellow preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Mellow%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Mellow preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Mellow%20preset)) by Super Review
+- [Sony WF-1000XM4 (Relaxed preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Relaxed%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Relaxed preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Relaxed%20preset)) by Super Review
+- [Sony WF-1000XM4 (Sony WF-1000XM3 silicone eartips)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Sony%20WF-1000XM3%20silicone%20eartips)) by Super Review
+- [Sony WF-1000XM4 (Speech preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Speech%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Speech preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Speech%20preset)) by Super Review
+- [Sony WF-1000XM4 (SpinFit eartips)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(SpinFit%20eartips)) by Super Review
+- [Sony WF-1000XM4 (Tanchjim APB eartips)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Tanchjim%20APB%20eartips)) by Super Review
+- [Sony WF-1000XM4 (Treble Boost preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Treble%20Boost%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Treble Boost preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Treble%20Boost%20preset)) by Super Review
+- [Sony WF-1000XM4 (Vocal preset)](./crinacle/711%20in-ear/Sony%20WF-1000XM4%20(Vocal%20preset)) by crinacle on 711
+- [Sony WF-1000XM4 (Vocal preset)](./Super%20Review/in-ear/Sony%20WF-1000XM4%20(Vocal%20preset)) by Super Review
+- [Sony WF-1000XM5](./oratory1990/in-ear/Sony%20WF-1000XM5) by oratory1990
+- [Sony WF-1000XM5](./Super%20Review/in-ear/Sony%20WF-1000XM5) by Super Review
+- [Sony WF-1000XM5](./Kazi/in-ear/Sony%20WF-1000XM5) by Kazi
+- [Sony WF-1000XM5](./DHRME/in-ear/Sony%20WF-1000XM5) by DHRME
+- [Sony WF-1000XM5](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Sony%20WF-1000XM5) by Rtings on Bruel & Kjaer 5128
+- [Sony WH-1000XM2](./oratory1990/over-ear/Sony%20WH-1000XM2) by oratory1990
+- [Sony WH-1000XM2](./Rtings/HMS%20II.3%20over-ear/Sony%20WH-1000XM2) by Rtings on HMS II.3
+- [Sony WH-1000XM3](./oratory1990/over-ear/Sony%20WH-1000XM3) by oratory1990
+- [Sony WH-1000XM3](./Super%20Review/over-ear/Sony%20WH-1000XM3) by Super Review
+- [Sony WH-1000XM3](./Rtings/HMS%20II.3%20over-ear/Sony%20WH-1000XM3) by Rtings on HMS II.3
+- [Sony WH-1000XM3 (ANC off)](./Kuulokenurkka/over-ear/Sony%20WH-1000XM3%20(ANC%20off)) by Kuulokenurkka
+- [Sony WH-1000XM3 (ANC on)](./Kuulokenurkka/over-ear/Sony%20WH-1000XM3%20(ANC%20on)) by Kuulokenurkka
+- [Sony WH-1000XM4](./oratory1990/over-ear/Sony%20WH-1000XM4) by oratory1990
+- [Sony WH-1000XM4](./crinacle/GRAS%2043AG-7%20over-ear/Sony%20WH-1000XM4) by crinacle on GRAS 43AG-7
+- [Sony WH-1000XM4](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Sony%20WH-1000XM4) by Rtings on Bruel & Kjaer 5128
+- [Sony WH-1000XM4 (ANC Off)](./HypetheSonics/over-ear/Sony%20WH-1000XM4%20(ANC%20Off)) by HypetheSonics
+- [Sony WH-1000XM4 (ANC on)](./HypetheSonics/over-ear/Sony%20WH-1000XM4%20(ANC%20on)) by HypetheSonics
+- [Sony WH-1000XM5](./oratory1990/over-ear/Sony%20WH-1000XM5) by oratory1990
+- [Sony WH-1000XM5](./Super%20Review/over-ear/Sony%20WH-1000XM5) by Super Review
+- [Sony WH-1000XM5](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Sony%20WH-1000XM5) by Rtings on Bruel & Kjaer 5128
+- [Sony WH-1000XM6](./Kuulokenurkka/over-ear/Sony%20WH-1000XM6) by Kuulokenurkka
+- [Sony WH-1000XM6](./Super%20Review/over-ear/Sony%20WH-1000XM6) by Super Review
+- [Sony WH-1000XM6 (analog cable)](./Super%20Review/over-ear/Sony%20WH-1000XM6%20(analog%20cable)) by Super Review
+- [Sony WI-1000X](./oratory1990/in-ear/Sony%20WI-1000X) by oratory1990
+- [Sony WI-1000X](./Rtings/HMS%20II.3%20in-ear/Sony%20WI-1000X) by Rtings on HMS II.3
+- [Sony WI-1000XM2](./Rtings/HMS%20II.3%20in-ear/Sony%20WI-1000XM2) by Rtings on HMS II.3
+- [Sony WI-C400](./Rtings/HMS%20II.3%20in-ear/Sony%20WI-C400) by Rtings on HMS II.3
+- [Sound Rhyme SR7 (off-on)](./ToneDeafMonk/in-ear/Sound%20Rhyme%20SR7%20(off-on)) by ToneDeafMonk
+- [SoundPeats RunFree Lite](./Regan%20Cipher/earbud/SoundPeats%20RunFree%20Lite) by Regan Cipher
+- [Stax SR-009 (serial number SZ9-1278)](./Innerfidelity/over-ear/Stax%20SR-009%20(serial%20number%20SZ9-1278)) by Innerfidelity
+- [Stax SR-40](./crinacle/GRAS%2043AG-7%20over-ear/Stax%20SR-40) by crinacle on GRAS 43AG-7
+- [Stax SR-40 Electret SR4 Adapter](./Innerfidelity/over-ear/Stax%20SR-40%20Electret%20SR4%20Adapter) by Innerfidelity
+- [Stax SR-404](./oratory1990/over-ear/Stax%20SR-404) by oratory1990
+- [Stax SR-404](./crinacle/GRAS%2043AG-7%20over-ear/Stax%20SR-404) by crinacle on GRAS 43AG-7
+- [Stax SR-404 (with perfect seal)](./oratory1990/over-ear/Stax%20SR-404%20(with%20perfect%20seal)) by oratory1990
+- [Stax SR-404 Limited](./crinacle/GRAS%2043AG-7%20over-ear/Stax%20SR-404%20Limited) by crinacle on GRAS 43AG-7
+- [Stax SR-404 Ltd SSL-0670](./Innerfidelity/over-ear/Stax%20SR-404%20Ltd%20SSL-0670) by Innerfidelity
+- [Stax SR-404 S 2742](./Innerfidelity/over-ear/Stax%20SR-404%20S%202742) by Innerfidelity
+- [Stax SR-404LE](./oratory1990/over-ear/Stax%20SR-404LE) by oratory1990
+- [Stax SR-404LE (with perfect seal)](./oratory1990/over-ear/Stax%20SR-404LE%20(with%20perfect%20seal)) by oratory1990
+- [Stax SR-4070](./crinacle/GRAS%2043AG-7%20over-ear/Stax%20SR-4070) by crinacle on GRAS 43AG-7
+- [Stax SR-X1](./oratory1990/over-ear/Stax%20SR-X1) by oratory1990
+- [Superlux HD 668B (velour earpads)](./oratory1990/over-ear/Superlux%20HD%20668B%20(velour%20earpads)) by oratory1990
+- [T-Peos H-100](./Innerfidelity/in-ear/T-Peos%20H-100) by Innerfidelity
+- [Tanchjim Bunny (USB)](./Super%20Review/in-ear/Tanchjim%20Bunny%20(USB)) by Super Review
+- [Tanchjim Bunny (USB)](./ToneDeafMonk/in-ear/Tanchjim%20Bunny%20(USB)) by ToneDeafMonk
+- [Tanchjim Fission (USB cable)](./ToneDeafMonk/in-ear/Tanchjim%20Fission%20(USB%20cable)) by ToneDeafMonk
+- [Tanchjim Hana 2021](./crinacle/711%20in-ear/Tanchjim%20Hana%202021) by crinacle on 711
+- [Tanchjim One (USB)](./Super%20Review/in-ear/Tanchjim%20One%20(USB)) by Super Review
+- [TANGZU Fudu](./Harpo/in-ear/TANGZU%20Fudu) by Harpo
+- [Tansio Mirai TSMR-12 (off-on-off)](./crinacle/711%20in-ear/Tansio%20Mirai%20TSMR-12%20(off-on-off)) by crinacle on 711
+- [Teufel Real Blue NC (ANC on)](./Filk/over-ear/Teufel%20Real%20Blue%20NC%20(ANC%20on)) by Filk
+- [Teufel Zola (USB)](./Filk/over-ear/Teufel%20Zola%20(USB)) by Filk
+- [ThieAudio Clairvoyance](./crinacle/711%20in-ear/ThieAudio%20Clairvoyance) by crinacle on 711
+- [ThieAudio Monarch MKII](./Harpo/in-ear/ThieAudio%20Monarch%20MKII) by Harpo
+- [Tin HiFi C0](./ToneDeafMonk/in-ear/Tin%20HiFi%20C0) by ToneDeafMonk
+- [Tin HiFi Dudu (USB)](./Super%20Review/in-ear/Tin%20HiFi%20Dudu%20(USB)) by Super Review
+- [Tin HiFi T2 MKII](./Hi%20End%20Portable/in-ear/Tin%20HiFi%20T2%20MKII) by Hi End Portable
+- [Toneking TO200](./HypetheSonics/earbud/Toneking%20TO200) by HypetheSonics
+- [TRI Starlight](./crinacle/711%20in-ear/TRI%20Starlight) by crinacle on 711
+- [TRN BAX Pro (on-off-off)](./ToneDeafMonk/in-ear/TRN%20BAX%20Pro%20(on-off-off)) by ToneDeafMonk
+- [Tronsmart Apollo Bold (ANC off, classic)](./kr0mka/in-ear/Tronsmart%20Apollo%20Bold%20(ANC%20off,%20classic)) by kr0mka
+- [Truthear Nova](./crinacle/Bruel%20&%20Kjaer%204620%20in-ear/Truthear%20Nova) by crinacle on Bruel & Kjaer 4620
+- [Turtle Beach Recon 200](./Rtings/HMS%20II.3%20over-ear/Turtle%20Beach%20Recon%20200) by Rtings on HMS II.3
+- [Ultimate Ears UE7](./crinacle/711%20in-ear/Ultimate%20Ears%20UE7) by crinacle on 711
+- [Unique Melody MEST](./crinacle/711%20in-ear/Unique%20Melody%20MEST) by crinacle on 711
+- [Valco VMK20 (ANC on)](./Kuulokenurkka/over-ear/Valco%20VMK20%20(ANC%20on)) by Kuulokenurkka
+- [Vision Ears PHöNIX](./HypetheSonics/GRAS%20RA0045%20in-ear/Vision%20Ears%20PH%C3%B6NIX) by HypetheSonics on GRAS RA0045
+- [Warwick Acoustics Sonoma Model One](./oratory1990/over-ear/Warwick%20Acoustics%20Sonoma%20Model%20One) by oratory1990
+- [Woodees iESW101V Vintage](./Headphone.com%20Legacy/in-ear/Woodees%20iESW101V%20Vintage) by Headphone.com Legacy
+- [Xbox Stereo Headset](./Rtings/HMS%20II.3%20over-ear/Xbox%20Stereo%20Headset) by Rtings on HMS II.3
+- [Yamaha HP3](./Innerfidelity/over-ear/Yamaha%20HP3) by Innerfidelity
+- [Yincrow RW-9](./Super%20Review/earbud/Yincrow%20RW-9) by Super Review
+- [ZMF Aeolus](./crinacle/EARS%20+%20711%20over-ear/ZMF%20Aeolus) by crinacle on EARS + 711
+- [ZMF Bokeh (hybrid earpads, no mesh)](./Kuulokenurkka/over-ear/ZMF%20Bokeh%20(hybrid%20earpads,%20no%20mesh)) by Kuulokenurkka
+- [Zoukbox ZDY10 Bass](./Innerfidelity/in-ear/Zoukbox%20ZDY10%20Bass) by Innerfidelity

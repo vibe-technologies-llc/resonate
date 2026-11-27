@@ -1385,7 +1385,9 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   the model minus the maker where the rest is telling (two words outside the graph's added
   vocabulary, one mixing letters and digits, or one of 3+ digits); refuses a description naming a
   socket; prefers the longest name; nothing on a tie between two *different* devices
-  (`tests/whole_index.rs` is the probe).
+  (`tests/whole_index.rs` is the probe: it walks `tests/fixtures/autoeq_index_excerpt.md`, 510 rows of AutoEq's
+  `results/INDEX.md` holding every device its assertions name with every near miss sharing its words,
+  plus every fiftieth row, and the whole index instead where `RESONATE_AUTOEQ_INDEX` names one).
 - **Measurers are ranked, fixed in `MEASURERS_BEST_FIRST`**: oratory1990, crinacle, Innerfidelity,
   HypetheSonics, Rtings, Super Review, Filk, DHRME, any other last (case-folded). The rank breaks only
   a tie of match and name length, so `suggest` takes the best-ranked measurer of the one device it
