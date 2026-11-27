@@ -248,12 +248,12 @@ Invariants the layering protects (the rules files have the rest):
   tests it natively in the `macos`, `macos-tests` and `macos-window` jobs. `packaging/macos/build.sh` builds the disk image on a Mac.
 
 - **`cargo xtask check` is the gate before a push**: `rust-formatter --check` of the workspace,
-  `fuzz/` and `dsp-lab/`, every clippy line below (`cargo xtask lint`) and `cargo nextest run --workspace` under
+  `fuzz/` and `dsp-lab/`, `cargo audit` over the lock (`cargo xtask audit`, the ignores in `.cargo/audit.toml`), every clippy line below (`cargo xtask lint`) and `cargo nextest run --workspace` under
   `dbus-run-session` where there is one (`cargo xtask test`). `--changed` narrows lint and test to
   the packages changed since `origin/master` (`--since <rev>` for another) and those depending on
   them, `resonate-words-build` always tested; a change to a root manifest, the lock or `.cargo/` is
   every package. Each step prints one line and keeps its output under `target/xtask/`, a failure
-  showing its last lines (`--verbose` streams instead); `cargo xtask fmt`, `android`, `ios
+  showing its last lines (`--verbose` streams instead); `cargo xtask fmt`, `audit`, `android`, `ios
   [--build]` and `help` are the rest (`build.md`).
 - **Tests run through `cargo nextest run`, never `cargo test`** (`build.md`): every test is a
   process of its own, run across every binary at once; `cargo-nextest` is a requirement like the

@@ -177,7 +177,7 @@ here, add it there.
 - `resonate-upnp`: core and `resonate-audio` alone, with `httparse`, `mio` (`os-poll` and `net`: the
   stream server's one thread woken by readiness rather than polling; the safe API alone, since the
   crate forbids `unsafe`), `roxmltree`, `flacenc` (the live
-  FLAC stream, pure Rust, the vault's own encoder), `parking_lot`,
+  FLAC stream, pure Rust, the vault's own encoder; 0.5.1, the latest, takes `heapless` 0.8, whose advisories `.cargo/audit.toml` ignores by id, `build.md`), `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or rustls (a
   renderer is plain HTTP on the local network, `upnp.md`). The engine and the codec are its dev-dependencies alone.
 - `resonate-cast`: core, `resonate-audio` and `resonate-upnp` (the paced stream, `cast.md`) alone, reached by the binary and `resonate-mobile` alone,

@@ -25,8 +25,8 @@ added there, and `SYNC` alone without its default features, the crate as `resona
 (every other line unifies `device` back on through the binary, `resonate-driven` or a
 dev-dependency, `sync.md`); off desktop Linux (a `--target` that is not one, or a Windows or Mac host) `OFF_LINUX`
 is left out, as CI's Windows and macOS jobs leave it. `test` is `cargo nextest run --workspace`,
-wrapped in `dbus-run-session` on Linux where it is on the path; `check` is `fmt --check`, `lint`
-and `test`; `android` and `ios` call the phones' own steps. CI's four clippy jobs run `cargo xtask
+wrapped in `dbus-run-session` on Linux where it is on the path; `audit` is `cargo audit` over
+`Cargo.lock`; `check` is `fmt --check`, `audit`, `lint` and `test`; `android` and `ios` call the phones' own steps. CI's four clippy jobs run `cargo xtask
 lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`). **The DSP lab is
 in the gate on Linux**: `lint` ends with `clippy --manifest-path dsp-lab/Cargo.toml --all-targets
 --no-default-features` and `test` with `nextest run --manifest-path dsp-lab/Cargo.toml
@@ -55,6 +55,21 @@ Linux, a Windows or Mac host) it is left out.
   A crate reading a sibling crate's files (`include_str!("../../resonate-eq/…")`) is covered by the
   dependency edge instead. The binary's feature lines come only with
   the binary, and `SYNC`'s line only with `resonate-sync`.
+- **`audit` gates on advisories** (`plan::audit`, one step named `advisories`). It is `cargo audit`
+  rather than `cargo deny`: the lock is the whole question, the tool reads one small config
+  (`.cargo/audit.toml`, found from the workspace root the step runs in) and the advisory database
+  is its only input, where `cargo deny` would add a licence and source policy nobody asked for.
+  The config denies every warning (`[output] deny = ["warnings"]`), so an unmaintained or unsound
+  crate fails like a vulnerability does, and **each known advisory is ignored by its RUSTSEC id,
+  never by crate**, so a second advisory against the same crate still fails: the nine `heapless` 0.8
+  advisories under `flacenc` (0.5.1, the latest, still takes `heapless` 0.8), and `paste`,
+  `basic-toml`, `chrono`, `ttf-parser`, zbus_names, zvariant and zvariant_derive under
+  gpui's and the build's trees. An id leaves the list when its crate leaves the lock. The tool is a
+  requirement like nextest (`cargo install cargo-audit --locked`; `Error::NoCargoAudit` says so
+  before any step runs), and the database is fetched on every run, so the step fails offline
+  rather than passing on a stale copy; `--changed` does not narrow it, since a new advisory is
+  against the lock, not a changed file. **CI does not run it**: CI runs `cargo xtask lint`, not
+  `check`, so the step is the local gate only.
 - **Output** is one line a step, each kept whole in `target/xtask/NN-<step>.log` (cleared at the
   start of a run, under `CARGO_TARGET_DIR` where set); a failure shows its last
   `LINES_SHOWN_OF_A_FAILURE` lines with cargo's and nextest's progress taken out, and a passing

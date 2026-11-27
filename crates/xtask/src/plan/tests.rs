@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::{DSP_LAB, Host, Program, Selection, Step, Summary, format, lint, test};
+use super::{DSP_LAB, Host, Program, Selection, Step, Summary, audit, format, lint, test};
 
 fn these(packages: &[&str]) -> Selection {
     Selection::These(
@@ -207,4 +207,11 @@ fn formatting_covers_the_workspace_and_every_detached_project() {
             "rust-formatter dsp-lab"
         ]
     );
+}
+
+#[test]
+fn the_advisories_are_one_cargo_audit_step() {
+    let steps: Vec<String> = audit().iter().map(line).collect();
+
+    assert_eq!(steps, ["cargo audit"]);
 }

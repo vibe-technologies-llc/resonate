@@ -17,6 +17,8 @@ pub enum Error {
     },
     #[error("ANDROID_HOME is not set; point it at the Android SDK")]
     NoAndroidSdk,
+    #[error("cargo-audit is not installed; run `cargo install cargo-audit --locked`")]
+    NoCargoAudit,
     #[error("could not start `{program}`")]
     Spawn {
         program: &'static str,

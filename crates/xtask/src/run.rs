@@ -52,6 +52,25 @@ pub fn asked(command: &mut Command, program: &'static str, op: Query) -> Result<
     }
 }
 
+pub fn cargo_audit_installed() -> Result<(), Error> {
+    let status = Command::new("cargo")
+        .args(["audit", "--version"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|source| Error::Spawn {
+            program: "cargo",
+            source,
+        })?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::NoCargoAudit)
+    }
+}
+
 pub fn workspace_root() -> Result<PathBuf, Error> {
     let manifest = asked(
         Command::new("cargo").args(["locate-project", "--workspace", "--message-format", "plain"]),

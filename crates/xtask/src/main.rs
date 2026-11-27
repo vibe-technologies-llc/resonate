@@ -56,11 +56,13 @@ fn steps_for(asked: &Asked, root: &Path) -> Result<Vec<Step>, Error> {
             &asked.passed_on,
             host,
         ),
+        Task::Audit => audited()?,
         Task::Check => {
             let selection = selection(asked, root)?;
 
             let mut steps = plan::format(true);
 
+            steps.extend(audited()?);
             steps.extend(plan::lint(&selection, None, asked.locked));
             steps.extend(plan::test(&selection, asked.locked, &[], host));
             steps
@@ -68,6 +70,11 @@ fn steps_for(asked: &Asked, root: &Path) -> Result<Vec<Step>, Error> {
         Task::Android => plan::android(&android_sdk()?),
         Task::Ios => plan::ios(asked.build),
     })
+}
+
+fn audited() -> Result<Vec<Step>, Error> {
+    run::cargo_audit_installed()?;
+    Ok(plan::audit())
 }
 
 fn selection(asked: &Asked, root: &Path) -> Result<Selection, Error> {

@@ -324,6 +324,10 @@ pub fn test(selection: &Selection, locked: bool, passed_on: &[String], host: Hos
     steps
 }
 
+pub fn audit() -> Vec<Step> {
+    vec![Step::new("advisories", Program::Cargo, ["audit"])]
+}
+
 pub fn android(sdk: &str) -> Vec<Step> {
     vec![
         Step::new(

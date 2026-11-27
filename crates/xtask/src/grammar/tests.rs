@@ -100,3 +100,18 @@ fn help_is_answered_whatever_else_is_asked() {
     assert_eq!(verbose.output, Output::Streamed);
     assert!(verbose.build);
 }
+
+#[test]
+fn audit_is_a_task_that_takes_no_cargo_flag() {
+    let asked = parsed(words("audit")).unwrap();
+    let locked = parsed(words("audit --locked"));
+
+    assert_eq!(asked.task, Task::Audit);
+    assert!(matches!(
+        locked,
+        Err(Error::NotForTask {
+            flag: "--locked",
+            task: "audit"
+        })
+    ));
+}

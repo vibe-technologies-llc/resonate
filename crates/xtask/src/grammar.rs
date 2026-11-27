@@ -12,7 +12,8 @@ tasks:
   fmt [--check]             rust-formatter over the workspace, fuzz/ and dsp-lab/
   lint                      every clippy line CI runs, -D warnings, and the DSP lab's on Linux
   test [-- <nextest args>]  cargo nextest run over the workspace and the DSP lab, under dbus-run-session where there is one
-  check                     fmt --check, lint and test: the gate before a push
+  audit                     cargo audit over Cargo.lock against the advisory database, the ignores in .cargo/audit.toml
+  check                     fmt --check, audit, lint and test: the gate before a push
   android                   the debug APK, its lint and unit tests, then the native check (ANDROID_HOME)
   ios [--build]             the iOS host tests and the Swift logic; with --build the native library and a clean build
   help                      this
@@ -33,6 +34,7 @@ pub enum Task {
     Format,
     Lint,
     Test,
+    Audit,
     Check,
     Android,
     Ios,
@@ -40,10 +42,11 @@ pub enum Task {
 }
 
 impl Task {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Format,
         Self::Lint,
         Self::Test,
+        Self::Audit,
         Self::Check,
         Self::Android,
         Self::Ios,
@@ -55,6 +58,7 @@ impl Task {
             Self::Format => "fmt",
             Self::Lint => "lint",
             Self::Test => "test",
+            Self::Audit => "audit",
             Self::Check => "check",
             Self::Android => "android",
             Self::Ios => "ios",

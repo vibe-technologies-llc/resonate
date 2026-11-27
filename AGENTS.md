@@ -69,8 +69,9 @@ Run before committing; `.github/workflows/ci.yml` runs them, bar the formatter, 
 workflow, the profiles and the fuzz targets).
 
 ```
-cargo xtask check                     # the gate: format check, every clippy line, every test, the DSP lab's clippy and tests; --changed for what a branch touched
+cargo xtask check                     # the gate: format check, the advisory audit, every clippy line, every test, the DSP lab's clippy and tests; --changed for what a branch touched
 cargo xtask lint                      # every clippy line CI runs, -D warnings
+cargo xtask audit                     # cargo audit over Cargo.lock, a new advisory fails; the known ones are ignored by id in .cargo/audit.toml
 cargo xtask test                      # cargo nextest run --workspace, under dbus-run-session where there is one
 cargo nextest run --workspace --exclude resonate-ui --no-default-features   # the usual inner loop; never `cargo test`
 cargo nextest run --workspace                                               # everything, gpui included
