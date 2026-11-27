@@ -415,3 +415,168 @@ fn a_removed_contact_is_ignored_when_read_and_dropped_on_the_next_edit() {
 
     assert_eq!(scratch.text(), "online = false\nenrich-on-metered = true\n");
 }
+
+fn seeded_with_bytes(bytes: &[u8]) -> Scratch {
+    let scratch = Scratch::new();
+
+    fs::create_dir_all(scratch.path.parent().expect("a folder")).expect("a writable folder");
+    fs::write(&scratch.path, bytes).expect("a writable folder");
+    scratch
+}
+
+fn names_beside(scratch: &Scratch) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(scratch.path.parent().expect("a folder"))
+        .expect("the folder")
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+
+    names.sort();
+    names
+}
+
+fn every_write(path: &Path) -> Vec<Result<()>> {
+    vec![
+        store(path, ConfigKey::Quality, "high"),
+        clear(path, ConfigKey::Sink),
+        store_in_table(path, ConfigKey::EqualiserFor, "one", "a"),
+        clear_in_table(path, ConfigKey::EqualiserFor, "one"),
+        edit(path, |editing| {
+            editing.store(ConfigKey::Dither, "none");
+            Ok(())
+        }),
+    ]
+}
+
+fn assert_left_as_it_was(scratch: &Scratch, bytes: &[u8], modified_then: std::time::SystemTime) {
+    assert_eq!(fs::read(&scratch.path).expect("the file stands"), bytes);
+    assert_eq!(modified(scratch), modified_then);
+    assert_eq!(names_beside(scratch), ["config.toml"]);
+}
+
+fn modified(scratch: &Scratch) -> std::time::SystemTime {
+    fs::metadata(&scratch.path)
+        .expect("the file stands")
+        .modified()
+        .expect("a modification time")
+}
+
+#[test]
+fn a_write_against_a_file_that_is_not_toml_is_refused_and_leaves_it_byte_for_byte() {
+    let broken = [
+        "quality = \"high\nsink = \"auto_null\"\n",
+        "quality =\n",
+        "quality = \"high\"\nquality = \"fast\"\n",
+        "[equaliser-for\none = \"a\"\n",
+        "sink = [\"a\", \"b\"\n",
+        "= \"high\"\n",
+        "# my setup\nquality = high\n",
+        "quality = \"fast\"\n\u{0}\n",
+        "[equaliser-for]\none = \"a\"\n[equaliser-for]\ntwo = \"b\"\n",
+    ];
+
+    for text in broken {
+        let scratch = Scratch::new().seed(text);
+        let before = modified(&scratch);
+
+        for written in every_write(&scratch.path) {
+            assert!(
+                matches!(&written, Err(Error::ConfigSyntax { path, .. }) if path == &scratch.path),
+                "{text:?} was not refused as a syntax error: {written:?}"
+            );
+        }
+
+        assert_left_as_it_was(&scratch, text.as_bytes(), before);
+    }
+}
+
+#[test]
+fn a_write_against_a_file_that_is_not_utf_8_is_refused_and_leaves_it_byte_for_byte() {
+    let utf_16_little_endian: Vec<u8> = [0xFF, 0xFE]
+        .into_iter()
+        .chain(
+            "quality = \"fast\"\n"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes),
+        )
+        .collect();
+    let utf_16_big_endian: Vec<u8> = [0xFE, 0xFF]
+        .into_iter()
+        .chain(
+            "quality = \"fast\"\n"
+                .encode_utf16()
+                .flat_map(u16::to_be_bytes),
+        )
+        .collect();
+
+    let broken: [&[u8]; 4] = [
+        b"sink = \"caf\xE9\"\n",
+        b"\xFF\xFE\xFD",
+        &utf_16_little_endian,
+        &utf_16_big_endian,
+    ];
+
+    for bytes in broken {
+        let scratch = seeded_with_bytes(bytes);
+        let before = modified(&scratch);
+
+        for written in every_write(&scratch.path) {
+            assert!(
+                matches!(&written, Err(Error::ReadConfig { path, .. }) if path == &scratch.path),
+                "{bytes:?} was not refused as unreadable: {written:?}"
+            );
+        }
+
+        assert_left_as_it_was(&scratch, bytes, before);
+    }
+}
+
+#[test]
+fn a_write_into_a_table_that_is_no_table_is_refused_and_leaves_the_file_byte_for_byte() {
+    let broken = [
+        "equaliser-for = \"harman\"\n",
+        "# kept\nequaliser-for = 7\nquality = \"fast\"\n",
+        "equaliser-for = [\"one\", \"two\"]\n",
+        "equaliser-for = true # my choice\n",
+    ];
+
+    for text in broken {
+        let scratch = Scratch::new().seed(text);
+        let before = modified(&scratch);
+
+        let written = store_in_table(&scratch.path, ConfigKey::EqualiserFor, "one", "a");
+
+        assert!(
+            matches!(
+                &written,
+                Err(Error::ConfigType {
+                    key: ConfigKey::EqualiserFor,
+                    expected: ValueKind::Table,
+                    ..
+                })
+            ),
+            "{text:?} was not refused as a wrong type: {written:?}"
+        );
+
+        assert_left_as_it_was(&scratch, text.as_bytes(), before);
+    }
+}
+
+#[test]
+fn a_file_that_is_no_file_is_refused_a_write_and_nothing_is_made_beside_it() {
+    let scratch = Scratch::new();
+
+    fs::create_dir_all(&scratch.path).expect("a folder where the file would be");
+
+    assert!(matches!(
+        store(&scratch.path, ConfigKey::Quality, "high"),
+        Err(Error::ReadConfig { .. })
+    ));
+    assert!(scratch.path.is_dir());
+    assert_eq!(names_beside(&scratch), ["config.toml"]);
+}
