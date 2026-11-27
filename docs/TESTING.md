@@ -256,18 +256,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   signs installs over the last release.
 
 ## Dependencies
-- [S · 0.18.1] Gate on advisories in the local check. **Low, builder.** `heapless` 0.8.0, which
-  `flacenc` brings (`Cargo.toml:174`), carries ten unsound advisories fixed in 0.9.4, beyond the
-  trees the blocked entry below names, and nothing in the tree gates on an advisory: there is no
-  `deny.toml` or `audit.toml` and no step runs `cargo audit`. Run it as an `xtask` step with the
-  entries below ignored by name, and move to a `flacenc` on `heapless` 0.9. Done when a new advisory
-  fails `cargo xtask check`.
-- [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
-  (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
-  5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with
-  `zvariant` and `zbus_names` unmaintained since they were merged into zbus 6; `rustybuzz` and
-  `ttf-parser` under gpui's `usvg`; and the build-time `paste` (lofty), `proc-macro-error` (glib)
-  and `basic-toml` (uniffi's askama)
+- [S · blocked: flacenc] `heapless` 0.8.0, which `flacenc` 0.5.1 (the latest, and upstream's
+  `main`) brings, carries nine unsound advisories fixed in 0.9.4 (RUSTSEC-2026-0574 to 0582), ignored
+  by id in `.cargo/audit.toml` until a `flacenc` on `heapless` 0.9 is published
+- [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees, each ignored by id in
+  `.cargo/audit.toml`: zbus 5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two
+  built), with `zvariant`, `zvariant_derive` and `zbus_names` unmaintained since they were merged into
+  zbus 6; `ttf-parser` under gpui's `usvg`; `chrono` 0.4.45 unmaintained under gpui's `scheduler`;
+  and the build-time `paste` (lofty) and `basic-toml` (uniffi's askama)
 
 ## Later: Structure
 - [L] The party, inspector, services, queue, lyrics, analysis, missing, statistics, suggestions
