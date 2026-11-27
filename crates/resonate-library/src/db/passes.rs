@@ -18,7 +18,8 @@ use super::{
 use crate::{
     CoverArt, EnrichHandle, EnrichOptions, Error, Fingerprinters, ImportHandle, ImportOptions,
     Move, OrganiseHandle, OrganiseOptions, PassKind, PollHandle, PollOptions, Reference, Replaced,
-    Result, RetagHandle, RetagOptions, ScanHandle, ScanOptions, StoreOp, TagSink, enrich, import,
+    Result, RetagHandle, RetagOptions, ScanHandle, ScanObserver, ScanOptions, StoreOp, TagSink,
+    enrich, import,
     organise::{self},
     retag::{self, Followed, TrackToTag},
     scan, sheeted, store, supply, undo,
@@ -93,6 +94,20 @@ impl Library {
         scan::start(
             Arc::clone(&self.inner),
             options,
+            None,
+            self.shared().settle_after_a_scan(),
+        )
+    }
+
+    pub fn scan_observed(
+        &self,
+        options: ScanOptions,
+        observer: Arc<dyn ScanObserver>,
+    ) -> Result<ScanHandle> {
+        scan::start(
+            Arc::clone(&self.inner),
+            options,
+            Some(observer),
             self.shared().settle_after_a_scan(),
         )
     }
@@ -109,7 +124,7 @@ impl Library {
         &self,
         options: ScanOptions,
     ) -> Result<ScanHandle> {
-        scan::start(Arc::clone(&self.inner), options, Replaced::default)
+        scan::start(Arc::clone(&self.inner), options, None, Replaced::default)
     }
 
     pub(crate) fn read_the_landed(

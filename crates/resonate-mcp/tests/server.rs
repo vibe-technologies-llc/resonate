@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -21,7 +21,8 @@ use resonate_library::{
     GroupMatch, Isrc, Layout, Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, ListedSong,
     LookingFor, LookupOp, LyricText, LyricsAsked, Mbid, Medium, PlaylistLink, ProfileLink,
     Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
-    ReleaseMatch, ReleaseTrack, Removal, ScanOptions, SongLink, SongsAsked, StreamAsked, Trashes,
+    ReleaseMatch, ReleaseTrack, Removal, ScanObserver, ScanOptions, SongLink, SongsAsked,
+    StreamAsked, Trashes,
 };
 use resonate_mcp::{Controlling, Error, Lookups, Reach, Resource, Row, Server, Tool};
 use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking, ZoneAsked};
@@ -2193,6 +2194,85 @@ fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained(
 }
 
 #[test]
+fn a_session_told_to_stop_cancels_a_scan_held_on_its_third_file_there() {
+    const FILES: usize = 6;
+    const HELD_ON: usize = 3;
+    const LONG_ENOUGH_TO_SEE_A_SESSION_LEAVE_EARLY: Duration = Duration::from_millis(300);
+
+    let tree = Tree::new();
+
+    for number in 1..=FILES {
+        tree.wav(
+            &format!("{number:02}.wav"),
+            &format!("Take {number}"),
+            "Hours",
+            &number.to_string(),
+        );
+    }
+
+    let gate = Arc::new(Gate::default());
+    let reached = Arc::new(Reaching {
+        reached: AtomicUsize::new(0),
+        held_on: HELD_ON,
+        gate: Arc::clone(&gate),
+    });
+    let server = Server::new(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        Fake::default(),
+    )
+    .observing_scans(Arc::clone(&reached) as Arc<dyn ScanObserver>);
+
+    let started = called(
+        &server,
+        "start_scan",
+        json!({ "roots": [tree.root.display().to_string()] }),
+    );
+
+    while !gate.is_reached() {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    let running = called(&server, "library_passes", json!({}));
+
+    let (reading, writing) = io::pipe().expect("a pipe");
+    let (stop, stoppable) = resonate_mcp::stoppable();
+
+    let releasing = Arc::clone(&gate);
+    let stopping = std::thread::spawn(move || {
+        stop.stop();
+        std::thread::sleep(LONG_ENOUGH_TO_SEE_A_SESSION_LEAVE_EARLY);
+        releasing.release();
+    });
+    let mut output = Vec::new();
+
+    server
+        .serve_until_stopped(BufReader::new(reading), &mut output, stoppable)
+        .expect("a session told to stop to end cleanly");
+
+    let released_before_it_ended = gate.is_released();
+
+    stopping.join().expect("the stopping thread");
+
+    let scan = called(&server, "library_passes", json!({}))["scan"].clone();
+    let added = scan["stats"]["added"]
+        .as_u64()
+        .expect("a count of rows added");
+
+    assert_eq!(started["started"], "scan");
+    assert_eq!(running["scan"]["state"], "running", "{running}");
+    assert!(
+        released_before_it_ended,
+        "the session ended while the scan was still held"
+    );
+    assert_eq!(scan["state"], "finished", "{scan}");
+    assert_eq!(scan["cancelled"], true, "{scan}");
+    assert_eq!(reached.reached.load(Ordering::Acquire), HELD_ON, "{scan}");
+    assert!(added < HELD_ON as u64, "{scan}");
+
+    drop(writing);
+}
+
+#[test]
 fn a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it() {
     let (stop, stoppable) = resonate_mcp::stoppable();
     let telling = std::thread::spawn(move || {
@@ -3549,6 +3629,22 @@ impl Gate {
 
     fn is_released(&self) -> bool {
         self.released.load(Ordering::Acquire)
+    }
+}
+
+struct Reaching {
+    reached: AtomicUsize,
+    held_on: usize,
+    gate: Arc<Gate>,
+}
+
+impl ScanObserver for Reaching {
+    fn reaching(&self, _file: &Path) {
+        let nth = self.reached.fetch_add(1, Ordering::AcqRel) + 1;
+
+        if nth == self.held_on {
+            self.gate.hold();
+        }
     }
 }
 

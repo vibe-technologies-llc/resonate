@@ -225,5 +225,7 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   the second signal however long a call runs
   (`a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it`). A session told to stop while a gated
   lookup runs ends only once it has been released
-  (`a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained`); a scan has no seam
-  to hold it, so its drain is not held apart.
+  (`a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained`); a scan is held
+  through `Server::observing_scans`, whose `ScanObserver` the scan calls before each file, and a
+  session told to stop while it is held on its third file cancels it there
+  (`a_session_told_to_stop_cancels_a_scan_held_on_its_third_file_there`).

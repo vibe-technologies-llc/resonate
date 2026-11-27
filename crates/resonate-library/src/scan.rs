@@ -68,6 +68,10 @@ pub struct ScanOptions {
     pub workers: NonZeroUsize,
 }
 
+pub trait ScanObserver: Send + Sync {
+    fn reaching(&self, file: &Path);
+}
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Failure {
     Misnamed,
@@ -260,6 +264,7 @@ fn replaced_after(mut summary: ScanSummary, after: impl FnOnce() -> Replaced) ->
 pub(crate) fn start(
     inner: Arc<Inner>,
     options: ScanOptions,
+    observer: Option<Arc<dyn ScanObserver>>,
     after: impl FnOnce() -> Replaced + Send + 'static,
 ) -> Result<ScanHandle> {
     let walking = inner.walk_the_tree()?;
@@ -273,7 +278,9 @@ pub(crate) fn start(
         .spawn(move || {
             let outcome = Library::settle_removals_before_a_scan(&inner, &walking)
                 .and_then(|()| roots(&inner, &options.roots))
-                .and_then(|roots| run(&inner, &options, roots, Beside::Tidied, &progress));
+                .and_then(|roots| {
+                    run(&inner, &options, roots, Beside::Tidied, observer, &progress)
+                });
 
             drop(walking);
             outcome.map(|summary| replaced_after(summary, after))
@@ -303,8 +310,16 @@ pub(crate) fn start_over_held(
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())
         .spawn(move || {
-            let outcome = Library::settle_removals_before_a_scan(&inner, &walking)
-                .and_then(|()| run(&inner, &options, roots, Beside::LeftToTheWatch, &progress));
+            let outcome = Library::settle_removals_before_a_scan(&inner, &walking).and_then(|()| {
+                run(
+                    &inner,
+                    &options,
+                    roots,
+                    Beside::LeftToTheWatch,
+                    None,
+                    &progress,
+                )
+            });
 
             drop(walking);
             outcome.map(|summary| replaced_after(summary, after))
@@ -814,6 +829,7 @@ fn run(
     options: &ScanOptions,
     roots: Vec<Root>,
     beside: Beside,
+    observer: Option<Arc<dyn ScanObserver>>,
     progress: &Arc<ScanProgress>,
 ) -> Result<ScanSummary> {
     resonate_codec::mend_what_was_written_back_from_elsewhere();
@@ -868,6 +884,7 @@ fn run(
                         work: &work_tx,
                         vault: vault.as_deref(),
                         mounting: &mounting,
+                        observer: observer.as_deref(),
                     },
                 );
 
@@ -1212,6 +1229,7 @@ struct Walked<'a> {
     work: &'a Sender<Job>,
     vault: Option<&'a Path>,
     mounting: &'a volumes::Mounting,
+    observer: Option<&'a dyn ScanObserver>,
 }
 
 fn walk_all(known: &Known, roots: &Rooted<'_>, walked: &Walked<'_>) -> Result<()> {
@@ -1226,6 +1244,7 @@ fn walk_all(known: &Known, roots: &Rooted<'_>, walked: &Walked<'_>) -> Result<()
             progress: walked.progress,
             work: walked.work,
             vault: walked.vault,
+            observer: walked.observer,
         };
         if !walk(&walking, &mut visited, walked.mounting)? || !kept_the_vanished_volumes(&walking) {
             break;
@@ -1462,9 +1481,16 @@ struct Walking<'a> {
     progress: &'a ScanProgress,
     work: &'a Sender<Job>,
     vault: Option<&'a Path>,
+    observer: Option<&'a dyn ScanObserver>,
 }
 
 impl Walking<'_> {
+    fn reaching(&self, file: &Path) {
+        if let Some(observer) = self.observer {
+            observer.reaching(file);
+        }
+    }
+
     fn reaches_a_root(&self, target: &Path) -> bool {
         self.registered
             .iter()
@@ -1494,6 +1520,10 @@ fn directory_of(
     let mut below: AHashMap<PathBuf, Vec<(PathBuf, Metadata)>> = AHashMap::new();
 
     for (path, metadata) in sheets {
+        if walking.progress.is_cancelled() {
+            return Ok(false);
+        }
+
         let Some(folder) = path.parent() else {
             continue;
         };
@@ -1562,6 +1592,9 @@ fn directory_of(
     }
 
     for (path, metadata) in audio {
+        if walking.progress.is_cancelled() {
+            return Ok(false);
+        }
         if claimed.contains(path) || claimed_from_above.remove(path) {
             continue;
         }
@@ -1611,6 +1644,8 @@ fn sheet_job(
     let (file, metadata) = held;
     let tracks = cut.audio_tracks().count();
 
+    walking.reaching(file);
+
     progress
         .discovered
         .fetch_add(tracks as u64, Ordering::Relaxed);
@@ -1654,6 +1689,8 @@ fn sheet_job(
 }
 
 fn whole_file_job(walking: &Walking<'_>, path: &Path, metadata: &Metadata) -> Result<bool> {
+    walking.reaching(path);
+
     let Walking {
         known,
         root,

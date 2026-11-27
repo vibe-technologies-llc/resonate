@@ -3,11 +3,15 @@ use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
     process, slice,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
+use parking_lot::Mutex;
 use resonate_core::{Frames, MediaLocation, Resumable, Resumption, Span, ZoneId};
-use resonate_library::{Library, Result, ScanOptions, SortOrder, TrackQuery};
+use resonate_library::{Library, Result, ScanObserver, ScanOptions, SortOrder, TrackQuery};
 use support::link_to_directory;
 
 use crate::support;
@@ -131,6 +135,49 @@ fn row(path: &str) -> Resumable {
         span: None,
         held: None,
     }
+}
+
+#[derive(Default)]
+struct Reached {
+    files: Mutex<Vec<PathBuf>>,
+}
+
+impl ScanObserver for Reached {
+    fn reaching(&self, file: &Path) {
+        self.files.lock().push(file.to_path_buf());
+    }
+}
+
+#[test]
+fn an_observer_is_told_of_each_file_once_in_the_order_the_walk_reaches_it() -> Result<()> {
+    const FILES: usize = 5;
+
+    let tree = Tree::new();
+
+    for number in 1..=FILES {
+        tree.wav(&format!("{number:02}.wav"));
+    }
+
+    let library = Library::open_in_memory()?;
+    let reached = Arc::new(Reached::default());
+    let options = ScanOptions {
+        incremental: false,
+        follow_symlinks: false,
+        ..following_links(tree.path())
+    };
+
+    let summary = library
+        .scan_observed(options, Arc::clone(&reached) as Arc<dyn ScanObserver>)?
+        .join()?;
+
+    let in_directory_order: Vec<PathBuf> = fs::read_dir(tree.path())
+        .expect("a readable folder")
+        .map(|entry| entry.expect("an entry").path())
+        .collect();
+
+    assert_eq!(summary.stats.added, FILES as u64);
+    assert_eq!(*reached.files.lock(), in_directory_order);
+    Ok(())
 }
 
 #[test]

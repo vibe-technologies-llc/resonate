@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_library::Library;
+use resonate_library::{Library, ScanObserver};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -227,8 +227,18 @@ impl Server {
 
     #[must_use]
     pub fn looking_up_with(self, lookups: Lookups) -> Self {
+        let observer = self.passes.scan_observer();
+
         Self {
-            passes: Passes::over(lookups),
+            passes: Passes::over(lookups).observing_scans(observer),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn observing_scans(self, observer: Arc<dyn ScanObserver>) -> Self {
+        Self {
+            passes: self.passes.observing_scans(Some(observer)),
             ..self
         }
     }

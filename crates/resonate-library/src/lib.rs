@@ -213,8 +213,8 @@ pub use crate::{
         Written,
     },
     scan::{
-        Failure, Failures, NamedByTheFile, ScanOptions, ScanProgress, ScanStats, ScanSummary,
-        disc_in_folder, named_by_the_file,
+        Failure, Failures, NamedByTheFile, ScanObserver, ScanOptions, ScanProgress, ScanStats,
+        ScanSummary, disc_in_folder, named_by_the_file,
     },
     scrobble::{
         Billed, Halted, LOVES_TOLD_AT_ONCE, LastfmApproval, LastfmSession, LastfmSignIn,

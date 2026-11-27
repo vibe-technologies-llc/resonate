@@ -9,8 +9,8 @@ use std::{
 
 use resonate_library::{
     Cancelling, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fingerprinters, Library,
-    Outcome, PassHandle, PollOptions, PollProgress, PollStats, PollSummary, Reference, ScanOptions,
-    ScanProgress, ScanStats, ScanSummary, Stopped,
+    Outcome, PassHandle, PollOptions, PollProgress, PollStats, PollSummary, Reference,
+    ScanObserver, ScanOptions, ScanProgress, ScanStats, ScanSummary, Stopped,
 };
 use resonate_providers::Providers;
 use serde::Deserialize;
@@ -295,6 +295,7 @@ impl Running {
 
 pub struct Passes {
     lookups: Lookups,
+    scan_observer: Option<Arc<dyn ScanObserver>>,
     running: RefCell<Running>,
 }
 
@@ -302,6 +303,7 @@ impl Passes {
     pub fn over(lookups: Lookups) -> Self {
         Self {
             lookups,
+            scan_observer: None,
             running: RefCell::new(Running {
                 scan: Slot::Idle,
                 lookup: Slot::Idle,
@@ -309,6 +311,16 @@ impl Passes {
                 lookup_owed: false,
             }),
         }
+    }
+
+    #[must_use]
+    pub(crate) fn observing_scans(mut self, observer: Option<Arc<dyn ScanObserver>>) -> Self {
+        self.scan_observer = observer;
+        self
+    }
+
+    pub(crate) fn scan_observer(&self) -> Option<Arc<dyn ScanObserver>> {
+        self.scan_observer.clone()
     }
 
     fn free(&self, pass: Pass) -> Result<()> {
@@ -330,13 +342,17 @@ impl Passes {
 
         Self::admit(library, roots)?;
 
-        let handle = library.scan(ScanOptions {
+        let options = ScanOptions {
             roots: roots.to_vec(),
             incremental: !asked.full,
             follow_symlinks: asked.follow_links,
             extract_cover_art: true,
             workers: thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
-        })?;
+        };
+        let handle = match &self.scan_observer {
+            Some(observer) => library.scan_observed(options, Arc::clone(observer))?,
+            None => library.scan(options)?,
+        };
         let looks_up_after = self.lookups.after_a_scan && self.lookups.reference.is_some();
         let mut running = self.running.borrow_mut();
 
