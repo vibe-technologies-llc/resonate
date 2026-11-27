@@ -181,6 +181,7 @@ mod run {
 
     use super::{DEB_MAINTAINER_SCRIPTS, HAND_OVER, packaging_path};
 
+    const REQUIRED_BY: &str = "RESONATE_SERVER_SYSTEMD_TESTS";
     const READ_BY_OWNER_AND_GROUP: u32 = 0o440;
     const ENTERED_BY_OWNER_AND_GROUP: u32 = 0o750;
     const PERMISSION_BITS: u32 = 0o7777;
@@ -389,7 +390,7 @@ mod run {
     #[test]
     fn a_debian_upgrade_restarts_a_running_server_and_a_first_install_starts_none() {
         if !under_systemd() {
-            eprintln!("skipped: the maintainer scripts act only under systemd");
+            passed_over!("the maintainer scripts act only under systemd");
             return;
         }
 

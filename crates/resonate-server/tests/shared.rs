@@ -31,6 +31,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::{firefox::Firefox, scripted::Scripted};
 
+const REQUIRED_BY: &str = "RESONATE_SERVER_PAGES_TESTS";
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
 
 fn song(title: &str) -> Recording {
@@ -1079,7 +1080,7 @@ fn a_row(title: &str) -> String {
 #[test]
 fn a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_shared_is_not_held() {
     if Command::new("node").arg("--version").output().is_err() {
-        eprintln!("skipped: no node to stand in for a browser");
+        passed_over!("no node to stand in for a browser");
         return;
     }
 
@@ -1140,7 +1141,7 @@ fn a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_sha
 #[test]
 fn a_browser_given_the_link_of_a_list_shared_anew_is_told_it_moved() {
     if Command::new("node").arg("--version").output().is_err() {
-        eprintln!("skipped: no node to stand in for a browser");
+        passed_over!("no node to stand in for a browser");
         return;
     }
 
@@ -1688,8 +1689,8 @@ const WHAT_THE_PARTY_PAGE_SHOWS: &str = "return { \
 
 #[test]
 fn firefox_runs_both_pages_under_their_policy_and_shows_the_list_a_real_link_names() {
-    if let Some(reason) = Firefox::unavailable() {
-        eprintln!("skipped: {reason}");
+    if let Some(absent) = Firefox::unavailable() {
+        absent.passed_over();
         return;
     }
 

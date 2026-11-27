@@ -11,6 +11,7 @@ use std::{
 use serde_json::{Value, json};
 
 const FIREFOX: &str = "firefox";
+const REQUIRED_BY: &str = "RESONATE_SERVER_FIREFOX_TESTS";
 const STARTS_WITHIN: Duration = Duration::from_secs(60);
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 const QUITS_WITHIN: Duration = Duration::from_secs(20);
@@ -29,6 +30,32 @@ const PREFERENCES: [(&str, &str); 3] = [
 ];
 const POLICY_REPORTED_AS: &str = "Content-Security-Policy";
 const VIOLATIONS: &str = "return Services.console.getMessageArray().map((message) => message.message || String(message)).filter((said) => said.includes(arguments[0]));";
+
+#[derive(Clone, Copy)]
+pub enum Unavailable {
+    NoFirefox,
+    Snapped,
+}
+
+impl Unavailable {
+    fn why(self) -> &'static str {
+        match self {
+            Self::NoFirefox => "no firefox to enforce the pages' policy",
+            Self::Snapped => "a snap firefox cannot read the test's profile folder",
+        }
+    }
+
+    pub fn passed_over(self) {
+        let why = self.why();
+
+        assert!(
+            !matches!(self, Self::NoFirefox) || env::var(REQUIRED_BY).as_deref() != Ok("required"),
+            "{why}, and {REQUIRED_BY} asks for it"
+        );
+
+        eprintln!("skipped: {why}");
+    }
+}
 
 struct Started(Child);
 
@@ -56,7 +83,7 @@ pub struct Firefox {
 }
 
 impl Firefox {
-    pub fn unavailable() -> Option<&'static str> {
+    pub fn unavailable() -> Option<Unavailable> {
         let runs = Command::new(FIREFOX)
             .arg("--version")
             .stdout(Stdio::null())
@@ -65,10 +92,10 @@ impl Firefox {
             .is_ok_and(|status| status.success());
 
         if !runs {
-            return Some("no firefox to enforce the pages' policy");
+            return Some(Unavailable::NoFirefox);
         }
         if env::var_os(SNAP_ENVIRONMENT).is_some() || installed_as_a_snap() {
-            return Some("a snap firefox cannot read the test's profile folder");
+            return Some(Unavailable::Snapped);
         }
         None
     }

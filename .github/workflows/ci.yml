@@ -51,6 +51,8 @@ jobs:
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
       - name: Install what the portal tests host
         run: pacman -S --noconfirm --needed xdg-desktop-portal bubblewrap xdg-dbus-proxy
+      - name: Install what the server's page tests run under
+        run: pacman -S --noconfirm --needed nodejs
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
@@ -71,6 +73,7 @@ jobs:
           RESONATE_LIBRARY_FFMPEG_TESTS: required
           RESONATE_VAULT_TESTS: required
           RESONATE_ENGINE_FFMPEG_TESTS: required
+          RESONATE_SERVER_PAGES_TESTS: required
 
   workspace:
     name: Tests with everything

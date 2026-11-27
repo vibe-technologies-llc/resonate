@@ -306,7 +306,9 @@ Invariants the layering protects (the rules files have the rest):
   (`RESONATE_DRAG_TESTS`, the opt-in gate, past which a missing hosted KWin, GTK 4 in python3 or
   `spectacle` fails); `resonate-mpris`'s `trash::` (`xdg-desktop-portal`, `RESONATE_MPRIS_PORTAL_TESTS`, CI; `bwrap` with
   `xdg-dbus-proxy` for the sandboxed case, `RESONATE_MPRIS_SANDBOX_TESTS`); `resonate-server`'s `shared::`
-  page tests (`node`, and a headless `firefox` driven over Marionette for the pages' policy).
+  page tests (`node`, `RESONATE_SERVER_PAGES_TESTS`, CI; a headless `firefox` driven over Marionette for the
+  pages' policy, `RESONATE_SERVER_FIREFOX_TESTS`) and `packaging::`'s maintainer scripts (a host
+  running systemd, `RESONATE_SERVER_SYSTEMD_TESTS`).
   `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers on
   loopback (`-ytmusic` a fake `yt-dlp` too, on Unix).
 - `cargo run -p resonate-server -- --help`: the sync server. `cargo nextest run -p resonate-server` runs

@@ -248,12 +248,16 @@ Linux sound server or GUI libraries are needed.
   `fdkaac`, `twolame` and ffmpeg's libopus stay optional), `RESONATE_DSP_RESTORATION_TESTS`,
   `RESONATE_LIBRARY_FFMPEG_TESTS`, `RESONATE_VAULT_TESTS` and `RESONATE_ENGINE_FFMPEG_TESTS`
   (ffmpeg, and `flac` for the vault), `RESONATE_CAST_MULTICAST_TESTS` (mDNS answered over multicast),
+  `RESONATE_SERVER_PAGES_TESTS` (`node`, for the served pages' script), `RESONATE_SERVER_FIREFOX_TESTS`
+  (`firefox` on the path; a snap Firefox stays a skip) and `RESONATE_SERVER_SYSTEMD_TESTS` (a host
+  running systemd, for the DEB maintainer scripts),
   with `RESONATE_COREAUDIO_TESTS` and `RESONATE_SYNC_NEARBY_TESTS`. A skip that is the machine's
   doing and no tool's (a user who writes through a read-only mode, no second filesystem, no user
   namespace) stays a skip. A suite behind an opt-in gate (`RESONATE_ONLINE_TESTS`,
   `RESONATE_DRAG_TESTS`) skips only while the gate is closed: past it, a missing tool fails.
   The `headless` job sets the switches for what `ARCH_PACKAGES` installs (and the portal's tools, which its own step adds) and a hosted daemon needs
-  (the bus, portal, terminal, hosted PipeWire, ffmpeg and encoder switches) and the `workspace` job sets
+  (the bus, portal, terminal, hosted PipeWire, ffmpeg and encoder switches, and the server's pages
+  with the `nodejs` its own step adds) and the `workspace` job sets
   `RESONATE_TERMINAL_TESTS`; the rest name something CI has no way to provide (a running
   daemon, a sandbox the container's seccomp allows, multicast, a sound device) and are set by hand where it exists.
   A lib or bin target holding no test sets `test = false` (`resonate-driven`, the server's and the

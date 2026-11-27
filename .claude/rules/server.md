@@ -458,7 +458,7 @@ it off.
   frames this one (`a_page_runs_only_the_scripts_its_policy_names_by_hash_and_is_framed_nowhere`);
   the page's words are `pages.ftl`'s, handed to the script as a JSON block `in_json` writes with `<`,
   `>` and `&` escaped, so no word closes the script. The tests run the served script under Node
-  against a real shared list, skipped without Node
+  against a real shared list, skipped without Node (a failure under `RESONATE_SERVER_PAGES_TESTS=required`, which CI sets)
   (`a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_shared_is_not_held`,
   `a_browser_given_the_link_of_a_list_shared_anew_is_told_it_moved`,
   `only_a_shared_playlists_page_reads_the_list_and_its_words_cannot_close_the_script`). **A real
@@ -468,7 +468,7 @@ it off.
   and `/p/` pages a real view link and party key name on loopback, waits for the list to be drawn and
   the code and the `resonate://` link to be written, and reads the browser console in its chrome
   context (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS`) for any `Content-Security-Policy` message; skipped
-  without `firefox` on the path, and skipped under a snap Firefox (the `snapped` check: a `snap`
+  without `firefox` on the path (a failure under `RESONATE_SERVER_FIREFOX_TESTS=required`), and skipped under a snap Firefox (the `snapped` check: a `snap`
   folder in its path or its resolved path, `/snap/` in a wrapper script, or `SNAP` in the
   environment), which cannot read the profile folder and would wait out the port file. Site icons
   stay on in that profile: each page names `<link rel="icon" href="data:,">` and the policy's
