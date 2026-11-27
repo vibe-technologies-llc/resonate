@@ -23,7 +23,7 @@ use crate::support::{
 fn a_suggestion_is_read_against_the_catalog_as_the_scan_left_it() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let library = Library::open_in_memory()?;
 

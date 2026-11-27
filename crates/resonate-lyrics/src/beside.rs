@@ -370,7 +370,7 @@ mod tests {
     use super::*;
     use crate::{Detail, LyricProvider, Lyrics, Sidecar, Wanted, read_document, read_lyrics};
 
-    const SYNCED: &str = "[00:01.00]all that you touch\n[00:05.00]all that you see\n";
+    const SYNCED: &str = "[00:01.00]every lamp you lit\n[00:05.00]each road I know\n";
     const WORDED: &str = include_str!("../tests/fixtures/lyricsfile_worded.yaml");
     const TTML: &str = include_str!("../tests/fixtures/ttml_worded.ttml");
 
@@ -391,7 +391,7 @@ mod tests {
         }
 
         fn track(&self) -> PathBuf {
-            let track = self.0.join("Echoes.flac");
+            let track = self.0.join("Slow Water.flac");
 
             fs::write(&track, b"fLaC").expect("a track");
             track
@@ -402,7 +402,7 @@ mod tests {
                 .expect("a folder")
                 .flatten()
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                .filter(|name| name != "Echoes.flac")
+                .filter(|name| name != "Slow Water.flac")
                 .collect();
 
             names.sort();
@@ -451,7 +451,7 @@ mod tests {
             .expect("a readable sheet")
             .expect("its lines");
 
-        assert_eq!(written, Beside::Written(folder.0.join("Echoes.lrc")));
+        assert_eq!(written, Beside::Written(folder.0.join("Slow Water.lrc")));
         assert_eq!(
             fs::read_to_string(written.path()).expect("its text"),
             SYNCED
@@ -464,7 +464,7 @@ mod tests {
     fn a_plain_sheet_kept_is_written_as_an_lrc_that_reads_back_unsynced() {
         let folder = Folder::new();
         let track = folder.track();
-        let plain = "all that you touch\nall that you see\n";
+        let plain = "every lamp you lit\neach road I know\n";
 
         write_beside(&track, kept(plain), Standing::LeftAlone).expect("a sheet written");
 
@@ -499,7 +499,7 @@ mod tests {
 
         assert_eq!(
             written,
-            Beside::Written(folder.0.join("Echoes.lyricsfile.yaml"))
+            Beside::Written(folder.0.join("Slow Water.lyricsfile.yaml"))
         );
         assert_eq!(read.detail(), Detail::Words);
         assert_eq!(lines_of(&read), lines_of(&as_kept));
@@ -516,7 +516,7 @@ mod tests {
 
         let written = write_beside(&track, sheet, Standing::LeftAlone).expect("a sheet written");
 
-        assert_eq!(written, Beside::Written(folder.0.join("Echoes.lrc")));
+        assert_eq!(written, Beside::Written(folder.0.join("Slow Water.lrc")));
         assert_eq!(
             fs::read_to_string(written.path()).expect("its text"),
             SYNCED
@@ -529,21 +529,22 @@ mod tests {
         let track = folder.track();
         let theirs = "[00:02.00]a sheet of the listener's own\n";
 
-        fs::write(folder.0.join("Echoes.lrc"), theirs).expect("a sheet of their own");
+        fs::write(folder.0.join("Slow Water.lrc"), theirs).expect("a sheet of their own");
 
         let refused = write_beside(&track, kept(SYNCED), Standing::LeftAlone);
-        let after_refusal = fs::read_to_string(folder.0.join("Echoes.lrc")).expect("their text");
+        let after_refusal =
+            fs::read_to_string(folder.0.join("Slow Water.lrc")).expect("their text");
         let replaced =
             write_beside(&track, kept(SYNCED), Standing::Replaced).expect("a sheet replaced");
 
         assert!(
-            matches!(&refused, Err(Error::SidecarStands { path }) if *path == folder.0.join("Echoes.lrc")),
+            matches!(&refused, Err(Error::SidecarStands { path }) if *path == folder.0.join("Slow Water.lrc")),
             "{refused:?}"
         );
         assert_eq!(after_refusal, theirs);
-        assert_eq!(replaced, Beside::Written(folder.0.join("Echoes.lrc")));
+        assert_eq!(replaced, Beside::Written(folder.0.join("Slow Water.lrc")));
         assert_eq!(
-            fs::read_to_string(folder.0.join("Echoes.lrc")).expect("our text"),
+            fs::read_to_string(folder.0.join("Slow Water.lrc")).expect("our text"),
             SYNCED
         );
     }
@@ -553,7 +554,7 @@ mod tests {
     fn a_fifo_standing_as_the_sheet_is_not_opened_to_see_what_it_says() {
         let folder = Folder::new();
         let track = folder.track();
-        let fifo = folder.0.join("Echoes.lrc");
+        let fifo = folder.0.join("Slow Water.lrc");
 
         let made = std::process::Command::new("mkfifo")
             .arg(&fifo)
@@ -583,11 +584,11 @@ mod tests {
         use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 
         let folder = Folder::new();
-        let track = folder.0.join(OsStr::from_bytes(b"Ech\xffoes.flac"));
+        let track = folder.0.join(OsStr::from_bytes(b"Slow\xffWater.flac"));
 
         fs::write(&track, b"fLaC").expect("a track");
         fs::write(
-            folder.0.join(OsStr::from_bytes(b"Ech\xffoes.lrc")),
+            folder.0.join(OsStr::from_bytes(b"Slow\xffWater.lrc")),
             "[00:02.00]theirs\n",
         )
         .expect("a sheet of their own");
@@ -603,13 +604,13 @@ mod tests {
     #[test]
     fn a_sheet_that_lands_while_the_write_is_staged_is_never_renamed_over() {
         let folder = Folder::new();
-        let target = folder.0.join("Echoes.lrc");
+        let target = folder.0.join("Slow Water.lrc");
 
         fs::write(&target, "theirs").expect("a sheet that landed");
 
         let refused = settled(
             &folder.0,
-            &OsString::from("Echoes.lrc"),
+            &OsString::from("Slow Water.lrc"),
             &target,
             SYNCED,
             Standing::LeftAlone,
@@ -630,7 +631,7 @@ mod tests {
 
         fs::create_dir_all(folder.0.join("Lyrics")).expect("a lyrics folder");
         fs::write(
-            folder.0.join("Lyrics").join("echoes.LRC"),
+            folder.0.join("Lyrics").join("slow water.LRC"),
             "[00:01.00]theirs",
         )
         .expect("a sheet of their own");
@@ -653,7 +654,7 @@ mod tests {
 
         assert_eq!(
             planned.ok(),
-            Some(Beside::Written(folder.0.join("Echoes.lrc")))
+            Some(Beside::Written(folder.0.join("Slow Water.lrc")))
         );
         assert_eq!(folder.holding(".lrc"), Vec::<String>::new());
     }
@@ -669,7 +670,7 @@ mod tests {
 
         assert_eq!(
             again.ok(),
-            Some(Beside::AlreadySaid(folder.0.join("Echoes.lrc")))
+            Some(Beside::AlreadySaid(folder.0.join("Slow Water.lrc")))
         );
     }
 
@@ -678,7 +679,7 @@ mod tests {
         let folder = Folder::new();
         let track = folder.track();
 
-        fs::write(folder.0.join("Echoes.lyricsfile.yaml"), WORDED).expect("a richer sheet");
+        fs::write(folder.0.join("Slow Water.lyricsfile.yaml"), WORDED).expect("a richer sheet");
 
         let refused = write_beside(&track, kept(SYNCED), Standing::Replaced);
 
@@ -693,7 +694,7 @@ mod tests {
     fn a_staged_sheet_a_dead_writer_left_is_swept_by_the_next_write() {
         let folder = Folder::new();
         let track = folder.track();
-        let left = folder.0.join(".Echoes.lrc.4194999.resonate-staging");
+        let left = folder.0.join(".Slow Water.lrc.4194999.resonate-staging");
         let file = File::create(&left).expect("a staged sheet left behind");
 
         file.set_modified(SystemTime::now() - Duration::from_secs(60))
@@ -708,18 +709,18 @@ mod tests {
     #[test]
     fn only_a_staged_name_for_the_sheet_being_written_is_taken_for_its_staging() {
         assert_eq!(
-            staged_for(".Echoes.lrc.42.resonate-staging", "Echoes.lrc"),
+            staged_for(".Slow Water.lrc.42.resonate-staging", "Slow Water.lrc"),
             Some(42)
         );
         assert_eq!(
-            staged_for(".Echo.42.resonate-staging", "Echoes.lrc"),
+            staged_for(".Slow Wa.42.resonate-staging", "Slow Water.lrc"),
             Some(42)
         );
         assert_eq!(
-            staged_for(".Other.lrc.42.resonate-staging", "Echoes.lrc"),
+            staged_for(".Other.lrc.42.resonate-staging", "Slow Water.lrc"),
             None
         );
-        assert_eq!(staged_for("Echoes.lrc", "Echoes.lrc"), None);
-        assert_eq!(staged_for("..42.resonate-staging", "Echoes.lrc"), None);
+        assert_eq!(staged_for("Slow Water.lrc", "Slow Water.lrc"), None);
+        assert_eq!(staged_for("..42.resonate-staging", "Slow Water.lrc"), None);
     }
 }

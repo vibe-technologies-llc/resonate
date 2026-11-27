@@ -241,9 +241,9 @@ mod tests {
 
     fn wanted() -> Wanted {
         Wanted {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            ..Wanted::for_media(MediaLocation::local("/music/Echoes.flac"))
+            title: Some("Slow Water".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            ..Wanted::for_media(MediaLocation::local("/music/Slow Water.flac"))
         }
     }
 
@@ -277,8 +277,10 @@ mod tests {
     #[test]
     fn a_track_carrying_words_is_read_where_nothing_sits_beside_it() {
         let wanted = Wanted {
-            carried: Some("all that you touch".to_owned()),
-            ..Wanted::for_media(MediaLocation::local("/music/nothing-is-here/Echoes.flac"))
+            carried: Some("every lamp you lit".to_owned()),
+            ..Wanted::for_media(MediaLocation::local(
+                "/music/nothing-is-here/Slow Water.flac",
+            ))
         };
 
         let found = Lyricists::local()
@@ -292,8 +294,8 @@ mod tests {
     #[test]
     fn the_first_provider_that_answers_as_finely_as_any_is_the_one_the_pane_draws() {
         let lyricists = Lyricists::unsourced()
-            .and(holding("first", "all that you touch"))
-            .and(holding("second", "all that you see"));
+            .and(holding("first", "every lamp you lit"))
+            .and(holding("second", "each road I know"));
 
         let found = lyricists
             .find(&wanted())
@@ -304,7 +306,7 @@ mod tests {
         assert_eq!(found.source(), &named("first"));
         assert_eq!(
             found.lines(),
-            [LyricLine::untimed("all that you touch")].as_slice()
+            [LyricLine::untimed("every lamp you lit")].as_slice()
         );
     }
 
@@ -320,20 +322,20 @@ mod tests {
         let lined = || {
             vec![LyricLine::sung(
                 Duration::from_secs(1),
-                "all that you touch",
+                "every lamp you lit",
             )]
         };
         let worded = || {
             vec![LyricLine::worded(
                 Duration::from_secs(1),
                 vec![
-                    SungWord::sung(Duration::from_secs(1), "all "),
-                    SungWord::sung(Duration::from_secs(2), "that you touch"),
+                    SungWord::sung(Duration::from_secs(1), "every "),
+                    SungWord::sung(Duration::from_secs(2), "lamp you lit"),
                 ],
             )]
         };
         let lyricists = Lyricists::unsourced()
-            .and(holding("plain", "all that you touch"))
+            .and(holding("plain", "every lamp you lit"))
             .and(timing("lines", lined()))
             .and(timing("also-lines", lined()));
 
@@ -366,7 +368,7 @@ mod tests {
             .and(Arc::new(Refusing {
                 source: named("first"),
             }))
-            .and(holding("second", "all that you see"));
+            .and(holding("second", "each road I know"));
 
         let found = lyricists
             .find(&wanted())
@@ -396,7 +398,7 @@ mod tests {
         });
         let lyricists = Lyricists::unsourced()
             .and(empty)
-            .and(holding("second", "all that you see"));
+            .and(holding("second", "each road I know"));
 
         let found = lyricists
             .find(&wanted())
@@ -408,7 +410,7 @@ mod tests {
 
     #[test]
     fn a_track_with_no_tags_is_still_something_a_provider_can_be_asked_about() {
-        let bare = Wanted::for_media(MediaLocation::local("/music/Echoes.flac"));
+        let bare = Wanted::for_media(MediaLocation::local("/music/Slow Water.flac"));
 
         assert!(bare.title.is_none() && bare.artist.is_none());
         assert!(wanted().title.is_some() && wanted().artist.is_some());

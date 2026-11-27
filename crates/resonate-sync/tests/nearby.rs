@@ -833,7 +833,7 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
         .ask_to_consult(desk.device(), b"who sang creep".to_vec())
         .answer(SETTLES_WITHIN);
     let unknown = phone
-        .ask_to_consult(desk.device(), b"who sang echoes".to_vec())
+        .ask_to_consult(desk.device(), b"who sang slow water".to_vec())
         .answer(SETTLES_WITHIN);
     let unasked = desk
         .ask_to_consult(phone.device(), b"who sang creep".to_vec())
@@ -861,15 +861,15 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
 fn a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_stays_missing() {
     let folder = scratch("lyricsfiles");
     let key = SyncKey::minted().expect("a key");
-    let held = song("Echoes");
+    let held = song("Slow Water");
     let lacking = song("Time");
     let lyricsfile = SharedLyricsfile {
-        text: "[00:01.00]Overhead the albatross".into(),
+        text: "[00:01.00]Sunlight the fireflies".into(),
         synced: true,
         document: "version: '1.0'".into(),
     };
-    let desk_shelf = Arc::new(Shelf::holding(&["Echoes", "Time"]));
-    let phone_shelf = Arc::new(Shelf::holding(&["Echoes", "Time"]));
+    let desk_shelf = Arc::new(Shelf::holding(&["Slow Water", "Time"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["Slow Water", "Time"]));
 
     desk_shelf
         .inside
@@ -932,12 +932,12 @@ fn a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_o
         recognition: Some(SharedRecognition::Heard(SharedHeard {
             recording: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
             score: 96,
-            title: "Echoes".into(),
-            artist: Some("Pink Floyd".into()),
+            title: "Slow Water".into(),
+            artist: Some("Example Band".into()),
         })),
     };
-    let desk_shelf = Arc::new(Shelf::holding(&["Echoes"]));
-    let phone_shelf = Arc::new(Shelf::holding(&["Echoes"]));
+    let desk_shelf = Arc::new(Shelf::holding(&["Slow Water"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["Slow Water"]));
 
     desk_shelf.inside.lock().prints.push((held, print.clone()));
     phone_shelf.inside.lock().lacking_prints = vec![held, lacking];
@@ -2033,13 +2033,13 @@ impl Stage {
                 first_row: 0,
                 rows: vec![
                     RemoteRow {
-                        title: "Echoes".into(),
-                        artist: "Pink Floyd".into(),
+                        title: "Slow Water".into(),
+                        artist: "Example Band".into(),
                         length: Some(Duration::from_secs(300)),
                     },
                     RemoteRow {
                         title: "Time".into(),
-                        artist: "Pink Floyd".into(),
+                        artist: "Example Band".into(),
                         length: None,
                     },
                 ],

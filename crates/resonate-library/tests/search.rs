@@ -186,12 +186,12 @@ fn a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything() -> R
 
     tree.write(
         "a.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada"),
+        &Wav::new().text(TITLE, "Lantern").text(ARTIST, "Ada"),
     );
     tree.write("b.wav", &Wav::new().text(TITLE, "Time").text(ARTIST, "Ada"));
 
     let library = scanned(&tree)?;
-    let everything = named(&["Echoes", "Time"]);
+    let everything = named(&["Lantern", "Time"]);
 
     for text in ["!!!", "+/-", "-!!!", "\"...\"", "artist:?"] {
         assert_eq!(
@@ -201,7 +201,7 @@ fn a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything() -> R
         );
     }
 
-    assert_eq!(titled(&library, "echoes !!!")?, named(&["Echoes"]));
+    assert_eq!(titled(&library, "lantern !!!")?, named(&["Lantern"]));
     Ok(())
 }
 
@@ -244,7 +244,7 @@ fn a_saved_query_with_no_search_fills_itself_with_the_whole_catalog() -> Result<
 
     tree.write(
         "a.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada"),
+        &Wav::new().text(TITLE, "Lantern").text(ARTIST, "Ada"),
     );
     tree.write("b.wav", &Wav::new().text(TITLE, "Time").text(ARTIST, "Ada"));
 
@@ -274,7 +274,7 @@ fn a_list_narrowed_by_a_text_a_search_reads_nothing_in_holds_no_row_and_drops_no
 
     tree.write(
         "a.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada"),
+        &Wav::new().text(TITLE, "Lantern").text(ARTIST, "Ada"),
     );
     tree.write("b.wav", &Wav::new().text(TITLE, "Time").text(ARTIST, "Ada"));
 
@@ -290,7 +290,10 @@ fn a_list_narrowed_by_a_text_a_search_reads_nothing_in_holds_no_row_and_drops_no
 
     assert_eq!(library.playlist_entries(list, Some("!!!"))?.len(), 0);
     assert_eq!(library.playlist_entries(list, Some(""))?.len(), 2);
-    assert_eq!(library.playlist_entries(list, Some("echoes !!!"))?.len(), 1);
+    assert_eq!(
+        library.playlist_entries(list, Some("lantern !!!"))?.len(),
+        1
+    );
     assert_eq!(library.playlist_entries(list, Some("nowhere"))?.len(), 0);
     assert_eq!(library.remove_matching(list, "!!!")?, 0);
     assert_eq!(library.playlist_entries(list, None)?.len(), 2);

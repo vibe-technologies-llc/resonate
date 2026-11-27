@@ -117,7 +117,7 @@ fn a_scan_stores_what_the_tags_declare_about_the_release() -> Result<()> {
     tree.write(
         "1.wav",
         &Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM_ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
@@ -130,7 +130,7 @@ fn a_scan_stores_what_the_tags_declare_about_the_release() -> Result<()> {
     tree.write(
         "2.wav",
         &Wav::new()
-            .text(TITLE, "A Pillow of Winds")
+            .text(TITLE, "A Quilt of Winds")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM_ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
@@ -204,7 +204,7 @@ fn a_rescan_keeps_a_barcode_the_file_no_longer_carries() -> Result<()> {
     let tree = Tree::new();
     let tagged = |barcode: Option<&str>| {
         let mut track = Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits");
 
@@ -306,9 +306,9 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
         album.id,
         &orbits(
             vec![
-                release_row(1, "One of These Days", Vec::new()),
-                release_row(2, "A Pillow of Winds", Vec::new()),
-                release_row(3, "Fearless", Vec::new()),
+                release_row(1, "Small Mercies", Vec::new()),
+                release_row(2, "A Quilt of Winds", Vec::new()),
+                release_row(3, "Paper Boats", Vec::new()),
             ],
             vec![Link::new(
                 "streaming",
@@ -356,12 +356,12 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
     assert_eq!(before.links.len(), 1);
     assert!(before.asked.is_some() && before.answered.is_some());
 
-    let pillow = tree.path().join("2.wav");
+    let quilt = tree.path().join("2.wav");
 
     answer_track(
         &database,
-        &pillow,
-        "A Pillow of Winds (2011 Remaster)",
+        &quilt,
+        "A Quilt of Winds (2011 Remaster)",
         "The Orbiters",
         "Orbits",
     );
@@ -370,7 +370,7 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
         "2.wav",
         &Wav::new()
             .frames(8_820)
-            .text(TITLE, "A Pillow of Winds")
+            .text(TITLE, "A Quilt of Winds")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .text(TRACK, "2")
@@ -396,11 +396,11 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
         })
     );
     assert_eq!(
-        stored(&database, &pillow),
+        stored(&database, &quilt),
         Stored {
-            title: "A Pillow of Winds (2011 Remaster)".to_owned(),
+            title: "A Quilt of Winds (2011 Remaster)".to_owned(),
             artist: Some("The Orbiters".to_owned()),
-            tagged_title: Some("A Pillow of Winds".to_owned()),
+            tagged_title: Some("A Quilt of Winds".to_owned()),
             tagged_artist: Some("The Orbiters".to_owned()),
             isrc: None,
             release_title: Some("Orbits".to_owned()),
@@ -415,7 +415,7 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
 fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged() -> Result<()> {
     let tree = Tree::new();
     let tagged = Wav::new()
-        .text(TITLE, "one of these days")
+        .text(TITLE, "small mercies")
         .text(ARTIST, "the orbiters")
         .build();
 
@@ -428,9 +428,9 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
     answer_track(
         &database,
         &file,
-        "One of These Days",
+        "Small Mercies",
         "The Orbiters",
-        "Meddle",
+        "Tideline",
     );
 
     tree.write_stamped("1.wav", &tagged, SECOND_WRITE);
@@ -439,12 +439,12 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
     assert_eq!(
         stored(&database, &file),
         Stored {
-            title: "One of These Days".to_owned(),
+            title: "Small Mercies".to_owned(),
             artist: Some("The Orbiters".to_owned()),
-            tagged_title: Some("one of these days".to_owned()),
+            tagged_title: Some("small mercies".to_owned()),
             tagged_artist: Some("the orbiters".to_owned()),
             isrc: None,
-            release_title: Some("Meddle".to_owned()),
+            release_title: Some("Tideline".to_owned()),
             asked: Some(ASKED),
             answered: Some(ANSWERED),
         }
@@ -453,7 +453,7 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
     tree.write(
         "1.wav",
         &Wav::new()
-            .text(TITLE, "One of These Days (Edit)")
+            .text(TITLE, "Small Mercies (Edit)")
             .text(ARTIST, "the orbiters")
             .build(),
     );
@@ -462,12 +462,12 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
     assert_eq!(
         stored(&database, &file),
         Stored {
-            title: "One of These Days (Edit)".to_owned(),
+            title: "Small Mercies (Edit)".to_owned(),
             artist: Some("the orbiters".to_owned()),
-            tagged_title: Some("One of These Days (Edit)".to_owned()),
+            tagged_title: Some("Small Mercies (Edit)".to_owned()),
             tagged_artist: Some("the orbiters".to_owned()),
             isrc: None,
-            release_title: Some("Meddle".to_owned()),
+            release_title: Some("Tideline".to_owned()),
             asked: Some(ASKED),
             answered: None,
         }
@@ -481,7 +481,7 @@ fn an_isrc_tag_is_stored_in_the_one_spelling_a_recording_code_has() -> Result<()
     let named = tree.write(
         "1.wav",
         &Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ISRC, "gb-aye-71-00195")
             .build(),
@@ -501,7 +501,7 @@ fn an_isrc_tag_is_stored_in_the_one_spelling_a_recording_code_has() -> Result<()
         None,
         "a tag that is no recording code was stored as though it were one"
     );
-    assert_eq!(held.tagged_title.as_deref(), Some("One of These Days"));
+    assert_eq!(held.tagged_title.as_deref(), Some("Small Mercies"));
     assert_eq!(held.tagged_artist.as_deref(), Some("The Orbiters"));
 
     let untagged = stored(&database, &bare);
@@ -608,9 +608,9 @@ fn a_song_whose_fetched_metadata_is_forgotten_reads_as_tagged_and_asks_again_for
         album.id,
         &orbits(
             vec![
-                release_row(1, "One of These Days", Vec::new()),
-                release_row(2, "A Pillow of Winds", Vec::new()),
-                release_row(3, "Fearless", Vec::new()),
+                release_row(1, "Small Mercies", Vec::new()),
+                release_row(2, "A Quilt of Winds", Vec::new()),
+                release_row(3, "Paper Boats", Vec::new()),
             ],
             Vec::new(),
         ),
@@ -625,7 +625,7 @@ fn a_song_whose_fetched_metadata_is_forgotten_reads_as_tagged_and_asks_again_for
         }
     )?);
 
-    answer_track(&database, &file, "One Of These Days", "Orbiters", "Orbits");
+    answer_track(&database, &file, "Small Mercies", "Orbiters", "Orbits");
 
     let track = the_row_at(&library, &file)?.id;
 
@@ -633,7 +633,7 @@ fn a_song_whose_fetched_metadata_is_forgotten_reads_as_tagged_and_asks_again_for
 
     let forgotten = stored(&database, &file);
 
-    assert_eq!(forgotten.title, "One of These Days");
+    assert_eq!(forgotten.title, "Small Mercies");
     assert_eq!(forgotten.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(forgotten.release_title, None);
     assert_eq!((forgotten.asked, forgotten.answered), (None, None));
@@ -664,7 +664,7 @@ fn forgetting_what_was_fetched_keeps_a_cover_the_files_carry() -> Result<()> {
         "1.wav",
         &Wav::new()
             .frames(8_820)
-            .text(TITLE, "Fearless")
+            .text(TITLE, "Paper Boats")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .picture(&art)
@@ -714,7 +714,7 @@ fn a_file_cover_found_on_a_rescan_replaces_one_the_archive_gave() -> Result<()> 
         "3.wav",
         &Wav::new()
             .frames(8_820)
-            .text(TITLE, "Fearless!")
+            .text(TITLE, "Paper Boats!")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .picture(&art)
@@ -746,10 +746,10 @@ fn release_rows_are_matched_by_recording_id_then_title_then_position_and_the_res
         album.id,
         &orbits(
             vec![
-                release_row(1, "One of These Days", Vec::new()),
-                release_row(2, "A Pillow of Winds", Vec::new()),
-                release_row(3, "Fearless", Vec::new()),
-                release_row(4, "San Tropez", Vec::new()),
+                release_row(1, "Small Mercies", Vec::new()),
+                release_row(2, "A Quilt of Winds", Vec::new()),
+                release_row(3, "Paper Boats", Vec::new()),
+                release_row(4, "Harbour Lights", Vec::new()),
             ],
             Vec::new(),
         ),
@@ -774,16 +774,13 @@ fn release_rows_are_matched_by_recording_id_then_title_then_position_and_the_res
     assert_eq!(
         by_title,
         vec![
+            ("Small Mercies".to_owned(), Some("Small Mercies".to_owned())),
             (
-                "One of These Days".to_owned(),
-                Some("One of These Days".to_owned())
+                "A Quilt of Winds".to_owned(),
+                Some("A Quilt of Winds".to_owned())
             ),
-            (
-                "A Pillow of Winds".to_owned(),
-                Some("A Pillow of Winds".to_owned())
-            ),
-            ("Fearless".to_owned(), Some("Fearless!".to_owned())),
-            ("San Tropez".to_owned(), None),
+            ("Paper Boats".to_owned(), Some("Paper Boats!".to_owned())),
+            ("Harbour Lights".to_owned(), None),
         ]
     );
     assert_eq!(only_album(&library)?.missing, 1);
@@ -794,7 +791,7 @@ fn release_rows_are_matched_by_recording_id_then_title_then_position_and_the_res
 fn a_pressing_in_another_order_pairs_each_row_with_the_song_of_its_title() -> Result<()> {
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let album = only_album(&library)?;
-    let mut swapped = release_row(1, "A Pillow of Winds", Vec::new());
+    let mut swapped = release_row(1, "A Quilt of Winds", Vec::new());
 
     swapped.recording = Some(mbid(RECORDING));
     library.land_release(
@@ -802,8 +799,8 @@ fn a_pressing_in_another_order_pairs_each_row_with_the_song_of_its_title() -> Re
         &orbits(
             vec![
                 swapped,
-                release_row(2, "One of These Days", Vec::new()),
-                release_row(3, "Fearless", Vec::new()),
+                release_row(2, "Small Mercies", Vec::new()),
+                release_row(3, "Paper Boats", Vec::new()),
             ],
             Vec::new(),
         ),
@@ -848,7 +845,7 @@ fn every_link_a_release_and_its_recordings_carry_is_kept_with_its_provider() -> 
         &orbits(
             vec![release_row(
                 1,
-                "One of These Days",
+                "Small Mercies",
                 vec![
                     Link::new(
                         "streaming",
@@ -1005,11 +1002,8 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
     let (tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(Canned {
         lyrics: vec![
-            (
-                "One of These Days",
-                timed_words("[00:01.00]One of these days"),
-            ),
-            ("A Pillow of Winds", words("A cloud of eiderdown")),
+            ("Small Mercies", timed_words("[00:01.00]Small mercies")),
+            ("A Quilt of Winds", words("A blanket of feathers")),
         ],
         ..Canned::default()
     }));
@@ -1028,7 +1022,7 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
             .iter()
             .map(|asked| asked.title.as_str())
             .collect::<Vec<_>>(),
-        ["A Pillow of Winds", "Fearless!", "One of These Days"]
+        ["A Quilt of Winds", "Paper Boats!", "Small Mercies"]
     );
     assert!(asked.iter().all(|asked| asked.artist == "The Orbiters"));
     assert!(
@@ -1044,21 +1038,15 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
             .and_then(|kept| kept.sung))
     };
 
-    assert_eq!(
-        kept("1.wav")?,
-        Some(timed_words("[00:01.00]One of these days"))
-    );
-    assert_eq!(kept("2.wav")?, Some(words("A cloud of eiderdown")));
+    assert_eq!(kept("1.wav")?, Some(timed_words("[00:01.00]Small mercies")));
+    assert_eq!(kept("2.wav")?, Some(words("A blanket of feathers")));
     assert!(
         library
             .kept_lyrics(&orbits_file(&tree, "3.wav"), None)?
             .is_some_and(|kept| kept.sung.is_none()),
         "the miss was not remembered"
     );
-    assert_eq!(
-        matching(&library, "lyrics:eiderdown")?,
-        ["A Pillow of Winds"]
-    );
+    assert_eq!(matching(&library, "lyrics:feathers")?, ["A Quilt of Winds"]);
 
     let again = Arc::new(Fake::new(Canned::default()));
 
@@ -1076,7 +1064,7 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
     assert_eq!(refreshed.sung().len(), 3);
     assert_eq!(
         kept("1.wav")?,
-        Some(timed_words("[00:01.00]One of these days")),
+        Some(timed_words("[00:01.00]Small mercies")),
         "a refresh that heard nothing put out what was kept"
     );
     Ok(())
@@ -1086,7 +1074,7 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
 fn a_set_short_of_a_lyricsfile_is_asked_about_again_once_it_has_aged_and_bettered() -> Result<()> {
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let plainly = Arc::new(Fake::new(Canned {
-        lyrics: vec![("One of These Days", words("One of these days"))],
+        lyrics: vec![("Small Mercies", words("Small mercies"))],
         ..Canned::default()
     }));
 
@@ -1101,10 +1089,10 @@ fn a_set_short_of_a_lyricsfile_is_asked_about_again_once_it_has_aged_and_bettere
 
     let documented = LyricText {
         lyricsfile: Some("version: '1.0'".to_owned()),
-        ..timed_words("[00:01.00]One of these days")
+        ..timed_words("[00:01.00]Small mercies")
     };
     let better = Arc::new(Fake::new(Canned {
-        lyrics: vec![("One of These Days", documented.clone())],
+        lyrics: vec![("Small Mercies", documented.clone())],
         ..Canned::default()
     }));
     let summary = enrich(&library, &better, false)?;
@@ -1173,8 +1161,11 @@ fn a_lookup_told_not_to_fetch_lyrics_asks_for_none_and_one_that_cannot_reach_the
 fn a_lyrics_offset_is_held_per_row_and_goes_with_the_track() -> Result<()> {
     let tree = Tree::new();
     let path = tree.write(
-        "echoes.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+        "lantern.wav",
+        &Wav::new()
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Ada")
+            .build(),
     );
     let library = Library::open_in_memory()?;
 
@@ -1210,12 +1201,18 @@ fn a_lyrics_offset_is_held_per_row_and_goes_with_the_track() -> Result<()> {
 fn a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_track() -> Result<()> {
     let tree = Tree::new();
     let opus = tree.write(
-        "echoes.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+        "lantern.wav",
+        &Wav::new()
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Ada")
+            .build(),
     );
     let flac = tree.write(
-        "elsewhere/echoes.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+        "elsewhere/lantern.wav",
+        &Wav::new()
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Ada")
+            .build(),
     );
     let library = Library::open_in_memory()?;
 
@@ -1274,12 +1271,18 @@ fn a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_
 -> Result<()> {
     let tree = Tree::new();
     let opus = tree.write(
-        "echoes.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+        "lantern.wav",
+        &Wav::new()
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Ada")
+            .build(),
     );
     let flac = tree.write(
-        "elsewhere/echoes.wav",
-        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+        "elsewhere/lantern.wav",
+        &Wav::new()
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Ada")
+            .build(),
     );
     let time = tree.write(
         "time.wav",
@@ -1331,14 +1334,14 @@ fn a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_
 #[test]
 fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<()> {
     let library = Library::open_in_memory()?;
-    let whole = MediaLocation::local("/music/Orbits/Echoes.flac");
+    let whole = MediaLocation::local("/music/Orbits/Lantern.flac");
     let cut = Some(FrameSpan::starting(Frames(44_100)));
 
     assert_eq!(library.kept_lyrics(&whole, None)?, None);
     assert!(library.keep_lyrics(
         &whole,
         None,
-        Some(&timed_words("[00:01.00]Overhead the albatross"))
+        Some(&timed_words("[00:01.00]Sunlight the fireflies"))
     )?);
     assert!(!library.keep_lyrics(&whole, cut, None)?);
 
@@ -1348,7 +1351,7 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
 
     assert_eq!(
         kept.sung,
-        Some(timed_words("[00:01.00]Overhead the albatross"))
+        Some(timed_words("[00:01.00]Sunlight the fireflies"))
     );
 
     let miss = library
@@ -1357,7 +1360,7 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
 
     assert_eq!(miss.sung, None);
 
-    assert!(!library.keep_lyrics(&whole, None, Some(&words("Overhead the albatross")))?);
+    assert!(!library.keep_lyrics(&whole, None, Some(&words("Sunlight the fireflies")))?);
 
     let held = library
         .kept_lyrics(&whole, None)?
@@ -1365,7 +1368,7 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
 
     assert_eq!(
         held.sung,
-        Some(timed_words("[00:01.00]Overhead the albatross")),
+        Some(timed_words("[00:01.00]Sunlight the fireflies")),
         "a synced set was traded for plain words"
     );
     assert!(held.taken >= kept.taken);
@@ -1375,13 +1378,13 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
         library
             .kept_lyrics(&whole, None)?
             .and_then(|kept| kept.sung),
-        Some(timed_words("[00:01.00]Overhead the albatross")),
+        Some(timed_words("[00:01.00]Sunlight the fireflies")),
         "a miss put out what was kept"
     );
 
     let documented = LyricText {
         lyricsfile: Some("version: '1.0'".to_owned()),
-        ..timed_words("[00:01.00]Overhead the albatross")
+        ..timed_words("[00:01.00]Sunlight the fireflies")
     };
 
     assert!(library.keep_lyrics(&whole, None, Some(&documented))?);
@@ -1414,7 +1417,7 @@ fn kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_al
     let third = orbits_file(&tree, "3.wav");
 
     for location in [&first, &second, &third] {
-        library.keep_lyrics(location, None, Some(&words("Overhead the albatross")))?;
+        library.keep_lyrics(location, None, Some(&words("Sunlight the fireflies")))?;
     }
 
     let refusals = |database: &Path| -> i64 {

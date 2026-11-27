@@ -1829,12 +1829,12 @@ mod tests {
         (0..SONG_BYTES).map(|at| (at % 251) as u8 ^ seed).collect()
     }
 
-    fn echoes() -> Recording {
+    fn slow_water() -> Recording {
         Recording {
             mbid: None,
-            title: "Echoes".into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            title: "Slow Water".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: None,
         }
     }
@@ -1897,7 +1897,7 @@ mod tests {
     async fn cut_off(connection: &Connection, staged: &Path) -> u64 {
         let cutting = connection.clone();
 
-        let fetched = fetch(connection, SENDER, &echoes(), staged, move |have, _| {
+        let fetched = fetch(connection, SENDER, &slow_water(), staged, move |have, _| {
             if have >= CUT_OFF_PAST {
                 cutting.close(0_u32.into(), b"cut off");
             }
@@ -1912,7 +1912,7 @@ mod tests {
         let heard = Arc::new(Mutex::new(Vec::new()));
         let hearing = Arc::clone(&heard);
 
-        let fetched = fetch(connection, SENDER, &echoes(), staged, move |have, _| {
+        let fetched = fetch(connection, SENDER, &slow_water(), staged, move |have, _| {
             hearing.lock().push(have);
         })
         .await
@@ -2148,7 +2148,7 @@ mod tests {
      {
         let quiet_after = Duration::from_millis(400);
         let held = Held {
-            recording: echoes(),
+            recording: slow_water(),
             size: 1,
             extension: "flac".into(),
         };
@@ -2226,9 +2226,9 @@ mod tests {
         let device = DeviceId([5; 16]);
         let recording = Recording {
             mbid: None,
-            title: "Echoes".into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            title: "Slow Water".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: None,
         };
 
@@ -2379,7 +2379,7 @@ mod tests {
         let song = a_song_of(0);
         let size = u64::try_from(song.len()).expect("a size");
         let unbound_from_zero = ToPeer::Fetch {
-            recording: echoes(),
+            recording: slow_water(),
             offset: 0,
             bound: Bound::Unsaid,
         }
@@ -2411,7 +2411,7 @@ mod tests {
         std::fs::write(&staged, &staged_by_a_newer_build[..4096]).expect("a partial");
         std::fs::write(&noted, song_note(SENDER, size, revision)).expect("a note");
 
-        let fetched = fetch(&connection, SENDER, &echoes(), &staged, |_, _| {})
+        let fetched = fetch(&connection, SENDER, &slow_water(), &staged, |_, _| {})
             .await
             .expect("the song whole");
         let bytes = std::fs::read(&fetched.staged).expect("the song staged");
@@ -2447,7 +2447,7 @@ mod tests {
         let staged = staged_in("unlike");
         let noted = staged.with_extension(NOTED_EXTENSION);
 
-        let fetched = fetch(&connection, SENDER, &echoes(), &staged, |_, _| {}).await;
+        let fetched = fetch(&connection, SENDER, &slow_water(), &staged, |_, _| {}).await;
 
         assert!(matches!(
             fetched,

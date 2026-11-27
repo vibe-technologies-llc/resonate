@@ -604,7 +604,7 @@ mod tests {
     use super::*;
     use crate::Timing;
 
-    const LRC: &str = "[00:01.00]all that you touch\n[00:05.00]all that you see";
+    const LRC: &str = "[00:01.00]every lamp you lit\n[00:05.00]each road I know";
 
     struct Tree {
         root: PathBuf,
@@ -666,7 +666,7 @@ mod tests {
                 None => resonate_core::FrameSpan::starting(at(from_second)),
             }),
             rate: Some(rate),
-            title: Some("A Pillow of Winds".to_owned()),
+            title: Some("A Quilt of Winds".to_owned()),
             ..wanted
         }
     }
@@ -676,12 +676,12 @@ mod tests {
         let tree = Tree::new();
 
         tree.write(
-            "Meddle.lrc",
-            "[00:01.00]one of these days\n[00:20.50]a cloud of eiderdown\n\
-             [00:30.00]draws me\n[00:40.00]overhead the albatross",
+            "Low Tide.lrc",
+            "[00:01.00]small hours\n[00:20.50]a blanket of feathers\n\
+             [00:30.00]holds me\n[00:40.00]sunlight the fireflies",
         );
 
-        let lyrics = found(&a_cut(tree.track("Meddle.flac"), 20, Some(40)))
+        let lyrics = found(&a_cut(tree.track("Low Tide.flac"), 20, Some(40)))
             .expect("the row's share of the file's lyrics");
 
         let lines: Vec<_> = lyrics
@@ -693,8 +693,8 @@ mod tests {
         assert_eq!(
             lines,
             [
-                (Some(Duration::from_millis(500)), "a cloud of eiderdown"),
-                (Some(Duration::from_secs(10)), "draws me"),
+                (Some(Duration::from_millis(500)), "a blanket of feathers"),
+                (Some(Duration::from_secs(10)), "holds me"),
             ]
         );
     }
@@ -705,14 +705,14 @@ mod tests {
         let tree = Tree::new();
 
         tree.write(
-            "Meddle.lrc",
-            "[ti:Meddle][length:46:45]\n[00:01.00]one of these days\n[00:20.50]a cloud of eiderdown\n\
-             [00:30.00]draws me\n[00:40.00]overhead the albatross",
+            "Low Tide.lrc",
+            "[ti:Low Tide][length:46:45]\n[00:01.00]small hours\n[00:20.50]a blanket of feathers\n\
+             [00:30.00]holds me\n[00:40.00]sunlight the fireflies",
         );
 
-        let mut wanted = a_cut(tree.track("Meddle.flac"), 20, Some(40));
+        let mut wanted = a_cut(tree.track("Low Tide.flac"), 20, Some(40));
 
-        wanted.album = Some("Meddle".to_owned());
+        wanted.album = Some("Low Tide".to_owned());
         wanted.duration = Some(Duration::from_secs(20));
 
         let lyrics = found(&wanted).expect("the row's share of the file's lyrics");
@@ -723,39 +723,39 @@ mod tests {
             .map(|line| line.text.as_str())
             .collect();
 
-        assert_eq!(lines, ["a cloud of eiderdown", "draws me"]);
+        assert_eq!(lines, ["a blanket of feathers", "holds me"]);
     }
 
-    fn a_cut_of_the_meddle_file() -> (Tree, Wanted) {
+    fn a_cut_of_the_low_tide_file() -> (Tree, Wanted) {
         let tree = Tree::new();
 
         tree.write(
-            "Meddle.lrc",
-            "[ti:Meddle][ar:Pink Floyd][length:46:45]\n[00:01.00]one of these days\n\
-             [00:20.50]a cloud of eiderdown\n[00:30.00]draws me\n[00:40.00]overhead the albatross",
+            "Low Tide.lrc",
+            "[ti:Low Tide][ar:Example Band][length:46:45]\n[00:01.00]small hours\n\
+             [00:20.50]a blanket of feathers\n[00:30.00]holds me\n[00:40.00]sunlight the fireflies",
         );
 
-        let mut wanted = a_cut(tree.track("Meddle.flac"), 20, Some(40));
+        let mut wanted = a_cut(tree.track("Low Tide.flac"), 20, Some(40));
 
-        wanted.album = Some("Meddle".to_owned());
-        wanted.artist = Some("Pink Floyd".to_owned());
+        wanted.album = Some("Low Tide".to_owned());
+        wanted.artist = Some("Example Band".to_owned());
         wanted.duration = Some(Duration::from_secs(20));
         (tree, wanted)
     }
 
     #[test]
     fn a_whole_file_sheet_is_weighed_against_the_files_length_and_artist() {
-        let (_tree, mut wanted) = a_cut_of_the_meddle_file();
+        let (_tree, mut wanted) = a_cut_of_the_low_tide_file();
 
         wanted.file_duration = Some(Duration::from_secs(46 * 60 + 45));
-        wanted.file_artist = Some("Pink Floyd".to_owned());
+        wanted.file_artist = Some("Example Band".to_owned());
 
         assert!(found(&wanted).is_some());
     }
 
     #[test]
     fn a_whole_file_sheet_running_to_another_length_than_the_file_is_passed_over() {
-        let (_tree, mut wanted) = a_cut_of_the_meddle_file();
+        let (_tree, mut wanted) = a_cut_of_the_low_tide_file();
 
         wanted.file_duration = Some(Duration::from_secs(23 * 60 + 31));
 
@@ -764,7 +764,7 @@ mod tests {
 
     #[test]
     fn a_whole_file_sheet_by_another_artist_than_the_files_is_passed_over() {
-        let (_tree, mut wanted) = a_cut_of_the_meddle_file();
+        let (_tree, mut wanted) = a_cut_of_the_low_tide_file();
 
         wanted.file_artist = Some("Led Zeppelin".to_owned());
 
@@ -776,11 +776,14 @@ mod tests {
     {
         let tree = Tree::new();
 
-        tree.write("Meddle.lrc", "[ti:Animals]\n[00:01.00]pigs\n[00:30.00]dogs");
+        tree.write(
+            "Low Tide.lrc",
+            "[ti:Seasons]\n[00:01.00]pebbles\n[00:30.00]dunes",
+        );
 
-        let mut wanted = a_cut(tree.track("Meddle.flac"), 0, Some(40));
+        let mut wanted = a_cut(tree.track("Low Tide.flac"), 0, Some(40));
 
-        wanted.album = Some("Meddle".to_owned());
+        wanted.album = Some("Low Tide".to_owned());
 
         assert_eq!(found(&wanted), None);
     }
@@ -789,13 +792,14 @@ mod tests {
     fn a_row_is_handed_a_sidecar_named_after_it_whole_and_an_unsynced_file_sheet_not_at_all() {
         let tree = Tree::new();
 
-        tree.write("Meddle.txt", "a whole album of words");
+        tree.write("Low Tide.txt", "a whole album of words");
 
-        assert_eq!(found(&a_cut(tree.track("Meddle.flac"), 20, None)), None);
+        assert_eq!(found(&a_cut(tree.track("Low Tide.flac"), 20, None)), None);
 
-        tree.write("A Pillow of Winds.lrc", LRC);
+        tree.write("A Quilt of Winds.lrc", LRC);
 
-        let own = found(&a_cut(tree.track("Meddle.flac"), 20, None)).expect("the row's own sheet");
+        let own =
+            found(&a_cut(tree.track("Low Tide.flac"), 20, None)).expect("the row's own sheet");
 
         assert_eq!(
             own.lines().first().and_then(|line| line.at),
@@ -807,9 +811,9 @@ mod tests {
     fn a_track_with_an_lrc_beside_it_is_read_from_that_file() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", LRC);
+        tree.write("Slow Water.lrc", LRC);
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the file beside it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the file beside it");
 
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert_eq!(lyrics.source().as_str(), SIDECAR);
@@ -819,20 +823,20 @@ mod tests {
     #[test]
     fn an_lrc_written_in_a_legacy_code_page_is_read_in_it() {
         let tree = Tree::new();
-        let sung = "[00:01.00]Группа крови на рукаве\n[00:05.00]Мой порядковый номер на рукаве";
+        let sung = "[00:01.00]Тихая вода у причала\n[00:05.00]Моя лодка у причала";
         let written = text::encoded(
             sung,
             resonate_core::TextEncoding::Legacy(resonate_core::LegacyEncoding::WINDOWS_1251),
         )
         .expect("Cyrillic letters");
 
-        fs::write(tree.root.join("Кино.lrc"), written).expect("a writable temporary file");
+        fs::write(tree.root.join("Пример.lrc"), written).expect("a writable temporary file");
 
-        let lyrics = found(&tree.track("Кино.flac")).expect("the file beside it");
+        let lyrics = found(&tree.track("Пример.flac")).expect("the file beside it");
 
         assert_eq!(
             lyrics.lines().first().map(|line| line.text.as_str()),
-            Some("Группа крови на рукаве")
+            Some("Тихая вода у причала")
         );
     }
 
@@ -871,29 +875,29 @@ mod tests {
     fn a_lyricsfile_that_does_not_parse_gives_way_to_the_lrc_beside_it() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", LRC);
-        tree.write("Echoes.lyricsfile.yaml", "version: '9.0'\n");
+        tree.write("Slow Water.lrc", LRC);
+        tree.write("Slow Water.lyricsfile.yaml", "version: '9.0'\n");
 
-        assert!(found(&tree.track("Echoes.flac")).is_some());
+        assert!(found(&tree.track("Slow Water.flac")).is_some());
     }
 
     #[test]
     fn a_sidecar_named_after_the_whole_file_is_found_too() {
         let tree = Tree::new();
 
-        tree.write("Echoes.flac.lrc", LRC);
+        tree.write("Slow Water.flac.lrc", LRC);
 
-        assert!(found(&tree.track("Echoes.flac")).is_some());
+        assert!(found(&tree.track("Slow Water.flac")).is_some());
     }
 
     #[test]
     fn an_lrc_outranks_a_text_file_beside_the_same_track() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", LRC);
-        tree.write("Echoes.txt", "all that you distrust");
+        tree.write("Slow Water.lrc", LRC);
+        tree.write("Slow Water.txt", "every door you opened");
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the file beside it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the file beside it");
 
         assert_eq!(lyrics.timing(), Timing::Synced);
     }
@@ -902,9 +906,9 @@ mod tests {
     fn a_text_file_beside_the_track_is_read_as_an_unsynced_set() {
         let tree = Tree::new();
 
-        tree.write("Echoes.txt", "all that you touch\nall that you see");
+        tree.write("Slow Water.txt", "every lamp you lit\neach road I know");
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the file beside it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the file beside it");
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
     }
@@ -914,7 +918,7 @@ mod tests {
         let tree = Tree::new();
 
         tree.write(
-            "Echoes.txt",
+            "Slow Water.txt",
             "Exact Audio Copy V1.6 from 23. November 2020\n\
              Used drive  : HL-DT-STBD-RE  WH16NS40\n\
              Read mode   : Secure\n\
@@ -923,14 +927,14 @@ mod tests {
         );
         tree.write(
             "Info.txt",
-            "Recorded live in the amphitheatre of Pompeii over four days in October 1971, \
+            "Recorded live in the amphitheatre of Quarry over four days in October 1971, \
              without an audience, the band playing to the stones and the film crew alone while \
              the light moved across the ruins and the sound carried out over the empty seats.\n\
-             See https://example.org/pompeii for the whole story.\n",
+             See https://example.org/quarry for the whole story.\n",
         );
         tree.write(
             "Coda.txt",
-            "all that you touch\nall that you see\nall that you taste\nall you feel\nTime: 3:41\n",
+            "every lamp you lit\neach road I know\nevery bell I heard\nwhat we kept\nTime: 3:41\n",
         );
         tree.write(
             "Breathe.txt",
@@ -942,7 +946,7 @@ mod tests {
             ..tree.track(file)
         };
 
-        assert!(found(&tree.track("Echoes.flac")).is_none());
+        assert!(found(&tree.track("Slow Water.flac")).is_none());
         assert!(found(&titled("01.flac", "Info")).is_none());
         assert!(found(&tree.track("Coda.flac")).is_some());
         assert!(found(&tree.track("Breathe.flac")).is_some());
@@ -952,7 +956,7 @@ mod tests {
     fn a_track_with_nothing_beside_it_answers_with_nothing_rather_than_refusing() {
         let tree = Tree::new();
 
-        assert!(found(&tree.track("Echoes.flac")).is_none());
+        assert!(found(&tree.track("Slow Water.flac")).is_none());
     }
 
     #[cfg(unix)]
@@ -961,15 +965,15 @@ mod tests {
         let tree = Tree::new();
 
         let made = std::process::Command::new("mkfifo")
-            .arg(tree.root.join("Echoes.lrc"))
+            .arg(tree.root.join("Slow Water.lrc"))
             .status()
             .expect("mkfifo runs");
 
         assert!(made.success(), "a fifo");
 
-        tree.write("Echoes.txt", "[00:01.00]all that you touch");
+        tree.write("Slow Water.txt", "[00:01.00]every lamp you lit");
 
-        let wanted = tree.track("Echoes.flac");
+        let wanted = tree.track("Slow Water.flac");
         let (told, hears) = std::sync::mpsc::channel();
 
         std::thread::spawn(move || {
@@ -997,11 +1001,11 @@ mod tests {
     #[test]
     fn a_sidecar_holding_more_lines_than_a_sheet_does_is_refused() {
         let tree = Tree::new();
-        let bulk = "all that you touch\n".repeat(64 * 1024);
+        let bulk = "every lamp you lit\n".repeat(64 * 1024);
 
-        tree.write("Echoes.lrc", &bulk);
+        tree.write("Slow Water.lrc", &bulk);
 
-        let refused = Sidecar::default().lyrics(&tree.track("Echoes.flac"));
+        let refused = Sidecar::default().lyrics(&tree.track("Slow Water.flac"));
 
         assert!(matches!(refused, Err(Error::Unreadable { .. })));
     }
@@ -1010,10 +1014,10 @@ mod tests {
     fn a_text_file_behind_a_sidecar_too_large_to_read_is_what_is_drawn() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &"all that you touch\n".repeat(64 * 1024));
-        tree.write("Echoes.txt", "all that you touch");
+        tree.write("Slow Water.lrc", &"every lamp you lit\n".repeat(64 * 1024));
+        tree.write("Slow Water.txt", "every lamp you lit");
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the text file behind it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the text file behind it");
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
     }
@@ -1023,9 +1027,9 @@ mod tests {
         let tree = Tree::new();
         let tail = "-".repeat(LARGEST_SIDECAR as usize);
 
-        tree.write("Echoes.lrc", &format!("{LRC}\n{tail}"));
+        tree.write("Slow Water.lrc", &format!("{LRC}\n{tail}"));
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the words before the tail");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the words before the tail");
 
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert_eq!(lyrics.lines().len(), 2);
@@ -1043,9 +1047,9 @@ mod tests {
         while sheet.is_char_boundary(limit) {
             sheet.insert(0, 'x');
         }
-        tree.write("Echoes.lrc", &sheet);
+        tree.write("Slow Water.lrc", &sheet);
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the words that fitted");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the words that fitted");
 
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert!(
@@ -1063,10 +1067,10 @@ mod tests {
     fn a_sidecar_whose_first_line_outruns_a_sheet_is_read_as_holding_nothing() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &"-".repeat(LARGEST_SIDECAR as usize + 1));
-        tree.write("Echoes.txt", "all that you touch");
+        tree.write("Slow Water.lrc", &"-".repeat(LARGEST_SIDECAR as usize + 1));
+        tree.write("Slow Water.txt", "every lamp you lit");
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the text file behind it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the text file behind it");
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
     }
@@ -1075,10 +1079,10 @@ mod tests {
     fn a_sidecar_holding_nothing_worth_drawing_is_passed_over() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", "[ti:Echoes]\n");
-        tree.write("Echoes.txt", "all that you touch");
+        tree.write("Slow Water.lrc", "[ti:Slow Water]\n");
+        tree.write("Slow Water.txt", "every lamp you lit");
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the text file behind it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the text file behind it");
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
     }
@@ -1087,9 +1091,9 @@ mod tests {
     fn a_sidecar_under_any_casing_is_found_rather_than_only_the_four_it_used_to_be_named() {
         let tree = Tree::new();
 
-        tree.write("ECHOES.Lrc", LRC);
+        tree.write("SLOW WATER.Lrc", LRC);
 
-        assert!(found(&tree.track("Echoes.flac")).is_some());
+        assert!(found(&tree.track("Slow Water.flac")).is_some());
     }
 
     #[test]
@@ -1097,14 +1101,14 @@ mod tests {
         let tree = Tree::new();
 
         tree.write(
-            "Echoes.lrc",
-            &format!("[ti:Echoes]\n[ar:Pink Floyd]\n{LRC}"),
+            "Slow Water.lrc",
+            &format!("[ti:Slow Water]\n[ar:Example Band]\n{LRC}"),
         );
 
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            ..tree.track("Echoes.flac")
+            title: Some("Slow Water".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            ..tree.track("Slow Water.flac")
         };
 
         assert!(found(&wanted).is_some());
@@ -1114,12 +1118,15 @@ mod tests {
     fn a_sidecar_declaring_another_song_is_passed_over_rather_than_drawn() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &format!("[ti:Time]\n[ar:Pink Floyd]\n{LRC}"));
+        tree.write(
+            "Slow Water.lrc",
+            &format!("[ti:Time]\n[ar:Example Band]\n{LRC}"),
+        );
 
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            ..tree.track("Echoes.flac")
+            title: Some("Slow Water".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            ..tree.track("Slow Water.flac")
         };
 
         assert!(found(&wanted).is_none());
@@ -1129,12 +1136,12 @@ mod tests {
     fn a_text_file_behind_a_sidecar_that_names_another_song_is_what_is_drawn() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &format!("[ti:Time]\n{LRC}"));
-        tree.write("Echoes.txt", "all that you touch");
+        tree.write("Slow Water.lrc", &format!("[ti:Time]\n{LRC}"));
+        tree.write("Slow Water.txt", "every lamp you lit");
 
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
-            ..tree.track("Echoes.flac")
+            title: Some("Slow Water".to_owned()),
+            ..tree.track("Slow Water.flac")
         };
 
         let lyrics = found(&wanted).expect("the text file behind it");
@@ -1146,28 +1153,29 @@ mod tests {
     fn a_sidecar_is_read_where_nothing_has_named_the_track_yet() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &format!("[ti:Time]\n{LRC}"));
+        tree.write("Slow Water.lrc", &format!("[ti:Time]\n{LRC}"));
 
-        assert!(found(&tree.track("Echoes.flac")).is_some());
+        assert!(found(&tree.track("Slow Water.flac")).is_some());
     }
 
     #[test]
     fn a_directory_named_like_a_sidecar_is_not_one() {
         let tree = Tree::new();
 
-        fs::create_dir_all(tree.root.join("Echoes.lrc")).expect("a writable temporary directory");
-        tree.write("Echoes.txt", "all that you touch");
+        fs::create_dir_all(tree.root.join("Slow Water.lrc"))
+            .expect("a writable temporary directory");
+        tree.write("Slow Water.txt", "every lamp you lit");
 
-        assert!(found(&tree.track("Echoes.flac")).is_some());
+        assert!(found(&tree.track("Slow Water.flac")).is_some());
     }
 
     #[test]
     fn a_sheet_filed_in_a_lyrics_folder_beside_the_track_is_found() {
         let tree = Tree::new();
 
-        tree.within("Lyrics", "Echoes.lrc", LRC);
+        tree.within("Lyrics", "Slow Water.lrc", LRC);
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the folder beside it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the folder beside it");
 
         assert_eq!(lyrics.timing(), Timing::Synced);
     }
@@ -1177,9 +1185,9 @@ mod tests {
         for folder in ["LYRICS", "Lyric", "lrc"] {
             let tree = Tree::new();
 
-            tree.within(folder, "Echoes.lrc", LRC);
+            tree.within(folder, "Slow Water.lrc", LRC);
 
-            assert!(found(&tree.track("Echoes.flac")).is_some(), "{folder}");
+            assert!(found(&tree.track("Slow Water.flac")).is_some(), "{folder}");
         }
     }
 
@@ -1187,19 +1195,23 @@ mod tests {
     fn a_folder_beside_the_track_that_is_not_a_lyric_folder_is_left_alone() {
         let tree = Tree::new();
 
-        tree.within("Scans", "Echoes.lrc", LRC);
+        tree.within("Scans", "Slow Water.lrc", LRC);
 
-        assert!(found(&tree.track("Echoes.flac")).is_none());
+        assert!(found(&tree.track("Slow Water.flac")).is_none());
     }
 
     #[test]
     fn a_sheet_beside_the_track_outranks_the_same_name_filed_in_the_lyrics_folder() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", LRC);
-        tree.within("Lyrics", "Echoes.lrc", "[00:01.00]all that you distrust");
+        tree.write("Slow Water.lrc", LRC);
+        tree.within(
+            "Lyrics",
+            "Slow Water.lrc",
+            "[00:01.00]every door you opened",
+        );
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the file beside it");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the file beside it");
 
         assert_eq!(lyrics.lines().len(), 2);
     }
@@ -1208,12 +1220,12 @@ mod tests {
     fn a_sheet_named_after_the_tags_rather_than_the_file_is_found() {
         let tree = Tree::new();
 
-        tree.write("Pink Floyd - Echoes.lrc", LRC);
+        tree.write("Example Band - Slow Water.lrc", LRC);
 
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            ..tree.track("01 Meddle side two.flac")
+            title: Some("Slow Water".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            ..tree.track("01 Low Tide side two.flac")
         };
 
         assert!(found(&wanted).is_some());
@@ -1223,11 +1235,11 @@ mod tests {
     fn a_sheet_named_after_the_title_alone_is_found_too() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", LRC);
+        tree.write("Slow Water.lrc", LRC);
 
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
-            ..tree.track("01 Meddle side two.flac")
+            title: Some("Slow Water".to_owned()),
+            ..tree.track("01 Low Tide side two.flac")
         };
 
         assert!(found(&wanted).is_some());
@@ -1237,12 +1249,12 @@ mod tests {
     fn punctuation_and_case_in_a_tag_named_sheet_still_name_the_track() {
         let tree = Tree::new();
 
-        tree.write("pink_floyd echoes.LRC", LRC);
+        tree.write("example_band slow water.LRC", LRC);
 
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            ..tree.track("01 Meddle side two.flac")
+            title: Some("Slow Water".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            ..tree.track("01 Low Tide side two.flac")
         };
 
         assert!(found(&wanted).is_some());
@@ -1252,13 +1264,16 @@ mod tests {
     fn a_sheet_named_after_the_file_outranks_one_named_after_the_tags() {
         let tree = Tree::new();
 
-        tree.write("01 Meddle side two.lrc", LRC);
-        tree.write("Pink Floyd - Echoes.lrc", "[00:01.00]all that you distrust");
+        tree.write("01 Low Tide side two.lrc", LRC);
+        tree.write(
+            "Example Band - Slow Water.lrc",
+            "[00:01.00]every door you opened",
+        );
 
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            ..tree.track("01 Meddle side two.flac")
+            title: Some("Slow Water".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            ..tree.track("01 Low Tide side two.flac")
         };
 
         let lyrics = found(&wanted).expect("the sheet named after the file");
@@ -1270,19 +1285,19 @@ mod tests {
     fn a_sheet_named_after_the_file_and_a_language_is_found() {
         let tree = Tree::new();
 
-        tree.write("Echoes.pt-BR.lrc", LRC);
+        tree.write("Slow Water.pt-BR.lrc", LRC);
 
-        assert!(found(&tree.track("Echoes.flac")).is_some());
+        assert!(found(&tree.track("Slow Water.flac")).is_some());
     }
 
     #[test]
     fn a_sheet_named_after_the_file_outranks_one_in_a_language() {
         let tree = Tree::new();
 
-        tree.write("Echoes.en.lrc", "[00:01.00]all that you distrust");
-        tree.write("Echoes.lrc", LRC);
+        tree.write("Slow Water.en.lrc", "[00:01.00]every door you opened");
+        tree.write("Slow Water.lrc", LRC);
 
-        let lyrics = found(&tree.track("Echoes.flac")).expect("the sheet named after the file");
+        let lyrics = found(&tree.track("Slow Water.flac")).expect("the sheet named after the file");
 
         assert_eq!(lyrics.lines().len(), 2);
     }
@@ -1291,7 +1306,7 @@ mod tests {
     fn of_two_sheets_in_a_language_the_one_the_listener_reads_answers() {
         let tree = Tree::new();
 
-        tree.write("Song.en.lrc", "[00:01.00]all that you distrust");
+        tree.write("Song.en.lrc", "[00:01.00]every door you opened");
         tree.write("Song.ja.lrc", LRC);
 
         let wanted = tree.track("Song.flac");
@@ -1332,30 +1347,30 @@ mod tests {
     fn a_sheet_named_after_the_file_and_a_word_that_is_no_language_is_passed_over() {
         let tree = Tree::new();
 
-        tree.write("Echoes.live.lrc", LRC);
-        tree.write("Echoes.1.lrc", LRC);
+        tree.write("Slow Water.live.lrc", LRC);
+        tree.write("Slow Water.1.lrc", LRC);
 
-        assert!(found(&tree.track("Echoes.flac")).is_none());
+        assert!(found(&tree.track("Slow Water.flac")).is_none());
     }
 
     #[test]
     fn a_sheet_named_after_the_tags_is_passed_over_where_nothing_has_named_the_track() {
         let tree = Tree::new();
 
-        tree.write("Pink Floyd - Echoes.lrc", LRC);
+        tree.write("Example Band - Slow Water.lrc", LRC);
 
-        assert!(found(&tree.track("01 Meddle side two.flac")).is_none());
+        assert!(found(&tree.track("01 Low Tide side two.flac")).is_none());
     }
 
     #[test]
     fn a_sidecar_declaring_another_length_is_passed_over_rather_than_drawn() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &format!("[length:03:20]\n{LRC}"));
+        tree.write("Slow Water.lrc", &format!("[length:03:20]\n{LRC}"));
 
         let wanted = Wanted {
             duration: Some(Duration::from_secs(23 * 60 + 31)),
-            ..tree.track("Echoes.flac")
+            ..tree.track("Slow Water.flac")
         };
 
         assert!(found(&wanted).is_none());
@@ -1365,11 +1380,11 @@ mod tests {
     fn a_sidecar_declaring_the_length_it_sits_beside_is_read() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &format!("[length:23:31]\n{LRC}"));
+        tree.write("Slow Water.lrc", &format!("[length:23:31]\n{LRC}"));
 
         let wanted = Wanted {
             duration: Some(Duration::from_secs(23 * 60 + 33)),
-            ..tree.track("Echoes.flac")
+            ..tree.track("Slow Water.flac")
         };
 
         assert!(found(&wanted).is_some());
@@ -1379,20 +1394,20 @@ mod tests {
     fn a_sidecar_is_read_where_the_track_has_no_length_to_weigh_it_against() {
         let tree = Tree::new();
 
-        tree.write("Echoes.lrc", &format!("[length:03:20]\n{LRC}"));
+        tree.write("Slow Water.lrc", &format!("[length:03:20]\n{LRC}"));
 
-        assert!(found(&tree.track("Echoes.flac")).is_some());
+        assert!(found(&tree.track("Slow Water.flac")).is_some());
     }
 
     #[test]
     fn a_sheet_dropped_in_beside_a_playing_track_is_found_though_the_folder_was_walked() {
         let tree = Tree::new();
         let sidecar = Sidecar::default();
-        let wanted = tree.track("Echoes.flac");
+        let wanted = tree.track("Slow Water.flac");
 
         assert!(sidecar.lyrics(&wanted).expect("nothing failed").is_none());
 
-        tree.write("Echoes.lrc", LRC);
+        tree.write("Slow Water.lrc", LRC);
 
         assert!(sidecar.lyrics(&wanted).expect("nothing failed").is_some());
     }
@@ -1402,8 +1417,8 @@ mod tests {
         let tree = Tree::new();
         let sidecar = Sidecar::default();
 
-        tree.write("Echoes.lrc", LRC);
-        for track in ["Echoes.flac", "Time.flac", "Money.flac"] {
+        tree.write("Slow Water.lrc", LRC);
+        for track in ["Slow Water.flac", "Time.flac", "Money.flac"] {
             let _ = sidecar.lyrics(&tree.track(track)).expect("nothing failed");
         }
 
@@ -1426,7 +1441,7 @@ mod tests {
     fn a_folder_walked_once_is_read_back_rather_than_walked_again() {
         let mut walked = Walked::default();
 
-        walked.hold(&folder(0), long_ago(), held(&["Echoes.lrc"]));
+        walked.hold(&folder(0), long_ago(), held(&["Slow Water.lrc"]));
 
         assert_eq!(
             walked
@@ -1441,7 +1456,7 @@ mod tests {
     fn a_folder_nothing_has_walked_is_not_something_to_read_back() {
         let mut walked = Walked::default();
 
-        walked.hold(&folder(0), long_ago(), held(&["Echoes.lrc"]));
+        walked.hold(&folder(0), long_ago(), held(&["Slow Water.lrc"]));
 
         assert!(walked.read(&folder(1), long_ago()).is_none());
     }
@@ -1450,7 +1465,7 @@ mod tests {
     fn a_folder_written_to_since_it_was_walked_is_walked_again() {
         let mut walked = Walked::default();
 
-        walked.hold(&folder(0), long_ago(), held(&["Echoes.lrc"]));
+        walked.hold(&folder(0), long_ago(), held(&["Slow Water.lrc"]));
 
         assert!(walked.read(&folder(0), Some(SystemTime::now())).is_none());
     }
@@ -1460,7 +1475,7 @@ mod tests {
         let mut walked = Walked::default();
         let written = Some(SystemTime::now());
 
-        walked.hold(&folder(0), written, held(&["Echoes.lrc"]));
+        walked.hold(&folder(0), written, held(&["Slow Water.lrc"]));
 
         assert!(walked.read(&folder(0), written).is_none());
     }

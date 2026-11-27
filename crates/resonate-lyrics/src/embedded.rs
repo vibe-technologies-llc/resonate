@@ -43,7 +43,7 @@ mod tests {
     fn carrying(text: Option<&str>) -> Wanted {
         Wanted {
             carried: text.map(str::to_owned),
-            ..Wanted::for_media(MediaLocation::local("/music/Echoes.flac"))
+            ..Wanted::for_media(MediaLocation::local("/music/Slow Water.flac"))
         }
     }
 
@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn the_text_a_track_carries_itself_is_what_this_provider_answers_with() {
-        let lyrics = found(&carrying(Some("all that you touch\nall that you see")))
+        let lyrics = found(&carrying(Some("every lamp you lit\neach road I know")))
             .expect("the track carries them");
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
@@ -64,14 +64,14 @@ mod tests {
     #[test]
     fn a_carried_tag_written_as_an_lrc_is_read_as_a_synced_set() {
         let lyrics =
-            found(&carrying(Some("[00:01.00]all that you touch"))).expect("the track carries them");
+            found(&carrying(Some("[00:01.00]every lamp you lit"))).expect("the track carries them");
 
         assert_eq!(lyrics.timing(), Timing::Synced);
     }
 
     #[test]
     fn a_carried_tag_past_what_a_sheet_holds_is_refused_rather_than_repeated() {
-        let repeated = format!("{}all that you touch", "[00:00.00]".repeat(100_000));
+        let repeated = format!("{}every lamp you lit", "[00:00.00]".repeat(100_000));
 
         assert!(
             Embedded::default()
@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn a_carried_tag_that_credits_its_own_making_keeps_those_credits() {
         let lyrics = found(&carrying(Some(
-            "[by:a stranger]\n[re:LRCGET]\n[ve:0.5]\n[00:01.00]all that you touch",
+            "[by:a stranger]\n[re:LRCGET]\n[ve:0.5]\n[00:01.00]every lamp you lit",
         )))
         .expect("the track carries them");
 
@@ -95,10 +95,10 @@ mod tests {
     #[test]
     fn a_carried_tag_naming_another_track_is_still_the_track_it_came_out_of() {
         let wanted = Wanted {
-            title: Some("Echoes".to_owned()),
+            title: Some("Slow Water".to_owned()),
             duration: Some(Duration::from_secs(23 * 60 + 31)),
             ..carrying(Some(
-                "[ti:Time]\n[length:03:20]\n[00:01.00]all that you touch",
+                "[ti:Time]\n[length:03:20]\n[00:01.00]every lamp you lit",
             ))
         };
 

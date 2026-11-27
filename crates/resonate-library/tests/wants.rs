@@ -18,12 +18,12 @@ use resonate_library::{
 use resonate_providers::{Identity, Obtained, Provider, Providers, Result as ProvidedResult};
 
 use crate::support::{
-    ADA, ANOTHER_RECORDING, Called, Canned, Delivering, ECHOES, Fake, MEDDLE, ORBITERS, Offering,
-    RECORDING, RELEASE, RELEASE_GROUP, RELEASE_TRACK, Tree, Unanswering,
-    a_provider_offering_echoes, ada, credited, echoes_found, mbid, meddle_fake, meddle_release,
+    ADA, ANOTHER_RECORDING, Called, Canned, Delivering, Fake, LOW_TIDE, ORBITERS, Offering,
+    RECORDING, RELEASE, RELEASE_GROUP, RELEASE_TRACK, SLOW_WATER, Tree, Unanswering,
+    a_provider_offering_slow_water, ada, credited, low_tide_fake, low_tide_release, mbid,
     only_album, opened_with_a_vault, options, orbiters_groups, orbits, orbits_rows, orbits_tree,
     png_art, recording_match, release_row, scan, scanned_orbits, scanned_orbits_on_disk,
-    unreachable_server, wanted_san_tropez,
+    slow_water_found, unreachable_server, wanted_harbour_lights,
 };
 
 #[test]
@@ -35,10 +35,10 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
         album.id,
         &orbits(
             vec![
-                release_row(1, "One of These Days", Vec::new()),
+                release_row(1, "Small Mercies", Vec::new()),
                 release_row(
                     4,
-                    "San Tropez",
+                    "Harbour Lights",
                     vec![Link::new(
                         "streaming",
                         "https://open.spotify.com/track/0Ga3szKsJOeZ0eAfydm1WV".to_owned(),
@@ -52,7 +52,7 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
 
     let want = library.want(missing.id)?;
@@ -70,7 +70,7 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
     assert_eq!(wants[0].release_track, missing.id);
     assert_eq!(wants[0].album, album.id);
     assert_eq!(wants[0].album_title, "Orbits");
-    assert_eq!(wants[0].title, "San Tropez");
+    assert_eq!(wants[0].title, "Harbour Lights");
     assert_eq!(wants[0].tried, None);
     assert_eq!(
         wants[0]
@@ -121,8 +121,8 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
         album.id,
         &orbits(
             vec![
-                recorded(1, "One of These Days", RECORDING),
-                recorded(2, "San Tropez", ANOTHER_RECORDING),
+                recorded(1, "Small Mercies", RECORDING),
+                recorded(2, "Harbour Lights", ANOTHER_RECORDING),
             ],
             Vec::new(),
         ),
@@ -131,7 +131,7 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
 
     library.want(missing.id)?;
@@ -140,9 +140,9 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
         album.id,
         &orbits(
             vec![
-                recorded(1, "Seamus", RELEASE_GROUP),
-                recorded(2, "One of These Days", RECORDING),
-                recorded(3, "San Tropez", ANOTHER_RECORDING),
+                recorded(1, "Marlow", RELEASE_GROUP),
+                recorded(2, "Small Mercies", RECORDING),
+                recorded(3, "Harbour Lights", ANOTHER_RECORDING),
             ],
             Vec::new(),
         ),
@@ -152,14 +152,14 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
 
     assert_eq!(wants.len(), 1);
     assert_eq!(
-        wants[0].title, "San Tropez",
+        wants[0].title, "Harbour Lights",
         "the want moved to whatever row now sits where its own used to"
     );
 
     let moved = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the re-edited release still holds the row");
 
     assert_eq!(wants[0].release_track, moved.id);
@@ -176,8 +176,8 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
         album.id,
         &orbits(
             vec![
-                release_row(1, "One of These Days", Vec::new()),
-                release_row(2, "San Tropez", Vec::new()),
+                release_row(1, "Small Mercies", Vec::new()),
+                release_row(2, "Harbour Lights", Vec::new()),
             ],
             Vec::new(),
         ),
@@ -186,7 +186,7 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
 
     library.want(missing.id)?;
@@ -195,8 +195,8 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
         album.id,
         &orbits(
             vec![
-                release_row(1, "One of These Days", Vec::new()),
-                release_row(2, "San Tropez!", Vec::new()),
+                release_row(1, "Small Mercies", Vec::new()),
+                release_row(2, "Harbour Lights!", Vec::new()),
             ],
             Vec::new(),
         ),
@@ -212,8 +212,8 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
         album.id,
         &orbits(
             vec![
-                release_row(1, "One of These Days", Vec::new()),
-                release_row(2, "Seamus", Vec::new()),
+                release_row(1, "Small Mercies", Vec::new()),
+                release_row(2, "Marlow", Vec::new()),
             ],
             Vec::new(),
         ),
@@ -234,7 +234,7 @@ fn forgetting_a_root_takes_the_release_rows_under_its_albums_with_it() -> Result
     library.land_release(
         album.id,
         &orbits(
-            vec![release_row(1, "One of These Days", Vec::new())],
+            vec![release_row(1, "Small Mercies", Vec::new())],
             vec![Link::new(
                 "streaming",
                 "https://tidal.com/album/55391740".to_owned(),
@@ -255,7 +255,7 @@ fn forgetting_a_root_takes_the_release_rows_under_its_albums_with_it() -> Result
 #[test]
 fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
 
     let providers = Arc::new(Providers::none());
 
@@ -290,9 +290,9 @@ fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> 
 fn a_file_delivered_with_no_vault_is_written_as_the_offer() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
-    let delivered = tree.path().join("inbox").join("san-tropez.flac");
+    let delivered = tree.path().join("inbox").join("harbour-lights.flac");
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered.clone())));
     let providers = inbox.registered();
 
@@ -336,7 +336,7 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
         isrcs: vec!["GBN9Y1100089".to_owned()],
         ..release_row(
             4,
-            "San Tropez",
+            "Harbour Lights",
             vec![Link::new(
                 "free streaming",
                 "https://tidal.com/track/55391743".to_owned(),
@@ -357,7 +357,7 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
 
     library.want(missing.id)?;
@@ -370,7 +370,7 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
 
     let identity = asked.asked().pop().expect("the want was asked about");
 
-    assert_eq!(identity.title, "San Tropez");
+    assert_eq!(identity.title, "Harbour Lights");
     assert_eq!(identity.album.as_deref(), Some("Orbits"));
     assert_eq!(identity.recording, Some(mbid(ORBITERS)));
     assert_eq!(identity.track, Some(mbid(RELEASE_TRACK)));
@@ -394,7 +394,7 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
 fn a_want_tried_lately_is_not_asked_again_until_the_window_passes() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
     let providers = quiet.registered();
@@ -449,8 +449,8 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
         ..Canned::default()
     });
     let matches = vec![
-        credited_to_ada(RECORDING, "Echoes"),
-        credited_to_ada(ANOTHER_RECORDING, "One of These Days"),
+        credited_to_ada(RECORDING, "Lantern"),
+        credited_to_ada(ANOTHER_RECORDING, "Small Mercies"),
         recording_match(ANOTHER_RECORDING, "Ada"),
     ];
 
@@ -466,7 +466,7 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
     );
     assert!(
         library
-            .unheld_artists_among(&matches, "ada echoes")?
+            .unheld_artists_among(&matches, "ada lantern")?
             .is_empty()
     );
     assert!(
@@ -481,7 +481,7 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
             joined_by: String::new(),
             mbid: Some(mbid(ORBITERS)),
         }],
-        ..recording_match(RECORDING, "Echoes")
+        ..recording_match(RECORDING, "Lantern")
     }];
 
     assert!(
@@ -559,8 +559,8 @@ fn an_album_the_words_name_is_offered_unless_the_catalog_holds_it() -> Result<()
         live,
         album_match(
             "ffffffff-1111-2222-3333-444444444444",
-            "Meddle",
-            "Pink Floyd",
+            "Tideline",
+            "Example Band",
             "Album",
         ),
     ];
@@ -593,35 +593,35 @@ fn an_album_the_words_name_is_offered_unless_the_catalog_holds_it() -> Result<()
 #[test]
 fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
-    let mut release = meddle_release();
+    let mut release = low_tide_release();
 
     release.has_front_cover = true;
 
     let art = png_art(128);
     let fake = Fake::new(Canned {
         found_songs: vec![
-            echoes_found(),
-            recording_match(RECORDING, "Echoes"),
-            recording_match(ANOTHER_RECORDING, "One of These Days"),
+            slow_water_found(),
+            recording_match(RECORDING, "Lantern"),
+            recording_match(ANOTHER_RECORDING, "Small Mercies"),
         ],
         releases: vec![release],
-        covers: vec![(mbid(MEDDLE), art.clone())],
+        covers: vec![(mbid(LOW_TIDE), art.clone())],
         ..Canned::default()
     });
 
-    let found = library.found_elsewhere(&fake, "echoes year:1971")?;
+    let found = library.found_elsewhere(&fake, "lantern year:1971")?;
 
     assert_eq!(
         fake.calls(),
-        vec![Called::FindSongs("echoes".to_owned())],
+        vec![Called::FindSongs("lantern".to_owned())],
         "only the words were sent"
     );
     assert_eq!(found.len(), 3);
-    assert_eq!(found[0].title, "Echoes");
-    assert_eq!(found[0].artist, "Pink Floyd");
+    assert_eq!(found[0].title, "Lantern");
+    assert_eq!(found[0].artist, "Example Band");
     assert_eq!(
         found[0].release.as_ref().map(|release| release.id.as_str()),
-        Some(MEDDLE)
+        Some(LOW_TIDE)
     );
     assert!(library.found_elsewhere(&fake, "year:1971")?.is_empty());
 
@@ -630,9 +630,9 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
 
     assert_eq!(wants.len(), 1);
     assert_eq!(wants[0].id, want);
-    assert_eq!(wants[0].title, "Echoes");
-    assert_eq!(wants[0].album_title, "Meddle");
-    assert_eq!(wants[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(wants[0].title, "Lantern");
+    assert_eq!(wants[0].album_title, "Tideline");
+    assert_eq!(wants[0].artist.as_deref(), Some("Example Band"));
     assert_eq!(library.cover_art(wants[0].album)?, Some(art));
     assert_eq!(
         library.missing_tracks(None, None)?.len(),
@@ -641,22 +641,22 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
     );
     assert_eq!(library.missing_counted(None)?.tracks, 1);
 
-    let unheld = library.unheld_matching("echoes", None)?;
+    let unheld = library.unheld_matching("lantern", None)?;
 
     assert_eq!(unheld.len(), 1);
     assert_eq!(unheld[0].want, Some(want));
-    assert!(library.unheld_matching("seamus", None)?.is_empty());
+    assert!(library.unheld_matching("marlow", None)?.is_empty());
     assert_eq!(
         library.albums(&AlbumQuery::default())?.len(),
         1,
         "an album holding no file is not browsed"
     );
 
-    let again = library.found_elsewhere(&fake, "echoes")?;
+    let again = library.found_elsewhere(&fake, "lantern")?;
     let offered: Vec<&str> = again.iter().map(|found| found.recording.as_str()).collect();
 
     assert!(
-        offered.contains(&ECHOES) && offered.contains(&ANOTHER_RECORDING),
+        offered.contains(&SLOW_WATER) && offered.contains(&ANOTHER_RECORDING),
         "a recording the catalog names but holds no file of is still offered: {offered:?}"
     );
     assert_eq!(library.want_found(&fake, &found[0])?, want);
@@ -669,7 +669,7 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
 
     scan(&library, &options(&tree))?;
 
-    assert!(library.unheld_matching("echoes", None)?.is_empty());
+    assert!(library.unheld_matching("lantern", None)?.is_empty());
     Ok(())
 }
 
@@ -677,7 +677,7 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
 fn a_song_found_elsewhere_is_wanted_with_every_code_of_it_and_from_its_next_release_where_one_is_gone()
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let mut release = meddle_release();
+    let mut release = low_tide_release();
 
     release.media[0].tracks[1].isrcs = vec!["GBN9Y1100065".to_owned(), "GBN9Y1100066".to_owned()];
 
@@ -685,13 +685,13 @@ fn a_song_found_elsewhere_is_wanted_with_every_code_of_it_and_from_its_next_rele
         releases: vec![release],
         ..Canned::default()
     });
-    let matched = echoes_found();
+    let matched = slow_water_found();
     let gone = matched.releases[0].clone();
 
     let found = resonate_library::Found {
         recording: matched.recording,
         title: matched.title,
-        artist: "Pink Floyd".to_owned(),
+        artist: "Example Band".to_owned(),
         length: matched.length,
         release: Some(gone),
         releases: matched.releases,
@@ -705,7 +705,7 @@ fn a_song_found_elsewhere_is_wanted_with_every_code_of_it_and_from_its_next_rele
 
     assert_eq!(wants.len(), 1);
     assert_eq!(
-        wants[0].album_title, "Meddle",
+        wants[0].album_title, "Tideline",
         "the release that read was the next one"
     );
     assert_eq!(
@@ -729,19 +729,19 @@ fn a_song_foreseen_from_what_the_search_found_is_not_asked_of_the_provider_again
 
     scan(&library, &options(&orbits))?;
 
-    let fake = meddle_fake();
-    let found = library.found_elsewhere(&fake, "echoes")?;
-    let shop = a_provider_offering_echoes("shop");
+    let fake = low_tide_fake();
+    let found = library.found_elsewhere(&fake, "lantern")?;
+    let shop = a_provider_offering_slow_water("shop");
 
     assert!(library.foresee(&shop.registered(), &found[0]));
 
     let asked = shop.asked();
 
     assert_eq!(asked.len(), 1);
-    assert_eq!(asked[0].title, "Echoes");
-    assert_eq!(asked[0].artist.as_deref(), Some("Pink Floyd"));
-    assert_eq!(asked[0].recording, Some(mbid(ECHOES)));
-    assert_eq!(asked[0].album.as_deref(), Some("Meddle"));
+    assert_eq!(asked[0].title, "Lantern");
+    assert_eq!(asked[0].artist.as_deref(), Some("Example Band"));
+    assert_eq!(asked[0].recording, Some(mbid(SLOW_WATER)));
+    assert_eq!(asked[0].album.as_deref(), Some("Tideline"));
     assert_eq!(asked[0].length, Some(Duration::from_secs(1_411)));
 
     library.want_found(&fake, &found[0])?;
@@ -762,10 +762,10 @@ fn a_song_foreseen_from_what_the_search_found_is_not_asked_of_the_provider_again
 #[test]
 fn a_foresight_is_spent_by_the_poll_that_takes_it_and_asked_afresh_by_the_next() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let fake = meddle_fake();
+    let fake = low_tide_fake();
 
-    let found = library.found_elsewhere(&fake, "echoes")?;
-    let shop = a_provider_offering_echoes("shop");
+    let found = library.found_elsewhere(&fake, "lantern")?;
+    let shop = a_provider_offering_slow_water("shop");
 
     assert!(library.foresee(&shop.registered(), &found[0]));
 
@@ -791,9 +791,9 @@ fn a_foresight_is_spent_by_the_poll_that_takes_it_and_asked_afresh_by_the_next()
 #[test]
 fn a_provider_offering_nothing_foresees_nothing_and_the_poll_asks_for_itself() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let fake = meddle_fake();
+    let fake = low_tide_fake();
 
-    let found = library.found_elsewhere(&fake, "echoes")?;
+    let found = library.found_elsewhere(&fake, "lantern")?;
     let empty = Arc::new(Offering::new("shop", Delivering::Nothing));
 
     assert!(!library.foresee(&empty.registered(), &found[0]));
@@ -812,10 +812,10 @@ fn a_provider_offering_nothing_foresees_nothing_and_the_poll_asks_for_itself() -
 #[test]
 fn an_offer_foreseen_of_a_provider_the_poll_does_not_register_is_not_taken() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let fake = meddle_fake();
+    let fake = low_tide_fake();
 
-    let found = library.found_elsewhere(&fake, "echoes")?;
-    let gone = a_provider_offering_echoes("old");
+    let found = library.found_elsewhere(&fake, "lantern")?;
+    let gone = a_provider_offering_slow_water("old");
     let current = Arc::new(Offering::new("current", Delivering::Nothing));
 
     assert!(library.foresee(&gone.registered(), &found[0]));
@@ -833,10 +833,10 @@ fn an_offer_foreseen_of_a_provider_the_poll_does_not_register_is_not_taken() -> 
 #[test]
 fn a_foresight_let_go_of_is_asked_afresh_by_the_poll() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let fake = meddle_fake();
+    let fake = low_tide_fake();
 
-    let found = library.found_elsewhere(&fake, "echoes")?;
-    let shop = a_provider_offering_echoes("shop");
+    let found = library.found_elsewhere(&fake, "lantern")?;
+    let shop = a_provider_offering_slow_water("shop");
 
     assert!(library.foresee(&shop.registered(), &found[0]));
 
@@ -915,8 +915,8 @@ fn wanted_every_missing_row(library: &Library) -> Result<()> {
     let album = only_album(library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
-    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
+    rows.push(release_row(5, "Marlow", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     for missing in library
         .release_tracks(album.id)?
@@ -933,7 +933,7 @@ fn a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_p
 {
     let (_tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let server = Unanswering::new("server", wrong_password);
     let providers = Arc::new(Providers::none().and(Arc::clone(&server) as Arc<dyn Provider>));
@@ -958,7 +958,7 @@ fn a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_p
 #[test]
 fn a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
     let providers = Arc::new(Providers::none().and(Arc::clone(&quiet) as Arc<dyn Provider>));
 
@@ -969,7 +969,7 @@ fn a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried() -> Result
     assert!(library.wants()?[0].tried.is_some());
     assert!(!library.is_a_want_due(PollOptions::default())?);
 
-    assert_eq!(wanted_san_tropez(&library)?, want);
+    assert_eq!(wanted_harbour_lights(&library)?, want);
 
     assert_eq!(library.wants()?[0].tried, None);
     assert!(library.is_a_want_due(PollOptions::default())?);
@@ -984,7 +984,7 @@ fn a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried() -> Result
 fn a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_for_again()
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
     let providers = Arc::new(Providers::none().and(Arc::clone(&quiet) as Arc<dyn Provider>));
 
@@ -1016,7 +1016,7 @@ fn a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_
     assert_eq!(given_up.due_at(), None);
     assert_eq!(library.next_want_due()?, None);
 
-    assert_eq!(wanted_san_tropez(&library)?, want);
+    assert_eq!(wanted_harbour_lights(&library)?, want);
 
     let asked_again = library.wants()?[0].clone();
 
@@ -1030,7 +1030,7 @@ fn a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_
 fn a_want_one_provider_answered_and_another_refused_stays_due() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
     let server = Unanswering::new("server", wrong_password);
@@ -1210,7 +1210,7 @@ impl Provider for WantsOneMore {
                 .release_tracks(album.id)
                 .expect("the release rows")
                 .into_iter()
-                .find(|row| row.title == "Seamus")
+                .find(|row| row.title == "Marlow")
                 .expect("a row nobody wanted yet");
 
             self.library.want(late.id).expect("a want");
@@ -1232,14 +1232,14 @@ fn a_want_pressed_while_a_poll_runs_is_asked_by_that_poll_and_not_the_next() -> 
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
-    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
+    rows.push(release_row(5, "Marlow", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
 
     let first = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("a row to want first");
 
     library.want(first.id)?;
@@ -1261,7 +1261,7 @@ fn a_want_pressed_while_a_poll_runs_is_asked_by_that_poll_and_not_the_next() -> 
     let summary = handle.join()?;
 
     assert_eq!(summary.stats.asked, 2);
-    assert_eq!(*provider.asked.lock(), ["San Tropez", "Seamus"]);
+    assert_eq!(*provider.asked.lock(), ["Harbour Lights", "Marlow"]);
     Ok(())
 }
 
@@ -1269,7 +1269,7 @@ fn a_want_pressed_while_a_poll_runs_is_asked_by_that_poll_and_not_the_next() -> 
 fn a_poll_that_has_finished_is_not_nudged() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
 

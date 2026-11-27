@@ -406,11 +406,11 @@ mod tests {
     fn a_name_taken_in_the_trash_meanwhile_is_never_moved_over_and_its_record_is_taken_back() {
         let scratch = Scratch::new("taken");
         let bin = made(&scratch.0.join(TRASH_FOLDER)).expect("a trash");
-        let file = scratch.0.join("echoes.flac");
+        let file = scratch.0.join("lantern.flac");
 
         fs::write(&file, b"deleted now").expect("a file to trash");
 
-        let (stem, info_name) = names_for(OsStr::new("echoes.flac"), 0);
+        let (stem, info_name) = names_for(OsStr::new("lantern.flac"), 0);
 
         fs::write(bin.files.join(&stem), b"trashed before").expect("a file already trashed");
 
@@ -435,10 +435,10 @@ mod tests {
         let trash = data_home.join(TRASH_FOLDER);
         let bin = made(&trash).expect("a trash");
 
-        fs::write(bin.files.join("echoes.flac"), b"trashed before")
+        fs::write(bin.files.join("lantern.flac"), b"trashed before")
             .expect("a file already trashed");
 
-        let file = scratch.0.join("echoes.flac");
+        let file = scratch.0.join("lantern.flac");
 
         fs::write(&file, b"deleted now").expect("a file to trash");
 
@@ -452,12 +452,12 @@ mod tests {
 
         assert!(!file.exists());
         assert_eq!(
-            fs::read(bin.files.join("echoes.flac.1")).expect("the second name"),
+            fs::read(bin.files.join("lantern.flac.1")).expect("the second name"),
             b"deleted now"
         );
-        assert!(bin.info.join("echoes.flac.1.trashinfo").exists());
+        assert!(bin.info.join("lantern.flac.1.trashinfo").exists());
         assert_eq!(
-            fs::read(bin.files.join("echoes.flac")).expect("the first stays"),
+            fs::read(bin.files.join("lantern.flac")).expect("the first stays"),
             b"trashed before"
         );
     }
@@ -472,14 +472,14 @@ mod tests {
         let mut attempts = Vec::new();
         let mut suffixes = Suffixes::default();
 
-        fs::write(bin.files.join("echoes.flac"), b"trashed before")
+        fs::write(bin.files.join("lantern.flac"), b"trashed before")
             .expect("a file already trashed");
-        fs::write(bin.info.join("echoes.flac.trashinfo"), b"kept record")
+        fs::write(bin.info.join("lantern.flac.trashinfo"), b"kept record")
             .expect("a record already kept");
 
         for index in 0..batch {
             let folder = scratch.0.join(format!("album-{index}"));
-            let file = folder.join("echoes.flac");
+            let file = folder.join("lantern.flac");
 
             fs::create_dir_all(&folder).expect("a folder");
             fs::write(&file, format!("deleted {index}")).expect("a file to trash");
@@ -495,17 +495,17 @@ mod tests {
             "attempts per file: {attempts:?}"
         );
         assert_eq!(
-            fs::read(bin.files.join("echoes.flac")).expect("the first stays"),
+            fs::read(bin.files.join("lantern.flac")).expect("the first stays"),
             b"trashed before"
         );
         assert_eq!(
-            fs::read(bin.info.join("echoes.flac.trashinfo")).expect("its record stays"),
+            fs::read(bin.info.join("lantern.flac.trashinfo")).expect("its record stays"),
             b"kept record"
         );
 
         for index in 0..batch {
             assert_eq!(
-                fs::read(bin.files.join(format!("echoes.flac.{}", index + 1)))
+                fs::read(bin.files.join(format!("lantern.flac.{}", index + 1)))
                     .expect("a name each"),
                 format!("deleted {index}").as_bytes()
             );
@@ -521,19 +521,19 @@ mod tests {
         let mut run = Suffixes::default();
 
         for _ in 0..2 {
-            let file = scratch.0.join("echoes.flac");
+            let file = scratch.0.join("lantern.flac");
 
             fs::write(&file, b"deleted").expect("a file to trash");
             sent_counting(&file, Some(&data_home), at(1_774_778_400), &mut run).expect("trashed");
         }
 
-        assert!(bin.files.join("echoes.flac.1").exists());
+        assert!(bin.files.join("lantern.flac.1").exists());
 
         fs::remove_dir_all(&bin.files).expect("the trash emptied");
         fs::remove_dir_all(&bin.info).expect("the trash emptied");
         made(&data_home.join(TRASH_FOLDER)).expect("a trash");
 
-        let file = scratch.0.join("echoes.flac");
+        let file = scratch.0.join("lantern.flac");
 
         fs::write(&file, b"deleted later").expect("a file to trash");
         sent_counting(
@@ -545,7 +545,7 @@ mod tests {
         .expect("trashed");
 
         assert_eq!(
-            fs::read(bin.files.join("echoes.flac")).expect("the plain name again"),
+            fs::read(bin.files.join("lantern.flac")).expect("the plain name again"),
             b"deleted later"
         );
     }

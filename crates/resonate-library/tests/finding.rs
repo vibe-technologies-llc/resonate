@@ -17,11 +17,11 @@ fn a_search_that_matches_nothing_is_answered_in_the_catalogs_own_spelling() -> R
     let tree = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
+            .text(ARTIST, "Example Band")
             .build(),
     );
     tree.write(
@@ -40,15 +40,15 @@ fn a_search_that_matches_nothing_is_answered_in_the_catalogs_own_spelling() -> R
     assert!(
         library
             .tracks(&TrackQuery {
-                text: Some("floid".to_owned()),
+                text: Some("bind".to_owned()),
                 ..TrackQuery::default()
             })?
             .is_empty(),
         "the misspelt word matched something, so there is nothing to suggest"
     );
     assert_eq!(
-        library.did_you_mean("floid")?,
-        Some("Floyd".to_owned()),
+        library.did_you_mean("bind")?,
+        Some("Band".to_owned()),
         "a misspelt word was not answered in the spelling the catalog holds"
     );
     assert_eq!(
@@ -57,12 +57,12 @@ fn a_search_that_matches_nothing_is_answered_in_the_catalogs_own_spelling() -> R
         "the marked spelling is the one a pane would draw"
     );
     assert_eq!(
-        library.did_you_mean("album:medle")?,
-        Some("album:Meddle".to_owned())
+        library.did_you_mean("album:tidline")?,
+        Some("album:Tideline".to_owned())
     );
     assert_eq!(
-        library.did_you_mean("pinkfloyd")?,
-        Some("Pink Floyd".to_owned()),
+        library.did_you_mean("exampleband")?,
+        Some("Example Band".to_owned()),
         "a run-together was not split into the two words the catalog holds"
     );
     assert_eq!(
@@ -71,12 +71,12 @@ fn a_search_that_matches_nothing_is_answered_in_the_catalogs_own_spelling() -> R
         "a phrase mistyped in a word too short to correct was not weighed against the whole name"
     );
     assert_eq!(
-        library.did_you_mean("pink floy d")?,
-        Some("pink Floyd".to_owned()),
+        library.did_you_mean("example ban d")?,
+        Some("example Band".to_owned()),
         "a word typed in two halves was not run together"
     );
     assert_eq!(
-        library.did_you_mean("echoes")?,
+        library.did_you_mean("lantern")?,
         None,
         "a word the catalog holds was corrected to something else"
     );
@@ -786,7 +786,7 @@ fn a_genre_tag_is_searchable() -> Result<()> {
     tree.write(
         "a.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(GENRE, "Progressive Rock")
             .build(),
     );
@@ -796,21 +796,21 @@ fn a_genre_tag_is_searchable() -> Result<()> {
 
     scan(&library, &options(&tree))?;
 
-    let echoes = library
+    let slow_water = library
         .track_at(&tree.path().join("a.wav"), None)?
         .expect("the scan stored the file it walked");
 
-    assert_eq!(echoes.genre.as_deref(), Some("Progressive Rock"));
+    assert_eq!(slow_water.genre.as_deref(), Some("Progressive Rock"));
 
-    assert_eq!(narrowed(&library, "genre:progressive")?, vec!["Echoes"]);
-    assert_eq!(narrowed(&library, "genre:rock")?, vec!["Echoes"]);
+    assert_eq!(narrowed(&library, "genre:progressive")?, vec!["Lantern"]);
+    assert_eq!(narrowed(&library, "genre:rock")?, vec!["Lantern"]);
     assert!(
         narrowed(&library, "genre:dogs")?.is_empty(),
         "a title answered a search scoped to the genre"
     );
     assert_eq!(
         narrowed(&library, "progressive")?,
-        vec!["Echoes"],
+        vec!["Lantern"],
         "an unscoped word did not reach the genre the index holds"
     );
     Ok(())
@@ -930,7 +930,7 @@ fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
     );
     assert_eq!(
         narrowed(&library, "genre:psychedelic")?,
-        vec!["A Pillow of Winds", "Fearless!", "One of These Days"],
+        vec!["A Quilt of Winds", "Paper Boats!", "Small Mercies"],
         "the genres the reference gave the artist did not reach the tracks it made"
     );
     Ok(())
@@ -998,28 +998,22 @@ fn a_track_is_found_by_the_words_it_sings_and_only_when_they_are_asked_for() -> 
         &orbits_file(&tree, "1.wav"),
         None,
         Some(&timed_words(
-            "[00:01.00]Overhead the albatross\n[00:04.50]<00:04.50>hangs motionless",
+            "[00:01.00]Sunlight the fireflies\n[00:04.50]<00:04.50>sways in silence",
         )),
     )?;
 
+    assert_eq!(matching(&library, "lyrics:fireflies")?, ["Small Mercies"]);
     assert_eq!(
-        matching(&library, "lyrics:albatross")?,
-        ["One of These Days"]
+        matching(&library, "lyric:\"fireflies sways\"")?,
+        ["Small Mercies"]
     );
-    assert_eq!(
-        matching(&library, "lyric:\"albatross hangs\"")?,
-        ["One of These Days"]
-    );
-    assert!(matching(&library, "albatross")?.is_empty());
+    assert!(matching(&library, "fireflies")?.is_empty());
     assert!(matching(&library, "lyrics:00")?.is_empty());
-    assert_eq!(matching(&library, "pillow")?, ["A Pillow of Winds"]);
+    assert_eq!(matching(&library, "quilt")?, ["A Quilt of Winds"]);
 
     scan(&library, &options(&tree))?;
 
-    assert_eq!(
-        matching(&library, "lyrics:albatross")?,
-        ["One of These Days"]
-    );
+    assert_eq!(matching(&library, "lyrics:fireflies")?, ["Small Mercies"]);
     Ok(())
 }
 
@@ -1031,20 +1025,20 @@ fn a_search_of_plain_words_is_offered_as_the_words_a_track_sings() -> Result<()>
         &orbits_file(&tree, "2.wav"),
         None,
         Some(&words(
-            "Overhead the albatross hangs motionless upon the air",
+            "Sunlight the fireflies sways in silence over the bay",
         )),
     )?;
 
     let sung = library
-        .sung("albatross hangs")?
+        .sung("fireflies sways")?
         .expect("a track sings those words");
 
-    assert_eq!(sung.query, "lyrics:\"albatross hangs\"");
+    assert_eq!(sung.query, "lyrics:\"fireflies sways\"");
     assert_eq!(sung.tracks, 1);
-    assert_eq!(matching(&library, &sung.query)?, ["A Pillow of Winds"]);
-    assert_eq!(library.sung("hangs albatross")?, None);
-    assert_eq!(library.sung("year:1971 albatross")?, None);
-    assert_eq!(library.sung("title:albatross")?, None);
+    assert_eq!(matching(&library, &sung.query)?, ["A Quilt of Winds"]);
+    assert_eq!(library.sung("sways fireflies")?, None);
+    assert_eq!(library.sung("year:1971 fireflies")?, None);
+    assert_eq!(library.sung("title:fireflies")?, None);
     Ok(())
 }
 
@@ -1054,21 +1048,21 @@ fn a_search_reaches_the_rows_the_catalog_knows_it_is_short_of() -> Result<()> {
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
 
     assert_eq!(library.rematch(album.id)?, 3);
 
-    let found = library.unheld_matching("tropez", None)?;
+    let found = library.unheld_matching("lights", None)?;
 
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].title, "San Tropez");
+    assert_eq!(found[0].title, "Harbour Lights");
     assert_eq!(found[0].album, album.id);
-    assert_eq!(library.unheld_matching("orbits san", None)?.len(), 1);
-    assert_eq!(library.unheld_matching("title:tropez", None)?.len(), 1);
-    assert!(library.unheld_matching("pillow", None)?.is_empty());
+    assert_eq!(library.unheld_matching("orbits harbour", None)?.len(), 1);
+    assert_eq!(library.unheld_matching("title:lights", None)?.len(), 1);
+    assert!(library.unheld_matching("quilt", None)?.is_empty());
     assert!(library.unheld_matching("year:1998", None)?.is_empty());
-    assert!(library.unheld_matching("tropez nowhere", None)?.is_empty());
+    assert!(library.unheld_matching("lights nowhere", None)?.is_empty());
     Ok(())
 }
 

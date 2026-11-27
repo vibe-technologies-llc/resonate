@@ -66,7 +66,7 @@ fn a_release_the_reference_answers_fills_the_album_and_lists_every_track_it_name
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
 
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
@@ -122,10 +122,10 @@ fn a_release_the_reference_answers_fills_the_album_and_lists_every_track_it_name
     assert_eq!(
         titles,
         vec![
-            "One of These Days",
-            "A Pillow of Winds",
-            "Fearless",
-            "San Tropez"
+            "Small Mercies",
+            "A Quilt of Winds",
+            "Paper Boats",
+            "Harbour Lights"
         ]
     );
     assert_eq!(summary.stats.albums, 1);
@@ -138,8 +138,8 @@ fn a_release_the_reference_answers_fills_the_album_and_lists_every_track_it_name
 }
 
 const DISC_TITLES: [[&str; 2]; 2] = [
-    ["One of These Days", "A Pillow of Winds"],
-    ["Fearless", "San Tropez"],
+    ["Small Mercies", "A Quilt of Winds"],
+    ["Paper Boats", "Harbour Lights"],
 ];
 
 fn write_orbits_as_two_discs(tree: &Tree) {
@@ -233,10 +233,10 @@ fn a_set_of_two_discs_is_billed_by_the_release_and_keeps_a_medium_of_its_own_for
     assert_eq!(
         placed,
         vec![
-            (1, 1, "One of These Days".to_owned()),
-            (1, 2, "A Pillow of Winds".to_owned()),
-            (2, 1, "Fearless".to_owned()),
-            (2, 2, "San Tropez".to_owned()),
+            (1, 1, "Small Mercies".to_owned()),
+            (1, 2, "A Quilt of Winds".to_owned()),
+            (2, 1, "Paper Boats".to_owned()),
+            (2, 2, "Harbour Lights".to_owned()),
         ]
     );
 
@@ -255,7 +255,7 @@ fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
 
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
@@ -775,9 +775,9 @@ fn orbits_in_two_folders() -> Tree {
 
     for (folder, frames) in [("ripped", 4_410), ("ripped again", 44_100 * 4)] {
         for (file, title) in [
-            ("1.wav", "One of These Days"),
-            ("2.wav", "A Pillow of Winds"),
-            ("3.wav", "Fearless!"),
+            ("1.wav", "Small Mercies"),
+            ("2.wav", "A Quilt of Winds"),
+            ("3.wav", "Paper Boats!"),
         ] {
             tree.write(
                 &format!("{folder}/{file}"),
@@ -1216,7 +1216,7 @@ fn five_track_pressing_rows() -> Vec<ReleaseTrack> {
     orbits_rows()
         .into_iter()
         .chain([
-            release_row(4, "Careful with That Axe", Vec::new()),
+            release_row(4, "Careful with That Lamp", Vec::new()),
             release_row(5, "Set the Controls", Vec::new()),
         ])
         .collect()

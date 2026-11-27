@@ -20,7 +20,7 @@ use rusqlite::Connection;
 use crate::shelf::{Shelf, song};
 
 const SPACE: SpaceId = SpaceId([5; 16]);
-const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const A_DAY_IN_NANOS: i64 = 24 * 60 * 60 * 1_000_000_000;
 
 fn days_ago(days: i64) -> i64 {
@@ -33,7 +33,7 @@ fn days_ago(days: i64) -> i64 {
 
 fn identified(title: &str) -> Recording {
     Recording {
-        mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+        mbid: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
         ..song(title)
     }
 }
@@ -1534,13 +1534,13 @@ fn told(changes: &[Change], what: fn(&Change) -> bool) -> usize {
 #[test]
 fn a_song_a_playlist_names_and_the_catalog_holds_under_other_names_is_written_once_and_settled_no_more()
  {
-    let mut desk = Device::new("Desk", &["Echoes", "Time"]);
+    let mut desk = Device::new("Desk", &["Slow Water", "Time"]);
     let mut phone = Device::new("Phone", &["Time"]);
 
     phone
         .shelf
-        .receive_named_otherwise(song("Echoes"), remastered("Echoes"));
-    desk.shelf.make_playlist("Mix", &["Echoes", "Time"]);
+        .receive_named_otherwise(song("Slow Water"), remastered("Slow Water"));
+    desk.shelf.make_playlist("Mix", &["Slow Water", "Time"]);
 
     sync(&mut desk, &mut phone);
 
@@ -1549,7 +1549,10 @@ fn a_song_a_playlist_names_and_the_catalog_holds_under_other_names_is_written_on
     let echoed = phone.send();
     let settled_again = phone.ledger.settle(&phone.shelf).expect("settled");
 
-    assert_eq!(titles(&phone, "Mix"), ["Echoes (2011 Remaster)", "Time"]);
+    assert_eq!(
+        titles(&phone, "Mix"),
+        ["Slow Water (2011 Remaster)", "Time"]
+    );
     assert_eq!((settled, settled_again), (0, 0));
     assert_eq!(phone.shelf.revision(), written_at);
     assert_eq!(
@@ -1561,13 +1564,13 @@ fn a_song_a_playlist_names_and_the_catalog_holds_under_other_names_is_written_on
 #[test]
 fn an_edit_to_a_playlist_holding_a_song_under_other_names_keeps_it_once_under_the_name_it_travels_by()
  {
-    let mut desk = Device::new("Desk", &["Echoes", "Time", "Money"]);
+    let mut desk = Device::new("Desk", &["Slow Water", "Time", "Money"]);
     let mut phone = Device::new("Phone", &["Time", "Money"]);
 
     phone
         .shelf
-        .receive_named_otherwise(song("Echoes"), remastered("Echoes"));
-    desk.shelf.make_playlist("Mix", &["Echoes", "Time"]);
+        .receive_named_otherwise(song("Slow Water"), remastered("Slow Water"));
+    desk.shelf.make_playlist("Mix", &["Slow Water", "Time"]);
     sync(&mut desk, &mut phone);
     phone.ledger.settle(&phone.shelf).expect("settled");
 
@@ -1580,15 +1583,15 @@ fn an_edit_to_a_playlist_holding_a_song_under_other_names_keeps_it_once_under_th
         .playlists
         .get_mut(&on_phone)
         .expect("a playlist")
-        .2 = vec![remastered("Echoes"), song("Time"), song("Money")];
+        .2 = vec![remastered("Slow Water"), song("Time"), song("Money")];
     phone.shelf.moved();
     phone.ledger.settle(&phone.shelf).expect("settled");
     sync(&mut phone, &mut desk);
 
-    assert_eq!(titles(&desk, "Mix"), ["Echoes", "Time", "Money"]);
+    assert_eq!(titles(&desk, "Mix"), ["Slow Water", "Time", "Money"]);
     assert_eq!(
         titles(&phone, "Mix"),
-        ["Echoes (2011 Remaster)", "Time", "Money"]
+        ["Slow Water (2011 Remaster)", "Time", "Money"]
     );
 }
 
@@ -1615,13 +1618,13 @@ fn a_listeners_edit_made_before_a_song_lands_is_kept_by_the_settle_that_follows(
 
 #[test]
 fn a_favourite_on_a_song_held_under_other_names_stays_one_favourite_under_the_name_it_travels_by() {
-    let mut desk = Device::new("Desk", &["Echoes"]);
+    let mut desk = Device::new("Desk", &["Slow Water"]);
     let mut phone = Device::new("Phone", &[]);
 
     phone
         .shelf
-        .receive_named_otherwise(song("Echoes"), remastered("Echoes"));
-    desk.shelf.favour_here("Echoes", true);
+        .receive_named_otherwise(song("Slow Water"), remastered("Slow Water"));
+    desk.shelf.favour_here("Slow Water", true);
 
     sync(&mut desk, &mut phone);
 
@@ -1629,14 +1632,17 @@ fn a_favourite_on_a_song_held_under_other_names_stays_one_favourite_under_the_na
 
     desk.receive(&echoed);
 
-    assert_eq!(phone.shelf.favourite_titles(), ["Echoes (2011 Remaster)"]);
+    assert_eq!(
+        phone.shelf.favourite_titles(),
+        ["Slow Water (2011 Remaster)"]
+    );
     assert_eq!(
         told(&echoed, |change| matches!(change, Change::Favourite(_))),
         0
     );
-    assert_eq!(desk.shelf.favourite_titles(), ["Echoes"]);
+    assert_eq!(desk.shelf.favourite_titles(), ["Slow Water"]);
 
-    phone.shelf.favour_here("Echoes (2011 Remaster)", false);
+    phone.shelf.favour_here("Slow Water (2011 Remaster)", false);
     sync(&mut phone, &mut desk);
 
     assert!(desk.shelf.favourite_titles().is_empty());
@@ -1645,15 +1651,16 @@ fn a_favourite_on_a_song_held_under_other_names_stays_one_favourite_under_the_na
 #[test]
 fn an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_under_another_keeps() {
     let mut desk = Device::new("Desk", &[]);
-    let mut laptop = Device::new("Laptop", &["Echoes"]);
-    let mut phone = Device::new("Phone", &["Echoes"]);
+    let mut laptop = Device::new("Laptop", &["Slow Water"]);
+    let mut phone = Device::new("Phone", &["Slow Water"]);
 
-    desk.shelf.add_song(identified("Echoes"), b"E".repeat(1000));
+    desk.shelf
+        .add_song(identified("Slow Water"), b"E".repeat(1000));
     desk.shelf
         .inside
         .lock()
         .favourites
-        .push(identified("Echoes"));
+        .push(identified("Slow Water"));
     desk.shelf.moved();
 
     let favoured = desk.send();
@@ -1664,7 +1671,7 @@ fn an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_und
 
     let unfavoured = desk.send();
 
-    laptop.shelf.favour_here("Echoes", true);
+    laptop.shelf.favour_here("Slow Water", true);
 
     let favoured_again = laptop.send();
 
@@ -1672,7 +1679,7 @@ fn an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_und
     phone.receive(&unfavoured);
     phone.ledger.settle(&phone.shelf).expect("settled");
 
-    assert_eq!(phone.shelf.favourite_titles(), ["Echoes"]);
+    assert_eq!(phone.shelf.favourite_titles(), ["Slow Water"]);
 }
 
 #[test]
@@ -1879,7 +1886,7 @@ fn a_song_received_under_the_name_an_answer_was_told_by_takes_the_answer() {
     sync(&mut desk, &mut phone);
 
     let own = Recording {
-        mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+        mbid: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
         album: "Another Album".into(),
         ..song("A")
     };
@@ -2078,7 +2085,7 @@ fn released(title: &str) -> Answer {
         group: None,
         title: title.into(),
         credit: vec![SharedCredit {
-            name: "Pink Floyd".into(),
+            name: "Example Band".into(),
             joined_by: String::new(),
             mbid: None,
         }],
@@ -2119,7 +2126,7 @@ fn a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back() {
     let mut phone = Device::new("Phone", &["A"]);
 
     desk.shelf.answer_here("A", sung("Words", false));
-    desk.shelf.answer_here("A", released("Meddle"));
+    desk.shelf.answer_here("A", released("Low Tide"));
 
     let told = desk.send();
 
@@ -2128,7 +2135,7 @@ fn a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back() {
     assert_eq!(answers_in(&told), 2);
     assert_eq!(
         phone.shelf.answers_of("A"),
-        [sung("Words", false), released("Meddle")]
+        [sung("Words", false), released("Low Tide")]
     );
     assert_eq!(answers_in(&phone.send()), 0);
     assert_eq!(answers_in(&desk.send()), 0);
@@ -2174,7 +2181,7 @@ fn a_release_heavier_than_the_server_keeps_stays_home() {
     let mut phone = Device::new("Phone", &["A"]);
 
     desk.shelf
-        .answer_here("A", released(&"Meddle ".repeat(10_000)));
+        .answer_here("A", released(&"Low Tide ".repeat(10_000)));
 
     let told = desk.send();
 

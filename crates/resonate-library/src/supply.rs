@@ -1591,7 +1591,7 @@ mod tests {
             release_track: ReleaseTrackId::new(1).expect("a non-zero id"),
             album: AlbumId::new(1).expect("a non-zero id"),
             album_title: "Orbits".to_owned(),
-            title: "San Tropez".to_owned(),
+            title: "Harbour Lights".to_owned(),
             artist: None,
             recording: None,
             track: None,

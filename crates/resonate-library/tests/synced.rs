@@ -31,8 +31,8 @@ const SECONDS: u32 = 3;
 const LIVE_SECONDS: u32 = 9;
 const UNIQUE_FILE_ID: &[u8; 4] = b"UFID";
 const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
-const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
-const ANOTHER_ECHOES: &str = "0bd1c7a3-9f2e-4c6b-8a1d-5e7f3b2c4d6a";
+const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+const ANOTHER_SLOW_WATER: &str = "0bd1c7a3-9f2e-4c6b-8a1d-5e7f3b2c4d6a";
 
 struct Tree {
     root: PathBuf,
@@ -258,12 +258,17 @@ fn titles(entries: &[Option<Recording>]) -> Vec<Option<&str>> {
 fn a_playlist_reads_as_recordings_and_one_written_from_elsewhere_resolves_what_is_held()
 -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("Floyd/Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let fearless = tree.song(
-        "Floyd/Meddle/fearless.wav",
-        "Fearless",
-        "Pink Floyd",
-        "Meddle",
+    let slow_water = tree.song(
+        "Band/Tideline/lantern.wav",
+        "Lantern",
+        "Example Band",
+        "Tideline",
+    );
+    let paper_boats = tree.song(
+        "Band/Tideline/paper boats.wav",
+        "Paper Boats",
+        "Example Band",
+        "Tideline",
     );
     let here = Library::open_in_memory()?;
     let there = Library::open_in_memory()?;
@@ -274,8 +279,8 @@ fn a_playlist_reads_as_recordings_and_one_written_from_elsewhere_resolves_what_i
     here.start_playlist(
         "Mix",
         &[
-            Cut::whole(MediaLocation::local(&echoes)),
-            Cut::whole(MediaLocation::local(&fearless)),
+            Cut::whole(MediaLocation::local(&slow_water)),
+            Cut::whole(MediaLocation::local(&paper_boats)),
             Cut::whole(MediaLocation::local("/nowhere/unscanned.wav")),
         ],
     )?;
@@ -285,7 +290,7 @@ fn a_playlist_reads_as_recordings_and_one_written_from_elsewhere_resolves_what_i
     assert_eq!(read.len(), 1);
     assert_eq!(
         titles(&read[0].entries),
-        [Some("Echoes"), Some("Fearless"), None]
+        [Some("Lantern"), Some("Paper Boats"), None]
     );
 
     let read_length = read[0].entries[0].as_ref().and_then(|entry| entry.length);
@@ -296,14 +301,17 @@ fn a_playlist_reads_as_recordings_and_one_written_from_elsewhere_resolves_what_i
         None,
         "Mix",
         &[
-            song("fearless", "PINK FLOYD", "Meddle"),
+            song("paper boats", "EXAMPLE BAND", "Tideline"),
             song("Not Here", "Nobody", "Nothing"),
-            song("Echoes", "Pink Floyd", "Meddle"),
+            song("Lantern", "Example Band", "Tideline"),
         ],
     )?;
 
     assert_eq!(written.name, "Mix");
-    assert_eq!(titles(&written.entries), [Some("Fearless"), Some("Echoes")]);
+    assert_eq!(
+        titles(&written.entries),
+        [Some("Paper Boats"), Some("Lantern")]
+    );
     assert_eq!(there.synced_playlists()?, [written]);
     Ok(())
 }
@@ -313,17 +321,17 @@ fn a_saved_query_is_read_with_its_text_and_written_on_another_catalog_to_be_aske
 -> Result<()> {
     let tree = Tree::new();
 
-    tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    tree.song("fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
+    tree.song("paper boats.wav", "Paper Boats", "Example Band", "Tideline");
 
     let here = Library::open_in_memory()?;
 
     scan(&here, &tree.root)?;
     here.create_playlist("Plain")?;
     here.save_query(
-        "Floyd",
+        "Band",
         &SavedQuery {
-            text: Some("artist:floyd".into()),
+            text: Some("artist:example".into()),
             sort: SortOrder::Title,
             reading: Direction::Descending,
             limit: Some(1),
@@ -341,8 +349,8 @@ fn a_saved_query_is_read_with_its_text_and_written_on_another_catalog_to_be_aske
     let entries = there.playlist_entries(written.id, None)?;
 
     assert_eq!(read.len(), 1);
-    assert_eq!(read[0].body.name, "Floyd");
-    assert_eq!(read[0].body.text.as_deref(), Some("artist:floyd"));
+    assert_eq!(read[0].body.name, "Band");
+    assert_eq!(read[0].body.text.as_deref(), Some("artist:example"));
     assert_eq!(read[0].body.rows, Some(1));
     assert_eq!(written.body, read[0].body);
     assert_eq!(there.synced_queries()?.len(), 1);
@@ -356,11 +364,11 @@ fn a_query_written_over_itself_is_revised_and_a_code_this_build_lacks_writes_not
 {
     let library = Library::open_in_memory()?;
 
-    library.create_playlist("Floyd")?;
+    library.create_playlist("Band")?;
 
     let body = SyncedQueryBody {
-        name: "Floyd".into(),
-        text: Some("artist:floyd".into()),
+        name: "Band".into(),
+        text: Some("artist:example".into()),
         sort: 0,
         reading: 0,
         rows: None,
@@ -371,7 +379,7 @@ fn a_query_written_over_itself_is_revised_and_a_code_this_build_lacks_writes_not
         .write_synced_query(
             Some((first.id, first.created)),
             &SyncedQueryBody {
-                text: Some("artist:waters".into()),
+                text: Some("artist:another".into()),
                 ..body.clone()
             },
         )?
@@ -384,9 +392,9 @@ fn a_query_written_over_itself_is_revised_and_a_code_this_build_lacks_writes_not
         },
     )?;
 
-    assert_eq!(first.body.name, "Floyd (2)");
+    assert_eq!(first.body.name, "Band (2)");
     assert_eq!(revised.id, first.id);
-    assert_eq!(revised.body.text.as_deref(), Some("artist:waters"));
+    assert_eq!(revised.body.text.as_deref(), Some("artist:another"));
     assert_eq!(library.synced_queries()?.len(), 1);
     assert!(unknown.is_none());
     assert!(library.remove_synced_playlist(first.id, first.created)?);
@@ -397,14 +405,14 @@ fn a_query_written_over_itself_is_revised_and_a_code_this_build_lacks_writes_not
 #[test]
 fn writing_over_a_playlist_ends_its_undo_steps_and_never_takes_another_name() -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
 
     let mix = library.create_playlist("Mix")?;
 
-    library.add_to_playlist(mix, &[Cut::whole(MediaLocation::local(&echoes))])?;
+    library.add_to_playlist(mix, &[Cut::whole(MediaLocation::local(&slow_water))])?;
 
     let other = library.create_playlist("Summer")?;
 
@@ -419,7 +427,7 @@ fn writing_over_a_playlist_ends_its_undo_steps_and_never_takes_another_name() ->
     let written = library.write_synced_playlist(
         Some((mix, created)),
         "Summer",
-        &[song("Echoes", "Pink Floyd", "Meddle")],
+        &[song("Lantern", "Example Band", "Tideline")],
     )?;
 
     assert_eq!(written.id, mix);
@@ -444,39 +452,42 @@ fn writing_over_a_playlist_ends_its_undo_steps_and_never_takes_another_name() ->
 fn a_playlist_from_elsewhere_under_a_name_taken_here_lands_under_a_free_one() -> Result<()> {
     let tree = Tree::new();
 
-    tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
 
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
     library.create_playlist("Mix")?;
 
-    let written =
-        library.write_synced_playlist(None, "Mix", &[song("Echoes", "Pink Floyd", "Meddle")])?;
+    let written = library.write_synced_playlist(
+        None,
+        "Mix",
+        &[song("Lantern", "Example Band", "Tideline")],
+    )?;
 
     assert_eq!(written.name, "Mix (2)");
-    assert_eq!(titles(&written.entries), [Some("Echoes")]);
+    assert_eq!(titles(&written.entries), [Some("Lantern")]);
     Ok(())
 }
 
 #[test]
 fn a_hidden_favourite_is_still_a_favourite_to_the_devices_it_syncs_with() -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
 
-    assert!(library.favour_recording(&song("Echoes", "Pink Floyd", "Meddle"), true)?);
+    assert!(library.favour_recording(&song("Lantern", "Example Band", "Tideline"), true)?);
 
-    let held = library.track_at(&echoes, None)?.expect("held");
+    let held = library.track_at(&slow_water, None)?.expect("held");
 
     library.hide_track(held.id, true)?;
 
     let favoured = library.favoured_recordings()?;
 
     assert_eq!(favoured.len(), 1);
-    assert_eq!(favoured[0].title, "Echoes");
+    assert_eq!(favoured[0].title, "Lantern");
     Ok(())
 }
 
@@ -484,8 +495,8 @@ fn a_hidden_favourite_is_still_a_favourite_to_the_devices_it_syncs_with() -> Res
 fn an_unfavourite_clears_the_favourite_on_every_copy_of_the_recording_and_a_look_keeps_it()
 -> Result<()> {
     let tree = Tree::new();
-    let first = tree.song("one/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let second = tree.song("two/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let first = tree.song("one/lantern.wav", "Lantern", "Example Band", "Tideline");
+    let second = tree.song("two/lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
@@ -503,7 +514,7 @@ fn an_unfavourite_clears_the_favourite_on_every_copy_of_the_recording_and_a_look
     );
     assert_eq!(library.favoured_recordings()?.len(), 1);
 
-    assert!(library.favour_recording(&song("Echoes", "Pink Floyd", "Meddle"), false)?);
+    assert!(library.favour_recording(&song("Lantern", "Example Band", "Tideline"), false)?);
 
     assert!(library.favoured_recordings()?.is_empty());
     assert!(
@@ -513,7 +524,7 @@ fn an_unfavourite_clears_the_favourite_on_every_copy_of_the_recording_and_a_look
             .favourite
             .is_none()
     );
-    assert!(library.favour_recording(&song("Echoes", "Pink Floyd", "Meddle"), false)?);
+    assert!(library.favour_recording(&song("Lantern", "Example Band", "Tideline"), false)?);
     assert!(library.favoured_recordings()?.is_empty());
     Ok(())
 }
@@ -522,21 +533,25 @@ fn an_unfavourite_clears_the_favourite_on_every_copy_of_the_recording_and_a_look
 fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_sent_back()
 -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
 
-    assert!(library.favour_recording(&song("Echoes", "Pink Floyd", "Meddle"), true)?);
+    assert!(library.favour_recording(&song("Lantern", "Example Band", "Tideline"), true)?);
     assert!(!library.favour_recording(&song("Gone", "Nobody", "Nothing"), true)?);
 
     let favoured = library.favoured_recordings()?;
 
     assert_eq!(favoured.len(), 1);
-    assert_eq!(favoured[0].title, "Echoes");
+    assert_eq!(favoured[0].title, "Lantern");
 
     let counted = library
-        .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+        .track_played(
+            &MediaLocation::local(&slow_water),
+            None,
+            Duration::from_secs(2),
+        )?
         .expect("a counted play");
 
     library.listened(counted.listen, Duration::from_secs(2))?;
@@ -545,12 +560,12 @@ fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_s
     let listens = library.listens_to_sync(0, 10)?;
 
     assert_eq!(listens.len(), 1);
-    assert_eq!(listens[0].recording.title, "Echoes");
+    assert_eq!(listens[0].recording.title, "Lantern");
 
     let before = library.synced_revision();
 
     assert!(library.credit_listen_elsewhere(
-        &song("Echoes", "Pink Floyd", "Meddle"),
+        &song("Lantern", "Example Band", "Tideline"),
         &[1; 16],
         7,
         1_000,
@@ -558,28 +573,28 @@ fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_s
     )?);
     assert!(library.synced_revision() > before);
     assert_eq!(library.listens_to_sync(listens[0].id, 10)?, []);
-    assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 2);
+    assert_eq!(library.track_at(&slow_water, None)?.expect("held").plays, 2);
 
     let again = library.synced_revision();
 
     assert!(library.credit_listen_elsewhere(
-        &song("Echoes", "Pink Floyd", "Meddle"),
+        &song("Lantern", "Example Band", "Tideline"),
         &[1; 16],
         7,
         1_000,
         Duration::from_secs(60)
     )?);
     assert_eq!(library.synced_revision(), again);
-    assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 2);
+    assert_eq!(library.track_at(&slow_water, None)?.expect("held").plays, 2);
 
     assert!(library.credit_listen_elsewhere(
-        &song("Echoes", "Pink Floyd", "Meddle"),
+        &song("Lantern", "Example Band", "Tideline"),
         &[2; 16],
         7,
         1_000,
         Duration::from_secs(60)
     )?);
-    assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 3);
+    assert_eq!(library.track_at(&slow_water, None)?.expect("held").plays, 3);
     Ok(())
 }
 
@@ -594,13 +609,17 @@ fn heard_elsewhere(recording: Recording, seconds: u64) -> HeardElsewhere {
 fn listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already_heard_here_is_not_counted_again()
 -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
 
     let counted = library
-        .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+        .track_played(
+            &MediaLocation::local(&slow_water),
+            None,
+            Duration::from_secs(2),
+        )?
         .expect("a counted play");
 
     library.listened(counted.listen, Duration::from_secs(2))?;
@@ -610,15 +629,15 @@ fn listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already
         .duration_since(UNIX_EPOCH)
         .expect("after the epoch")
         .as_secs();
-    let mut named_by_the_service = song("ECHOES", "pink floyd", "");
+    let mut named_by_the_service = song("LANTERN", "example band", "");
 
     named_by_the_service.length = None;
 
     let heard = [
-        heard_elsewhere(song("Echoes", "Pink Floyd", "Meddle"), 1_000_000),
+        heard_elsewhere(song("Lantern", "Example Band", "Tideline"), 1_000_000),
         heard_elsewhere(named_by_the_service, 2_000_000),
         heard_elsewhere(song("Gone", "Nobody", "Nothing"), 3_000_000),
-        heard_elsewhere(song("Echoes", "Pink Floyd", "Meddle"), here),
+        heard_elsewhere(song("Lantern", "Example Band", "Tideline"), here),
     ];
 
     let first = library.bring_in(ListeningService::ListenBrainz, &heard)?;
@@ -632,7 +651,7 @@ fn listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already
         (again.credited, again.held_already, again.unmatched),
         (0, 3, 1)
     );
-    assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 3);
+    assert_eq!(library.track_at(&slow_water, None)?.expect("held").plays, 3);
 
     library.settle_listens_after(Duration::ZERO);
 
@@ -644,12 +663,16 @@ fn listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already
 fn the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_where_they_were()
 -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
     for _ in 0..3 {
-        library.track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(1))?;
+        library.track_played(
+            &MediaLocation::local(&slow_water),
+            None,
+            Duration::from_secs(1),
+        )?;
     }
 
     let gone = tree.root.join("never-scanned.flac");
@@ -661,7 +684,7 @@ fn the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_w
             .bring_in(
                 ListeningService::LastFm,
                 &[heard_elsewhere(
-                    song("Echoes", "Pink Floyd", "Meddle"),
+                    song("Lantern", "Example Band", "Tideline"),
                     1_000
                 )],
             )?
@@ -685,7 +708,7 @@ fn the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_w
         heard
             .billed
             .as_ref()
-            .is_some_and(|billed| billed.title == "Echoes")
+            .is_some_and(|billed| billed.title == "Lantern")
     }));
     assert!(read[4].billed.is_none());
     assert_eq!(read[4].location, MediaLocation::local(&gone).to_uri());
@@ -697,7 +720,7 @@ fn the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_w
 fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> Result<()> {
     let tree = Tree::new();
 
-    tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    tree.song("held/lantern.wav", "Lantern", "Example Band", "Tideline");
 
     let library = Library::open_in_memory()?;
 
@@ -716,8 +739,8 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
         layout: Layout::default(),
     }));
 
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
-    let bytes = tagged_wav_opening_on("San Tropez", "Pink Floyd", "Meddle", 1);
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
+    let bytes = tagged_wav_opening_on("Harbour Lights", "Example Band", "Tideline", 1);
 
     let SongFiled::Filed(filed) = library.file_song_from_elsewhere(
         &arriving,
@@ -731,7 +754,7 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
 
     assert!(filed.starts_with(&tree.root));
     assert!(
-        filed.ends_with("Meddle/San Tropez.wav"),
+        filed.ends_with("Tideline/Harbour Lights.wav"),
         "{}",
         filed.display()
     );
@@ -766,7 +789,7 @@ fn songs_from_another_device_landing_together_are_each_catalogued_by_their_ident
 -> Result<()> {
     let tree = Tree::new();
 
-    tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    tree.song("held/lantern.wav", "Lantern", "Example Band", "Tideline");
 
     let library = Library::open_in_memory()?;
 
@@ -776,11 +799,11 @@ fn songs_from_another_device_landing_together_are_each_catalogued_by_their_ident
         layout: Layout::default(),
     }));
 
-    let stray = tree.song("by hand/seamus.wav", "Seamus", "Pink Floyd", "Meddle");
+    let stray = tree.song("by hand/marlow.wav", "Marlow", "Example Band", "Tideline");
     let arriving = [
-        song("San Tropez", "Pink Floyd", "Meddle"),
-        song("One of These Days", "Pink Floyd", "Meddle"),
-        song("Fearless", "Pink Floyd", "Meddle"),
+        song("Harbour Lights", "Example Band", "Tideline"),
+        song("Small Mercies", "Example Band", "Tideline"),
+        song("Paper Boats", "Example Band", "Tideline"),
     ];
     let filed = filed_from_elsewhere(&library, &arriving)?;
 
@@ -810,7 +833,7 @@ fn a_song_from_another_device_landing_below_a_cue_sheet_is_read_by_a_walk_that_w
 -> Result<()> {
     let tree = Tree::new();
 
-    tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    tree.song("held/lantern.wav", "Lantern", "Example Band", "Tideline");
 
     let library = Library::open_in_memory()?;
 
@@ -820,13 +843,13 @@ fn a_song_from_another_device_landing_below_a_cue_sheet_is_read_by_a_walk_that_w
         layout: Layout::default(),
     }));
     fs::write(
-        tree.root.join("meddle.cue"),
+        tree.root.join("tideline.cue"),
         "FILE \"elsewhere.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n",
     )
     .expect("a sheet");
 
-    let stray = tree.song("by hand/seamus.wav", "Seamus", "Pink Floyd", "Meddle");
-    let arriving = [song("San Tropez", "Pink Floyd", "Meddle")];
+    let stray = tree.song("by hand/marlow.wav", "Marlow", "Example Band", "Tideline");
+    let arriving = [song("Harbour Lights", "Example Band", "Tideline")];
     let filed = filed_from_elsewhere(&library, &arriving)?;
 
     assert!(library.track_at(&filed[0], None)?.is_some());
@@ -851,8 +874,8 @@ fn a_song_from_another_device_whose_extension_climbs_out_of_the_folder_is_refuse
         layout: Layout::default(),
     }));
 
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
-    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
+    let bytes = tagged_wav("Harbour Lights", "Example Band", "Tideline");
 
     let filed = library.file_song_from_elsewhere(
         &arriving,
@@ -877,7 +900,7 @@ fn a_song_from_another_device_that_does_not_decode_is_refused_and_not_left_behin
         layout: Layout::default(),
     }));
 
-    let arriving = song("Seamus", "Pink Floyd", "Meddle");
+    let arriving = song("Marlow", "Example Band", "Tideline");
 
     let filed = library.file_song_from_elsewhere(
         &arriving,
@@ -887,7 +910,7 @@ fn a_song_from_another_device_that_does_not_decode_is_refused_and_not_left_behin
     )?;
 
     assert_eq!(filed, SongFiled::Refused);
-    assert!(!tree.root.join("Meddle/Seamus.wav").exists());
+    assert!(!tree.root.join("Tideline/Marlow.wav").exists());
     Ok(())
 }
 
@@ -896,8 +919,8 @@ fn a_song_from_another_device_with_no_music_folder_lands_in_the_open_vault() -> 
     let tree = Tree::new();
     let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(Arc::clone(&vault))?;
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
-    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
+    let bytes = tagged_wav("Harbour Lights", "Example Band", "Tideline");
 
     let SongFiled::Vaulted(kept) = library.file_song_from_elsewhere(
         &arriving,
@@ -918,8 +941,8 @@ fn a_song_from_another_device_with_no_music_folder_lands_in_the_open_vault() -> 
     let rows = library.tracks(&TrackQuery::default())?;
 
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].title, "San Tropez");
-    assert_eq!(rows[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(rows[0].title, "Harbour Lights");
+    assert_eq!(rows[0].artist.as_deref(), Some("Example Band"));
     assert!(rows[0].album_id.is_some());
 
     let offered = library.held_songs()?;
@@ -933,8 +956,8 @@ fn a_song_from_another_device_with_no_music_folder_lands_in_the_open_vault() -> 
 #[test]
 fn a_song_from_another_device_comes_back_nowhere_with_neither_folder_nor_vault() -> Result<()> {
     let library = Library::open_in_memory()?;
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
-    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
+    let bytes = tagged_wav("Harbour Lights", "Example Band", "Tideline");
 
     let filed = library.file_song_from_elsewhere(
         &arriving,
@@ -953,11 +976,11 @@ fn two_songs_of_one_album_from_another_device_land_in_the_vault_under_one_album(
     let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
 
-    for title in ["San Tropez", "Seamus"] {
-        let arriving = song(title, "Pink Floyd", "Meddle");
-        let mut bytes = tagged_wav(title, "Pink Floyd", "Meddle");
+    for title in ["Harbour Lights", "Marlow"] {
+        let arriving = song(title, "Example Band", "Tideline");
+        let mut bytes = tagged_wav(title, "Example Band", "Tideline");
 
-        if title == "Seamus" {
+        if title == "Marlow" {
             *bytes.last_mut().expect("a sample") = 1;
         }
         library.file_song_from_elsewhere(
@@ -981,9 +1004,9 @@ fn a_song_whose_audio_the_vault_already_holds_under_another_recording_is_held_un
     let tree = Tree::new();
     let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
-    let first = song("San Tropez", "Pink Floyd", "Meddle");
-    let again = song("San Tropez (Edit)", "Pink Floyd", "Meddle");
-    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    let first = song("Harbour Lights", "Example Band", "Tideline");
+    let again = song("Harbour Lights (Edit)", "Example Band", "Tideline");
+    let bytes = tagged_wav("Harbour Lights", "Example Band", "Tideline");
 
     let SongFiled::Vaulted(kept) = library.file_song_from_elsewhere(
         &first,
@@ -1016,7 +1039,7 @@ fn a_song_whose_audio_the_vault_already_holds_under_another_recording_is_held_un
 fn a_song_whose_audio_a_vault_import_keeps_is_held_though_its_file_is_gone_and_never_vaulted_beside_it()
 -> Result<()> {
     let tree = Tree::new();
-    let original = tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let original = tree.song("held/lantern.wav", "Lantern", "Example Band", "Tideline");
     let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
 
@@ -1034,8 +1057,8 @@ fn a_song_whose_audio_a_vault_import_keeps_is_held_though_its_file_is_gone_and_n
 
     assert_eq!(imported.stats.vaulted, 1);
 
-    let held = song("Echoes", "Pink Floyd", "Meddle");
-    let renamed = song("Echoes (Live)", "Pink Floyd", "Meddle");
+    let held = song("Lantern", "Example Band", "Tideline");
+    let renamed = song("Lantern (Live)", "Example Band", "Tideline");
 
     fs::remove_file(&original).expect("the original goes");
 
@@ -1044,7 +1067,7 @@ fn a_song_whose_audio_a_vault_import_keeps_is_held_though_its_file_is_gone_and_n
         &renamed,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(tagged_wav("Echoes (Live)", "Pink Floyd", "Meddle")),
+        &mut Cursor::new(tagged_wav("Lantern (Live)", "Example Band", "Tideline")),
     )?;
 
     assert!(still_held, "a vaulted song plays from its object");
@@ -1060,17 +1083,17 @@ fn a_song_whose_audio_a_vault_import_keeps_is_held_though_its_file_is_gone_and_n
 #[test]
 fn a_hidden_song_is_still_held_so_another_device_never_sends_it_again() -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
 
-    let held = library.track_at(&echoes, None)?.expect("held");
+    let held = library.track_at(&slow_water, None)?.expect("held");
 
     library.hide_track(held.id, true)?;
 
-    assert!(library.holds_recording(&song("Echoes", "Pink Floyd", "Meddle"))?);
-    assert!(!library.holds_recording(&song("Seamus", "Pink Floyd", "Meddle"))?);
+    assert!(library.holds_recording(&song("Lantern", "Example Band", "Tideline"))?);
+    assert!(!library.holds_recording(&song("Marlow", "Example Band", "Tideline"))?);
     Ok(())
 }
 
@@ -1085,13 +1108,13 @@ fn a_song_its_sender_renamed_after_sending_it_is_known_by_its_audio_and_never_fi
         layout: Layout::default(),
     }));
 
-    let sent = song("San Tropez", "Pink Floyd", "Meddle");
-    let renamed = song("Saint-Tropez", "Floyd", "Meddle");
+    let sent = song("Harbour Lights", "Example Band", "Tideline");
+    let renamed = song("Harbour-Lights", "Band", "Tideline");
     let SongFiled::Filed(filed) = library.file_song_from_elsewhere(
         &sent,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(tagged_wav("San Tropez", "Pink Floyd", "Meddle")),
+        &mut Cursor::new(tagged_wav("Harbour Lights", "Example Band", "Tideline")),
     )?
     else {
         panic!("filed");
@@ -1101,7 +1124,7 @@ fn a_song_its_sender_renamed_after_sending_it_is_known_by_its_audio_and_never_fi
         &renamed,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(tagged_wav("Saint-Tropez", "Floyd", "Meddle")),
+        &mut Cursor::new(tagged_wav("Harbour-Lights", "Band", "Tideline")),
     )?;
 
     assert_eq!(again, SongFiled::Filed(filed.clone()));
@@ -1141,15 +1164,15 @@ fn a_received_song_whose_file_is_forgotten_names_no_other_file_landing_where_it_
     }));
 
     let asked = song(
-        "San Tropez (2011 Remaster)",
-        "Pink Floyd",
-        "Meddle (Remastered)",
+        "Harbour Lights (2011 Remaster)",
+        "Example Band",
+        "Tideline (Remastered)",
     );
     let SongFiled::Filed(filed) = library.file_song_from_elsewhere(
         &asked,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(tagged_wav("San Tropez", "Pink Floyd", "Meddle")),
+        &mut Cursor::new(tagged_wav("Harbour Lights", "Example Band", "Tideline")),
     )?
     else {
         panic!("filed");
@@ -1159,7 +1182,7 @@ fn a_received_song_whose_file_is_forgotten_names_no_other_file_landing_where_it_
     scan(&library, &tree.root)?;
     fs::write(
         &filed,
-        tagged_wav_opening_on("One of These Days", "Pink Floyd", "Meddle", 1),
+        tagged_wav_opening_on("Small Mercies", "Example Band", "Tideline", 1),
     )
     .expect("another song where it was");
     scan(&library, &tree.root)?;
@@ -1183,8 +1206,8 @@ fn a_song_from_another_device_goes_to_the_vault_when_both_a_vault_and_a_music_fo
         layout: Layout::default(),
     }));
 
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
-    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
+    let bytes = tagged_wav("Harbour Lights", "Example Band", "Tideline");
 
     let filed = library.file_song_from_elsewhere(
         &arriving,
@@ -1213,8 +1236,8 @@ fn a_song_from_another_device_with_a_folder_and_no_vault_is_still_filed_in_the_f
         layout: Layout::default(),
     }));
 
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
-    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
+    let bytes = tagged_wav("Harbour Lights", "Example Band", "Tideline");
 
     let filed = library.file_song_from_elsewhere(
         &arriving,
@@ -1236,7 +1259,7 @@ fn a_vaulted_song_is_passed_on_to_a_third_device_as_the_bytes_it_decodes_to() ->
     let second = Library::open_in_memory_with_vault(Arc::new(
         Vault::make(tree.root.join("second")).expect("a writable vault"),
     ))?;
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
 
     first.file_song_from_elsewhere(
         &arriving,
@@ -1277,7 +1300,7 @@ fn a_vaulted_song_is_passed_on_to_a_third_device_as_the_bytes_it_decodes_to() ->
 #[test]
 fn a_plain_file_is_opened_to_send_as_it_stands() -> Result<()> {
     let tree = Tree::new();
-    let path = tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let path = tree.song("held/lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     let mut opened = library.open_song(&path)?.expect("opens");
@@ -1298,14 +1321,14 @@ fn songs_from_another_device_group_by_the_album_artist_and_year_their_files_decl
     let tree = Tree::new();
     let vault = Arc::new(Vault::make(tree.root.join("vault")).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
-    let waters = song("San Tropez", "Roger Waters", "Meddle");
-    let gilmour = song("Seamus", "David Gilmour", "Meddle");
+    let another = song("Harbour Lights", "Another Band", "Tideline");
+    let third = song("Marlow", "Third Band", "Tideline");
     let first = declared_wav(
         &[
-            (b"TIT2", "San Tropez"),
-            (b"TPE1", "Roger Waters"),
-            (b"TPE2", "Pink Floyd"),
-            (b"TALB", "Meddle"),
+            (b"TIT2", "Harbour Lights"),
+            (b"TPE1", "Another Band"),
+            (b"TPE2", "Example Band"),
+            (b"TALB", "Tideline"),
             (b"TDRC", "1971"),
             (b"TRCK", "3/6"),
         ],
@@ -1313,23 +1336,23 @@ fn songs_from_another_device_group_by_the_album_artist_and_year_their_files_decl
     );
     let second = declared_wav(
         &[
-            (b"TIT2", "Seamus"),
-            (b"TPE1", "David Gilmour"),
-            (b"TPE2", "Pink Floyd"),
-            (b"TALB", "Meddle"),
+            (b"TIT2", "Marlow"),
+            (b"TPE1", "Third Band"),
+            (b"TPE2", "Example Band"),
+            (b"TALB", "Tideline"),
             (b"TDRC", "1971"),
         ],
         1,
     );
 
     library.file_song_from_elsewhere(
-        &waters,
+        &another,
         &HeldTags::default(),
         "wav",
         &mut Cursor::new(first),
     )?;
     library.file_song_from_elsewhere(
-        &gilmour,
+        &third,
         &HeldTags::default(),
         "wav",
         &mut Cursor::new(second),
@@ -1341,8 +1364,8 @@ fn songs_from_another_device_group_by_the_album_artist_and_year_their_files_decl
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].album_id, rows[1].album_id);
     assert_eq!(albums.len(), 1);
-    assert_eq!(albums[0].title, "Meddle");
-    assert_eq!(albums[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(albums[0].title, "Tideline");
+    assert_eq!(albums[0].artist.as_deref(), Some("Example Band"));
     assert_eq!(albums[0].year, Some(1971));
     assert_eq!(albums[0].artist_count, 2);
     Ok(())
@@ -1361,15 +1384,15 @@ fn songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the
     let with = Library::open_in_memory_with_vault(Arc::new(
         Vault::make(tree.root.join("with")).expect("a writable vault"),
     ))?;
-    let waters = song("San Tropez", "Roger Waters", "Meddle");
-    let gilmour = song("Seamus", "David Gilmour", "Meddle");
+    let another = song("Harbour Lights", "Another Band", "Tideline");
+    let third = song("Marlow", "Third Band", "Tideline");
     let declared_by = |title, artist, sample| {
         declared_wav(
             &[
                 (b"TIT2", title),
                 (b"TPE1", artist),
-                (b"TPE2", "Pink Floyd"),
-                (b"TALB", "Meddle"),
+                (b"TPE2", "Example Band"),
+                (b"TALB", "Tideline"),
                 (b"TDRC", "1971"),
                 (b"TRCK", "3/6"),
                 (b"TPOS", "1/2"),
@@ -1379,16 +1402,16 @@ fn songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the
     };
 
     first.file_song_from_elsewhere(
-        &waters,
+        &another,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(declared_by("San Tropez", "Roger Waters", 0)),
+        &mut Cursor::new(declared_by("Harbour Lights", "Another Band", 0)),
     )?;
     first.file_song_from_elsewhere(
-        &gilmour,
+        &third,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(declared_by("Seamus", "David Gilmour", 1)),
+        &mut Cursor::new(declared_by("Marlow", "Third Band", 1)),
     )?;
 
     for held in first.held_songs()? {
@@ -1401,7 +1424,7 @@ fn songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the
             .read_to_end(&mut bytes)
             .expect("read");
 
-        assert_eq!(tags.album_artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(tags.album_artist.as_deref(), Some("Example Band"));
         assert_eq!(tags.date.as_deref(), Some("1971"));
         assert_eq!(tags.track_total, Some(6));
         assert_eq!(tags.disc_total, Some(2));
@@ -1420,7 +1443,7 @@ fn songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the
 
     assert_eq!(ungrouped.len(), 2);
     assert_eq!(grouped.len(), 1);
-    assert_eq!(grouped[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(grouped[0].artist.as_deref(), Some("Example Band"));
     assert_eq!(grouped[0].year, Some(1971));
     assert_eq!(grouped[0].artist_count, 2);
     Ok(())
@@ -1430,7 +1453,7 @@ fn songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the
 fn a_song_filed_in_a_music_folder_reports_no_tags_to_pass_on() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
-    let path = tree.song("a.wav", "San Tropez", "Pink Floyd", "Meddle");
+    let path = tree.song("a.wav", "Harbour Lights", "Example Band", "Tideline");
 
     assert_eq!(library.song_tags(&path)?, HeldTags::default());
     Ok(())
@@ -1447,11 +1470,11 @@ fn a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice() 
     }));
 
     let asked = song(
-        "San Tropez (2011 Remaster)",
-        "Pink Floyd",
-        "Meddle (Remastered)",
+        "Harbour Lights (2011 Remaster)",
+        "Example Band",
+        "Tideline (Remastered)",
     );
-    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+    let bytes = tagged_wav("Harbour Lights", "Example Band", "Tideline");
 
     let SongFiled::Filed(filed) = library.file_song_from_elsewhere(
         &asked,
@@ -1500,15 +1523,15 @@ fn a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_f
     }));
 
     let asked = song(
-        "San Tropez (2011 Remaster)",
-        "Pink Floyd",
-        "Meddle (Remastered)",
+        "Harbour Lights (2011 Remaster)",
+        "Example Band",
+        "Tideline (Remastered)",
     );
     let SongFiled::Filed(_) = library.file_song_from_elsewhere(
         &asked,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(tagged_wav("San Tropez", "Pink Floyd", "Meddle")),
+        &mut Cursor::new(tagged_wav("Harbour Lights", "Example Band", "Tideline")),
     )?
     else {
         panic!("filed");
@@ -1522,7 +1545,7 @@ fn a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_f
         held_as
             .as_ref()
             .map(|own| (own.title.as_str(), own.album.as_str())),
-        Some(("San Tropez", "Meddle"))
+        Some(("Harbour Lights", "Tideline"))
     );
     assert_eq!(written.entries, std::slice::from_ref(&held_as));
     assert!(favoured);
@@ -1531,7 +1554,7 @@ fn a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_f
         held_as.into_iter().collect::<Vec<_>>()
     );
     assert_eq!(
-        library.held_as(&song("Echoes", "Pink Floyd", "Meddle"))?,
+        library.held_as(&song("Lantern", "Example Band", "Tideline"))?,
         None
     );
     Ok(())
@@ -1540,17 +1563,17 @@ fn a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_f
 #[test]
 fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left() -> Result<()> {
     let tree = Tree::new();
-    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let copy = tree.root.join("Echoes (1).wav");
+    let original = tree.song("Lantern.wav", "Lantern", "Example Band", "Tideline");
+    let copy = tree.root.join("Lantern (1).wav");
 
     fs::copy(&original, &copy).expect("a copy");
 
-    let other = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let other = tree.song("Paper Boats.wav", "Paper Boats", "Example Band", "Tideline");
     let differing = tree.song(
-        "Fearless (1).wav",
-        "Fearless",
-        "Pink Floyd",
-        "Meddle (Live)",
+        "Paper Boats (1).wav",
+        "Paper Boats",
+        "Example Band",
+        "Tideline (Live)",
     );
     let library = Library::open_in_memory()?;
 
@@ -1608,10 +1631,10 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
 fn files_holding_the_same_bytes_under_different_names_are_folded_into_the_one_not_numbered()
 -> Result<()> {
     let tree = Tree::new();
-    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let renamed = tree.root.join("Echoes2.wav");
-    let elsewhere = tree.root.join("Mirror/echoes.wav");
-    let numbered = tree.root.join("Echoes (1).wav");
+    let original = tree.song("Lantern.wav", "Lantern", "Example Band", "Tideline");
+    let renamed = tree.root.join("Lantern2.wav");
+    let elsewhere = tree.root.join("Mirror/lantern.wav");
+    let numbered = tree.root.join("Lantern (1).wav");
 
     fs::create_dir_all(elsewhere.parent().expect("a folder")).expect("a writable folder");
     fs::copy(&original, &renamed).expect("a copy");
@@ -1645,17 +1668,17 @@ fn files_of_one_size_holding_other_bytes_are_not_identical() -> Result<()> {
 
     fs::write(
         &one,
-        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 1),
+        tagged_wav_opening_on("Lantern", "Example Band", "Tideline", 1),
     )
     .expect("a song");
     fs::write(
         &other,
-        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 2),
+        tagged_wav_opening_on("Lantern", "Example Band", "Tideline", 2),
     )
     .expect("a song");
     fs::write(
         &numbered,
-        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 3),
+        tagged_wav_opening_on("Lantern", "Example Band", "Tideline", 3),
     )
     .expect("a song");
 
@@ -1688,8 +1711,8 @@ impl Trashes for RefusedByTheDesktop {
 #[test]
 fn a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice() -> Result<()> {
     let tree = Tree::new();
-    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let copy = tree.root.join("Echoes (1).wav");
+    let original = tree.song("Lantern.wav", "Lantern", "Example Band", "Tideline");
+    let copy = tree.root.join("Lantern (1).wav");
 
     fs::copy(&original, &copy).expect("a copy");
 
@@ -1737,43 +1760,43 @@ impl Trashes for TakenByTheDesktop {
 #[test]
 fn a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not() -> Result<()> {
     let tree = Tree::new();
-    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let copy = tree.root.join("Echoes (1).wav");
+    let original = tree.song("Lantern.wav", "Lantern", "Example Band", "Tideline");
+    let copy = tree.root.join("Lantern (1).wav");
 
     fs::copy(&original, &copy).expect("a copy");
 
-    let gone = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let gone = tree.song("Paper Boats.wav", "Paper Boats", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     library.trash_through(Some(Arc::new(TakenByTheDesktop)));
     scan(&library, &tree.root)?;
 
-    let echoes = song("Echoes", "Pink Floyd", "Meddle");
-    let fearless = song("Fearless", "Pink Floyd", "Meddle");
+    let slow_water = song("Lantern", "Example Band", "Tideline");
+    let paper_boats = song("Paper Boats", "Example Band", "Tideline");
 
     let found = library.identical_copies()?;
 
     library.fold_copies(&found.identical)?;
 
-    assert!(!library.deleted_recording(&echoes)?);
+    assert!(!library.deleted_recording(&slow_water)?);
 
     let doomed = library.track_at(&gone, None)?.expect("scanned");
 
     library.delete_tracks(&[doomed.id])?;
 
-    assert!(library.deleted_recording(&fearless)?);
-    assert!(!library.deleted_recording(&echoes)?);
+    assert!(library.deleted_recording(&paper_boats)?);
+    assert!(!library.deleted_recording(&slow_water)?);
 
-    library.forgive_deleted_recording(&fearless)?;
+    library.forgive_deleted_recording(&paper_boats)?;
 
-    assert!(!library.deleted_recording(&fearless)?);
+    assert!(!library.deleted_recording(&paper_boats)?);
 
     let doomed = library.track_at(&original, None)?.expect("scanned");
 
     library.delete_tracks(&[doomed.id])?;
     library.forgive_deleted_recordings()?;
 
-    assert!(!library.deleted_recording(&echoes)?);
+    assert!(!library.deleted_recording(&slow_water)?);
     Ok(())
 }
 
@@ -1857,14 +1880,14 @@ impl Trashes for MarkedBeforeTheFileGoes {
 fn a_song_is_marked_deleted_before_its_file_goes_so_a_follow_meanwhile_does_not_fetch_it_back()
 -> Result<()> {
     let tree = Tree::new();
-    let gone = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let gone = tree.song("Paper Boats.wav", "Paper Boats", "Example Band", "Tideline");
     let library = Arc::new(Library::open_in_memory()?);
     let marked_as_it_went = Arc::new(AtomicBool::new(false));
     let seat = Arc::new(OnceLock::new());
 
     library.trash_through(Some(Arc::new(MarkedBeforeTheFileGoes {
         library: Arc::clone(&seat),
-        recording: song("Fearless", "Pink Floyd", "Meddle"),
+        recording: song("Paper Boats", "Example Band", "Tideline"),
         marked_as_it_went: Arc::clone(&marked_as_it_went),
     })));
     seat.set(Arc::clone(&library)).ok();
@@ -1898,12 +1921,12 @@ impl Trashes for TrashesOnlyWhatIsNamedAfter {
 #[test]
 fn a_song_the_trash_refused_is_not_marked_deleted_and_one_trashed_beside_it_is() -> Result<()> {
     let tree = Tree::new();
-    let refused = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let taken = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let refused = tree.song("Lantern.wav", "Lantern", "Example Band", "Tideline");
+    let taken = tree.song("Paper Boats.wav", "Paper Boats", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     library.trash_through(Some(Arc::new(TrashesOnlyWhatIsNamedAfter {
-        refused: "Echoes",
+        refused: "Lantern",
     })));
     scan(&library, &tree.root)?;
 
@@ -1918,8 +1941,8 @@ fn a_song_the_trash_refused_is_not_marked_deleted_and_one_trashed_beside_it_is()
 
     assert_eq!((deleted.files, deleted.kept), (1, 1));
     assert!(library.track_at(&refused, None)?.is_some());
-    assert!(!library.deleted_recording(&song("Echoes", "Pink Floyd", "Meddle"))?);
-    assert!(library.deleted_recording(&song("Fearless", "Pink Floyd", "Meddle"))?);
+    assert!(!library.deleted_recording(&song("Lantern", "Example Band", "Tideline"))?);
+    assert!(library.deleted_recording(&song("Paper Boats", "Example Band", "Tideline"))?);
     Ok(())
 }
 
@@ -1937,13 +1960,13 @@ fn now_in_nanos() -> i64 {
 fn a_song_deleted_everywhere_waits_to_be_told_and_one_the_trash_refused_or_deleted_here_does_not()
 -> Result<()> {
     let tree = Tree::new();
-    let refused = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let taken = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
-    let here = tree.song("Seamus.wav", "Seamus", "Pink Floyd", "Meddle");
+    let refused = tree.song("Lantern.wav", "Lantern", "Example Band", "Tideline");
+    let taken = tree.song("Paper Boats.wav", "Paper Boats", "Example Band", "Tideline");
+    let here = tree.song("Marlow.wav", "Marlow", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     library.trash_through(Some(Arc::new(TrashesOnlyWhatIsNamedAfter {
-        refused: "Echoes",
+        refused: "Lantern",
     })));
     scan(&library, &tree.root)?;
 
@@ -1967,10 +1990,10 @@ fn a_song_deleted_everywhere_waits_to_be_told_and_one_the_trash_refused_or_delet
             .iter()
             .map(|told| told.recording.title.as_str())
             .collect::<Vec<_>>(),
-        ["Fearless"]
+        ["Paper Boats"]
     );
-    assert!(library.deleted_recording(&song("Fearless", "Pink Floyd", "Meddle"))?);
-    assert!(!library.deleted_recording(&song("Echoes", "Pink Floyd", "Meddle"))?);
+    assert!(library.deleted_recording(&song("Paper Boats", "Example Band", "Tideline"))?);
+    assert!(!library.deleted_recording(&song("Lantern", "Example Band", "Tideline"))?);
 
     library.deletions_told(&waiting.iter().map(|told| told.id).collect::<Vec<_>>())?;
 
@@ -1981,7 +2004,7 @@ fn a_song_deleted_everywhere_waits_to_be_told_and_one_the_trash_refused_or_delet
 #[test]
 fn a_deletion_another_device_told_takes_only_the_copies_older_than_it() -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("Lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     library.trash_through(Some(Arc::new(TakenByTheDesktop)));
@@ -1991,41 +2014,41 @@ fn a_deletion_another_device_told_takes_only_the_copies_older_than_it() -> Resul
     scan(&library, &tree.root)?;
 
     let after_the_scan = now_in_nanos();
-    let told = song("Echoes", "Pink Floyd", "Meddle");
+    let told = song("Lantern", "Example Band", "Tideline");
 
     let too_old = library.take_deletion(&told, before_the_scan)?;
 
     assert_eq!(too_old.files, 0);
-    assert!(library.track_at(&echoes, None)?.is_some());
+    assert!(library.track_at(&slow_water, None)?.is_some());
     assert!(library.added_by_hand_since(&told, before_the_scan)?);
     assert!(!library.added_by_hand_since(&told, after_the_scan)?);
 
     let taken = library.take_deletion(&told, after_the_scan)?;
 
     assert_eq!(taken.files, 1);
-    assert!(!echoes.exists());
-    assert!(library.track_at(&echoes, None)?.is_none());
+    assert!(!slow_water.exists());
+    assert!(library.track_at(&slow_water, None)?.is_none());
     assert!(library.deleted_recording(&told)?);
     assert!(library.deleted_everywhere_to_tell()?.is_empty());
     Ok(())
 }
 
-struct Echoes<'a> {
+struct SlowWater<'a> {
     album: &'a str,
     recording: Option<&'a str>,
     seconds: u32,
 }
 
 impl Tree {
-    fn echoes(&self, relative: &str, echoes: &Echoes<'_>, distinct: u8) -> PathBuf {
+    fn slow_water(&self, relative: &str, slow_water: &SlowWater<'_>, distinct: u8) -> PathBuf {
         let path = self.root.join(relative);
         let mut frames = vec![
-            (b"TIT2", "Echoes"),
-            (b"TPE1", "Pink Floyd"),
-            (b"TALB", echoes.album),
+            (b"TIT2", "Lantern"),
+            (b"TPE1", "Example Band"),
+            (b"TALB", slow_water.album),
         ];
 
-        if let Some(recording) = echoes.recording {
+        if let Some(recording) = slow_water.recording {
             frames.push((UNIQUE_FILE_ID, recording));
         }
         if let Some(parent) = path.parent() {
@@ -2033,27 +2056,27 @@ impl Tree {
         }
         fs::write(
             &path,
-            declared_wav_lasting(&frames, distinct, echoes.seconds),
+            declared_wav_lasting(&frames, distinct, slow_water.seconds),
         )
         .expect("a written song");
         path
     }
 }
 
-const MEDDLE: Echoes<'static> = Echoes {
-    album: "Meddle",
+const LOW_TIDE: SlowWater<'static> = SlowWater {
+    album: "Tideline",
     recording: None,
     seconds: SECONDS,
 };
 
-const POMPEII: Echoes<'static> = Echoes {
-    album: "Live at Pompeii",
-    ..MEDDLE
+const QUARRY: SlowWater<'static> = SlowWater {
+    album: "Live at the Quarry",
+    ..LOW_TIDE
 };
 
-const LIVE: Echoes<'static> = Echoes {
+const LIVE: SlowWater<'static> = SlowWater {
     seconds: LIVE_SECONDS,
-    ..MEDDLE
+    ..LOW_TIDE
 };
 
 fn deleted_by_another_device(tree: &Tree) -> Result<Library> {
@@ -2068,22 +2091,22 @@ fn deleted_by_another_device(tree: &Tree) -> Result<Library> {
 fn a_deletion_another_device_told_takes_its_recording_and_leaves_another_album_take_or_recording_id()
 -> Result<()> {
     let tree = Tree::new();
-    let named = tree.echoes(
-        "Meddle/Echoes.wav",
-        &Echoes {
-            recording: Some(ECHOES),
-            ..MEDDLE
+    let named = tree.slow_water(
+        "Tideline/Lantern.wav",
+        &SlowWater {
+            recording: Some(SLOW_WATER),
+            ..LOW_TIDE
         },
         1,
     );
     let kept = [
-        tree.echoes("Pompeii/Echoes.wav", &POMPEII, 2),
-        tree.echoes("Meddle/Echoes (live).wav", &LIVE, 3),
-        tree.echoes(
-            "Meddle/Echoes (another).wav",
-            &Echoes {
-                recording: Some(ANOTHER_ECHOES),
-                ..MEDDLE
+        tree.slow_water("Quarry/Lantern.wav", &QUARRY, 2),
+        tree.slow_water("Tideline/Lantern (live).wav", &LIVE, 3),
+        tree.slow_water(
+            "Tideline/Lantern (another).wav",
+            &SlowWater {
+                recording: Some(ANOTHER_SLOW_WATER),
+                ..LOW_TIDE
             },
             4,
         ),
@@ -2091,8 +2114,8 @@ fn a_deletion_another_device_told_takes_its_recording_and_leaves_another_album_t
     let library = deleted_by_another_device(&tree)?;
 
     let told = Recording {
-        mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
-        ..song("Echoes", "Pink Floyd", "Meddle")
+        mbid: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
+        ..song("Lantern", "Example Band", "Tideline")
     };
     let taken = library.take_deletion(&told, now_in_nanos())?;
 
@@ -2110,14 +2133,15 @@ fn a_deletion_another_device_told_takes_its_recording_and_leaves_another_album_t
 fn a_deletion_named_without_a_recording_id_takes_only_the_copy_of_its_album_and_length()
 -> Result<()> {
     let tree = Tree::new();
-    let named = tree.echoes("Meddle/Echoes.wav", &MEDDLE, 1);
+    let named = tree.slow_water("Tideline/Lantern.wav", &LOW_TIDE, 1);
     let kept = [
-        tree.echoes("Pompeii/Echoes.wav", &POMPEII, 2),
-        tree.echoes("Meddle/Echoes (live).wav", &LIVE, 3),
+        tree.slow_water("Quarry/Lantern.wav", &QUARRY, 2),
+        tree.slow_water("Tideline/Lantern (live).wav", &LIVE, 3),
     ];
     let library = deleted_by_another_device(&tree)?;
 
-    let taken = library.take_deletion(&song("Echoes", "Pink Floyd", "Meddle"), now_in_nanos())?;
+    let taken =
+        library.take_deletion(&song("Lantern", "Example Band", "Tideline"), now_in_nanos())?;
 
     assert_eq!(taken.files, 1);
     assert!(!named.exists());
@@ -2133,15 +2157,15 @@ fn a_deletion_named_without_a_recording_id_takes_only_the_copy_of_its_album_and_
 fn a_deletion_naming_no_album_length_or_recording_id_takes_nothing() -> Result<()> {
     let tree = Tree::new();
     let kept = [
-        tree.echoes("Meddle/Echoes.wav", &MEDDLE, 1),
-        tree.echoes("Pompeii/Echoes.wav", &POMPEII, 2),
+        tree.slow_water("Tideline/Lantern.wav", &LOW_TIDE, 1),
+        tree.slow_water("Quarry/Lantern.wav", &QUARRY, 2),
     ];
     let library = deleted_by_another_device(&tree)?;
 
     let told = Recording {
         album: String::new(),
         length: None,
-        ..song("Echoes", "Pink Floyd", "")
+        ..song("Lantern", "Example Band", "")
     };
     let taken = library.take_deletion(&told, now_in_nanos())?;
 
@@ -2167,12 +2191,12 @@ fn a_song_landed_from_another_device_is_never_added_by_hand() -> Result<()> {
     }));
 
     let before = now_in_nanos();
-    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
     let SongFiled::Filed(_) = library.file_song_from_elsewhere(
         &arriving,
         &HeldTags::default(),
         "wav",
-        &mut Cursor::new(tagged_wav("San Tropez", "Pink Floyd", "Meddle")),
+        &mut Cursor::new(tagged_wav("Harbour Lights", "Example Band", "Tideline")),
     )?
     else {
         panic!("filed");
@@ -2199,14 +2223,24 @@ fn answers_kept_in_one_instant_are_listed_past_a_page_by_their_row_and_kind() ->
     let catalog = tree.root.join("catalog.sqlite");
     let library = Library::open(&catalog)?;
     let songs = [
-        tree.song("Floyd/Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle"),
         tree.song(
-            "Floyd/Meddle/fearless.wav",
-            "Fearless",
-            "Pink Floyd",
-            "Meddle",
+            "Band/Tideline/lantern.wav",
+            "Lantern",
+            "Example Band",
+            "Tideline",
         ),
-        tree.song("Floyd/Meddle/seamus.wav", "Seamus", "Pink Floyd", "Meddle"),
+        tree.song(
+            "Band/Tideline/paper boats.wav",
+            "Paper Boats",
+            "Example Band",
+            "Tideline",
+        ),
+        tree.song(
+            "Band/Tideline/marlow.wav",
+            "Marlow",
+            "Example Band",
+            "Tideline",
+        ),
     ];
 
     scan(&library, &tree.root)?;
@@ -2219,7 +2253,7 @@ fn answers_kept_in_one_instant_are_listed_past_a_page_by_their_row_and_kind() ->
     library.note_study(track, &study)?;
     for song in &songs {
         let words = LyricText {
-            text: "Overhead the albatross".into(),
+            text: "Sunlight the fireflies".into(),
             synced: false,
             lyricsfile: None,
         };
@@ -2266,14 +2300,19 @@ fn answers_kept_in_one_instant_are_listed_past_a_page_by_their_row_and_kind() ->
 fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went()
 -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("Floyd/Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song(
+        "Band/Tideline/lantern.wav",
+        "Lantern",
+        "Example Band",
+        "Tideline",
+    );
     let here = Library::open_in_memory()?;
     let there = Library::open_in_memory()?;
 
     scan(&here, &tree.root)?;
     scan(&there, &tree.root)?;
 
-    let location = MediaLocation::local(&echoes);
+    let location = MediaLocation::local(&slow_water);
     let track = here.track_held(&location, None)?.expect("a held track");
     let study = resonate_analysis::study(&here.sources(), &location, None, &Watch::default())
         .expect("a study");
@@ -2281,7 +2320,7 @@ fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_
     here.note_study(track, &study)?;
 
     let words = LyricText {
-        text: "[00:01.00] Overhead the albatross".into(),
+        text: "[00:01.00] Sunlight the fireflies".into(),
         synced: true,
         lyricsfile: None,
     };
@@ -2325,7 +2364,12 @@ fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_
 fn a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer_words_and_never_over_richer()
 -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("Floyd/Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song(
+        "Band/Tideline/lantern.wav",
+        "Lantern",
+        "Example Band",
+        "Tideline",
+    );
     let here = Library::open_in_memory()?;
     let there = Library::open_in_memory()?;
     let richer = Library::open_in_memory()?;
@@ -2334,9 +2378,9 @@ fn a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer
         scan(library, &tree.root)?;
     }
 
-    let location = MediaLocation::local(&echoes);
+    let location = MediaLocation::local(&slow_water);
     let lines = LyricText {
-        text: "[00:01.00] Overhead the albatross".into(),
+        text: "[00:01.00] Sunlight the fireflies".into(),
         synced: true,
         lyricsfile: None,
     };
@@ -2359,7 +2403,7 @@ fn a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer
         .expect("a lyricsfile to share");
     let nothing_to_share = there.lyricsfile_to_share(&wanted[0])?;
     let other_song = Recording {
-        title: "Fearless".into(),
+        title: "Paper Boats".into(),
         ..wanted[0].clone()
     };
 
@@ -2369,7 +2413,7 @@ fn a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer
     let again = there.take_shared_lyricsfile(&wanted[0], &shared)?;
 
     assert_eq!(wanted.len(), 1);
-    assert_eq!(wanted[0].title, "Echoes");
+    assert_eq!(wanted[0].title, "Lantern");
     assert!(here.lyricsfiles_wanted(0, 10)?.is_empty());
     assert!(richer.lyricsfiles_wanted(0, 10)?.is_empty());
     assert!(there.lyricsfiles_wanted(1, 10)?.is_empty());
@@ -2399,12 +2443,12 @@ fn a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer
 fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Result<()> {
     let here_tree = Tree::new();
     let there_tree = Tree::new();
-    let echoes = here_tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let other_encode = there_tree.root.join("echoes.wav");
+    let slow_water = here_tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
+    let other_encode = there_tree.root.join("lantern.wav");
 
     fs::write(
         &other_encode,
-        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 9),
+        tagged_wav_opening_on("Lantern", "Example Band", "Tideline", 9),
     )
     .expect("a written song");
 
@@ -2414,7 +2458,7 @@ fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Re
     scan(&here, &here_tree.root)?;
     scan(&there, &there_tree.root)?;
 
-    let location = MediaLocation::local(&echoes);
+    let location = MediaLocation::local(&slow_water);
     let track = here.track_held(&location, None)?.expect("a held track");
     let study = resonate_analysis::study(&here.sources(), &location, None, &Watch::default())
         .expect("a study");
@@ -2424,10 +2468,10 @@ fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Re
     let shared = here.answers_to_share(AnswersMark::default(), 10)?;
     let another_take = Recording {
         length: Some(Duration::from_secs(u64::from(SECONDS) + 30)),
-        ..song("Echoes", "Pink Floyd", "Meddle")
+        ..song("Lantern", "Example Band", "Tideline")
     };
     let words = Answer::Lyrics(resonate_core::SharedLyrics {
-        text: "Overhead the albatross".into(),
+        text: "Sunlight the fireflies".into(),
         synced: false,
     });
 
@@ -2468,13 +2512,18 @@ fn a_print_and_its_recognition_land_on_a_copy_that_is_the_same_file_and_are_weig
     let tree = Tree::new();
     let renamed_tree = Tree::new();
     let other_tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
-    let renamed = renamed_tree.song("time.wav", "Brain Damage", "Roger Waters", "The Wall");
-    let another_encode = other_tree.root.join("echoes.wav");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
+    let renamed = renamed_tree.song(
+        "time.wav",
+        "Quiet Harbour",
+        "Another Band",
+        "The Lighthouse",
+    );
+    let another_encode = other_tree.root.join("lantern.wav");
 
     fs::write(
         &another_encode,
-        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 9),
+        tagged_wav_opening_on("Lantern", "Example Band", "Tideline", 9),
     )
     .expect("a written song");
 
@@ -2490,14 +2539,14 @@ fn a_print_and_its_recognition_land_on_a_copy_that_is_the_same_file_and_are_weig
     scan(&unstudied, &tree.root)?;
     scan(&elsewhere, &other_tree.root)?;
 
-    let location = MediaLocation::local(&echoes);
+    let location = MediaLocation::local(&slow_water);
     let print = studied_with_a_print(&here, &location)?;
     let track = here.track_held(&location, None)?.expect("a held track");
     let heard = HeardAs {
         recording: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
         score: 96,
-        title: "Echoes".into(),
-        artist: Some("Pink Floyd".into()),
+        title: "Lantern".into(),
+        artist: Some("Example Band".into()),
     };
 
     here.note_recognition(track, Some(&heard), Agreement::Agrees)?;
@@ -2557,14 +2606,14 @@ fn a_print_and_its_recognition_land_on_a_copy_that_is_the_same_file_and_are_weig
 fn a_recognition_that_heard_nothing_travels_as_nothing_and_a_print_alone_leaves_the_recognition_owed()
 -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let here = Library::open_in_memory()?;
     let there = Library::open_in_memory()?;
 
     scan(&here, &tree.root)?;
     scan(&there, &tree.root)?;
 
-    let location = MediaLocation::local(&echoes);
+    let location = MediaLocation::local(&slow_water);
 
     studied_with_a_print(&here, &location)?;
 
@@ -2609,13 +2658,13 @@ fn a_recognition_that_heard_nothing_travels_as_nothing_and_a_print_alone_leaves_
     Ok(())
 }
 
-fn meddle(titles: &[&str]) -> Release {
+fn low_tide(titles: &[&str]) -> Release {
     Release {
         id: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("an mbid"),
         group: Some(Mbid::new("a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e").expect("an mbid")),
-        title: "Meddle".into(),
+        title: "Tideline".into(),
         credit: vec![Credit {
-            name: "Pink Floyd".into(),
+            name: "Example Band".into(),
             joined_by: String::new(),
             mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid")),
         }],
@@ -2668,12 +2717,17 @@ fn a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not
     let tree = Tree::new();
 
     tree.song(
-        "Meddle/one.wav",
-        "One of These Days",
-        "Pink Floyd",
-        "Meddle",
+        "Tideline/one.wav",
+        "Small Mercies",
+        "Example Band",
+        "Tideline",
     );
-    tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    tree.song(
+        "Tideline/lantern.wav",
+        "Lantern",
+        "Example Band",
+        "Tideline",
+    );
 
     let here = Library::open_in_memory()?;
     let there = Library::open_in_memory()?;
@@ -2681,7 +2735,7 @@ fn a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not
     scan(&here, &tree.root)?;
     scan(&there, &tree.root)?;
 
-    let release = meddle(&["One of These Days", "Echoes"]);
+    let release = low_tide(&["Small Mercies", "Lantern"]);
     let album = album_of(&here)?.id;
 
     here.land_release(album, &release)?;
@@ -2694,8 +2748,8 @@ fn a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not
         .collect::<Result<Vec<_>>>()?;
     let read_back = there.answers_to_share(AnswersMark::default(), 10)?;
     let landed = album_of(&there)?;
-    let floyd = there
-        .artist_named("Pink Floyd")?
+    let band = there
+        .artist_named("Example Band")?
         .and_then(|artist| there.artist_detail(artist).transpose())
         .transpose()?
         .expect("an artist");
@@ -2705,7 +2759,7 @@ fn a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not
     assert_eq!(taken, [true]);
     assert_eq!(landed.mbid, Some(release.id.clone()));
     assert_eq!(answers_of(&read_back), answers_of(&shared));
-    assert_eq!(floyd.mbid, release.credit[0].mbid);
+    assert_eq!(band.mbid, release.credit[0].mbid);
     assert!(there.albums_to_ask(WAITS, false)?.is_empty());
     assert!(there.tracks_to_ask(WAITS, false)?.is_empty());
     Ok(())
@@ -2719,15 +2773,30 @@ fn a_release_the_album_held_there_does_not_strictly_match_is_never_written() -> 
 
     for tree in [&here_tree, &there_tree] {
         tree.song(
-            "Meddle/one.wav",
-            "One of These Days",
-            "Pink Floyd",
-            "Meddle",
+            "Tideline/one.wav",
+            "Small Mercies",
+            "Example Band",
+            "Tideline",
         );
-        tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+        tree.song(
+            "Tideline/lantern.wav",
+            "Lantern",
+            "Example Band",
+            "Tideline",
+        );
     }
-    there_tree.song("Meddle/fearless.wav", "Fearless", "Pink Floyd", "Meddle");
-    shorter_tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    there_tree.song(
+        "Tideline/paper boats.wav",
+        "Paper Boats",
+        "Example Band",
+        "Tideline",
+    );
+    shorter_tree.song(
+        "Tideline/lantern.wav",
+        "Lantern",
+        "Example Band",
+        "Tideline",
+    );
 
     let here = Library::open_in_memory()?;
     let there = Library::open_in_memory()?;
@@ -2739,12 +2808,12 @@ fn a_release_the_album_held_there_does_not_strictly_match_is_never_written() -> 
 
     let album = album_of(&here)?.id;
 
-    here.land_release(album, &meddle(&["One of These Days", "Echoes"]))?;
+    here.land_release(album, &low_tide(&["Small Mercies", "Lantern"]))?;
     here.rematch(album)?;
 
     let shared = here.answers_to_share(AnswersMark::default(), 10)?;
     let another_band = Recording {
-        artist: "Pink Fluid".into(),
+        artist: "Example Brand".into(),
         ..shared[0].recording.clone()
     };
 
@@ -2769,14 +2838,24 @@ fn a_release_shared_by_a_track_held_under_another_name_lands_through_any_other_t
     let there_tree = Tree::new();
 
     here_tree.song(
-        "Meddle/one.wav",
-        "One of These Days",
-        "Pink Floyd",
-        "Meddle",
+        "Tideline/one.wav",
+        "Small Mercies",
+        "Example Band",
+        "Tideline",
     );
-    there_tree.song("Meddle/one.wav", "Un de ces jours", "Pink Floyd", "Meddle");
+    there_tree.song(
+        "Tideline/one.wav",
+        "Un de ces jours",
+        "Example Band",
+        "Tideline",
+    );
     for tree in [&here_tree, &there_tree] {
-        tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+        tree.song(
+            "Tideline/lantern.wav",
+            "Lantern",
+            "Example Band",
+            "Tideline",
+        );
     }
 
     let here = Library::open_in_memory()?;
@@ -2785,7 +2864,7 @@ fn a_release_shared_by_a_track_held_under_another_name_lands_through_any_other_t
     scan(&here, &here_tree.root)?;
     scan(&there, &there_tree.root)?;
 
-    let release = meddle(&["One of These Days", "Echoes"]);
+    let release = low_tide(&["Small Mercies", "Lantern"]);
     let album = album_of(&here)?.id;
 
     here.land_release(album, &release)?;
@@ -2795,7 +2874,7 @@ fn a_release_shared_by_a_track_held_under_another_name_lands_through_any_other_t
     let taken = there.take_shared_answer(&shared[0].recording, &shared[0].answer)?;
 
     assert_eq!(shared.len(), 1);
-    assert_eq!(shared[0].recording.title, "One of These Days");
+    assert_eq!(shared[0].recording.title, "Small Mercies");
     assert!(taken);
     assert_eq!(album_of(&there)?.mbid, Some(release.id));
     Ok(())
@@ -2805,7 +2884,12 @@ fn a_release_shared_by_a_track_held_under_another_name_lands_through_any_other_t
 fn a_cover_one_catalog_holds_for_a_release_lands_on_another_holding_it_without_one() -> Result<()> {
     let tree = Tree::new();
 
-    tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    tree.song(
+        "Tideline/lantern.wav",
+        "Lantern",
+        "Example Band",
+        "Tideline",
+    );
 
     let here = Library::open_in_memory()?;
     let there = Library::open_in_memory()?;
@@ -2813,7 +2897,7 @@ fn a_cover_one_catalog_holds_for_a_release_lands_on_another_holding_it_without_o
     scan(&here, &tree.root)?;
     scan(&there, &tree.root)?;
 
-    let release = meddle(&["Echoes"]);
+    let release = low_tide(&["Lantern"]);
     let picture = [b"\x89PNG\r\n\x1a\n".as_slice(), &[7; 64]].concat();
 
     for library in [&here, &there] {
@@ -2932,13 +3016,17 @@ mod shared_lists {
 #[test]
 fn a_listen_still_being_heard_is_offered_only_once_it_has_settled() -> Result<()> {
     let tree = Tree::new();
-    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let slow_water = tree.song("lantern.wav", "Lantern", "Example Band", "Tideline");
     let library = Library::open_in_memory()?;
 
     scan(&library, &tree.root)?;
 
     let counted = library
-        .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+        .track_played(
+            &MediaLocation::local(&slow_water),
+            None,
+            Duration::from_secs(2),
+        )?
         .expect("a counted play");
 
     library.listened(counted.listen, Duration::from_secs(30))?;

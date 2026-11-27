@@ -97,7 +97,7 @@ mod tests {
     };
 
     const PEER: DeviceId = DeviceId([2; 16]);
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
     const AN_INSTANT: i64 = 1_700_000_000_000_000_000;
 
     struct Bare;
@@ -191,7 +191,7 @@ mod tests {
 
     fn identified() -> Recording {
         Recording {
-            mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+            mbid: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
             ..quoted()
         }
     }

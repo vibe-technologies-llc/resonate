@@ -587,7 +587,7 @@ mod tests {
 
         assert!(watch.ran_out_of_watches(), "the cap still stands");
 
-        fs::write(covered.path.join("album/echoes.flac"), b"fLaC").expect("a file");
+        fs::write(covered.path.join("album/lantern.flac"), b"fLaC").expect("a file");
 
         assert_eq!(
             settled_within(&watch, HEARD_WITHIN),
@@ -599,8 +599,8 @@ mod tests {
     #[test]
     fn a_rename_that_names_neither_side_and_a_making_since_undone_are_weighed_against_the_disc() {
         let scratch = Scratch::new("undirected");
-        let before = scratch.path.join("album/echoes.flac");
-        let after = scratch.path.join("album/06 Echoes.flac");
+        let before = scratch.path.join("album/lantern.flac");
+        let after = scratch.path.join("album/06 Lantern.flac");
 
         fs::write(&after, b"fLaC").expect("a file");
 
@@ -630,7 +630,7 @@ mod tests {
     #[test]
     fn a_file_dropped_under_a_root_names_that_root_once_the_folder_is_quiet() {
         let scratch = Scratch::new("taken");
-        let file = scratch.path.join("album/echoes.flac");
+        let file = scratch.path.join("album/lantern.flac");
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
 
         fs::write(&file, b"fLaC").expect("a file");
@@ -662,7 +662,7 @@ mod tests {
     #[test]
     fn a_file_taken_away_is_named_on_its_own_without_waiting_on_the_whole_root() {
         let scratch = Scratch::new("gone");
-        let first = scratch.path.join("album/echoes.flac");
+        let first = scratch.path.join("album/lantern.flac");
         let second = scratch.path.join("album/time.flac");
 
         fs::write(&first, b"fLaC").expect("a file");
@@ -690,8 +690,8 @@ mod tests {
     #[test]
     fn a_file_renamed_under_a_root_is_left_to_the_scan_rather_than_forgotten_first() {
         let scratch = Scratch::new("renamed");
-        let before = scratch.path.join("album/echoes.flac");
-        let after = scratch.path.join("album/06 Echoes.flac");
+        let before = scratch.path.join("album/lantern.flac");
+        let after = scratch.path.join("album/06 Lantern.flac");
 
         fs::write(&before, b"fLaC").expect("a file");
 
@@ -783,7 +783,7 @@ mod tests {
     fn a_watch_laid_again_hands_out_what_the_one_it_replaced_had_heard() {
         let scratch = Scratch::new("laid-again");
         let elsewhere = Scratch::new("laid-again-elsewhere");
-        let taken = scratch.path.join("album/echoes.flac");
+        let taken = scratch.path.join("album/lantern.flac");
 
         fs::write(&taken, b"fLaC").expect("a file");
 
@@ -847,7 +847,7 @@ mod tests {
         assert!(watch.leaves_a_root_uncovered());
 
         fs::create_dir_all(&late).expect("the folder appears");
-        fs::write(late.join("echoes.flac"), b"fLaC").expect("a file no watch heard");
+        fs::write(late.join("lantern.flac"), b"fLaC").expect("a file no watch heard");
 
         watch.cover_again();
 
@@ -889,7 +889,7 @@ mod tests {
 
         assert!(!watch.leaves_a_root_uncovered());
 
-        fs::write(late.join("echoes.flac"), b"fLaC").expect("a file");
+        fs::write(late.join("lantern.flac"), b"fLaC").expect("a file");
 
         let until = Instant::now() + HEARD_WITHIN;
         while !settled_within(&watch, until.saturating_duration_since(Instant::now()))

@@ -453,7 +453,7 @@ mod tests {
         payload
     }
 
-    fn meddle() -> Vec<Track> {
+    fn low_tide() -> Vec<Track> {
         vec![
             Track::audio(1, 0),
             Track::audio(2, 15_773_100),
@@ -470,7 +470,7 @@ mod tests {
     fn a_sheet_a_ripper_embedded_names_every_track_at_the_sample_it_starts_on() {
         let file = flac(&[
             (STREAMINFO, vec![0; 34]),
-            (CUESHEET, cuesheet(&meddle(), None)),
+            (CUESHEET, cuesheet(&low_tide(), None)),
             (PADDING, vec![0; 64]),
         ]);
 
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn a_track_whose_music_starts_after_its_pregap_begins_at_the_first_index() {
-        let mut tracks = meddle();
+        let mut tracks = low_tide();
 
         tracks[1].points.insert(
             0,
@@ -534,7 +534,7 @@ mod tests {
 
     #[test]
     fn audio_ahead_of_the_first_tracks_first_index_is_the_first_tracks() {
-        let mut tracks = meddle();
+        let mut tracks = low_tide();
 
         tracks[0].points.insert(
             0,
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn a_block_names_each_tracks_isrc_and_the_discs_catalogue_number() {
-        let mut tracks = meddle();
+        let mut tracks = low_tide();
 
         tracks[1].isrc = "GBN9Y7100002";
 
@@ -586,7 +586,7 @@ mod tests {
 
     #[test]
     fn a_block_cut_short_of_what_it_declares_names_nothing() {
-        let payload = cuesheet(&meddle(), None);
+        let payload = cuesheet(&low_tide(), None);
         let mut file = MAGIC.to_vec();
 
         file.push(CUESHEET | LAST_BLOCK);
@@ -598,7 +598,7 @@ mod tests {
 
     #[test]
     fn a_block_naming_more_tracks_than_it_holds_names_none_of_them() {
-        let file = flac(&[(CUESHEET, cuesheet(&meddle(), Some(200)))]);
+        let file = flac(&[(CUESHEET, cuesheet(&low_tide(), Some(200)))]);
 
         assert_eq!(found(file).cue, None);
     }
@@ -609,7 +609,7 @@ mod tests {
 
         file.push(CUESHEET);
         file.extend_from_slice(&[0xFF, 0xFF, 0xFF]);
-        file.extend_from_slice(&cuesheet(&meddle(), None));
+        file.extend_from_slice(&cuesheet(&low_tide(), None));
 
         assert_eq!(found(file).cue, None);
 
@@ -636,7 +636,7 @@ mod tests {
         let mut file = b"ID3\x04\x00\x00\x00\x00\x01\x00".to_vec();
 
         file.extend_from_slice(&[0; 128]);
-        file.extend(flac(&[(CUESHEET, cuesheet(&meddle(), None))]));
+        file.extend(flac(&[(CUESHEET, cuesheet(&low_tide(), None))]));
 
         let cut = found(file).cue.expect("an embedded sheet");
 
@@ -652,7 +652,7 @@ mod tests {
 
     #[test]
     fn the_scan_leaves_the_stream_where_it_found_it() {
-        let mut source = Cursor::new(flac(&[(CUESHEET, cuesheet(&meddle(), None))]));
+        let mut source = Cursor::new(flac(&[(CUESHEET, cuesheet(&low_tide(), None))]));
 
         assert!(read(&mut source).cue.is_some());
         assert_eq!(source.position(), 0);
@@ -667,7 +667,7 @@ mod tests {
         let declared = MAX_CUESHEET_BYTES + 1;
 
         file.extend_from_slice(&(declared as u32).to_be_bytes()[1..]);
-        file.extend_from_slice(&cuesheet(&meddle(), None));
+        file.extend_from_slice(&cuesheet(&low_tide(), None));
 
         assert_eq!(found(file).cue, None);
     }

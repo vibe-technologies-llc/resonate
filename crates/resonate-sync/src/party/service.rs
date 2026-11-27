@@ -1283,12 +1283,12 @@ mod tests {
 
     #[test]
     fn a_request_is_named_by_who_asked_what_and_the_name_reads_back_from_its_bytes() {
-        let first = asked(1, 4, "Echoes");
-        let same_row_other_song = asked(1, 4, "Meddle");
-        let other_guest = asked(2, 4, "Echoes");
-        let other_row = asked(1, 5, "Echoes");
+        let first = asked(1, 4, "Slow Water");
+        let same_row_other_song = asked(1, 4, "Low Tide");
+        let other_guest = asked(2, 4, "Slow Water");
+        let other_row = asked(1, 5, "Slow Water");
 
-        assert_eq!(first.id(), asked(1, 4, "Echoes").id());
+        assert_eq!(first.id(), asked(1, 4, "Slow Water").id());
         assert_ne!(first.id(), same_row_other_song.id());
         assert_ne!(first.id(), other_guest.id());
         assert_ne!(first.id(), other_row.id());

@@ -2725,8 +2725,8 @@ mod tests {
         Recording {
             mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("mbid")),
             title: title.into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: Some(Duration::from_millis(1_403_000)),
         }
     }
@@ -3138,13 +3138,13 @@ mod tests {
     #[test]
     fn peer_frames_read_back_as_written() {
         let fetch = ToPeer::Fetch {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             offset: 1 << 40,
             bound: Bound::Unsaid,
         };
         let held = FromPeer::Held {
             items: vec![Held {
-                recording: song("One of These Days"),
+                recording: song("Small Hours"),
                 size: 30_000_000,
                 extension: "flac".into(),
             }],
@@ -3166,11 +3166,11 @@ mod tests {
             device: DeviceId([4; DEVICE_BYTES]),
         };
         let asked = ToPeer::Tags {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
         };
         let tagged = FromPeer::Tagged {
             tags: SongTags {
-                album_artist: Some("Pink Floyd".into()),
+                album_artist: Some("Example Band".into()),
                 date: Some("1971-10-30".into()),
                 track_number: Some(6),
                 track_total: Some(6),
@@ -3220,18 +3220,18 @@ mod tests {
      {
         let revision = Revision([7; REVISION_BYTES]);
         let unbound = ToPeer::Fetch {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             offset: 4096,
             bound: Bound::Unsaid,
         };
         let asked = [
             ToPeer::Fetch {
-                recording: song("Echoes"),
+                recording: song("Slow Water"),
                 offset: 0,
                 bound: Bound::Carried(None),
             },
             ToPeer::Fetch {
-                recording: song("Echoes"),
+                recording: song("Slow Water"),
                 offset: 4096,
                 bound: Bound::Carried(Some(revision)),
             },
@@ -3371,7 +3371,7 @@ mod tests {
     fn the_tags_of_a_song_travel_in_frames_an_earlier_build_refuses_whole_and_the_fetch_is_unchanged()
      {
         let asked = ToPeer::Tags {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
         }
         .encoded();
         let tagged = FromPeer::Tagged {
@@ -3379,7 +3379,7 @@ mod tests {
         }
         .encoded();
         let fetch = ToPeer::Fetch {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             offset: 0,
             bound: Bound::Unsaid,
         }
@@ -3431,9 +3431,9 @@ mod tests {
     fn lyricsfiles_asked_of_a_device_read_back_and_too_many_asked_at_once_are_refused() {
         let recording = Recording {
             mbid: Some(Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid")),
-            title: "Echoes".into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            title: "Slow Water".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: Some(Duration::from_secs(1_400)),
         };
         let asked = ToPeer::Lyricsfiles {
@@ -3442,7 +3442,7 @@ mod tests {
         let documented = FromPeer::Documented {
             recording: recording.clone(),
             lyricsfile: SharedLyricsfile {
-                text: "[00:01.00]Overhead".into(),
+                text: "[00:01.00]Sunlight".into(),
                 synced: true,
                 document: "version: '1.0'".into(),
             },
@@ -3509,14 +3509,14 @@ mod tests {
             SharedRecognition::Heard(SharedHeard {
                 recording: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
                 score: 96,
-                title: "Echoes".into(),
+                title: "Slow Water".into(),
                 artist: artist.map(str::to_owned),
             })
         };
         for recognition in [
             None,
             Some(SharedRecognition::Unheard),
-            Some(heard(Some("Pink Floyd"))),
+            Some(heard(Some("Example Band"))),
             Some(heard(None)),
         ] {
             let printed = FromPeer::Printed {
@@ -3594,7 +3594,7 @@ mod tests {
                 stamp: stamp(),
                 body: Some(PlaylistBody {
                     name: "Summer".into(),
-                    entries: vec![song("Echoes"), song("Fearless")],
+                    entries: vec![song("Slow Water"), song("Paper Boats")],
                 }),
             }),
             Change::Playlist(PlaylistNote {
@@ -3603,21 +3603,21 @@ mod tests {
                 body: None,
             }),
             Change::Favourite(FavouriteNote {
-                recording: song("Echoes"),
+                recording: song("Slow Water"),
                 favoured: false,
                 stamp: stamp(),
             }),
             Change::Listen(Listen {
                 device: DeviceId([1; DEVICE_BYTES]),
                 id: 99,
-                recording: song("Echoes"),
+                recording: song("Slow Water"),
                 at: 1_700_000_000_000_000_000,
                 heard: Duration::from_secs(60),
             }),
             Change::Handoff(Handoff {
                 device: DeviceId([1; DEVICE_BYTES]),
                 stamp: stamp(),
-                rows: vec![song("Echoes")],
+                rows: vec![song("Slow Water")],
                 at: 0,
                 position: Duration::from_secs(3),
                 playing: true,
@@ -3654,22 +3654,22 @@ mod tests {
                 body: None,
             }),
             Change::Answer(AnswerNote {
-                recording: song("Echoes"),
+                recording: song("Slow Water"),
                 stamp: stamp(),
                 answer: Answer::Lyrics(SharedLyrics {
-                    text: "[00:01.00] Overhead the albatross".into(),
+                    text: "[00:01.00] Sunlight the fireflies".into(),
                     synced: true,
                 }),
             }),
             Change::Answer(AnswerNote {
-                recording: song("Echoes"),
+                recording: song("Slow Water"),
                 stamp: stamp(),
                 answer: studied(),
             }),
             Change::PlaylistFolded(PlaylistFolded {
                 folded: PlaylistKey([8; 16]),
                 into: PlaylistKey([2; 16]),
-                entries: vec![song("Fearless")],
+                entries: vec![song("Paper Boats")],
             }),
             Change::QueryFolded(QueryFolded {
                 folded: PlaylistKey([9; 16]),
@@ -3681,12 +3681,12 @@ mod tests {
                 stamp: stamp(),
             }),
             Change::Deletion(DeletionNote {
-                recording: song("Echoes"),
+                recording: song("Slow Water"),
                 deleted: true,
                 stamp: stamp(),
             }),
             Change::Deletion(DeletionNote {
-                recording: song("Fearless"),
+                recording: song("Paper Boats"),
                 deleted: false,
                 stamp: stamp(),
             }),
@@ -3732,14 +3732,14 @@ mod tests {
     #[test]
     fn an_answer_of_a_kind_a_later_build_adds_is_skipped_and_the_rest_read() {
         let known = Change::Answer(AnswerNote {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             stamp: stamp(),
             answer: studied(),
         });
         let mut later = Writer::new();
 
         later.byte(7);
-        later.recording(&song("Echoes"));
+        later.recording(&song("Slow Water"));
         later.stamp(stamp());
         later.byte(200);
         later.text("a release");
@@ -3757,10 +3757,10 @@ mod tests {
     }
 
     fn released() -> Answer {
-        let echoes = SharedTrack {
+        let slow_water = SharedTrack {
             position: 6,
             number: "6".into(),
-            title: "Echoes".into(),
+            title: "Slow Water".into(),
             artist: None,
             recording: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("mbid")),
             track: None,
@@ -3774,9 +3774,9 @@ mod tests {
         Answer::Release(Box::new(SharedRelease {
             id: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
             group: Some(Mbid::new("a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e").expect("mbid")),
-            title: "Meddle".into(),
+            title: "Low Tide".into(),
             credit: vec![SharedCredit {
-                name: "Pink Floyd".into(),
+                name: "Example Band".into(),
                 joined_by: String::new(),
                 mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("mbid")),
             }],
@@ -3796,7 +3796,7 @@ mod tests {
                 position: 1,
                 format: Some("CD".into()),
                 title: None,
-                tracks: vec![echoes],
+                tracks: vec![slow_water],
             }],
         }))
     }
@@ -3804,12 +3804,12 @@ mod tests {
     #[test]
     fn a_release_reads_back_and_a_build_knowing_only_lyrics_and_studies_skips_it() {
         let release = Change::Answer(AnswerNote {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             stamp: stamp(),
             answer: released(),
         });
         let study = Change::Answer(AnswerNote {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             stamp: stamp(),
             answer: studied(),
         });
@@ -3842,12 +3842,12 @@ mod tests {
     fn the_peaks_of_a_study_read_back_and_a_build_knowing_only_lyrics_studies_and_releases_skips_them()
      {
         let study = Change::Answer(AnswerNote {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             stamp: stamp(),
             answer: studied(),
         });
         let peaks = Change::Answer(AnswerNote {
-            recording: song("Echoes"),
+            recording: song("Slow Water"),
             stamp: stamp(),
             answer: peaked(),
         });

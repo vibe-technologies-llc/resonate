@@ -1,5 +1,5 @@
 #EXTM3U
-#PLAYLIST:Meddle
-#EXTINF:1411,Pink Floyd - Echoes
-Pink Floyd/Meddle/06 Echoes.flac
-file:///music/Pink%20Floyd/Meddle/01%20One%20of%20These%20Days.flac
+#PLAYLIST:Low Tide
+#EXTINF:1411,Example Band - Slow Water
+Example Band/Low Tide/06 Slow Water.flac
+file:///music/Example%20Band/Low%20Tide/01%20Small%20Hours.flac

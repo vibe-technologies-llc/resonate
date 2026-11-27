@@ -12,12 +12,12 @@ use resonate_library::{
 };
 
 use crate::support::{
-    ALBUM, ANOTHER_CODE, ARTIST, CODE, Called, Canned, DAYBREAK, ECHOES, Fake, Fault, HOURS,
-    HOURS_BONUS, HOURS_FEARLESS, HOURS_GROUP, HOURS_REISSUE, ISRC, MEDDLE, MUSICBRAINZ, ORBITERS,
-    ORBITS_TITLES, RECORDING, RELEASE, RELEASE_GROUP, TITLE, Tree, Wav, YEAR, all, artist_named,
-    barcode, credited, echoes_found, enrich, hours_pressed, isrc, learnt_canned, mbid,
-    meddle_release, only_album, options, orbiters, orbits, orbits_group, orbits_match, orbits_rows,
-    release_row, scan, scanned_orbits,
+    ALBUM, ANOTHER_CODE, ARTIST, CODE, Called, Canned, DAYBREAK, Fake, Fault, HOURS, HOURS_BONUS,
+    HOURS_GROUP, HOURS_PAPER_BOATS, HOURS_REISSUE, ISRC, LOW_TIDE, MUSICBRAINZ, ORBITERS,
+    ORBITS_TITLES, RECORDING, RELEASE, RELEASE_GROUP, SLOW_WATER, TITLE, Tree, Wav, YEAR, all,
+    artist_named, barcode, credited, enrich, hours_pressed, isrc, learnt_canned, low_tide_release,
+    mbid, only_album, options, orbiters, orbits, orbits_group, orbits_match, orbits_rows,
+    release_row, scan, scanned_orbits, slow_water_found,
 };
 
 const A_STREAMING_LINK: &str = "https://open.spotify.com/track/1a2b3c4d5e";
@@ -29,9 +29,9 @@ fn a_share_names_the_track_and_the_album_it_came_from() -> Result<()> {
     let tree = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .text(YEAR, "1971")
@@ -48,7 +48,7 @@ fn a_share_names_the_track_and_the_album_it_came_from() -> Result<()> {
         .shareable(track.id)?
         .expect("the catalog holds the track it just scanned");
 
-    assert_eq!(shared.title, "Echoes");
+    assert_eq!(shared.title, "Lantern");
     assert_eq!(shared.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(shared.album.as_deref(), Some("Orbits"));
     assert_eq!(shared.year, Some(1971));
@@ -62,9 +62,9 @@ fn a_share_prefers_a_streaming_link_over_musicbrainz() -> Result<()> {
     let tree = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .identified(MUSICBRAINZ, RECORDING)
@@ -82,7 +82,7 @@ fn a_share_prefers_a_streaming_link_over_musicbrainz() -> Result<()> {
         &orbits(
             vec![release_row(
                 1,
-                "Echoes",
+                "Lantern",
                 vec![Link::new("streaming", A_STREAMING_LINK.to_owned())],
             )],
             vec![Link::new("wikipedia", AN_ENCYCLOPAEDIA_LINK.to_owned())],
@@ -113,9 +113,9 @@ fn a_share_falls_back_to_musicbrainz_where_no_service_is_linked() -> Result<()> 
     let tree = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .identified(MUSICBRAINZ, RECORDING)
@@ -131,7 +131,7 @@ fn a_share_falls_back_to_musicbrainz_where_no_service_is_linked() -> Result<()> 
     library.land_release(
         album.id,
         &orbits(
-            vec![release_row(1, "Echoes", Vec::new())],
+            vec![release_row(1, "Lantern", Vec::new())],
             vec![Link::new("wikipedia", AN_ENCYCLOPAEDIA_LINK.to_owned())],
         ),
     )?;
@@ -180,9 +180,9 @@ const A_DEEZER_LINK: &str = "https://www.deezer.com/track/677241";
 
 fn a_track_with_no_service_linked(tree: &Tree) -> Result<(Library, Track)> {
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(ARTIST, "The Orbiters")
             .text(ISRC, "GBAYE7100195")
             .identified(MUSICBRAINZ, RECORDING)
@@ -222,7 +222,7 @@ fn a_share_with_no_service_linked_asks_where_the_track_streams_and_hands_that_to
         panic!("the share asked {calls:?}");
     };
 
-    assert_eq!(asked.title, "Echoes");
+    assert_eq!(asked.title, "Lantern");
     assert_eq!(asked.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(asked.isrc.as_ref().map(Isrc::as_str), Some("GBAYE7100195"));
     assert!(asked.length.is_some(), "the share asked with no length");
@@ -290,16 +290,16 @@ fn linked_to_spotify() -> SongLink {
 fn a_link_to_a_song_nothing_holds_is_followed_by_its_isrc_to_the_recording_to_want() -> Result<()> {
     let library = Library::open_in_memory()?;
     let code = isrc(CODE);
-    let mut short = echoes_found().into_recording();
+    let mut short = slow_water_found().into_recording();
 
     short.id = mbid(RECORDING);
     short.length = Some(Duration::from_secs(300));
 
-    let mut take = echoes_found().into_recording();
+    let mut take = slow_water_found().into_recording();
 
     take.releases = vec![take.releases[1].clone()];
 
-    let whole = echoes_found().into_recording();
+    let whole = slow_water_found().into_recording();
     let fake = Fake::new(Canned {
         linked: Some(LinkNames {
             isrcs: vec![code.clone()],
@@ -316,11 +316,11 @@ fn a_link_to_a_song_nothing_holds_is_followed_by_its_isrc_to_the_recording_to_wa
         panic!("the link named no song to want");
     };
 
-    assert_eq!(found.recording, mbid(ECHOES));
-    assert_eq!(found.artist, "Pink Floyd");
+    assert_eq!(found.recording, mbid(SLOW_WATER));
+    assert_eq!(found.artist, "Example Band");
     assert_eq!(
         found.release.as_ref().map(|release| release.id.clone()),
-        Some(mbid(MEDDLE)),
+        Some(mbid(LOW_TIDE)),
         "the recording asked for whole is placed on the album it was meant for"
     );
     assert_eq!(
@@ -328,7 +328,7 @@ fn a_link_to_a_song_nothing_holds_is_followed_by_its_isrc_to_the_recording_to_wa
         vec![
             Called::SongLinked(linked_to_spotify()),
             Called::Isrc(code),
-            Called::Recording(mbid(ECHOES)),
+            Called::Recording(mbid(SLOW_WATER)),
         ]
     );
     Ok(())
@@ -413,7 +413,7 @@ fn a_service_listing(songs: Vec<ListedSong>) -> Fake {
             name: "Night drive".to_owned(),
             songs,
         }),
-        recordings: vec![echoes_found().into_recording()],
+        recordings: vec![slow_water_found().into_recording()],
         ..Canned::default()
     })
 }
@@ -425,9 +425,9 @@ fn a_playlist_kept_in_step_with_its_link_takes_what_the_service_added_and_drops_
     let link = PlaylistLink::Spotify("37i9dQZF1DXcBWIGoYBM5M".to_owned());
     let holding = a_service_listing(vec![
         ListedSong::Recording(mbid(RECORDING)),
-        ListedSong::Recording(mbid(ECHOES)),
+        ListedSong::Recording(mbid(SLOW_WATER)),
     ]);
-    let emptied = a_service_listing(vec![ListedSong::Recording(mbid(ECHOES))]);
+    let emptied = a_service_listing(vec![ListedSong::Recording(mbid(SLOW_WATER))]);
 
     let imported = library
         .import_playlist_link(&holding, &link, None, Upkeep::InStep)?
@@ -468,7 +468,7 @@ fn a_playlist_kept_in_step_with_its_link_takes_what_the_service_added_and_drops_
             .iter()
             .map(|found| found.recording.clone())
             .collect::<Vec<_>>(),
-        [mbid(ECHOES)],
+        [mbid(SLOW_WATER)],
         "a song nobody wants yet is offered to be wanted"
     );
     assert_eq!(
@@ -503,7 +503,7 @@ fn a_profile_holding(playlists: &[(u64, &str, ListedSong)]) -> Fake {
                 )
             })
             .collect(),
-        recordings: vec![echoes_found().into_recording()],
+        recordings: vec![slow_water_found().into_recording()],
         ..Canned::default()
     })
 }
@@ -515,7 +515,7 @@ fn a_profile_followed_takes_its_new_playlists_lets_go_of_its_deleted_ones_and_ne
     let profile = ProfileLink::Deezer(2_529);
     let first = a_profile_holding(&[
         (1, "Loved Tracks", ListedSong::Recording(mbid(RECORDING))),
-        (2, "Night drive", ListedSong::Recording(mbid(ECHOES))),
+        (2, "Night drive", ListedSong::Recording(mbid(SLOW_WATER))),
     ]);
     let later = a_profile_holding(&[
         (1, "Loved Tracks", ListedSong::Recording(mbid(RECORDING))),
@@ -589,9 +589,9 @@ fn a_spotify_account_listing(songs: Vec<ListedSong>) -> Fake {
         ],
         isrcs: vec![(
             Isrc::new("USRC17607839").expect("a code"),
-            echoes_found().into_recording(),
+            slow_water_found().into_recording(),
         )],
-        recordings: vec![echoes_found().into_recording()],
+        recordings: vec![slow_water_found().into_recording()],
         ..Canned::default()
     })
 }
@@ -603,8 +603,8 @@ fn a_spotify_account_is_followed_as_a_profile_each_song_by_its_isrc_and_one_not_
     let coded = ListedSong::Named(LinkNames {
         isrcs: vec![Isrc::new("USRC17607839").expect("a code")],
         length: None,
-        title: Some("Echoes".to_owned()),
-        artist: Some("Pink Floyd".to_owned()),
+        title: Some("Lantern".to_owned()),
+        artist: Some("Example Band".to_owned()),
     });
     let nothing_knows = ListedSong::Named(LinkNames {
         isrcs: vec![Isrc::new("ZZZZZ0000000").expect("a code")],
@@ -768,7 +768,7 @@ fn a_playlist_link_names_the_songs_held_the_songs_to_want_and_fills_a_playlist_o
             name: "Night drive".to_owned(),
             songs: vec![
                 ListedSong::Recording(mbid(RECORDING)),
-                ListedSong::Recording(mbid(ECHOES)),
+                ListedSong::Recording(mbid(SLOW_WATER)),
                 ListedSong::Named(LinkNames {
                     isrcs: vec![isrc(ANOTHER_CODE)],
                     length: None,
@@ -777,7 +777,7 @@ fn a_playlist_link_names_the_songs_held_the_songs_to_want_and_fills_a_playlist_o
                 }),
             ],
         }),
-        recordings: vec![echoes_found().into_recording()],
+        recordings: vec![slow_water_found().into_recording()],
         ..Canned::default()
     });
 
@@ -795,7 +795,7 @@ fn a_playlist_link_names_the_songs_held_the_songs_to_want_and_fills_a_playlist_o
             .iter()
             .map(|found| found.recording.clone())
             .collect::<Vec<_>>(),
-        [mbid(ECHOES)]
+        [mbid(SLOW_WATER)]
     );
     assert_eq!(followed.unnamed, 1);
     assert!(first.started);
@@ -854,10 +854,10 @@ fn titled_on_the_page(title: &str, artist: &str, seconds: u64) -> LinkNames {
     }
 }
 
-fn echoes_asked(wording: Wording) -> RecordingAsked {
+fn slow_water_asked(wording: Wording) -> RecordingAsked {
     RecordingAsked {
-        title: "Echoes".to_owned(),
-        artist: Some("Pink Floyd".to_owned()),
+        title: "Lantern".to_owned(),
+        artist: Some("Example Band".to_owned()),
         artist_mbid: None,
         release: None,
         length: Some(Duration::from_secs(1_410)),
@@ -865,41 +865,46 @@ fn echoes_asked(wording: Wording) -> RecordingAsked {
     }
 }
 
-fn echoes_asked_at_any_length(wording: Wording) -> RecordingAsked {
+fn slow_water_asked_at_any_length(wording: Wording) -> RecordingAsked {
     RecordingAsked {
         length: None,
-        ..echoes_asked(wording)
+        ..slow_water_asked(wording)
     }
 }
 
-fn echoes_lasting(seconds: u64) -> RecordingMatch {
+fn slow_water_lasting(seconds: u64) -> RecordingMatch {
     RecordingMatch {
         length: Some(Duration::from_secs(seconds)),
-        ..echoes_found()
+        ..slow_water_found()
     }
 }
 
 #[test]
 fn a_music_video_running_past_its_song_is_followed_to_the_take_it_plays() -> Result<()> {
     let library = Library::open_in_memory()?;
-    let mut live = echoes_lasting(1_402);
+    let mut live = slow_water_lasting(1_402);
 
     live.recording = mbid(HOURS_BONUS);
-    live.title = "Echoes (live)".to_owned();
+    live.title = "Lantern (live)".to_owned();
 
-    let mut demo = echoes_lasting(900);
+    let mut demo = slow_water_lasting(900);
 
     demo.recording = mbid(DAYBREAK);
 
     let video = Fake::new(Canned {
-        linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
-        found_recordings: vec![demo, echoes_lasting(1_330), live, echoes_lasting(1_500)],
-        recordings: vec![echoes_found().into_recording()],
+        linked: Some(titled_on_the_page("Lantern", "Example Band", 1_410)),
+        found_recordings: vec![
+            demo,
+            slow_water_lasting(1_330),
+            live,
+            slow_water_lasting(1_500),
+        ],
+        recordings: vec![slow_water_found().into_recording()],
         ..Canned::default()
     });
     let page_of_a_song = Fake::new(Canned {
-        linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
-        found_recordings: vec![echoes_lasting(1_330)],
+        linked: Some(titled_on_the_page("Lantern", "Example Band", 1_410)),
+        found_recordings: vec![slow_water_lasting(1_330)],
         ..Canned::default()
     });
 
@@ -907,15 +912,15 @@ fn a_music_video_running_past_its_song_is_followed_to_the_take_it_plays() -> Res
         panic!("the video named no song to want");
     };
 
-    assert_eq!(found.recording, mbid(ECHOES));
+    assert_eq!(found.recording, mbid(SLOW_WATER));
     assert_eq!(
         video.calls(),
         vec![
             Called::SongLinked(linked_to_youtube()),
-            Called::FindRecording(echoes_asked(Wording::Phrase)),
-            Called::FindRecording(echoes_asked(Wording::Words)),
-            Called::FindRecording(echoes_asked_at_any_length(Wording::Phrase)),
-            Called::Recording(mbid(ECHOES)),
+            Called::FindRecording(slow_water_asked(Wording::Phrase)),
+            Called::FindRecording(slow_water_asked(Wording::Words)),
+            Called::FindRecording(slow_water_asked_at_any_length(Wording::Phrase)),
+            Called::Recording(mbid(SLOW_WATER)),
         ],
         "the length the video ran bounded the take from above alone"
     );
@@ -933,12 +938,12 @@ fn a_song_link_naming_no_isrc_is_followed_by_its_title_and_artist_under_the_stri
     let library = Library::open_in_memory()?;
     let fake = Fake::new(Canned {
         linked: Some(titled_on_the_page(
-            "Pink Floyd - Echoes (Official Audio)",
-            "Pink Floyd - Topic",
+            "Example Band - Lantern (Official Audio)",
+            "Example Band - Topic",
             1_410,
         )),
-        found_recordings: vec![echoes_found()],
-        recordings: vec![echoes_found().into_recording()],
+        found_recordings: vec![slow_water_found()],
+        recordings: vec![slow_water_found().into_recording()],
         ..Canned::default()
     });
 
@@ -946,17 +951,17 @@ fn a_song_link_naming_no_isrc_is_followed_by_its_title_and_artist_under_the_stri
         panic!("the link's title and artist named no song to want");
     };
 
-    assert_eq!(found.recording, mbid(ECHOES));
+    assert_eq!(found.recording, mbid(SLOW_WATER));
     assert_eq!(
         found.release.as_ref().map(|release| release.id.clone()),
-        Some(mbid(MEDDLE))
+        Some(mbid(LOW_TIDE))
     );
     assert_eq!(
         fake.calls(),
         vec![
             Called::SongLinked(linked_to_youtube()),
-            Called::FindRecording(echoes_asked(Wording::Phrase)),
-            Called::Recording(mbid(ECHOES)),
+            Called::FindRecording(slow_water_asked(Wording::Phrase)),
+            Called::Recording(mbid(SLOW_WATER)),
         ],
         "the upload's billing was read as the song by the artist and the video's words left out"
     );
@@ -966,15 +971,15 @@ fn a_song_link_naming_no_isrc_is_followed_by_its_title_and_artist_under_the_stri
 #[test]
 fn a_song_link_whose_title_finds_only_a_near_miss_still_names_nothing() -> Result<()> {
     let library = Library::open_in_memory()?;
-    let mut by_another = echoes_found();
+    let mut by_another = slow_water_found();
 
     by_another.credit = credited(Some("The Orbiters"), None);
 
     let longer = Fake::new(Canned {
-        linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
+        linked: Some(titled_on_the_page("Lantern", "Example Band", 1_410)),
         found_recordings: vec![RecordingMatch {
             length: Some(Duration::from_secs(1_500)),
-            ..echoes_found()
+            ..slow_water_found()
         }],
         found_recordings_in_words: vec![by_another],
         ..Canned::default()
@@ -982,9 +987,9 @@ fn a_song_link_whose_title_finds_only_a_near_miss_still_names_nothing() -> Resul
     let nameless = Fake::new(Canned {
         linked: Some(LinkNames {
             artist: None,
-            ..titled_on_the_page("Echoes", "Pink Floyd", 1_410)
+            ..titled_on_the_page("Lantern", "Example Band", 1_410)
         }),
-        found_recordings: vec![echoes_found()],
+        found_recordings: vec![slow_water_found()],
         ..Canned::default()
     });
 
@@ -996,10 +1001,10 @@ fn a_song_link_whose_title_finds_only_a_near_miss_still_names_nothing() -> Resul
         longer.calls(),
         vec![
             Called::SongLinked(linked_to_youtube()),
-            Called::FindRecording(echoes_asked(Wording::Phrase)),
-            Called::FindRecording(echoes_asked(Wording::Words)),
-            Called::FindRecording(echoes_asked_at_any_length(Wording::Phrase)),
-            Called::FindRecording(echoes_asked_at_any_length(Wording::Words)),
+            Called::FindRecording(slow_water_asked(Wording::Phrase)),
+            Called::FindRecording(slow_water_asked(Wording::Words)),
+            Called::FindRecording(slow_water_asked_at_any_length(Wording::Phrase)),
+            Called::FindRecording(slow_water_asked_at_any_length(Wording::Words)),
         ],
         "a take longer than the video it was filmed for is no take of it"
     );
@@ -1092,7 +1097,7 @@ fn an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_p
         "2011",
         &[
             ("Daybreak", DAYBREAK),
-            ("Fearless", HOURS_FEARLESS),
+            ("Paper Boats", HOURS_PAPER_BOATS),
             ("Daybreak (demo)", HOURS_BONUS),
         ],
     ));
@@ -1115,7 +1120,7 @@ fn an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_p
     assert_eq!(release, Some(mbid(HOURS_REISSUE)));
     assert_eq!(
         songs,
-        [mbid(DAYBREAK), mbid(HOURS_FEARLESS), mbid(HOURS_BONUS)]
+        [mbid(DAYBREAK), mbid(HOURS_PAPER_BOATS), mbid(HOURS_BONUS)]
     );
     assert_eq!(library.wants()?.len(), 3);
     assert_eq!(
@@ -1142,7 +1147,7 @@ fn a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactl
     let elsewhere = Fake::new(Canned {
         artist_linked: Some("Rick Astley".to_owned()),
         found_artists: vec![ArtistMatch {
-            mbid: mbid(ECHOES),
+            mbid: mbid(SLOW_WATER),
             name: "Rick Astley".to_owned(),
             score: 100,
             kind: None,
@@ -1163,7 +1168,7 @@ fn a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactl
     assert_eq!(
         library.follow_artist_link(&elsewhere, &on_deezer)?,
         Linked::Artist(ArtistFound {
-            mbid: mbid(ECHOES),
+            mbid: mbid(SLOW_WATER),
             name: "Rick Astley".to_owned(),
         })
     );
@@ -1172,7 +1177,7 @@ fn a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactl
         Linked::Unnamed
     );
     assert_eq!(
-        library.follow_artist_link(&nobody, &ArtistLink::MusicBrainz(mbid(ECHOES)))?,
+        library.follow_artist_link(&nobody, &ArtistLink::MusicBrainz(mbid(SLOW_WATER)))?,
         Linked::Unnamed
     );
     Ok(())
@@ -1319,28 +1324,28 @@ fn a_link_to_an_album_the_library_holds_answers_the_album_and_how_many_songs_it_
 fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_out_on()
 -> Result<()> {
     let library = Library::open_in_memory()?;
-    let mut matched = echoes_found();
+    let mut matched = slow_water_found();
 
     matched.releases.clear();
 
     let mut recorded = matched.clone().into_recording();
 
-    recorded.releases = echoes_found().releases;
+    recorded.releases = slow_water_found().releases;
 
     let fake = Fake::new(Canned {
         found_songs: vec![matched],
         recordings: vec![recorded],
-        releases: vec![meddle_release()],
+        releases: vec![low_tide_release()],
         ..Canned::default()
     });
 
-    let found = library.found_elsewhere(&fake, "echoes")?;
+    let found = library.found_elsewhere(&fake, "lantern")?;
 
     assert_eq!(found[0].release, None);
 
     library.want_found(&fake, &found[0])?;
 
-    assert_eq!(library.wants()?[0].album_title, "Meddle");
+    assert_eq!(library.wants()?[0].album_title, "Tideline");
 
     let mut lost = found[0].clone();
 
@@ -1352,8 +1357,8 @@ fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_
     ));
 
     lost.release = Some(RecordingRelease {
-        id: mbid(MEDDLE),
-        title: "Meddle".to_owned(),
+        id: mbid(LOW_TIDE),
+        title: "Tideline".to_owned(),
         date: None,
         disc: None,
         position: None,

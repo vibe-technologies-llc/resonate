@@ -479,10 +479,10 @@ fn encode(source: &Path, target: &Path, codec: &[&str]) -> bool {
         .args(["-y", "-v", "error", "-i"])
         .arg(source)
         .args(codec)
-        .args(["-metadata", "title=Echoes"])
-        .args(["-metadata", "artist=Pink Floyd"])
-        .args(["-metadata", "album=Meddle"])
-        .args(["-metadata", "album_artist=Pink Floyd"])
+        .args(["-metadata", "title=Slow Water"])
+        .args(["-metadata", "artist=Example Band"])
+        .args(["-metadata", "album=Low Tide"])
+        .args(["-metadata", "album_artist=Example Band"])
         .args(["-metadata", "date=1971"])
         .args(["-metadata", "track=2"])
         .arg(target)
@@ -670,7 +670,7 @@ fn two_audio_tracks(tree: &Tree, name: &str) -> Option<PathBuf> {
         .arg("-i")
         .arg(&source)
         .args(["-map", "0:a", "-map", "1:a", "-c:a", "libvorbis"])
-        .args(["-metadata", "title=Echoes"])
+        .args(["-metadata", "title=Slow Water"])
         .arg(&target)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -905,13 +905,13 @@ fn a_wave_ffmpeg_writes_as_rf64_or_wave64_decodes_to_what_went_in_and_keeps_its_
                 "-rf64",
                 "always",
                 "-metadata",
-                "title=Echoes",
+                "title=Slow Water",
             ],
             Container::Rf64,
         ),
         (
             "tone.w64",
-            &["-c:a", "pcm_s24le", "-metadata", "title=Echoes"],
+            &["-c:a", "pcm_s24le", "-metadata", "title=Slow Water"],
             Container::Wave64,
         ),
     ];
@@ -932,7 +932,7 @@ fn a_wave_ffmpeg_writes_as_rf64_or_wave64_decodes_to_what_went_in_and_keeps_its_
         );
 
         if container == Container::Rf64 {
-            assert_eq!(info.tags.title.as_deref(), Some("Echoes"), "{name}");
+            assert_eq!(info.tags.title.as_deref(), Some("Slow Water"), "{name}");
         }
 
         assert_eq!(
@@ -968,10 +968,10 @@ fn a_sixty_four_bit_float_wave_rf64_or_caf_decodes_as_thirty_two_bit_float_losin
     }
 }
 
-const CHAPTERS: &str = ";FFMETADATA1\ntitle=Meddle\nartist=Pink Floyd\n\
-[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=One of These Days\n\
-[CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=1500\ntitle=A Pillow of Winds\n\
-[CHAPTER]\nTIMEBASE=1/1000\nSTART=1500\nEND=2000\ntitle=Fearless\n";
+const CHAPTERS: &str = ";FFMETADATA1\ntitle=Low Tide\nartist=Example Band\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=Small Hours\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=1500\ntitle=A Quilt of Winds\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=1500\nEND=2000\ntitle=Paper Boats\n";
 
 fn chaptered(tree: &Tree, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i32>)> {
     if !ffmpeg() {
@@ -1035,9 +1035,9 @@ fn a_file_carrying_chapters_is_cut_where_they_start_and_named_by_them() {
         assert_eq!(
             rows,
             vec![
-                (Frames::ZERO, Some("One of These Days".to_owned())),
-                (Frames(44_100), Some("A Pillow of Winds".to_owned())),
-                (Frames(66_150), Some("Fearless".to_owned())),
+                (Frames::ZERO, Some("Small Hours".to_owned())),
+                (Frames(44_100), Some("A Quilt of Winds".to_owned())),
+                (Frames(66_150), Some("Paper Boats".to_owned())),
             ],
             "{name}"
         );
@@ -1050,10 +1050,10 @@ fn a_file_carrying_chapters_is_cut_where_they_start_and_named_by_them() {
 
         assert_eq!(
             heard.tags.title.as_deref(),
-            Some("A Pillow of Winds"),
+            Some("A Quilt of Winds"),
             "{name}"
         );
-        assert_eq!(heard.tags.album.as_deref(), Some("Meddle"), "{name}");
+        assert_eq!(heard.tags.album.as_deref(), Some("Low Tide"), "{name}");
         assert_eq!(heard.duration, Some(Frames(22_050)), "{name}");
 
         if name.ends_with(".mka") {
@@ -1070,9 +1070,9 @@ fn a_file_carrying_chapters_is_cut_where_they_start_and_named_by_them() {
 fn chapter_comments_cut_a_flac_or_an_ogg_where_they_start() {
     let comments = [
         "CHAPTER001=00:00:00.000",
-        "CHAPTER001NAME=One of These Days",
+        "CHAPTER001NAME=Small Hours",
         "CHAPTER002=00:00:01.250",
-        "CHAPTER002NAME=A Pillow of Winds",
+        "CHAPTER002NAME=A Quilt of Winds",
     ];
     for (name, codec) in [("book.flac", "flac"), ("book.ogg", "libvorbis")] {
         let tree = Tree::new();
@@ -1095,8 +1095,8 @@ fn chapter_comments_cut_a_flac_or_an_ogg_where_they_start() {
                 .map(|(_, track)| (track.start.at(info.spec.rate), track.titled().title))
                 .collect::<Vec<_>>(),
             vec![
-                (Frames::ZERO, Some("One of These Days".to_owned())),
-                (Frames(55_125), Some("A Pillow of Winds".to_owned())),
+                (Frames::ZERO, Some("Small Hours".to_owned())),
+                (Frames(55_125), Some("A Quilt of Winds".to_owned())),
             ],
             "{name}"
         );
@@ -1801,7 +1801,7 @@ fn every_encoder_the_workspace_claims_is_recognised_by_the_probe() {
 
         assert_eq!(
             tags.title.as_deref(),
-            Some("Echoes"),
+            Some("Slow Water"),
             "{name} lost its title"
         );
 
@@ -1811,17 +1811,17 @@ fn every_encoder_the_workspace_claims_is_recognised_by_the_probe() {
 
         assert_eq!(
             tags.artist.as_deref(),
-            Some("Pink Floyd"),
+            Some("Example Band"),
             "{name} lost its artist"
         );
         assert_eq!(
             tags.album.as_deref(),
-            Some("Meddle"),
+            Some("Low Tide"),
             "{name} lost its album"
         );
         assert_eq!(
             tags.album_artist.as_deref(),
-            Some("Pink Floyd"),
+            Some("Example Band"),
             "{name} lost its album artist"
         );
         assert_eq!(tags.track_number, Some(2), "{name} lost its track number");
@@ -2039,7 +2039,7 @@ fn a_segment_title_names_a_track_only_where_it_is_the_only_one() {
 
     assert_eq!(
         one.tags.title.as_deref(),
-        Some("Echoes"),
+        Some("Slow Water"),
         "the only audio track lost the name the segment gave it"
     );
     assert_eq!(
@@ -2056,11 +2056,11 @@ fn the_credits_a_matroska_carries_reach_the_set_rather_than_stopping_at_the_raw_
         "credited.mka",
         &["-c:a", "libvorbis"],
         &[
-            "title=Echoes",
+            "title=Slow Water",
             "COMPOSER=Richard Wright",
             "CONDUCTOR=Ron Goodwin",
-            "LYRICIST=Roger Waters",
-            "PRODUCER=Pink Floyd",
+            "LYRICIST=Another Band",
+            "PRODUCER=Example Band",
             "SOUND_ENGINEER=Alan Parsons",
             "PUBLISHER=Harvest",
             "COPYRIGHT=(c) 1971 Harvest",
@@ -2078,8 +2078,8 @@ fn the_credits_a_matroska_carries_reach_the_set_rather_than_stopping_at_the_raw_
 
     assert_eq!(tags.credits.composer.as_deref(), Some("Richard Wright"));
     assert_eq!(tags.credits.conductor.as_deref(), Some("Ron Goodwin"));
-    assert_eq!(tags.credits.lyricist.as_deref(), Some("Roger Waters"));
-    assert_eq!(tags.credits.producer.as_deref(), Some("Pink Floyd"));
+    assert_eq!(tags.credits.lyricist.as_deref(), Some("Another Band"));
+    assert_eq!(tags.credits.producer.as_deref(), Some("Example Band"));
     assert_eq!(tags.credits.engineer.as_deref(), Some("Alan Parsons"));
     assert_eq!(tags.label.as_deref(), Some("Harvest"));
     assert_eq!(tags.copyright.as_deref(), Some("(c) 1971 Harvest"));
@@ -2155,8 +2155,8 @@ fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
         "metaflac",
         &[
             &format!("--import-picture-from={}", picture.to_string_lossy()),
-            "--set-tag=TITLE=Echoes",
-            "--set-tag=ARTIST=Pink Floyd",
+            "--set-tag=TITLE=Slow Water",
+            "--set-tag=ARTIST=Example Band",
             &target.to_string_lossy(),
         ],
     );
@@ -2183,8 +2183,8 @@ fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
 
     assert_eq!(info.bits_per_coded_sample, Some(16));
     assert_eq!(info.duration, Some(Frames(samples.len() as u64 / 2)));
-    assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
-    assert_eq!(info.tags.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(info.tags.title.as_deref(), Some("Slow Water"));
+    assert_eq!(info.tags.artist.as_deref(), Some("Example Band"));
 
     let cover = probe_cover_art(&Sources::local(), &location)
         .expect("a rip with a picture probes")
@@ -2223,9 +2223,9 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
             "standard",
             "--add-id3v2",
             "--tt",
-            "Echoes",
+            "Slow Water",
             "--ta",
-            "Pink Floyd",
+            "Example Band",
             &source.to_string_lossy(),
             &target.to_string_lossy(),
         ],
@@ -2249,8 +2249,8 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
     let lanes = usize::from(CD.channels);
     let music = Frames((samples.len() / lanes) as u64);
 
-    assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
-    assert_eq!(info.tags.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(info.tags.title.as_deref(), Some("Slow Water"));
+    assert_eq!(info.tags.artist.as_deref(), Some("Example Band"));
     assert!(
         info.encoder_delay > 0,
         "the LAME tag's priming never reached the decoder"
@@ -3076,17 +3076,17 @@ fn a_dsf_declaring_the_other_bit_order_decodes_to_the_same_tone() {
     }
 }
 
-const CUT_SHEET: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
+const CUT_SHEET: &str = r#"PERFORMER "Example Band"
+TITLE "Low Tide"
 FILE "cut.flac" WAVE
   TRACK 01 AUDIO
-    TITLE "One of These Days"
+    TITLE "Small Hours"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "A Pillow of Winds"
+    TITLE "A Quilt of Winds"
     INDEX 01 00:00:50
   TRACK 03 AUDIO
-    TITLE "Echoes"
+    TITLE "Slow Water"
     INDEX 01 00:01:25
 "#;
 
@@ -3190,7 +3190,7 @@ fn a_cuesheet_comment_names_its_tracks_and_wins_over_the_block_beside_it() {
         cut.audio_tracks()
             .map(|(_, track)| track.tags.title.clone().unwrap_or_default())
             .collect::<Vec<_>>(),
-        vec!["One of These Days", "A Pillow of Winds", "Echoes"]
+        vec!["Small Hours", "A Quilt of Winds", "Slow Water"]
     );
     assert_eq!(
         cut.tracks[0].start,
@@ -3217,7 +3217,7 @@ fn a_cuesheet_comment_names_its_tracks_and_wins_over_the_block_beside_it() {
 
     assert_eq!(
         both.tracks[0].tags.title.as_deref(),
-        Some("One of These Days"),
+        Some("Small Hours"),
         "the block was read where the comment carries the names"
     );
     assert_eq!(
@@ -3930,7 +3930,7 @@ fn an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_ha
         };
         let location = MediaLocation::local(&path);
         let before = decode(&path).samples;
-        let long = "Echoes ".repeat(40);
+        let long = "Slow Water ".repeat(26);
         let long = long.trim_end();
 
         titled_with(&path, long);
@@ -3943,7 +3943,7 @@ fn an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_ha
         let grown = fs::metadata(&path).expect("the file").len();
         let grown_as = identity_of(&path);
 
-        titled_with(&path, "Echoes (Live)");
+        titled_with(&path, "Slow Water (Live)");
 
         let shrunk = fs::metadata(&path).expect("the file").len();
 
@@ -3962,8 +3962,8 @@ fn an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_ha
             .expect("a readable Ogg file")
             .tags;
 
-        assert_eq!(read.title.as_deref(), Some("Echoes (Live)"));
-        assert_eq!(read.album.as_deref(), Some("Meddle"));
+        assert_eq!(read.title.as_deref(), Some("Slow Water (Live)"));
+        assert_eq!(read.album.as_deref(), Some("Low Tide"));
         assert_eq!(decode(&path).samples, before, "{name} had its audio moved");
     }
 }
@@ -4645,13 +4645,13 @@ fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
             &target,
             &[
                 "-w",
-                "Title=Echoes",
+                "Title=Slow Water",
                 "-w",
-                "Artist=Pink Floyd",
+                "Artist=Example Band",
                 "-w",
-                "Album=Meddle",
+                "Album=Low Tide",
                 "-w",
-                "Album Artist=Pink Floyd",
+                "Album Artist=Example Band",
                 "-w",
                 "Track=2/6",
                 "-w",
@@ -4665,10 +4665,10 @@ fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
         .expect("a tagged WavPack probes");
     let tags = &report.info.tags;
 
-    assert_eq!(tags.title.as_deref(), Some("Echoes"));
-    assert_eq!(tags.artist.as_deref(), Some("Pink Floyd"));
-    assert_eq!(tags.album.as_deref(), Some("Meddle"));
-    assert_eq!(tags.album_artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(tags.title.as_deref(), Some("Slow Water"));
+    assert_eq!(tags.artist.as_deref(), Some("Example Band"));
+    assert_eq!(tags.album.as_deref(), Some("Low Tide"));
+    assert_eq!(tags.album_artist.as_deref(), Some("Example Band"));
     assert_eq!(tags.track_number, Some(2));
     assert_eq!(tags.date.as_deref(), Some("1971"));
 
@@ -6309,7 +6309,7 @@ fn a_matroska_tags_element_after_the_clusters_is_replaced_rather_than_shadowed()
 
     let location = MediaLocation::local(&path);
 
-    assert_eq!(tags_of(&location).artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(tags_of(&location).artist.as_deref(), Some("Example Band"));
 
     let before = packets_of(&path);
 
@@ -6326,13 +6326,13 @@ fn a_matroska_tags_element_after_the_clusters_is_replaced_rather_than_shadowed()
     assert_eq!(tags_elements(&after), 1);
     assert_eq!(read.title.as_deref(), Some("Creep"));
     assert_eq!(read.artist.as_deref(), Some("Radiohead"));
-    assert_eq!(read.album.as_deref(), Some("Meddle"));
-    assert_eq!(read.album_artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(read.album.as_deref(), Some("Low Tide"));
+    assert_eq!(read.album_artist.as_deref(), Some("Example Band"));
     assert_eq!(packets_of(&path), before);
     assert_eq!(
         after
-            .windows(10)
-            .filter(|held| *held == b"Pink Floyd")
+            .windows(12)
+            .filter(|held| *held == b"Example Band")
             .count(),
         1,
         "the old artist is still in the file beside the album artist"
@@ -6535,14 +6535,14 @@ fn a_matroska_tagged_by_its_targets_keeps_what_it_read_through_a_write_of_someth
             tag_at(
                 EBML_ALBUM_LEVEL,
                 &[
-                    simple_tag_of("TITLE", "Meddle"),
+                    simple_tag_of("TITLE", "Low Tide"),
                     sorted_under("ARTIST", "Band", "Band, The"),
                 ],
             ),
             tag_at(
                 EBML_TRACK_LEVEL,
                 &[
-                    simple_tag_of("TITLE", "Echoes"),
+                    simple_tag_of("TITLE", "Slow Water"),
                     sorted_under("ARTIST", "Singer", "Singer, The"),
                 ],
             ),
@@ -6553,7 +6553,7 @@ fn a_matroska_tagged_by_its_targets_keeps_what_it_read_through_a_write_of_someth
     let tags = FileTags::over(Sources::local());
     let before = tags_of(&location);
 
-    assert_eq!(before.album.as_deref(), Some("Meddle"));
+    assert_eq!(before.album.as_deref(), Some("Low Tide"));
     assert_eq!(before.album_artist_sort.as_deref(), Some("Band, The"));
     assert_eq!(before.artist_sort.as_deref(), Some("Singer, The"));
 
@@ -6563,8 +6563,8 @@ fn a_matroska_tagged_by_its_targets_keeps_what_it_read_through_a_write_of_someth
     let read = tags_of(&location);
 
     assert_eq!(read.track_number, Some(4));
-    assert_eq!(read.title.as_deref(), Some("Echoes"));
-    assert_eq!(read.album.as_deref(), Some("Meddle"));
+    assert_eq!(read.title.as_deref(), Some("Slow Water"));
+    assert_eq!(read.album.as_deref(), Some("Low Tide"));
     assert_eq!(read.artist.as_deref(), Some("Singer"));
     assert_eq!(read.album_artist.as_deref(), Some("Band"));
     assert_eq!(read.album_artist_sort.as_deref(), Some("Band, The"));

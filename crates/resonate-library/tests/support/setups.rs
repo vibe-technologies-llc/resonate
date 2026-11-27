@@ -20,8 +20,8 @@ use resonate_library::{
 use resonate_providers::{Provider, Providers};
 
 use crate::support::{
-    ALBUM, ANSWERED, ARTIST, ASKED, Called, Canned, DAYBREAK, Fake, HOURS, HOURS_FEARLESS,
-    HOURS_GROUP, MEDDLE_SHEET, ORBITERS, Offering, Stored, THE_FILES_LENGTH, TITLE, TRACK,
+    ALBUM, ANSWERED, ARTIST, ASKED, Called, Canned, DAYBREAK, Fake, HOURS, HOURS_GROUP,
+    HOURS_PAPER_BOATS, LOW_TIDE_SHEET, ORBITERS, Offering, Stored, THE_FILES_LENGTH, TITLE, TRACK,
     TWO_DISC_SHEET, Tree, Wav, YEAR, hours_pressed, hours_pressings, options, orbiters,
     orbiters_groups, orbits, orbits_match, orbits_rows, png, scan,
 };
@@ -45,7 +45,7 @@ pub(crate) fn read_as(
 pub(crate) fn scanned_playlist_tree() -> (Tree, Library) {
     let tree = Tree::new();
 
-    for (file, title) in [("a.wav", "Echoes"), ("b.wav", "Dogs"), ("c.wav", "Sheep")] {
+    for (file, title) in [("a.wav", "Lantern"), ("b.wav", "Dogs"), ("c.wav", "Sheep")] {
         tree.write(file, &Wav::new().text(TITLE, title).build());
     }
 
@@ -59,9 +59,9 @@ pub(crate) fn one_song(bits: u16, frames: usize) -> Vec<u8> {
     Wav::new()
         .bits(bits)
         .frames(frames)
-        .text(TITLE, "Echoes")
-        .text(ARTIST, "Pink Floyd")
-        .text(ALBUM, "Meddle")
+        .text(TITLE, "Lantern")
+        .text(ARTIST, "Example Band")
+        .text(ALBUM, "Tideline")
         .text(TRACK, "6")
         .build()
 }
@@ -90,9 +90,9 @@ pub(crate) fn stems(cuts: &[Cut]) -> Vec<String> {
 pub(crate) fn sortable_playlist_tree() -> (Tree, Library) {
     let tree = Tree::new();
     let written = [
-        ("c.wav", "Echoes", "Syd Barrett", 44_100),
-        ("a.wav", "Dogs", "Pink Floyd", 13_230),
-        ("b.wav", "Sheep", "Roger Waters", 4_410),
+        ("c.wav", "Lantern", "Zephyr Band", 44_100),
+        ("a.wav", "Dogs", "Example Band", 13_230),
+        ("b.wav", "Sheep", "Hollow Band", 4_410),
     ];
 
     for (file, title, artist, frames) in written {
@@ -161,8 +161,8 @@ pub(crate) fn matched(library: &Library, text: &str) -> Result<Vec<String>> {
 pub(crate) fn scanned_sheet() -> (Tree, Library) {
     let tree = Tree::new();
 
-    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
-    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("Tideline.wav", &Wav::new().frames(44_100).build());
+    tree.write("Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let library = Library::open_in_memory().expect("an in-memory library");
 
@@ -173,9 +173,9 @@ pub(crate) fn scanned_sheet() -> (Tree, Library) {
 pub(crate) fn scanned_two_discs() -> (Tree, Library) {
     let tree = Tree::new();
 
-    tree.write("CD1/wall.wav", &Wav::new().frames(44_100).build());
-    tree.write("CD2/wall.wav", &Wav::new().frames(44_100).build());
-    tree.write("The Wall.cue", TWO_DISC_SHEET.as_bytes());
+    tree.write("CD1/lighthouse.wav", &Wav::new().frames(44_100).build());
+    tree.write("CD2/lighthouse.wav", &Wav::new().frames(44_100).build());
+    tree.write("The Lighthouse.cue", TWO_DISC_SHEET.as_bytes());
 
     let library = Library::open_in_memory().expect("an in-memory library");
 
@@ -387,7 +387,7 @@ pub(crate) fn learnt_canned() -> Canned {
             hours_pressed(
                 HOURS,
                 "1996-05-06",
-                &[("Daybreak", DAYBREAK), ("Fearless", HOURS_FEARLESS)],
+                &[("Daybreak", DAYBREAK), ("Paper Boats", HOURS_PAPER_BOATS)],
             ),
         ],
         artists: vec![orbiters()],
@@ -469,17 +469,17 @@ pub(crate) fn recorded(database: &Path, file: &Path) -> Option<String> {
         .expect("the scan stored the track")
 }
 
-pub(crate) fn wanted_san_tropez(library: &Library) -> Result<WantId> {
+pub(crate) fn wanted_harbour_lights(library: &Library) -> Result<WantId> {
     let album = only_album(library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
 
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
     library.want(missing.id)
 }

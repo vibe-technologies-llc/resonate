@@ -623,14 +623,14 @@ mod tests {
         Wanted {
             title: title.map(str::to_owned),
             artist: artist.map(str::to_owned),
-            ..Wanted::for_media(MediaLocation::local("/music/Echoes.flac"))
+            ..Wanted::for_media(MediaLocation::local("/music/Slow Water.flac"))
         }
     }
 
     fn lasting(seconds: u64) -> Wanted {
         Wanted {
             duration: Some(Duration::from_secs(seconds)),
-            ..Wanted::for_media(MediaLocation::local("/music/Echoes.flac"))
+            ..Wanted::for_media(MediaLocation::local("/music/Slow Water.flac"))
         }
     }
 
@@ -672,37 +672,37 @@ mod tests {
     #[test]
     fn a_line_stamped_word_by_word_is_read_as_its_words_and_ends_where_the_last_stamp_says() {
         let lyrics = lyrics(
-            "[00:12.00]<00:12.00>Overhead, <00:12.60>the <00:12.90>albatross<00:14.10>\n\
-             [00:15.00]Hangs motionless",
+            "[00:12.00]<00:12.00>Sunlight, <00:12.60>the <00:12.90>fireflies<00:14.10>\n\
+             [00:15.00]Sways in silence",
         )
         .expect("the sheet holds lines");
         let line = &lyrics.lines()[0];
 
         assert_eq!(lyrics.detail(), crate::Detail::Words);
-        assert_eq!(line.text, "Overhead, the albatross");
+        assert_eq!(line.text, "Sunlight, the fireflies");
         assert_eq!(
             spelled(line),
             [
-                ("Overhead, ", millis(12_000)),
+                ("Sunlight, ", millis(12_000)),
                 ("the ", millis(12_600)),
-                ("albatross", millis(12_900))
+                ("fireflies", millis(12_900))
             ]
         );
         assert_eq!(line.until, Some(millis(14_100)));
         assert!(lyrics.lines()[1].words.is_empty());
-        assert_eq!(lyrics.lines()[1].text, "Hangs motionless");
+        assert_eq!(lyrics.lines()[1].text, "Sways in silence");
     }
 
     #[test]
     fn stamps_written_with_spaces_around_them_and_no_closing_stamp_still_read_as_words() {
-        let lyrics = lyrics("[00:01.00] <00:01.00> all <00:01.50> that you touch")
+        let lyrics = lyrics("[00:01.00] <00:01.00> every <00:01.50> lamp you lit")
             .expect("the sheet holds lines");
         let line = &lyrics.lines()[0];
 
-        assert_eq!(line.text, "all that you touch");
+        assert_eq!(line.text, "every lamp you lit");
         assert_eq!(
             spelled(line),
-            [("all ", millis(1_000)), ("that you touch", millis(1_500))]
+            [("every ", millis(1_000)), ("lamp you lit", millis(1_500))]
         );
         assert_eq!(line.until, None);
     }
@@ -739,38 +739,38 @@ mod tests {
     #[test]
     fn syllables_an_id3_sylt_frame_times_are_read_as_the_words_of_their_line() {
         let lyrics = lyrics(
-            "[00:01.000]<00:01.000>Over<00:01.400>head <00:01.900>the albatross\n\
-             [00:05.000]<00:05.000>Hangs<00:05.600> motionless\n",
+            "[00:01.000]<00:01.000>Sun<00:01.400>light <00:01.900>the fireflies\n\
+             [00:05.000]<00:05.000>Sways<00:05.600> in silence\n",
         )
         .expect("the sheet holds lines");
 
-        assert_eq!(lyrics.lines()[0].text, "Overhead the albatross");
+        assert_eq!(lyrics.lines()[0].text, "Sunlight the fireflies");
         assert_eq!(
             spelled(&lyrics.lines()[0]),
             [
-                ("Over", millis(1_000)),
-                ("head ", millis(1_400)),
-                ("the albatross", millis(1_900))
+                ("Sun", millis(1_000)),
+                ("light ", millis(1_400)),
+                ("the fireflies", millis(1_900))
             ]
         );
-        assert_eq!(lyrics.lines()[1].text, "Hangs motionless");
+        assert_eq!(lyrics.lines()[1].text, "Sways in silence");
     }
 
     #[test]
     fn an_id3_sylt_line_led_by_a_bracket_the_reader_would_take_is_read_as_its_text() {
         let lyrics = lyrics(
-            "[00:01.000]\\[offset:5] overhead\n\
-             [00:09.000]\\[00:09.00] the albatross\n\
-             [00:12.000][Chorus] hangs\n",
+            "[00:01.000]\\[offset:5] sunlight\n\
+             [00:09.000]\\[00:09.00] the fireflies\n\
+             [00:12.000][Chorus] sways\n",
         )
         .expect("the sheet holds lines");
 
         assert_eq!(
             timed(&lyrics),
             [
-                (millis(1_000), "[offset:5] overhead"),
-                (millis(9_000), "[00:09.00] the albatross"),
-                (millis(12_000), "[Chorus] hangs"),
+                (millis(1_000), "[offset:5] sunlight"),
+                (millis(9_000), "[00:09.00] the fireflies"),
+                (millis(12_000), "[Chorus] sways"),
             ]
         );
     }
@@ -790,12 +790,12 @@ mod tests {
 
     #[test]
     fn a_sheet_larger_than_any_lyric_is_refused_before_a_line_of_it_is_read() {
-        assert!(refused(&"all that you touch\n".repeat(64 * 1024)));
+        assert!(refused(&"every lamp you lit\n".repeat(64 * 1024)));
     }
 
     #[test]
     fn a_line_carrying_more_moments_than_a_set_holds_is_refused_rather_than_repeated() {
-        let repeated = format!("{}all that you touch", "[00:00.00]".repeat(50_000));
+        let repeated = format!("{}every lamp you lit", "[00:00.00]".repeat(50_000));
 
         assert!(repeated.len() <= LARGEST_SHEET);
         assert!(refused(&repeated));
@@ -803,16 +803,16 @@ mod tests {
 
     #[test]
     fn a_timestamped_file_is_read_as_a_synced_set_in_the_order_it_is_sung() {
-        let lyrics = lyrics("[00:10.00]and everything under the sun\n[00:05.50]all that you see\n[00:00.00]all that you touch\n")
+        let lyrics = lyrics("[00:10.00]and every window on the quay\n[00:05.50]each road I know\n[00:00.00]every lamp you lit\n")
             .expect("a set");
 
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert_eq!(
             timed(&lyrics),
             [
-                (Duration::ZERO, "all that you touch"),
-                (Duration::from_millis(5_500), "all that you see"),
-                (Duration::from_secs(10), "and everything under the sun"),
+                (Duration::ZERO, "every lamp you lit"),
+                (Duration::from_millis(5_500), "each road I know"),
+                (Duration::from_secs(10), "and every window on the quay"),
             ]
         );
     }
@@ -840,13 +840,13 @@ mod tests {
 
     #[test]
     fn several_moments_in_front_of_one_line_sing_it_at_each_of_them() {
-        let lyrics = lyrics("[00:04.00][01:04.00]all that you touch").expect("a set");
+        let lyrics = lyrics("[00:04.00][01:04.00]every lamp you lit").expect("a set");
 
         assert_eq!(
             timed(&lyrics),
             [
-                (Duration::from_secs(4), "all that you touch"),
-                (Duration::from_secs(64), "all that you touch"),
+                (Duration::from_secs(4), "every lamp you lit"),
+                (Duration::from_secs(64), "every lamp you lit"),
             ]
         );
     }
@@ -886,19 +886,19 @@ mod tests {
 
     #[test]
     fn a_metadata_bracket_is_not_a_line_and_its_text_is_not_sung() {
-        let lyrics = lyrics("[ti:Echoes]\n[ar:Pink Floyd]\n[al:Meddle: remastered]\n[00:01.00]overhead the albatross")
+        let lyrics = lyrics("[ti:Slow Water]\n[ar:Example Band]\n[al:Low Tide: remastered]\n[00:01.00]sunlight the fireflies")
             .expect("a set");
 
         assert_eq!(
             timed(&lyrics),
-            [(Duration::from_secs(1), "overhead the albatross")]
+            [(Duration::from_secs(1), "sunlight the fireflies")]
         );
     }
 
     #[test]
     fn an_offset_shifts_every_moment_and_a_positive_one_sings_the_line_earlier() {
-        let earlier = lyrics("[offset:+500]\n[00:10.00]all that you touch").expect("a set");
-        let later = lyrics("[offset:-500]\n[00:10.00]all that you touch").expect("a set");
+        let earlier = lyrics("[offset:+500]\n[00:10.00]every lamp you lit").expect("a set");
+        let later = lyrics("[offset:-500]\n[00:10.00]every lamp you lit").expect("a set");
 
         assert_eq!(timed(&earlier)[0].0, Duration::from_millis(9_500));
         assert_eq!(timed(&later)[0].0, Duration::from_millis(10_500));
@@ -906,23 +906,23 @@ mod tests {
 
     #[test]
     fn an_offset_larger_than_the_first_moment_lands_on_zero_rather_than_wrapping() {
-        let lyrics = lyrics("[offset:+9000]\n[00:01.00]all that you touch").expect("a set");
+        let lyrics = lyrics("[offset:+9000]\n[00:01.00]every lamp you lit").expect("a set");
 
         assert_eq!(timed(&lyrics)[0].0, Duration::ZERO);
     }
 
     #[test]
     fn a_file_with_no_moments_at_all_is_read_as_an_unsynced_set() {
-        let lyrics = lyrics("all that you touch\n\nall that you see\n").expect("a set");
+        let lyrics = lyrics("every lamp you lit\n\neach road I know\n").expect("a set");
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
-        assert_eq!(plain(&lyrics), ["all that you touch", "all that you see"]);
+        assert_eq!(plain(&lyrics), ["every lamp you lit", "each road I know"]);
     }
 
     #[test]
     fn an_untimed_line_among_timed_ones_is_kept_where_it_was_written() {
         let lyrics = lyrics(
-            "[Verse 1]\n[00:05.00]all that you touch\n(all that you do)\n[00:10.00]all that you see\n\nWritten by Roger",
+            "[Verse 1]\n[00:05.00]every lamp you lit\n(all that you do)\n[00:10.00]each road I know\n\nWritten by Roger",
         )
         .expect("a set");
 
@@ -935,9 +935,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 (None, "[Verse 1]"),
-                (Some(Duration::from_secs(5)), "all that you touch"),
+                (Some(Duration::from_secs(5)), "every lamp you lit"),
                 (None, "(all that you do)"),
-                (Some(Duration::from_secs(10)), "all that you see"),
+                (Some(Duration::from_secs(10)), "each road I know"),
                 (None, "Written by Roger"),
             ]
         );
@@ -957,7 +957,7 @@ mod tests {
 
     #[test]
     fn untimed_lines_leave_the_timed_line_beside_them_lit_to_its_own_end() {
-        let lyrics = lyrics("[00:00.00]all that you touch\n(chorus)\n[00:04.00]all that you see")
+        let lyrics = lyrics("[00:00.00]every lamp you lit\n(chorus)\n[00:04.00]each road I know")
             .expect("a set");
 
         assert_eq!(
@@ -972,7 +972,7 @@ mod tests {
 
     #[test]
     fn a_moment_with_nothing_behind_it_is_a_break_rather_than_a_line() {
-        let lyrics = lyrics("[00:01.00]all that you touch\n[00:20.00]\n[00:30.00]all that you see")
+        let lyrics = lyrics("[00:01.00]every lamp you lit\n[00:20.00]\n[00:30.00]each road I know")
             .expect("a set");
 
         assert_eq!(lyrics.lines().len(), 3);
@@ -982,22 +982,22 @@ mod tests {
     #[test]
     fn a_file_holding_nothing_worth_drawing_answers_with_nothing() {
         assert!(lyrics("").is_none());
-        assert!(lyrics("[ti:Echoes]\n[ar:Pink Floyd]\n").is_none());
+        assert!(lyrics("[ti:Slow Water]\n[ar:Example Band]\n").is_none());
         assert!(lyrics("[00:01.00]\n[00:02.00]   \n").is_none());
     }
 
     #[test]
     fn a_bracket_that_is_neither_a_moment_nor_an_id_tag_is_the_line_it_was_written_on() {
-        let lyrics = lyrics("[Chorus]\nall that you touch\n[Verse 2: Roger]\nall that you see")
+        let lyrics = lyrics("[Chorus]\nevery lamp you lit\n[Verse 2: Roger]\neach road I know")
             .expect("a set");
 
         assert_eq!(
             plain(&lyrics),
             [
                 "[Chorus]",
-                "all that you touch",
+                "every lamp you lit",
                 "[Verse 2: Roger]",
-                "all that you see",
+                "each road I know",
             ]
         );
     }
@@ -1035,7 +1035,7 @@ mod tests {
             assert_eq!(read.lines()[2].at, None, "{sheet}");
         }
 
-        assert_eq!(escaped_for_lrc("all that you touch"), "all that you touch");
+        assert_eq!(escaped_for_lrc("every lamp you lit"), "every lamp you lit");
         assert_eq!(escaped_for_lrc("a [bracket] inside"), "a [bracket] inside");
         assert_eq!(escaped_for_lrc("[Chorus] x"), "[Chorus] x");
         assert_eq!(escaped_for_lrc("[v2: x] y"), "[v2: x] y");
@@ -1051,24 +1051,24 @@ mod tests {
 
     #[test]
     fn a_marker_in_front_of_a_sung_line_is_sung_with_it() {
-        let lyrics = lyrics("[00:01.00][Chorus] all that you touch").expect("a set");
+        let lyrics = lyrics("[00:01.00][Chorus] every lamp you lit").expect("a set");
 
         assert_eq!(
             timed(&lyrics),
-            [(Duration::from_secs(1), "[Chorus] all that you touch")]
+            [(Duration::from_secs(1), "[Chorus] every lamp you lit")]
         );
     }
 
     #[test]
     fn a_marker_ahead_of_the_stamps_still_lets_them_time_the_line() {
-        let lyrics = lyrics("[Chorus] [00:12.00]all that you touch\n[00:15.00]all that you see")
+        let lyrics = lyrics("[Chorus] [00:12.00]every lamp you lit\n[00:15.00]each road I know")
             .expect("a set");
 
         assert_eq!(
             timed(&lyrics),
             [
-                (Duration::from_secs(12), "[Chorus] all that you touch"),
-                (Duration::from_secs(15), "all that you see"),
+                (Duration::from_secs(12), "[Chorus] every lamp you lit"),
+                (Duration::from_secs(15), "each road I know"),
             ]
         );
     }
@@ -1076,14 +1076,14 @@ mod tests {
     #[test]
     fn an_id_tag_the_reader_keeps_is_still_not_a_line_of_its_own() {
         let sheet = sheet(
-            "[by:a stranger]\n[re:an editor]\n[ve:1.0]\n[length:03:20]\n[00:01.00]overhead the \
-             albatross",
+            "[by:a stranger]\n[re:an editor]\n[ve:1.0]\n[length:03:20]\n[00:01.00]sunlight the \
+             fireflies",
         );
         let lyrics = sheet.lyrics.expect("a set");
 
         assert_eq!(
             timed(&lyrics),
-            [(Duration::from_secs(1), "overhead the albatross")]
+            [(Duration::from_secs(1), "sunlight the fireflies")]
         );
         assert_eq!(lyrics.credits().sheet_by.as_deref(), Some("a stranger"));
         assert_eq!(sheet.declared.length, Some(Duration::from_secs(200)));
@@ -1097,12 +1097,12 @@ mod tests {
     #[test]
     fn what_a_sheet_says_about_its_own_making_is_kept_beside_the_lines() {
         let credits = credits(
-            "[al:Meddle]\n[au:Roger Waters]\n[by:a stranger]\n[re:LRCGET]\n[ve:0.5]\n\
-             [00:01.00]overhead the albatross",
+            "[al:Low Tide]\n[au:Another Band]\n[by:a stranger]\n[re:LRCGET]\n[ve:0.5]\n\
+             [00:01.00]sunlight the fireflies",
         );
 
-        assert_eq!(credits.album.as_deref(), Some("Meddle"));
-        assert_eq!(credits.words_by.as_deref(), Some("Roger Waters"));
+        assert_eq!(credits.album.as_deref(), Some("Low Tide"));
+        assert_eq!(credits.words_by.as_deref(), Some("Another Band"));
         assert_eq!(credits.sheet_by.as_deref(), Some("a stranger"));
         assert_eq!(credits.editor.as_deref(), Some("LRCGET"));
         assert_eq!(credits.version.as_deref(), Some("0.5"));
@@ -1110,7 +1110,7 @@ mod tests {
 
     #[test]
     fn the_tool_tag_names_the_editor_the_way_the_re_tag_does() {
-        let credits = credits("[tool:LRCGET]\n[00:01.00]overhead the albatross");
+        let credits = credits("[tool:LRCGET]\n[00:01.00]sunlight the fireflies");
 
         assert_eq!(credits.editor.as_deref(), Some("LRCGET"));
     }
@@ -1118,7 +1118,7 @@ mod tests {
     #[test]
     fn a_sheet_that_credits_nobody_credits_nobody() {
         assert_eq!(
-            credits("[ti:Echoes]\n[00:01.00]overhead the albatross"),
+            credits("[ti:Slow Water]\n[00:01.00]sunlight the fireflies"),
             Credits::default()
         );
     }
@@ -1132,7 +1132,7 @@ mod tests {
             ("1:03:20", 3_800_000),
         ] {
             let sheet = sheet(&format!(
-                "[length:{written}]\n[00:01.00]overhead the albatross"
+                "[length:{written}]\n[00:01.00]sunlight the fireflies"
             ));
 
             assert_eq!(
@@ -1153,7 +1153,7 @@ mod tests {
             "99999999999999999999:01",
         ] {
             let sheet = sheet(&format!(
-                "[length:{written}]\n[00:01.00]overhead the albatross"
+                "[length:{written}]\n[00:01.00]sunlight the fireflies"
             ));
 
             assert_eq!(sheet.declared.length, None, "{written}");
@@ -1162,21 +1162,21 @@ mod tests {
 
     #[test]
     fn a_sheet_running_to_another_length_is_not_about_this_track() {
-        let sheet = sheet("[length:03:20]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[length:03:20]\n[00:01.00]sunlight the fireflies");
 
         assert!(sheet.declared.names_another_track(&lasting(23 * 60 + 31)));
     }
 
     #[test]
     fn a_length_rounded_to_the_second_by_one_and_ripped_by_the_other_still_agrees() {
-        let sheet = sheet("[length:23:31]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[length:23:31]\n[00:01.00]sunlight the fireflies");
 
         assert!(!sheet.declared.names_another_track(&lasting(23 * 60 + 33)));
     }
 
     #[test]
     fn a_length_is_weighed_to_the_tolerance_the_reader_names_and_no_further() {
-        let sheet = sheet("[length:03:20]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[length:03:20]\n[00:01.00]sunlight the fireflies");
         let declared = Duration::from_secs(200);
         let at_the_edge = (declared + LENGTH_MAY_DIFFER_BY).as_secs();
 
@@ -1190,40 +1190,40 @@ mod tests {
 
     #[test]
     fn a_sheet_that_declares_no_length_is_about_whatever_it_sits_beside() {
-        let sheet = sheet("[00:01.00]overhead the albatross");
+        let sheet = sheet("[00:01.00]sunlight the fireflies");
 
         assert!(!sheet.declared.names_another_track(&lasting(200)));
     }
 
     #[test]
     fn a_track_whose_length_is_unknown_is_not_something_a_sheet_can_contradict() {
-        let sheet = sheet("[length:03:20]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[length:03:20]\n[00:01.00]sunlight the fireflies");
 
         assert!(!sheet.declared.names_another_track(&about(None, None)));
     }
 
     #[test]
     fn what_a_sheet_says_it_is_comes_off_its_id_tags() {
-        let sheet = sheet("[ti:Echoes]\n[AR:Pink Floyd]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[ti:Slow Water]\n[AR:Example Band]\n[00:01.00]sunlight the fireflies");
 
-        assert_eq!(sheet.declared.title.as_deref(), Some("Echoes"));
-        assert_eq!(sheet.declared.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(sheet.declared.title.as_deref(), Some("Slow Water"));
+        assert_eq!(sheet.declared.artist.as_deref(), Some("Example Band"));
     }
 
     #[test]
     fn a_sheet_declaring_the_track_it_sits_beside_is_the_one_it_names() {
-        let sheet = sheet("[ti:Echoes]\n[ar:Pink Floyd]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[ti:Slow Water]\n[ar:Example Band]\n[00:01.00]sunlight the fireflies");
 
         assert!(
             !sheet
                 .declared
-                .names_another_track(&about(Some("Echoes"), Some("Pink Floyd")))
+                .names_another_track(&about(Some("Slow Water"), Some("Example Band")))
         );
     }
 
     #[test]
     fn a_sheet_naming_another_song_is_not_about_this_track() {
-        let sheet = sheet("[ti:Echoes]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[ti:Slow Water]\n[00:01.00]sunlight the fireflies");
 
         assert!(
             sheet
@@ -1245,11 +1245,11 @@ mod tests {
 
     #[test]
     fn punctuation_case_and_a_longer_naming_of_the_same_track_all_still_agree() {
-        let sheet = sheet("[ti:echoes]\n[ar:Pink Floyd]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[ti:slow water]\n[ar:Example Band]\n[00:01.00]sunlight the fireflies");
 
         assert!(!sheet.declared.names_another_track(&about(
-            Some("Echoes (Live at Pompeii)"),
-            Some("Pink Floyd feat. Roger Waters")
+            Some("Slow Water (Live at the Quarry)"),
+            Some("Example Band feat. Another Band")
         )));
     }
 
@@ -1350,19 +1350,19 @@ mod tests {
 
     #[test]
     fn a_sheet_that_declares_nothing_is_about_whatever_it_sits_beside() {
-        let sheet = sheet("[00:01.00]overhead the albatross");
+        let sheet = sheet("[00:01.00]sunlight the fireflies");
 
         assert!(
             !sheet
                 .declared
-                .names_another_track(&about(Some("Time"), Some("Pink Floyd")))
+                .names_another_track(&about(Some("Time"), Some("Example Band")))
         );
         assert!(!sheet.declared.names_another_track(&about(None, None)));
     }
 
     #[test]
     fn a_track_the_player_cannot_name_is_not_something_a_sheet_can_contradict() {
-        let sheet = sheet("[ti:Echoes]\n[ar:Pink Floyd]\n[00:01.00]overhead the albatross");
+        let sheet = sheet("[ti:Slow Water]\n[ar:Example Band]\n[00:01.00]sunlight the fireflies");
 
         assert!(!sheet.declared.names_another_track(&about(None, None)));
     }
@@ -1370,8 +1370,8 @@ mod tests {
     #[test]
     fn a_moment_no_arithmetic_can_hold_is_not_a_moment() {
         for overflowing in [
-            "[99999999999999999999:01.00]all that you touch",
-            "[18446744073709551615:01.00]all that you touch",
+            "[99999999999999999999:01.00]every lamp you lit",
+            "[18446744073709551615:01.00]every lamp you lit",
         ] {
             let lyrics = lyrics(overflowing).expect("a set");
 

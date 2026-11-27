@@ -1488,8 +1488,8 @@ mod tests {
         let folder = Folder::new("through-the-handle");
         let was = paged(2, 10, 3);
         let tagged = paged(2, 50, 9);
-        let track = folder.0.join("Us and Them.flac");
-        let staged = folder.0.join(".Us and Them.staged.flac");
+        let track = folder.0.join("Near and Far.flac");
+        let staged = folder.0.join(".Near and Far.staged.flac");
 
         fs::write(&track, &was).expect("a track");
 
@@ -1617,13 +1617,13 @@ mod tests {
     #[test]
     fn a_whole_copy_a_failed_write_back_kept_is_finished_even_by_its_own_process() {
         let folder = Folder::new("torn-copy");
-        let track = folder.0.join("Brain Damage.flac");
+        let track = folder.0.join("Quiet Harbour.flac");
 
         fs::write(&track, [1_u8; 8]).expect("a torn track");
 
         let ours = folder
             .0
-            .join(kept_name(OsStr::new("Brain Damage.flac"), WHOLE_SUFFIX));
+            .join(kept_name(OsStr::new("Quiet Harbour.flac"), WHOLE_SUFFIX));
 
         fs::write(&ours, recorded_against(&track, &[2_u8; 8])).expect("a copy being written back");
 
@@ -1832,7 +1832,7 @@ mod tests {
     fn kept_away_by_a_dead_writer(folder: &Folder, was: &[u8]) -> (PathBuf, PathBuf, PathBuf) {
         let spool = folder.0.join("spool");
         let music = folder.0.join("music");
-        let track = music.join("Echoes.flac");
+        let track = music.join("Slow Water.flac");
 
         fs::create_dir_all(&spool).expect("a spool folder");
         fs::create_dir_all(&music).expect("a music folder");
@@ -1852,7 +1852,7 @@ mod tests {
         )
         .expect("an undo kept under the spool");
         let dead = spool.join(format!(
-            ".Echoes.flac.{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{JOURNAL_SUFFIX}"
+            ".Slow Water.flac.{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{JOURNAL_SUFFIX}"
         ));
 
         fs::rename(&undo.journal, &dead).expect("an undo a dead writer left");
@@ -1874,7 +1874,7 @@ mod tests {
         let folder = Folder::new("refused-beside");
         let spool = folder.0.join("spool");
         let music = folder.0.join("music");
-        let track = music.join("Echoes.flac");
+        let track = music.join("Slow Water.flac");
 
         fs::create_dir_all(&spool).expect("a spool folder");
         fs::create_dir_all(&music).expect("a music folder");
@@ -1968,7 +1968,7 @@ mod tests {
     #[test]
     fn a_write_cut_short_between_its_pages_is_rolled_back_whole() {
         let folder = Folder::new("torn");
-        let track = folder.0.join("Echoes.flac");
+        let track = folder.0.join("Slow Water.flac");
         let was = vec![1_u8; 64];
 
         fs::write(&track, &was).expect("a track");
@@ -2005,7 +2005,7 @@ mod tests {
     #[test]
     fn a_write_that_grew_the_file_and_was_cut_short_is_rolled_back_to_its_length() {
         let folder = Folder::new("grown");
-        let track = folder.0.join("Wish You Were Here.wav");
+        let track = folder.0.join("Glad You Came By.wav");
         let was = vec![1_u8; 20];
         let changes = [Change {
             start: 16,
@@ -2117,7 +2117,7 @@ mod tests {
         let folder = Folder::new("laid");
         let was = paged(5, 10, 3);
         let wanted = [&was[..PAGE_BYTES * 3], &[9; 100][..]].concat();
-        let track = folder.0.join("Brain Damage.wav");
+        let track = folder.0.join("Quiet Harbour.wav");
         let copy = folder.0.join("copy");
 
         fs::write(&track, &was).expect("a track");
@@ -2222,12 +2222,12 @@ mod tests {
     #[test]
     fn only_a_dead_writers_journal_beside_the_track_is_mended() {
         let folder = Folder::new("beside");
-        let track = folder.0.join("Brain Damage.flac");
+        let track = folder.0.join("Quiet Harbour.flac");
 
         fs::write(&track, [1_u8; 8]).expect("a track");
 
         let ours = folder.0.join(format!(
-            ".Brain Damage.flac.{}-0{JOURNAL_SUFFIX}",
+            ".Quiet Harbour.flac.{}-0{JOURNAL_SUFFIX}",
             process::id()
         ));
 
@@ -2560,24 +2560,24 @@ mod tests {
     #[test]
     fn a_whole_copy_name_another_writer_holds_is_left_whole_and_a_fresh_one_taken() {
         let folder = Folder::new("whole-collision");
-        let track = folder.0.join("Brain Damage.flac");
+        let track = folder.0.join("Quiet Harbour.flac");
         let was = paged(3, 100, 10);
         let theirs = paged(2, 50, 90);
 
         fs::write(&track, &was).expect("a track");
 
-        let their_staged = folder.0.join(".Brain Damage.theirs.flac");
+        let their_staged = folder.0.join(".Quiet Harbour.theirs.flac");
         let their_held = staged_holding(&their_staged, &theirs);
 
         let their_copy =
             WholeCopy::named_beside(&their_staged, &their_held, &track).expect("their whole copy");
-        let planted = kept_next(&folder.0, "Brain Damage.flac", WHOLE_SUFFIX, 0);
+        let planted = kept_next(&folder.0, "Quiet Harbour.flac", WHOLE_SUFFIX, 0);
 
         fs::rename(&their_copy.copy, &planted).expect("their copy under the next name");
 
         let record = fs::read(&planted).expect("their copy");
 
-        let our_staged = folder.0.join(".Brain Damage.ours.flac");
+        let our_staged = folder.0.join(".Quiet Harbour.ours.flac");
         let our_held = staged_holding(&our_staged, &paged(1, 0, 40));
 
         let ours = WholeCopy::named_beside(&our_staged, &our_held, &track).expect("our whole copy");
@@ -2606,9 +2606,9 @@ mod tests {
     fn a_move_with_no_exclusive_rename_and_no_link_keeps_a_competing_name_and_lands_under_a_fresh_one()
      {
         let folder = Folder::new("reserved-collision");
-        let track = OsStr::new("Echoes.flac");
-        let staged = folder.0.join(".Echoes.ours.flac");
-        let planted = kept_next(&folder.0, "Echoes.flac", WHOLE_SUFFIX, 0);
+        let track = OsStr::new("Slow Water.flac");
+        let staged = folder.0.join(".Slow Water.ours.flac");
+        let planted = kept_next(&folder.0, "Slow Water.flac", WHOLE_SUFFIX, 0);
 
         fs::write(&staged, b"ours").expect("our staged copy");
         fs::write(&planted, b"theirs").expect("another writer's copy under the next name");

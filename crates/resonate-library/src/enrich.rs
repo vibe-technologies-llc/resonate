@@ -3446,7 +3446,7 @@ mod tests {
         assert_eq!(taken_from(&undated_alone, &owned).as_deref(), Some(PORTAL));
     }
 
-    const HEARD: &str = "One of These Days";
+    const HEARD: &str = "Small Mercies";
 
     fn heard(artist: Option<&str>, length: Option<Duration>) -> TrackToAsk {
         TrackToAsk {
@@ -3517,8 +3517,8 @@ mod tests {
 
     #[test]
     fn a_file_name_names_something_only_where_it_holds_a_word_that_is_not_a_placeholder() {
-        assert!(names_something("Echoes"));
-        assert!(names_something("San Tropez"));
+        assert!(names_something("Lantern"));
+        assert!(names_something("Harbour Lights"));
         assert!(!names_something("1"));
         assert!(!names_something("07"));
         assert!(!names_something("track07"));
@@ -3533,7 +3533,7 @@ mod tests {
         const FIRST: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
         const SECOND: &str = "2b3c4d5e-6f7a-4b2c-9d3e-4f5a6b7c8d9e";
 
-        let unkinded = |id| recording_release(id, "Meddle", Some("1971"));
+        let unkinded = |id| recording_release(id, "Tideline", Some("1971"));
         let kinded = |id| RecordingRelease {
             issued: crate::Issued {
                 kind: Some("Album".to_owned()),
@@ -3586,7 +3586,7 @@ mod tests {
 
         assert!(
             matches_a_recording(
-                &found_recording(100, "One of These Days!", Some("the orbiters"), long),
+                &found_recording(100, "Small Mercies!", Some("the orbiters"), long),
                 &played
             )
             .is_some()
@@ -3923,7 +3923,7 @@ mod tests {
         );
 
         let another_title = vec![Recording {
-            title: "A Pillow of Winds".to_owned(),
+            title: "A Quilt of Winds".to_owned(),
             ..take(ORBITS, Some(Duration::from_millis(500_000)), Vec::new())
         }];
 

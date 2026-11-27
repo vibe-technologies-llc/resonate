@@ -682,7 +682,7 @@ mod tests {
         for ending in ["\r", "\r\n", "\n"] {
             let m3u = [
                 "#EXTM3U",
-                "#EXTINF:350,Pink Floyd - Echoes",
+                "#EXTINF:350,Example Band - Lantern",
                 "a.flac",
                 "b.flac",
                 "",
@@ -799,14 +799,14 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_file_uri_is_read_whatever_the_case_of_its_scheme_and_host_and_with_one_slash() {
-        let echoes = Some(PathBuf::from("/tmp/a.wav"));
+        let slow_water = Some(PathBuf::from("/tmp/a.wav"));
 
-        assert_eq!(read_at("FILE:///tmp/a.wav"), echoes);
-        assert_eq!(read_at("File://LocalHost/tmp/a.wav"), echoes);
-        assert_eq!(read_at("file:/tmp/a.wav"), echoes);
-        assert_eq!(read_at("FILE:/tmp/a.wav"), echoes);
-        assert_eq!(read_at("file:/tmp/a.wav#t=30"), echoes);
-        assert_eq!(read_at("file:/tmp/a.wav?query"), echoes);
+        assert_eq!(read_at("FILE:///tmp/a.wav"), slow_water);
+        assert_eq!(read_at("File://LocalHost/tmp/a.wav"), slow_water);
+        assert_eq!(read_at("file:/tmp/a.wav"), slow_water);
+        assert_eq!(read_at("FILE:/tmp/a.wav"), slow_water);
+        assert_eq!(read_at("file:/tmp/a.wav#t=30"), slow_water);
+        assert_eq!(read_at("file:/tmp/a.wav?query"), slow_water);
         assert_eq!(
             read_at("file:track.flac"),
             Some(PathBuf::from("/music/file:track.flac"))
@@ -831,8 +831,8 @@ mod tests {
     fn a_file_uri_a_windows_player_wrote_reads_with_its_separators_turned_and_an_escaped_one_kept()
     {
         assert_eq!(
-            read_at("file:///music\\Pink Floyd\\Echoes.flac"),
-            Some(PathBuf::from("/music/Pink Floyd/Echoes.flac"))
+            read_at("file:///music\\Example Band\\Lantern.flac"),
+            Some(PathBuf::from("/music/Example Band/Lantern.flac"))
         );
         assert_eq!(
             read_at("file:///music/AC%5CDC.wav"),
@@ -843,13 +843,19 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_file_uri_is_read_up_to_its_query_or_fragment_and_an_escaped_mark_stays_in_the_name() {
-        let echoes = Some(PathBuf::from("/music/Echoes.flac"));
+        let slow_water = Some(PathBuf::from("/music/Lantern.flac"));
 
-        assert_eq!(read_at("file:///music/Echoes.flac#t=10"), echoes);
-        assert_eq!(read_at("file:///music/Echoes.flac?at=10"), echoes);
-        assert_eq!(read_at("file:///music/Echoes.flac?at=10#t=10"), echoes);
-        assert_eq!(read_at("file:///music/Echoes.flac#frames=0-44100"), echoes);
-        assert_eq!(read_at("file://localhost/music/Echoes.flac#t=10"), echoes);
+        assert_eq!(read_at("file:///music/Lantern.flac#t=10"), slow_water);
+        assert_eq!(read_at("file:///music/Lantern.flac?at=10"), slow_water);
+        assert_eq!(read_at("file:///music/Lantern.flac?at=10#t=10"), slow_water);
+        assert_eq!(
+            read_at("file:///music/Lantern.flac#frames=0-44100"),
+            slow_water
+        );
+        assert_eq!(
+            read_at("file://localhost/music/Lantern.flac#t=10"),
+            slow_water
+        );
         assert_eq!(
             read_at("file:///music/Take%235%3F.flac"),
             Some(PathBuf::from("/music/Take#5?.flac"))
@@ -899,22 +905,22 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn a_file_beneath_the_sheet_is_named_from_it_whichever_prefix_either_carries() {
-        let file = Path::new(r"\\?\C:\Music\Pink Floyd\Echoes.flac");
+        let file = Path::new(r"\\?\C:\Music\Example Band\Lantern.flac");
 
         for beside in [r"C:\Music", r"\\?\C:\Music", r"c:\Music\"] {
             let beside = Path::new(beside);
             let row = as_a_row(file, beside).expect("a row");
 
-            assert_eq!(row, r"Pink Floyd\Echoes.flac", "beside {beside:?}");
+            assert_eq!(row, r"Example Band\Lantern.flac", "beside {beside:?}");
             assert_eq!(read_back(&row, beside), Some(file.to_path_buf()));
         }
 
-        let plain = Path::new(r"C:\Music\Pink Floyd\Echoes.flac");
+        let plain = Path::new(r"C:\Music\Example Band\Lantern.flac");
         let beside = Path::new(r"\\?\C:\Music");
 
         assert_eq!(
             as_a_row(plain, beside).expect("a row"),
-            r"Pink Floyd\Echoes.flac"
+            r"Example Band\Lantern.flac"
         );
     }
 
@@ -925,13 +931,13 @@ mod tests {
 
         for (file, uri) in [
             (
-                r"\\?\D:\Elsewhere\Meddle #1.flac",
-                "file:///D:/Elsewhere/Meddle%20%231.flac",
+                r"\\?\D:\Elsewhere\Tideline #1.flac",
+                "file:///D:/Elsewhere/Tideline%20%231.flac",
             ),
             (r"C:\Elsewhere\a.flac", "file:///C:/Elsewhere/a.flac"),
             (
-                r"\\?\UNC\nas\music\Echoes.flac",
-                "file://nas/music/Echoes.flac",
+                r"\\?\UNC\nas\music\Lantern.flac",
+                "file://nas/music/Lantern.flac",
             ),
         ] {
             let file = Path::new(file);
@@ -951,8 +957,8 @@ mod tests {
     fn every_format_written_on_windows_reads_back_the_files_it_named() {
         let beside = Path::new(r"C:\Music");
         let files = [
-            Path::new(r"\\?\C:\Music\Pink Floyd\Echoes.flac"),
-            Path::new(r"\\?\D:\Elsewhere\Meddle #1.flac"),
+            Path::new(r"\\?\C:\Music\Example Band\Lantern.flac"),
+            Path::new(r"\\?\D:\Elsewhere\Tideline #1.flac"),
             Path::new(r"\\?\UNC\nas\music\Dogs.flac"),
         ];
         let rows: Vec<SheetRow<'_>> = files
@@ -962,7 +968,7 @@ mod tests {
                 described: Described {
                     seconds: None,
                     artist: None,
-                    title: String::from("Echoes"),
+                    title: String::from("Lantern"),
                 },
                 timed: None,
             })
@@ -999,20 +1005,20 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn a_row_another_windows_player_wrote_reads_as_the_spelling_the_scan_stores() {
-        let echoes = Some(PathBuf::from(r"\\?\C:\Music\Pink Floyd\Echoes.flac"));
+        let slow_water = Some(PathBuf::from(r"\\?\C:\Music\Example Band\Lantern.flac"));
 
         for beside in [r"C:\Music", r"\\?\C:\Music"] {
             let beside = Path::new(beside);
 
-            assert_eq!(read_back(r"Pink Floyd\Echoes.flac", beside), echoes);
-            assert_eq!(read_back("Pink Floyd/Echoes.flac", beside), echoes);
+            assert_eq!(read_back(r"Example Band\Lantern.flac", beside), slow_water);
+            assert_eq!(read_back("Example Band/Lantern.flac", beside), slow_water);
             assert_eq!(
-                read_back(r"..\Music\Pink Floyd\Echoes.flac", beside),
-                echoes
+                read_back(r"..\Music\Example Band\Lantern.flac", beside),
+                slow_water
             );
             assert_eq!(
-                read_back(r"C:\Music\Pink Floyd\Echoes.flac", beside),
-                echoes
+                read_back(r"C:\Music\Example Band\Lantern.flac", beside),
+                slow_water
             );
         }
     }
@@ -1023,9 +1029,9 @@ mod tests {
         let beside = Path::new("/music");
 
         assert_eq!(
-            located("Pink Floyd\\Echoes.flac", beside, &ShareHosts::none())
+            located("Example Band\\Lantern.flac", beside, &ShareHosts::none())
                 .and_then(|held| held.as_path().map(Path::to_path_buf)),
-            Some(PathBuf::from("/music/Pink Floyd/Echoes.flac"))
+            Some(PathBuf::from("/music/Example Band/Lantern.flac"))
         );
     }
 }

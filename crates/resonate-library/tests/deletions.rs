@@ -524,7 +524,7 @@ fn a_pair_changed_or_forgotten_since_it_was_found_is_not_folded_and_the_rest_sti
     let tree = Tree::new();
     let mut pairs = Vec::new();
 
-    for title in ["Dogs", "Echoes", "Sheep", "Time"] {
+    for title in ["Dogs", "Lantern", "Sheep", "Time"] {
         let kept = tree.write(&format!("{title}.wav"), &song(title));
         let copy = tree.root.join(format!("{title} (1).wav"));
 
@@ -534,7 +534,7 @@ fn a_pair_changed_or_forgotten_since_it_was_found_is_not_folded_and_the_rest_sti
 
     let [
         (dogs, dogs_copy),
-        (echoes, echoes_copy),
+        (slow_water, slow_water_copy),
         (_, sheep_copy),
         (time, time_copy),
     ] = <[_; 4]>::try_from(pairs).expect("four pairs");
@@ -546,8 +546,8 @@ fn a_pair_changed_or_forgotten_since_it_was_found_is_not_folded_and_the_rest_sti
 
     let found = library.identical_copies()?;
 
-    library.favour(Favoured::Track(row_of(&library, &echoes_copy)?), true)?;
-    changed_in_place(&echoes_copy);
+    library.favour(Favoured::Track(row_of(&library, &slow_water_copy)?), true)?;
+    changed_in_place(&slow_water_copy);
     grown(&dogs);
     fs::remove_file(&sheep_copy).expect("the copy goes by hand");
     library.forget_the_gone(std::slice::from_ref(&sheep_copy))?;
@@ -558,21 +558,21 @@ fn a_pair_changed_or_forgotten_since_it_was_found_is_not_folded_and_the_rest_sti
     assert_eq!(folded.files, 1);
     assert_eq!(
         folded.changed_since_found,
-        [dogs_copy.clone(), echoes_copy.clone(), sheep_copy]
+        [dogs_copy.clone(), slow_water_copy.clone(), sheep_copy]
     );
     assert_eq!(*desktop.asked.lock(), std::slice::from_ref(&time_copy));
     assert!(!time_copy.exists() && time.exists());
     assert!(dogs.exists() && dogs_copy.exists());
-    assert!(echoes.exists() && echoes_copy.exists());
+    assert!(slow_water.exists() && slow_water_copy.exists());
     assert!(
         library
-            .track_at(&echoes_copy, None)?
+            .track_at(&slow_water_copy, None)?
             .is_some_and(|row| row.favourite.is_some()),
         "the changed copy's favourite was handed over"
     );
     assert!(
         library
-            .track_at(&echoes, None)?
+            .track_at(&slow_water, None)?
             .is_some_and(|row| row.favourite.is_none())
     );
     Ok(())

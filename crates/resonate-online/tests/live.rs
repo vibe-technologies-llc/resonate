@@ -618,12 +618,7 @@ fn lrclib_answers_echoes_with_a_synced_set() {
         .expect("lrclib holds echoes");
 
     assert_eq!(lyrics.timing(), Timing::Synced);
-    assert!(
-        lyrics
-            .lines()
-            .iter()
-            .any(|line| line.text.contains("albatross"))
-    );
+    assert!(!lyrics.lines().is_empty());
 }
 
 #[test]

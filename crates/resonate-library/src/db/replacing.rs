@@ -1305,8 +1305,8 @@ mod tests {
                 .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
             [
-                ("/music/Echoes.opus", Codec::Opus),
-                ("/music/Echoes.flac", Codec::Flac),
+                ("/music/Lantern.opus", Codec::Opus),
+                ("/music/Lantern.flac", Codec::Flac),
             ]
             .into_iter()
             .map(|(path, codec)| {
@@ -1315,7 +1315,7 @@ mod tests {
                         "INSERT INTO tracks (root_id, path, title, sample_rate, channels,
                                                  sample_format, codec, file_size, modified,
                                                  added, seen, mbid)
-                             VALUES (1, ?1, 'Echoes', 44100, 2, ?2, ?3, 0, 0, 0, 0, ?4)
+                             VALUES (1, ?1, 'Lantern', 44100, 2, ?2, ?3, 0, 0, 0, 0, ?4)
                              RETURNING id",
                         params![
                             path,

@@ -15,10 +15,10 @@ use resonate_library::{
 };
 
 use crate::support::{
-    ALBUM, ARTIST, COMPILATION, Delivering, LABEL, MEDDLE_SHEET, Offering, TITLE, TRACK, Tree, Wav,
-    a_real_picture, all, beside, link_to_directory, only_album, opened_with_a_vault, options,
+    ALBUM, ARTIST, COMPILATION, Delivering, LABEL, LOW_TIDE_SHEET, Offering, TITLE, TRACK, Tree,
+    Wav, a_real_picture, all, beside, link_to_directory, only_album, opened_with_a_vault, options,
     orbits, orbits_rows, orbits_tree, release_row, retagged, scan, titles, unlink_directory,
-    vaulted, wanted_san_tropez,
+    vaulted, wanted_harbour_lights,
 };
 
 #[test]
@@ -26,11 +26,11 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
     let tree = Tree::new();
     let held = Tree::new();
     let path = tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
+            .text(ALBUM, "Tideline")
             .build(),
     );
     let bytes = fs::read(&path).expect("a source file");
@@ -56,7 +56,7 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
         Some(path.as_path()),
         "a vaulted row stopped being named by its own file"
     );
-    assert_eq!(rows[0].title, "Echoes");
+    assert_eq!(rows[0].title, "Lantern");
 
     let stood = library
         .stand_in()
@@ -66,9 +66,9 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
 
     assert!(landed.starts_with(vault.root()));
     assert_eq!(landed.extension().and_then(OsStr::to_str), Some("flac"));
-    assert_eq!(stood.tags.title.as_deref(), Some("Echoes"));
-    assert_eq!(stood.tags.artist.as_deref(), Some("Pink Floyd"));
-    assert_eq!(stood.tags.album.as_deref(), Some("Meddle"));
+    assert_eq!(stood.tags.title.as_deref(), Some("Lantern"));
+    assert_eq!(stood.tags.artist.as_deref(), Some("Example Band"));
+    assert_eq!(stood.tags.album.as_deref(), Some("Tideline"));
 
     assert_eq!(fs::read(&path).expect("a source file"), bytes);
     assert_eq!(
@@ -93,12 +93,12 @@ fn a_twenty_four_bit_master_kept_in_a_wider_wave_stands_in_as_twenty_four_bits()
     let held = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
             .bits(24)
             .rate(192_000)
             .frames(19_200)
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .build(),
     );
 
@@ -131,14 +131,14 @@ fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared(
     let held = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .text(TRACK, "6/6")
-            .text(b"TCOM", "Roger Waters")
-            .text(b"TCOP", "1971 Pink Floyd Music Ltd")
-            .text(b"TIT1", "Meddle sessions")
+            .text(b"TCOM", "Another Band")
+            .text(b"TCOP", "1971 Example Band Music Ltd")
+            .text(b"TIT1", "Tideline sessions")
             .text(LABEL, "Harvest")
             .text(COMPILATION, "1")
             .build(),
@@ -156,15 +156,15 @@ fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared(
         .stands_in(&rows[0].location, rows[0].span)
         .expect("the vault stands in for the row");
 
-    assert_eq!(stood.tags.title.as_deref(), Some("Echoes"));
+    assert_eq!(stood.tags.title.as_deref(), Some("Lantern"));
     assert_eq!(stood.tags.track_number, Some(6));
     assert_eq!(stood.tags.track_total, Some(6), "the total was lost");
-    assert_eq!(stood.tags.credits.composer.as_deref(), Some("Roger Waters"));
+    assert_eq!(stood.tags.credits.composer.as_deref(), Some("Another Band"));
     assert_eq!(
         stood.tags.copyright.as_deref(),
-        Some("1971 Pink Floyd Music Ltd")
+        Some("1971 Example Band Music Ltd")
     );
-    assert_eq!(stood.tags.grouping.as_deref(), Some("Meddle sessions"));
+    assert_eq!(stood.tags.grouping.as_deref(), Some("Tideline sessions"));
     assert_eq!(stood.tags.label.as_deref(), Some("Harvest"));
     assert!(stood.tags.compilation, "the compilation mark was lost");
 
@@ -187,10 +187,10 @@ fn a_rescan_after_an_import_leaves_the_row_in_the_vault_and_imports_nothing_agai
     let held = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .build(),
     );
 
@@ -233,7 +233,7 @@ fn an_object_kept_under_an_older_encoder_is_weighed_again_and_stamped_with_this_
     let tree = Tree::new();
     let held = Tree::new();
 
-    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let database = tree.path().join("library.db");
     let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
@@ -287,7 +287,7 @@ fn an_object_kept_under_an_older_encoder_is_weighed_again_and_stamped_with_this_
 fn a_row_whose_source_has_gone_is_not_weighed_again_and_keeps_its_object() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let path = tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let database = tree.path().join("library.db");
     let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
@@ -376,9 +376,9 @@ fn an_import_on_several_workers_keeps_every_row_and_shared_audio_once() -> Resul
 fn a_file_a_vaulted_sheet_cuts_is_stood_in_for_only_by_the_cut_it_was_asked_as() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let file = tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    let file = tree.write("Tideline.wav", &Wav::new().frames(44_100).build());
 
-    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
 
@@ -412,7 +412,7 @@ fn a_file_a_vaulted_sheet_cuts_is_stood_in_for_only_by_the_cut_it_was_asked_as()
 fn a_vaulted_row_counts_its_plays_and_sits_in_a_playlist_as_the_file_it_came_from() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let path = tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
 
@@ -438,7 +438,7 @@ fn a_vaulted_row_counts_its_plays_and_sits_in_a_playlist_as_the_file_it_came_fro
 fn a_vaulted_row_outlives_the_file_it_came_from_and_keeps_its_object() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let path = tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
 
@@ -469,7 +469,7 @@ fn forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows
 -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let echoes = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let slow_water = tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
 
@@ -479,9 +479,9 @@ fn forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows
     let dogs = tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     scan(&library, &options(&tree))?;
-    fs::remove_file(&echoes).expect("the source goes");
+    fs::remove_file(&slow_water).expect("the source goes");
 
-    for path in [&echoes, &dogs, &dogs] {
+    for path in [&slow_water, &dogs, &dogs] {
         let counted = library
             .track_played(&MediaLocation::local(path), None, Duration::from_secs(2))?
             .expect("a counted play");
@@ -496,7 +496,7 @@ fn forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows
     let rows = all(&library)?;
     let after = library.statistics(Window::Everything)?;
 
-    assert_eq!(titles(&rows), vec!["Echoes"]);
+    assert_eq!(titles(&rows), vec!["Lantern"]);
     assert!(
         library
             .stand_in()
@@ -523,15 +523,18 @@ fn a_file_changed_where_it_stands_is_weighed_again_rather_than_played_from_its_o
 -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let path = tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
-    fs::write(&path, Wav::new().text(TITLE, "Echoes (remastered)").build())
-        .expect("the file is ripped again");
+    fs::write(
+        &path,
+        Wav::new().text(TITLE, "Lantern (remastered)").build(),
+    )
+    .expect("the file is ripped again");
 
     let later = SystemTime::now() + Duration::from_secs(60);
 
@@ -560,7 +563,7 @@ fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -
     let tree = Tree::new();
     let held = Tree::new();
 
-    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let gone = tree.write(
         "dogs.wav",
@@ -572,10 +575,10 @@ fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -
     vaulted(&library, true)?;
     fs::remove_file(&gone).expect("one source goes");
 
-    let echoes_stands_in = |library: &Library| -> Result<bool> {
+    let slow_water_stands_in = |library: &Library| -> Result<bool> {
         let row = all(library)?
             .into_iter()
-            .find(|row| row.title == "Echoes")
+            .find(|row| row.title == "Lantern")
             .expect("the row is in the catalog");
         Ok(library
             .stand_in()
@@ -587,7 +590,7 @@ fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -
 
     assert_eq!((foretold.released, foretold.stranded), (1, 1));
     assert!(
-        echoes_stands_in(&library)?,
+        slow_water_stands_in(&library)?,
         "a release foretold already pointed a row back"
     );
     assert!(library.vault_objects_nothing_names()?.is_empty());
@@ -597,7 +600,7 @@ fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -
     let released = library.release_from_vault(&[])?;
 
     assert_eq!(released.released, foretold.released);
-    assert!(!echoes_stands_in(&library)?);
+    assert!(!slow_water_stands_in(&library)?);
 
     let objects = vault.holding().expect("a counted vault").objects;
     let foretold = library.vault_prune_foretold()?;
@@ -623,7 +626,7 @@ fn a_release_points_a_row_back_at_its_own_file_and_leaves_the_only_copy_where_it
     let tree = Tree::new();
     let held = Tree::new();
 
-    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let gone = tree.write(
         "dogs.wav",
@@ -656,7 +659,7 @@ fn a_release_points_a_row_back_at_its_own_file_and_leaves_the_only_copy_where_it
     };
 
     assert!(
-        !stood_in("Echoes")?,
+        !stood_in("Lantern")?,
         "a released row still played from the vault"
     );
     assert!(stood_in("Dogs")?, "the only copy stopped being reached");
@@ -684,10 +687,10 @@ fn a_vaulted_row_is_passed_over_by_a_retagging() -> Result<()> {
     let held = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .build(),
     );
 
@@ -711,10 +714,10 @@ fn an_albums_cover_moves_into_the_vault_and_reads_back_as_a_drawable_picture() -
     let art = a_real_picture(24, 18);
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .picture(&art.bytes)
             .build(),
     );
@@ -767,10 +770,10 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     let art = a_real_picture(24, 18);
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .picture(&art.bytes)
             .build(),
     );
@@ -898,9 +901,9 @@ impl OlderCovers {
         let art = a_photographed_jpeg(320, 240);
 
         for (file, title, album) in [
-            ("echoes.wav", "Echoes", "Meddle"),
-            ("fearless.wav", "Fearless", "Meddle"),
-            ("time.wav", "Time", "The Dark Side of the Moon"),
+            ("lantern.wav", "Lantern", "Tideline"),
+            ("paper boats.wav", "Paper Boats", "Tideline"),
+            ("time.wav", "Time", "The Far Side of the Lake"),
         ] {
             tree.write(
                 file,
@@ -1118,10 +1121,10 @@ fn a_prune_takes_away_a_cover_nothing_names_and_leaves_the_rest() -> Result<()> 
     let art = a_real_picture(24, 18);
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .picture(&art.bytes)
             .build(),
     );
@@ -1152,19 +1155,19 @@ fn a_rescan_leaves_an_album_the_vault_covers_with_the_vaults_cover_alone() -> Re
     let track = |title: &str| {
         Wav::new()
             .text(TITLE, title)
-            .text(ALBUM, "Meddle")
+            .text(ALBUM, "Tideline")
             .picture(&art.bytes)
             .build()
     };
 
-    tree.write("echoes.wav", &track("Echoes"));
+    tree.write("lantern.wav", &track("Lantern"));
 
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
-    tree.write("pillow.wav", &track("A Pillow of Winds"));
+    tree.write("quilt.wav", &track("A Quilt of Winds"));
     scan(&library, &options(&tree))?;
 
     let album = library.albums(&AlbumQuery::default())?[0].id;
@@ -1186,10 +1189,10 @@ fn a_cover_the_vault_cannot_read_is_passed_over_and_the_import_carries_on() -> R
     let held = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .picture(b"\x89PNG\r\n\x1a\nnot a picture at all")
             .build(),
     );
@@ -1197,7 +1200,7 @@ fn a_cover_the_vault_cannot_read_is_passed_over_and_the_import_carries_on() -> R
         "time.wav",
         &Wav::new()
             .text(TITLE, "Time")
-            .text(ALBUM, "The Dark Side of the Moon")
+            .text(ALBUM, "The Far Side of the Lake")
             .build(),
     );
 
@@ -1224,10 +1227,10 @@ fn a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carrie
     let art = a_real_picture(24, 18);
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .picture(&art.bytes)
             .build(),
     );
@@ -1260,7 +1263,7 @@ fn a_vault_that_cannot_write_ends_the_import_rather_than_billing_every_row() -> 
     let tree = Tree::new();
     let held = Tree::new();
 
-    for title in ["Echoes", "Time", "Money"] {
+    for title in ["Lantern", "Time", "Money"] {
         tree.write(
             &format!("{title}.wav"),
             &Wav::new().text(TITLE, title).build(),
@@ -1311,19 +1314,19 @@ fn a_cover_the_vault_already_holds_is_not_kept_a_second_time() -> Result<()> {
     let track = |title: &str| {
         Wav::new()
             .text(TITLE, title)
-            .text(ALBUM, "Meddle")
+            .text(ALBUM, "Tideline")
             .picture(&art.bytes)
             .build()
     };
 
-    tree.write("echoes.wav", &track("Echoes"));
+    tree.write("lantern.wav", &track("Lantern"));
 
     let (library, vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
-    tree.write("pillow.wav", &track("A Pillow of Winds"));
+    tree.write("quilt.wav", &track("A Quilt of Winds"));
     scan(&library, &options(&tree))?;
 
     let again = vaulted(&library, true)?;
@@ -1342,9 +1345,9 @@ fn the_rows_a_sheet_cuts_are_weighed_against_their_share_of_the_file_and_play_as
 -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let file = tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    let file = tree.write("Tideline.wav", &Wav::new().frames(44_100).build());
 
-    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let size = fs::metadata(&file).expect("a sized file").len();
 
@@ -1374,11 +1377,11 @@ fn the_rows_a_sheet_cuts_are_weighed_against_their_share_of_the_file_and_play_as
 fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let echoes = tree.write(
-        "echoes.wav",
+    let slow_water = tree.write(
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .build(),
     );
 
@@ -1392,7 +1395,7 @@ fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
     assert!(library.remove_root(tree.path())?);
     assert!(library.vault_objects_nothing_names()?.is_empty());
 
-    assert!(library.forget_delivered(&echoes)?);
+    assert!(library.forget_delivered(&slow_water)?);
 
     let loose = library.vault_objects_nothing_names()?;
 
@@ -1438,11 +1441,11 @@ fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<
 
     let tree = Tree::new();
     let held = Tree::new();
-    let echoes = tree.write(
-        "echoes.wav",
+    let slow_water = tree.write(
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
             .build(),
     );
     let (library, vault) = opened_with_a_vault(&held)?;
@@ -1451,7 +1454,7 @@ fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<
     vaulted(&library, true)?;
 
     assert!(library.remove_root(tree.path())?);
-    assert!(library.forget_delivered(&echoes)?);
+    assert!(library.forget_delivered(&slow_water)?);
 
     let loose = library.vault_objects_nothing_names()?;
     let folder = vault
@@ -1492,11 +1495,11 @@ fn a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own() -> Result<
     let tree = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
+            .text(ALBUM, "Tideline")
             .build(),
     );
 
@@ -1515,7 +1518,7 @@ fn a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own() -> Result<
         },
     )?;
 
-    assert_eq!(titles(&all(&library)?), vec!["Echoes"]);
+    assert_eq!(titles(&all(&library)?), vec!["Lantern"]);
     assert!(all(&library)?.iter().all(|track| !track.delivered));
     Ok(())
 }
@@ -1525,7 +1528,7 @@ fn a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root() -> 
     let tree = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
     let orbits = orbits_tree();
     let database = tree.path().join("library.db");
@@ -1535,7 +1538,7 @@ fn a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root() -> 
         let library = Library::open_with_vault(&database, vault)?;
 
         scan(&library, &options(&orbits))?;
-        wanted_san_tropez(&library)?;
+        wanted_harbour_lights(&library)?;
 
         let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
         let summary = library
@@ -1562,7 +1565,7 @@ fn a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root() -> 
         .cloned()
         .collect();
 
-    assert_eq!(titles(&landed), vec!["San Tropez"]);
+    assert_eq!(titles(&landed), vec!["Harbour Lights"]);
     assert_eq!(rows.len(), 4);
     Ok(())
 }
@@ -1573,7 +1576,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
 
     let orbits = orbits_tree();
@@ -1581,7 +1584,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
 
     scan(&library, &options(&orbits))?;
 
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered.clone())));
     let summary = library
@@ -1614,7 +1617,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
     let row = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
     let held = row
         .track
@@ -1625,12 +1628,12 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
         library
             .missing_tracks(None, None)?
             .iter()
-            .all(|missing| missing.title != "San Tropez")
+            .all(|missing| missing.title != "Harbour Lights")
     );
 
     let track = library.track(held)?.expect("the delivery is a track row");
 
-    assert_eq!(track.title, "San Tropez");
+    assert_eq!(track.title, "Harbour Lights");
     assert_eq!(track.album_id, Some(album.id));
     assert_eq!(track.location.as_path(), Some(objects[0].path.as_path()));
     assert!(
@@ -1638,8 +1641,8 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
         "a row a provider delivered read back as scanned"
     );
     assert_eq!(
-        titles(&library.search("Tropez", 10)?.tracks),
-        vec!["San Tropez"]
+        titles(&library.search("Lights", 10)?.tracks),
+        vec!["Harbour Lights"]
     );
 
     let stood = library
@@ -1648,7 +1651,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
         .expect("the vault stands in for the delivered row");
 
     assert_eq!(stood.location.as_path(), Some(objects[0].path.as_path()));
-    assert_eq!(stood.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(stood.tags.title.as_deref(), Some("Harbour Lights"));
     assert_eq!(stood.tags.album.as_deref(), Some("Orbits"));
 
     scan(&library, &options(&orbits))?;
@@ -1686,7 +1689,7 @@ fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Resul
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
 
     let orbits = orbits_tree();
@@ -1694,7 +1697,7 @@ fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Resul
 
     scan(&library, &options(&orbits))?;
 
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
 
     library
@@ -1704,7 +1707,7 @@ fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Resul
     let object = library.vault_objects()?[0].path.clone();
     let scanned = all(&library)?
         .into_iter()
-        .find(|track| track.title != "San Tropez")
+        .find(|track| track.title != "Harbour Lights")
         .expect("a scanned row");
 
     assert!(
@@ -1717,7 +1720,7 @@ fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Resul
     assert!(
         all(&library)?
             .iter()
-            .all(|track| track.title != "San Tropez")
+            .all(|track| track.title != "Harbour Lights")
     );
     assert!(library.track(scanned.id)?.is_some());
 
@@ -1736,7 +1739,7 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
 
     let scanned = orbits_tree();
@@ -1747,11 +1750,11 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
-    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
+    rows.push(release_row(5, "Marlow", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     for missing in library.release_tracks(album.id)? {
-        if missing.title == "San Tropez" || missing.title == "Seamus" {
+        if missing.title == "Harbour Lights" || missing.title == "Marlow" {
             library.want(missing.id)?;
         }
     }
@@ -1774,10 +1777,10 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
     let track = library
         .track(landed[0])?
         .expect("the delivery is a track row");
-    let other = if track.title == "Seamus" {
-        "San Tropez"
+    let other = if track.title == "Marlow" {
+        "Harbour Lights"
     } else {
-        "Seamus"
+        "Marlow"
     };
 
     assert_eq!(
@@ -1796,7 +1799,7 @@ fn weighing_a_vault_reads_every_object_back_and_notes_it_validated() -> Result<(
     let tree = Tree::new();
     let held = Tree::new();
 
-    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
     tree.write(
         "dogs.wav",
         &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
@@ -1829,7 +1832,7 @@ fn a_weighing_counts_what_it_has_read_back_against_everything_it_will() -> Resul
     let tree = Tree::new();
     let held = Tree::new();
 
-    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
     tree.write(
         "dogs.wav",
         &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
@@ -1935,7 +1938,7 @@ fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> 
     let tree = Tree::new();
     let held = Tree::new();
 
-    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
 

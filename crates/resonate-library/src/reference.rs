@@ -561,12 +561,12 @@ pub trait Reference: Send + Sync {
 mod tests {
     use super::*;
 
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 
     #[test]
     fn a_release_is_credited_as_its_names_joined_the_way_musicbrainz_joins_them() {
         let release = Release {
-            id: Mbid::new(ECHOES).expect("a well-formed mbid"),
+            id: Mbid::new(SLOW_WATER).expect("a well-formed mbid"),
             group: None,
             title: "Under the Covers".to_owned(),
             credit: vec![

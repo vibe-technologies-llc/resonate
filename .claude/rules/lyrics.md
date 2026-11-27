@@ -123,7 +123,7 @@ dependency (tested without a window).
 - **A sidecar is checked against its track; an embedded set never is.** `lrc::read` answers a
   `Sheet` with a `Declared` of what `[ti:]`, `[ar:]`, `[length:]` say; `Sidecar` passes over a sheet
   declaring another track. Names fold through core's `folded_letters` and agree where they fold to
-  the same letters or one is a run of whole words of the other ("Echoes" answers for "Echoes (Live
+  the same letters or one is a run of whole words of the other ("Slow Water" answers for "Slow Water (Live
   at Pompeii)", not "Hallelujah"); unspaced scripts (kana, CJK, Thai) agree by containment. One side
   ASCII-folding and the other not = different scripts: the check stands aside. A sheet declaring
   none of the three, or beside a row nothing has named, is read as always
@@ -149,14 +149,14 @@ dependency (tested without a window).
 - **The sidecar walks folders, not fixed names** (`Place::Beside`, `Place::Within`; `WITHIN` =
   `lyrics`, `lyric`, `lrc`, case-insensitive). `Rank` is the whole precedence, in order: `.lrc` over
   `.txt`; how the name was arrived at (file stem, whole name, stem + language like
-  `Echoes.pt-BR.lrc`, then `<artist> - <title>` and `<title>` off `Wanted`); for a language sheet,
+  `Slow Water.pt-BR.lrc`, then `<artist> - <title>` and `<title>` off `Wanted`); for a language sheet,
   how early its language stands among those the listener reads; only then where found. Tag
   spellings compare for equality after `lrc::folded`, not containment (else every sheet holding the
   title goes to every track). A candidate is read to `LARGEST_SIDECAR` (= the reader's
   `LARGEST_SHEET`), keeping whole lines: bytes are cut back to the last line break *before* their
   encoding is weighed, so a UTF-8 file cut inside a letter is not guessed a legacy code page
   (`a_sidecar_in_utf8_cut_inside_a_letter_still_reads_as_utf8`). An unreadable candidate is logged
-  and the walk goes on (an oversized `Echoes.lrc` does not stop `Echoes.txt`). **A candidate is opened
+  and the walk goes on (an oversized `Slow Water.lrc` does not stop `Slow Water.txt`). **A candidate is opened
   only if it is a regular file** (`regular.rs`: opened without blocking and without a controlling terminal on Unix, the kind
   read from the open handle), so a FIFO named `Song.lrc` is passed over at once rather than blocking
   the lookup thread; the write's read-back of a standing sheet does the same

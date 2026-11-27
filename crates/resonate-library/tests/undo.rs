@@ -129,13 +129,13 @@ fn a_saved_query_comes_back_with_the_search_it_filled_itself_from() -> Result<()
         limit: None,
     };
 
-    let floyd = library.save_query("Floyd", &asked)?;
+    let band = library.save_query("Band", &asked)?;
 
     library.revise_query(
-        floyd,
-        "Barrett",
+        band,
+        "Dunmore",
         &SavedQuery {
-            text: Some("echoes".to_owned()),
+            text: Some("lantern".to_owned()),
             sort: SortOrder::Artist,
             reading: SortOrder::Artist.reads(),
             limit: Some(5),
@@ -146,13 +146,13 @@ fn a_saved_query_comes_back_with_the_search_it_filled_itself_from() -> Result<()
 
     assert_eq!(put_back.edit, Edit::Revised);
     assert_eq!(
-        put_back.name, "Floyd",
+        put_back.name, "Band",
         "the name the revision took is not what came back"
     );
 
-    let found = library.playlist(floyd)?.expect("the query is still there");
+    let found = library.playlist(band)?.expect("the query is still there");
 
-    assert_eq!(found.name, "Floyd");
+    assert_eq!(found.name, "Band");
     assert_eq!(found.query, Some(asked));
     Ok(())
 }
@@ -507,13 +507,13 @@ fn a_discarded_playlist_goes_again_under_the_id_it_came_back_with() -> Result<()
 fn a_saved_query_is_revised_again_after_the_revision_was_walked_back() -> Result<()> {
     let (_tree, library) = sortable_playlist_tree();
     let revised = SavedQuery {
-        text: Some("echoes".to_owned()),
+        text: Some("lantern".to_owned()),
         sort: SortOrder::Artist,
         reading: SortOrder::Artist.reads(),
         limit: Some(5),
     };
-    let floyd = library.save_query(
-        "Floyd",
+    let band = library.save_query(
+        "Band",
         &SavedQuery {
             text: Some("dogs".to_owned()),
             sort: SortOrder::Title,
@@ -522,20 +522,20 @@ fn a_saved_query_is_revised_again_after_the_revision_was_walked_back() -> Result
         },
     )?;
 
-    library.revise_query(floyd, "Barrett", &revised)?;
+    library.revise_query(band, "Dunmore", &revised)?;
     library.undo()?.expect("the revision is there to put back");
 
     let again = library.redo()?.expect("the revision is there to do again");
 
     assert_eq!(again.edit, Edit::Revised);
     assert_eq!(
-        again.name, "Barrett",
+        again.name, "Dunmore",
         "the revision put back named the query what it was before"
     );
 
-    let found = library.playlist(floyd)?.expect("the query is still there");
+    let found = library.playlist(band)?.expect("the query is still there");
 
-    assert_eq!(found.name, "Barrett");
+    assert_eq!(found.name, "Dunmore");
     assert_eq!(found.query, Some(revised));
     Ok(())
 }
@@ -589,7 +589,7 @@ fn rows_put_into_a_playlist_at_a_place_land_there_and_one_undo_takes_them_out() 
 fn offered_playlist_tree() -> (Tree, PathBuf) {
     let tree = Tree::new();
 
-    for (file, title) in [("a.wav", "Echoes"), ("b.wav", "Dogs"), ("c.wav", "Sheep")] {
+    for (file, title) in [("a.wav", "Lantern"), ("b.wav", "Dogs"), ("c.wav", "Sheep")] {
         tree.write(file, &Wav::new().text(TITLE, title).build());
     }
 

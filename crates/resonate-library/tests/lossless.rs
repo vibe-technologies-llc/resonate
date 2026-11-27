@@ -38,9 +38,9 @@ const REQUIRED_BY: &str = "RESONATE_LIBRARY_FFMPEG_TESTS";
 fn one_song_in_two_formats_is_listed_once_as_the_better_of_the_two() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("flac/06 Echoes.wav", &one_song(16, 44_100));
+    tree.write("flac/06 Lantern.wav", &one_song(16, 44_100));
 
-    let best = tree.write("hires/06 Echoes.wav", &one_song(24, 44_100));
+    let best = tree.write("hires/06 Lantern.wav", &one_song(24, 44_100));
 
     let library = Library::open_in_memory()?;
 
@@ -71,8 +71,8 @@ fn one_song_in_two_formats_is_listed_once_as_the_better_of_the_two() -> Result<(
 fn two_identical_copies_of_one_song_are_listed_once_as_the_first_scanned() -> Result<()> {
     let tree = Tree::new();
     let copies = [
-        tree.write("a/06 Echoes.wav", &one_song(16, 44_100)),
-        tree.write("b/06 Echoes.wav", &one_song(16, 44_100)),
+        tree.write("a/06 Lantern.wav", &one_song(16, 44_100)),
+        tree.write("b/06 Lantern.wav", &one_song(16, 44_100)),
     ];
 
     let library = Library::open_in_memory()?;
@@ -167,16 +167,16 @@ fn encoded_lasting(
     Some(target)
 }
 
-fn pink_floyd(title: &str) -> [String; 3] {
+fn example_band(title: &str) -> [String; 3] {
     [
         format!("title={title}"),
-        "artist=Pink Floyd".to_owned(),
-        "album=Meddle".to_owned(),
+        "artist=Example Band".to_owned(),
+        "album=Tideline".to_owned(),
     ]
 }
 
-fn encoded_as_pink_floyd(tree: &Tree, name: &str, title: &str) -> Option<PathBuf> {
-    let tags = pink_floyd(title);
+fn encoded_as_example_band(tree: &Tree, name: &str, title: &str) -> Option<PathBuf> {
+    let tags = example_band(title);
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
     encoded_with_tags(tree, name, &tags)
 }
@@ -185,10 +185,10 @@ fn encoded_as_pink_floyd(tree: &Tree, name: &str, title: &str) -> Option<PathBuf
 fn a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held() -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(flac), Some(mp3), Some(money)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
-        encoded_as_pink_floyd(&tree, "lossless/C.flac", "Money"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossless/A.flac", "Lantern"),
+        encoded_as_example_band(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_example_band(&tree, "lossless/C.flac", "Money"),
     ) else {
         return Ok(());
     };
@@ -208,7 +208,7 @@ fn a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held() ->
             .iter()
             .map(|row| row.track.title.as_str())
             .collect::<Vec<_>>(),
-        ["Echoes", "Time"]
+        ["Lantern", "Time"]
     );
 
     let held = listed[0].held.as_ref().expect("the lossless copy is held");
@@ -222,25 +222,25 @@ fn a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held() ->
     Ok(())
 }
 
-const A_SHEET_CUTTING_A_LOSSY_FILE: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
+const A_SHEET_CUTTING_A_LOSSY_FILE: &str = r#"PERFORMER "Example Band"
+TITLE "Tideline"
 FILE "whole.opus" WAVE
   TRACK 01 AUDIO
-    TITLE "One of These Days"
+    TITLE "Small Mercies"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "Echoes"
+    TITLE "Lantern"
     INDEX 01 00:01:00
 "#;
 
-const A_SHEET_CUTTING_A_LOSSLESS_FILE: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
+const A_SHEET_CUTTING_A_LOSSLESS_FILE: &str = r#"PERFORMER "Example Band"
+TITLE "Tideline"
 FILE "album.flac" WAVE
   TRACK 01 AUDIO
-    TITLE "Fearless"
+    TITLE "Paper Boats"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "Fearless"
+    TITLE "Paper Boats"
     INDEX 01 00:01:00
 "#;
 
@@ -248,10 +248,10 @@ FILE "album.flac" WAVE
 fn a_cut_of_a_sheet_is_neither_a_lossy_song_to_replace_nor_a_copy_to_replace_one_with() -> Result<()>
 {
     let tree = Tree::new();
-    let (Some(_), Some(_), Some(fearless)) = (
+    let (Some(_), Some(_), Some(paper_boats)) = (
         encoded_with_tags(&tree, "whole.opus", &[]),
         encoded_with_tags(&tree, "album.flac", &[]),
-        encoded_as_pink_floyd(&tree, "fearless.mp3", "Fearless"),
+        encoded_as_example_band(&tree, "paper boats.mp3", "Paper Boats"),
     ) else {
         return Ok(());
     };
@@ -277,14 +277,14 @@ fn a_cut_of_a_sheet_is_neither_a_lossy_song_to_replace_nor_a_copy_to_replace_one
 
     let mut every = cuts;
 
-    every.push(whole(&fearless));
+    every.push(whole(&paper_boats));
 
     let playlist = library.start_playlist("Cuts", &every)?;
 
     let listed = library.songs_to_better_in(playlist)?;
 
     assert_eq!(listed.len(), 1, "a cut was listed as a lossy song");
-    assert_eq!(listed[0].track.title, "Fearless");
+    assert_eq!(listed[0].track.title, "Paper Boats");
     assert!(
         listed[0].held.is_none(),
         "a cut of a sheet was offered as the copy"
@@ -296,11 +296,11 @@ fn a_cut_of_a_sheet_is_neither_a_lossy_song_to_replace_nor_a_copy_to_replace_one
 fn a_song_playing_a_lesser_copy_is_offered_the_best_and_one_playing_the_best_is_not_listed()
 -> Result<()> {
     let tree = Tree::new();
-    let tags = pink_floyd("Echoes");
+    let tags = example_band("Lantern");
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
 
     let (Some(opus), Some(better), Some(chosen)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
         encoded_lasting(
             &tree,
             "one/A.flac",
@@ -308,7 +308,7 @@ fn a_song_playing_a_lesser_copy_is_offered_the_best_and_one_playing_the_best_is_
             TWO_SECONDS_OF_FRAMES,
             &["-ar", "96000"],
         ),
-        encoded_as_pink_floyd(&tree, "two/A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "two/A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -382,8 +382,8 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_by_default_and_keeps_everythi
 -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossless/A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -466,12 +466,12 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_by_default_and_keeps_everythi
 #[cfg(unix)]
 fn a_lossless_song_plays_a_copy_of_higher_resolution_and_never_one_alike() -> Result<()> {
     let tree = Tree::new();
-    let tags = pink_floyd("Echoes");
+    let tags = example_band("Lantern");
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
 
     let (Some(plain), Some(alike), Some(finer)) = (
-        encoded_as_pink_floyd(&tree, "cd/A.flac", "Echoes"),
-        encoded_as_pink_floyd(&tree, "again/A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "cd/A.flac", "Lantern"),
+        encoded_as_example_band(&tree, "again/A.flac", "Lantern"),
         encoded_lasting(
             &tree,
             "studio/A.flac",
@@ -512,9 +512,9 @@ fn a_lossless_song_plays_a_copy_of_higher_resolution_and_never_one_alike() -> Re
 fn two_lossy_copies_of_one_song_both_play_the_one_lossless_copy() -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(mp3), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossy/A.mp3", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossy/A.mp3", "Lantern"),
+        encoded_as_example_band(&tree, "lossless/A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -544,8 +544,8 @@ fn a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neithe
 -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(mp3)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossy/B.mp3", "Time"),
     ) else {
         return Ok(());
     };
@@ -591,7 +591,7 @@ fn a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neithe
 fn a_lossy_song_a_want_once_delivered_is_wanted_again_with_its_offer_forgotten_and_its_refusals_kept()
 -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let database = tree.path().join("library.db");
@@ -679,7 +679,7 @@ fn offering_as(source: &str, extension: &'static str) -> Arc<Offering> {
 fn a_lossy_song_is_found_where_a_provider_offers_it_lossless_and_the_finding_is_kept() -> Result<()>
 {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
@@ -718,8 +718,8 @@ fn a_lossy_song_is_found_where_a_provider_offers_it_lossless_and_the_finding_is_
 fn a_lossy_song_offered_only_lossy_is_offered_nowhere_whether_matched_or_not() -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(mp3)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossy/B.mp3", "Time"),
     ) else {
         return Ok(());
     };
@@ -783,7 +783,7 @@ fn a_lossy_song_offered_only_lossy_is_offered_nowhere_whether_matched_or_not() -
 #[test]
 fn a_look_a_provider_could_not_answer_keeps_nothing() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
@@ -814,8 +814,8 @@ fn a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_plays_i
     let shop = Tree::new();
 
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -921,8 +921,8 @@ fn a_song_kept_to_replace_a_lossy_one_that_arrives_lossy_is_refused_and_the_loss
     let shop = Tree::new();
 
     let (Some(opus), Some(mp3)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "A.mp3", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -973,8 +973,8 @@ fn a_song_kept_to_replace_a_lossy_one_is_never_downloaded_from_an_offer_named_fo
     let shop = Tree::new();
 
     let (Some(opus), Some(mp3)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "A.mp3", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -1022,7 +1022,7 @@ fn a_song_kept_to_replace_a_lossy_one_is_never_downloaded_from_an_offer_named_fo
 #[test]
 fn a_last_resort_is_never_asked_whether_a_lossy_song_is_held_lossless() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
@@ -1083,9 +1083,9 @@ impl Trashes for HeldOpenByTheDesktop {
 fn a_replacement_is_kept_while_another_pass_walks_the_tree_since_it_moves_no_file() -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(flac), Some(mp3)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossless/A.flac", "Lantern"),
+        encoded_as_example_band(&tree, "lossy/B.mp3", "Time"),
     ) else {
         return Ok(());
     };
@@ -1143,8 +1143,8 @@ fn a_vaulted_lossy_song_plays_its_lossless_copy_and_keeps_its_file_and_object() 
     let tree = Tree::new();
     let held = Tree::new();
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossless/A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -1193,8 +1193,8 @@ fn a_vaulted_lossy_song_plays_its_lossless_copy_and_keeps_its_file_and_object() 
 fn a_lossy_song_is_not_replaced_by_a_lossless_copy_whose_file_is_gone() -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossless/A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -1225,7 +1225,7 @@ fn a_lossy_song_is_not_replaced_by_a_lossless_copy_whose_file_is_gone() -> Resul
 #[test]
 fn dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
@@ -1327,7 +1327,7 @@ fn still_pending(library: &Library, waiting: &Waiting) -> Result<bool> {
 }
 
 fn tagged_as_the_recording(tree: &Tree, name: &str, recording: &str) -> Option<PathBuf> {
-    let mut tags = pink_floyd("Echoes").to_vec();
+    let mut tags = example_band("Lantern").to_vec();
 
     tags.push(format!("MUSICBRAINZ_TRACKID={recording}"));
 
@@ -1339,7 +1339,7 @@ fn tagged_as_the_recording(tree: &Tree, name: &str, recording: &str) -> Option<P
 #[cfg(unix)]
 fn a_lossless_copy_delivered_for_a_replacement_plays_in_the_lossy_songs_place() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let data = Tree::new();
@@ -1350,7 +1350,7 @@ fn a_lossless_copy_delivered_for_a_replacement_plays_in_the_lossy_songs_place() 
     scan(&library, &options(&tree))?;
 
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
-    let mut tags = pink_floyd("Echoes").to_vec();
+    let mut tags = example_band("Lantern").to_vec();
 
     tags.push(format!("MUSICBRAINZ_ALBUMID={RELEASE}"));
 
@@ -1408,7 +1408,7 @@ fn a_lossless_copy_delivered_for_a_replacement_plays_in_the_lossy_songs_place() 
 #[cfg(unix)]
 fn a_lossless_copy_holding_the_same_recording_plays_in_the_lossy_songs_place() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let data = Tree::new();
@@ -1443,7 +1443,7 @@ fn a_lossless_copy_holding_the_same_recording_plays_in_the_lossy_songs_place() -
 #[test]
 fn a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
@@ -1451,7 +1451,7 @@ fn a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended() -> Resul
     scan(&library, &options(&tree))?;
 
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
-    let Some(flac) = encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes") else {
+    let Some(flac) = encoded_as_example_band(&tree, "lossless/A.flac", "Lantern") else {
         return Ok(());
     };
 
@@ -1471,7 +1471,7 @@ fn a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended() -> Resul
 #[test]
 fn a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
@@ -1500,7 +1500,7 @@ fn a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it() -> Result<()> 
 #[cfg(unix)]
 fn a_cancelled_scan_settles_no_replacement() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let data = Tree::new();
@@ -1511,7 +1511,7 @@ fn a_cancelled_scan_settles_no_replacement() -> Result<()> {
     scan(&library, &options(&tree))?;
 
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
-    let Some(flac) = encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes") else {
+    let Some(flac) = encoded_as_example_band(&tree, "lossless/A.flac", "Lantern") else {
         return Ok(());
     };
 
@@ -1548,7 +1548,7 @@ fn a_cancelled_scan_settles_no_replacement() -> Result<()> {
 #[test]
 fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_holds() -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let database = tree.path().join("library.db");
@@ -1611,7 +1611,7 @@ fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_hold
 fn a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_matched_again()
 -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let database = tree.path().join("library.db");
@@ -1664,8 +1664,8 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_the_lossy_song_keeps_i
 -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(_)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossy/B.mp3", "Time"),
     ) else {
         return Ok(());
     };
@@ -1678,9 +1678,9 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_the_lossy_song_keeps_i
 
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
     let tags = [
-        "title=Echoes".to_owned(),
-        "artist=Pink Floyd".to_owned(),
-        "album=Live at Pompeii".to_owned(),
+        "title=Lantern".to_owned(),
+        "artist=Example Band".to_owned(),
+        "album=Live at the Quarry".to_owned(),
     ];
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
     let Some(flac) = encoded_with_tags(&tree, "live/A.flac", &tags) else {
@@ -1726,11 +1726,11 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_the_lossy_song_keeps_i
 const EIGHT_SECONDS_OF_FRAMES: usize = 352_800;
 
 #[cfg(unix)]
-fn live_at_pompeii(recording: &str) -> [String; 4] {
+fn live_at_quarry(recording: &str) -> [String; 4] {
     [
-        "title=Echoes".to_owned(),
-        "artist=Pink Floyd".to_owned(),
-        "album=Live at Pompeii".to_owned(),
+        "title=Lantern".to_owned(),
+        "artist=Example Band".to_owned(),
+        "album=Live at the Quarry".to_owned(),
         format!("MUSICBRAINZ_TRACKID={recording}"),
     ]
 }
@@ -1765,9 +1765,9 @@ fn a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_
 -> Result<()> {
     let tree = Tree::new();
     let (Some(opus), Some(mp3), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
-        encoded_as_pink_floyd(&tree, "delivered/B.flac", "Time"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_example_band(&tree, "delivered/B.flac", "Time"),
     ) else {
         return Ok(());
     };
@@ -1813,7 +1813,7 @@ fn a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_
 fn a_lossless_copy_of_the_recording_lasting_otherwise_never_replaces_a_song_unattended()
 -> Result<()> {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let data = Tree::new();
@@ -1823,7 +1823,7 @@ fn a_lossless_copy_of_the_recording_lasting_otherwise_never_replaces_a_song_unat
     scan(&library, &options(&tree))?;
 
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
-    let mut tags = pink_floyd("Echoes").to_vec();
+    let mut tags = example_band("Lantern").to_vec();
 
     tags.push(format!("MUSICBRAINZ_TRACKID={RECORDING}"));
 
@@ -1855,11 +1855,11 @@ fn a_lossless_copy_of_the_recording_lasting_otherwise_never_replaces_a_song_unat
 fn a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let tags = live_at_pompeii(RECORDING);
+    let tags = live_at_quarry(RECORDING);
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
 
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
         encoded_with_tags(&tree, "live/A.flac", &tags),
     ) else {
         return Ok(());
@@ -1895,11 +1895,11 @@ fn a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song() -> Result<(
 #[cfg(unix)]
 fn the_best_of_two_lossless_copies_of_the_recording_plays_in_the_lossy_songs_place() -> Result<()> {
     let tree = Tree::new();
-    let tags = live_at_pompeii(RECORDING);
+    let tags = live_at_quarry(RECORDING);
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
 
     let (Some(opus), Some(plain)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
         encoded_with_tags(&tree, "live/A.flac", &tags),
     ) else {
         return Ok(());
@@ -1941,7 +1941,7 @@ fn the_best_of_two_lossless_copies_of_the_recording_plays_in_the_lossy_songs_pla
 fn a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_again() -> Result<()>
 {
     let tree = Tree::new();
-    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+    let Some(opus) = encoded_as_example_band(&tree, "lossy/A.opus", "Lantern") else {
         return Ok(());
     };
     let database = tree.path().join("library.db");
@@ -1988,9 +1988,9 @@ fn a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_ag
 fn a_copy_in_the_best_copys_own_format_is_hidden_beside_one_in_another() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("a/06 Echoes.wav", &one_song(24, 44_100));
-    tree.write("b/06 Echoes.wav", &one_song(24, 44_100));
-    tree.write("c/06 Echoes.wav", &one_song(16, 44_100));
+    tree.write("a/06 Lantern.wav", &one_song(24, 44_100));
+    tree.write("b/06 Lantern.wav", &one_song(24, 44_100));
+    tree.write("c/06 Lantern.wav", &one_song(16, 44_100));
 
     let library = Library::open_in_memory()?;
 
@@ -2013,14 +2013,14 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
     let reissue = Wav::new()
         .bits(16)
         .frames(44_100)
-        .text(TITLE, "Echoes")
-        .text(ARTIST, "Pink Floyd")
-        .text(ALBUM, "Meddle (Remastered)")
+        .text(TITLE, "Lantern")
+        .text(ARTIST, "Example Band")
+        .text(ALBUM, "Tideline (Remastered)")
         .text(TRACK, "6")
         .build();
 
-    tree.write("a/06 Echoes.wav", &one_song(16, 44_100));
-    tree.write("b/06 Echoes.wav", &reissue);
+    tree.write("a/06 Lantern.wav", &one_song(16, 44_100));
+    tree.write("b/06 Lantern.wav", &reissue);
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
@@ -2035,7 +2035,7 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
 
     let billed = beside(&database)
         .execute(
-            "UPDATE albums SET release_title = 'Meddle' WHERE title = 'Meddle (Remastered)'",
+            "UPDATE albums SET release_title = 'Tideline' WHERE title = 'Tideline (Remastered)'",
             [],
         )
         .expect("the album row is writable");
@@ -2047,7 +2047,7 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
     assert_eq!(
         all(&library)?.len(),
         1,
-        "a copy billed as Meddle did not meet the copy tagged Meddle"
+        "a copy billed as Tideline did not meet the copy tagged Tideline"
     );
     Ok(())
 }
@@ -2056,8 +2056,8 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
 fn two_copies_whose_lengths_disagree_are_two_songs() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("a/06 Echoes.wav", &one_song(16, 44_100));
-    tree.write("b/06 Echoes.wav", &one_song(24, 44_100 * 4));
+    tree.write("a/06 Lantern.wav", &one_song(16, 44_100));
+    tree.write("b/06 Lantern.wav", &one_song(24, 44_100 * 4));
 
     let library = Library::open_in_memory()?;
 
@@ -2071,9 +2071,9 @@ fn two_copies_whose_lengths_disagree_are_two_songs() -> Result<()> {
 fn the_better_copy_leaving_puts_the_one_it_hid_back_on_the_list() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("flac/06 Echoes.wav", &one_song(16, 44_100));
+    tree.write("flac/06 Lantern.wav", &one_song(16, 44_100));
 
-    let best = tree.write("hires/06 Echoes.wav", &one_song(24, 44_100));
+    let best = tree.write("hires/06 Lantern.wav", &one_song(24, 44_100));
 
     let library = Library::open_in_memory()?;
 
@@ -2094,13 +2094,13 @@ fn a_better_copy_added_later_takes_the_song_over_and_one_gone_by_the_watch_hands
 -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("flac/06 Echoes.wav", &one_song(16, 44_100));
+    tree.write("flac/06 Lantern.wav", &one_song(16, 44_100));
 
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
 
-    let best = tree.write("hires/06 Echoes.wav", &one_song(24, 44_100));
+    let best = tree.write("hires/06 Lantern.wav", &one_song(24, 44_100));
 
     scan(&library, &options(&tree))?;
 
@@ -2167,8 +2167,8 @@ fn a_replacement_is_never_asked_of_a_last_resort() -> Result<()> {
     let shop = Tree::new();
 
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -2207,9 +2207,9 @@ fn a_lossy_delivery_for_a_replacement_is_refused_and_the_next_provider_asked() -
     let shop = Tree::new();
 
     let (Some(opus), Some(offered_opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "one/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "two/A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "one/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "two/A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -2278,8 +2278,8 @@ fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_
     let shop = Tree::new();
 
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -2321,8 +2321,8 @@ fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_asked_of_a_pro
     let shop = Tree::new();
 
     let (Some(opus), Some(flac)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "A.flac", "Lantern"),
     ) else {
         return Ok(());
     };
@@ -2369,8 +2369,8 @@ fn a_lossy_file_filed_for_a_replacement_is_taken_away_and_refused() -> Result<()
     let shop = Tree::new();
 
     let (Some(opus), Some(mp3)) = (
-        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
+        encoded_as_example_band(&tree, "lossy/A.opus", "Lantern"),
+        encoded_as_example_band(&shop, "A.mp3", "Lantern"),
     ) else {
         return Ok(());
     };

@@ -25,10 +25,11 @@ use resonate_providers::{
 
 use crate::support::{
     Canned, Delivering, Fake, GENRE, LastResort, Offering, THE_POLL_HAS_WAITED, TITLE,
-    TrashedByTheDesktop, Tree, Unanswering, Wav, a_provider_offering_echoes, all, asking_in_turn,
-    echoes_found, every_file_under, matching, meddle_fake, meddle_release, only_album,
+    TrashedByTheDesktop, Tree, Unanswering, Wav, a_provider_offering_slow_water, all,
+    asking_in_turn, every_file_under, low_tide_fake, low_tide_release, matching, only_album,
     opened_with_a_vault, options, orbits, orbits_rows, orbits_track, orbits_tree, release_row,
-    scan, scanned_orbits, source, titles, unreachable_server, waited_for, wanted_san_tropez,
+    scan, scanned_orbits, slow_water_found, source, titles, unreachable_server, waited_for,
+    wanted_harbour_lights,
 };
 
 struct CancelledAsItAnswers {
@@ -91,7 +92,7 @@ fn polled_into_a_vault(
 
     scan(&library, &options(&orbits))?;
 
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
 
     let provider = Arc::new(WatchedAsItAnswers {
         source: SourceId::new("inbox").expect("a nameable source"),
@@ -124,7 +125,10 @@ fn a_poll_names_the_want_it_is_asking_about_while_it_asks() -> Result<()> {
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+        &Wav::new()
+            .text(TITLE, "Harbour Lights")
+            .frames(8_820)
+            .build(),
     );
 
     let (_library, want, heard) = polled_into_a_vault(&held, delivered)?;
@@ -139,7 +143,10 @@ fn deleting_a_delivered_track_takes_its_vault_object_and_its_want() -> Result<()
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+        &Wav::new()
+            .text(TITLE, "Harbour Lights")
+            .frames(8_820)
+            .build(),
     );
 
     let (library, _want, _heard) = polled_into_a_vault(&held, delivered)?;
@@ -174,14 +181,14 @@ fn a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted() -> Result<(
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
     let orbits = orbits_tree();
     let (library, vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
 
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
 
     let provider = Arc::new(CancelledAsItAnswers {
         source: SourceId::new("inbox").expect("a nameable source"),
@@ -221,7 +228,7 @@ fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() ->
     let delivered = tree.write(
         "delivered.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(GENRE, "Krautrock")
             .described("REPLAYGAIN_TRACK_GAIN", "-7.50 dB")
             .described("REPLAYGAIN_TRACK_PEAK", "0.891")
@@ -235,7 +242,7 @@ fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() ->
 
     scan(&library, &options(&orbits))?;
 
-    let _want = wanted_san_tropez(&library)?;
+    let _want = wanted_harbour_lights(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
     let summary = library
@@ -253,7 +260,7 @@ fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() ->
 
     assert_eq!(
         titles(&library.search("genre:krautrock", 10)?.tracks),
-        vec!["San Tropez"],
+        vec!["Harbour Lights"],
         "the genre the delivered file declared does not reach a search"
     );
 
@@ -278,7 +285,7 @@ fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() ->
     );
     assert_eq!(
         matching(&library, "lyrics:shore")?,
-        ["San Tropez"],
+        ["Harbour Lights"],
         "the words the delivered file declared do not reach a search"
     );
     Ok(())
@@ -291,14 +298,17 @@ fn a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging() -> Res
     let (library, vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let shop = Arc::new(Offering::new(
         "shop",
         Delivering::Bytes {
             key: "track/55391743",
             extension: "wav",
-            bytes: Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+            bytes: Wav::new()
+                .text(TITLE, "Harbour Lights")
+                .frames(8_820)
+                .build(),
         },
     ));
     let summary = library
@@ -354,7 +364,7 @@ fn a_poll_cancelled_mid_delivery_stops_reading_and_leaves_the_want_untried() -> 
     let (library, vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let shop = Arc::new(Offering::new("shop", Delivering::Endless));
     let polling = library.poll(shop.registered(), PollOptions::default())?;
@@ -387,7 +397,7 @@ fn polling_endlessly() -> Result<(Tree, Tree, Library, PollHandle)> {
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let shop = Arc::new(Offering::new("shop", Delivering::Endless));
     let polling = library.poll(shop.registered(), PollOptions::default())?;
@@ -436,7 +446,7 @@ fn a_stream_that_stops_sending_is_given_up_as_late_and_the_want_left_due() -> Re
     let (library, vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let shop = Arc::new(Offering::new("shop", Delivering::Stalling));
     let began = Instant::now();
@@ -501,7 +511,7 @@ fn a_download_its_provider_failed_part_way_into_the_vault_is_refused_and_no_miss
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let shop = Arc::new(Offering::new("shop", Delivering::DyingPartWay));
 
@@ -518,7 +528,7 @@ fn a_download_its_provider_failed_part_way_into_the_music_folder_is_refused_and_
 -> Result<()> {
     let (tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
     library.deliver_into(Some(DeliveryFolder {
         path: tree.path().to_path_buf(),
         layout: Layout::default(),
@@ -538,7 +548,7 @@ fn a_download_its_provider_failed_part_way_into_the_music_folder_is_refused_and_
 fn a_streamed_delivery_with_no_vault_is_counted_unkept_and_offers_nothing() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let shop = Arc::new(Offering::new(
         "shop",
@@ -604,11 +614,11 @@ fn two_wants_filed_in_the_music_folder() -> Result<(Tree, Arc<Library>)> {
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
-    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
+    rows.push(release_row(5, "Marlow", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     for row in library.release_tracks(album.id)? {
-        if row.title == "San Tropez" || row.title == "Seamus" {
+        if row.title == "Harbour Lights" || row.title == "Marlow" {
             library.want(row.id)?;
         }
     }
@@ -668,9 +678,9 @@ fn an_album_asked_for_whole_is_asked_song_by_song_in_its_order_and_before_an_alb
     let mut rows = orbits_rows();
 
     rows.extend([
-        release_row(4, "San Tropez", Vec::new()),
-        release_row(5, "Seamus", Vec::new()),
-        release_row(6, "Echoes", Vec::new()),
+        release_row(4, "Harbour Lights", Vec::new()),
+        release_row(5, "Marlow", Vec::new()),
+        release_row(6, "Lantern", Vec::new()),
         release_row(7, "Childhood's End", Vec::new()),
         release_row(8, "Free Four", Vec::new()),
     ]);
@@ -688,9 +698,9 @@ fn an_album_asked_for_whole_is_asked_song_by_song_in_its_order_and_before_an_alb
         asked: Mutex::new(Vec::new()),
     });
 
-    library.want_release_tracks(&[row_of("Seamus"), row_of("San Tropez")])?;
+    library.want_release_tracks(&[row_of("Marlow"), row_of("Harbour Lights")])?;
     library.want_release_tracks(&[row_of("Free Four"), row_of("Childhood's End")])?;
-    library.want(row_of("Echoes"))?;
+    library.want(row_of("Lantern"))?;
     library
         .poll(
             Arc::new(Providers::none().and(Arc::clone(&noting) as Arc<dyn Provider>)),
@@ -704,9 +714,9 @@ fn an_album_asked_for_whole_is_asked_song_by_song_in_its_order_and_before_an_alb
     assert_eq!(
         *noting.asked.lock(),
         [
-            "Echoes",
-            "San Tropez",
-            "Seamus",
+            "Lantern",
+            "Harbour Lights",
+            "Marlow",
             "Childhood's End",
             "Free Four"
         ]
@@ -806,7 +816,7 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
     library.deliver_into(Some(DeliveryFolder {
         path: tree.path().to_path_buf(),
         layout: Layout::default(),
@@ -848,7 +858,7 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
         !track.delivered,
         "a filed row belongs to its root, not the vault"
     );
-    assert_eq!(track.title, "San Tropez");
+    assert_eq!(track.title, "Harbour Lights");
     assert_eq!(track.album_id, Some(album.id));
     assert_eq!(
         wants[0].offered.as_deref(),
@@ -866,14 +876,14 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
 
 const WHOLE_SONG_FRAMES: usize = 40_000;
 
-fn san_tropez_bytes() -> Vec<u8> {
+fn harbour_lights_bytes() -> Vec<u8> {
     Wav::new().frames(WHOLE_SONG_FRAMES).build()
 }
 
-fn san_tropez_wanted_into_the_music_folder() -> Result<(Tree, Library)> {
+fn harbour_lights_wanted_into_the_music_folder() -> Result<(Tree, Library)> {
     let (tree, library) = scanned_orbits()?;
 
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
     library.deliver_into(Some(DeliveryFolder {
         path: tree.path().to_path_buf(),
         layout: Layout::default(),
@@ -881,13 +891,13 @@ fn san_tropez_wanted_into_the_music_folder() -> Result<(Tree, Library)> {
     Ok((tree, library))
 }
 
-fn san_tropez_offered() -> Arc<Offering> {
+fn harbour_lights_offered() -> Arc<Offering> {
     Arc::new(Offering::new(
         "shop",
         Delivering::Bytes {
             key: "track/55391743",
             extension: "wav",
-            bytes: san_tropez_bytes(),
+            bytes: harbour_lights_bytes(),
         },
     ))
 }
@@ -895,13 +905,13 @@ fn san_tropez_offered() -> Arc<Offering> {
 #[test]
 fn a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not() -> Result<()>
 {
-    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let (_tree, library) = harbour_lights_wanted_into_the_music_folder()?;
     let metering = Metering::new();
 
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering.clone(), true));
 
-    let shop = san_tropez_offered();
+    let shop = harbour_lights_offered();
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
     let progress = Arc::clone(polling.progress());
@@ -929,7 +939,7 @@ fn a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_i
 
 #[test]
 fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result<()> {
-    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let (_tree, library) = harbour_lights_wanted_into_the_music_folder()?;
     let metering = Metering::new();
 
     metering.report(Meter::Metered);
@@ -938,7 +948,7 @@ fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result
 
     library.stall_downloads_by(gate.clone());
 
-    let shop = san_tropez_offered();
+    let shop = harbour_lights_offered();
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
     let progress = Arc::clone(polling.progress());
@@ -955,11 +965,11 @@ fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result
 
 #[test]
 fn a_connection_that_cannot_be_told_is_not_a_reason_to_hold_a_download() -> Result<()> {
-    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let (_tree, library) = harbour_lights_wanted_into_the_music_folder()?;
 
     library.stall_downloads_by(MeteredGate::new(Metering::new(), true));
 
-    let shop = san_tropez_offered();
+    let shop = harbour_lights_offered();
 
     let summary = library
         .poll(shop.registered(), PollOptions::default())?
@@ -971,13 +981,13 @@ fn a_connection_that_cannot_be_told_is_not_a_reason_to_hold_a_download() -> Resu
 
 #[test]
 fn a_metered_connection_holds_nothing_back_unless_the_setting_asks() -> Result<()> {
-    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let (_tree, library) = harbour_lights_wanted_into_the_music_folder()?;
     let metering = Metering::new();
 
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering, false));
 
-    let shop = san_tropez_offered();
+    let shop = harbour_lights_offered();
 
     let summary = library
         .poll(shop.registered(), PollOptions::default())?
@@ -989,13 +999,13 @@ fn a_metered_connection_holds_nothing_back_unless_the_setting_asks() -> Result<(
 
 #[test]
 fn a_poll_cancelled_while_it_waits_for_the_connection_ends_without_asking() -> Result<()> {
-    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let (_tree, library) = harbour_lights_wanted_into_the_music_folder()?;
     let metering = Metering::new();
 
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering, true));
 
-    let shop = san_tropez_offered();
+    let shop = harbour_lights_offered();
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
     let progress = Arc::clone(polling.progress());
@@ -1041,7 +1051,7 @@ impl Provider for TurnsMeteredDuring {
     }
 
     fn find(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
-        let bytes = san_tropez_bytes();
+        let bytes = harbour_lights_bytes();
         let opened = Arc::clone(&self.opened);
 
         let opening = match self.when {
@@ -1077,7 +1087,7 @@ struct TurningMetered {
 }
 
 fn turning_metered(when: TurnsMetered) -> Result<TurningMetered> {
-    let (tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let (tree, library) = harbour_lights_wanted_into_the_music_folder()?;
     let metering = Metering::new();
 
     library.stall_downloads_by(MeteredGate::new(metering.clone(), true));
@@ -1157,7 +1167,7 @@ fn a_download_under_way_stops_reading_when_the_connection_turns_metered_and_fini
         received > 0,
         "nothing was read before the connection turned"
     );
-    assert!(received < san_tropez_bytes().len() as u64);
+    assert!(received < harbour_lights_bytes().len() as u64);
 
     thread::sleep(THE_POLL_HAS_WAITED);
 
@@ -1178,14 +1188,14 @@ fn wanted_lasting(library: &Library, length: Option<Duration>) -> Result<WantId>
 
     rows.push(ReleaseTrack {
         length,
-        ..release_row(4, "San Tropez", Vec::new())
+        ..release_row(4, "Harbour Lights", Vec::new())
     });
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
 
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
     library.want(missing.id)
 }
@@ -1261,7 +1271,10 @@ fn a_poll_names_the_provider_it_is_asking_and_counts_what_it_received() -> Resul
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, None)?;
 
-    let bytes = Wav::new().text(TITLE, "San Tropez").frames(400_000).build();
+    let bytes = Wav::new()
+        .text(TITLE, "Harbour Lights")
+        .frames(400_000)
+        .build();
     let size = bytes.len() as u64;
     let named = Arc::new(Mutex::new(Vec::new()));
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1316,7 +1329,7 @@ fn a_file_delivered_into_the_vault_counts_the_bytes_it_was_as_received() -> Resu
     let tree = Tree::new();
     let held = Tree::new();
     let bytes = Wav::new()
-        .text(TITLE, "San Tropez")
+        .text(TITLE, "Harbour Lights")
         .frames(4_000_000)
         .build();
     let size = bytes.len() as u64;
@@ -1363,14 +1376,17 @@ fn a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+        &Wav::new()
+            .text(TITLE, "Harbour Lights")
+            .frames(8_820)
+            .build(),
     );
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
 
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
 
     let empty = Arc::new(Offering::new("inbox", Delivering::Nothing));
     let server = Arc::new(Offering::new("server", Delivering::File(delivered.clone())));
@@ -1416,13 +1432,16 @@ fn a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_
     Ok(())
 }
 
-fn half_of_san_tropez() -> Arc<Offering> {
+fn half_of_harbour_lights() -> Arc<Offering> {
     Arc::new(Offering::new(
         "shop",
         Delivering::Bytes {
             key: "track/half",
             extension: "wav",
-            bytes: Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+            bytes: Wav::new()
+                .text(TITLE, "Harbour Lights")
+                .frames(8_820)
+                .build(),
         },
     ))
 }
@@ -1437,7 +1456,10 @@ fn a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_doe
     wanted_lasting(&library, Some(Duration::from_secs(60)))?;
 
     let summary = library
-        .poll(half_of_san_tropez().registered(), PollOptions::default())?
+        .poll(
+            half_of_harbour_lights().registered(),
+            PollOptions::default(),
+        )?
         .join()?;
 
     assert_eq!(
@@ -1455,7 +1477,7 @@ fn a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_doe
     assert!(
         all(&library)?
             .iter()
-            .all(|track| track.title != "San Tropez")
+            .all(|track| track.title != "Harbour Lights")
     );
 
     let refused = library.wants()?[0].clone();
@@ -1466,13 +1488,16 @@ fn a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_doe
     Ok(())
 }
 
-fn the_whole_of_san_tropez(provider: &str) -> Arc<Offering> {
+fn the_whole_of_harbour_lights(provider: &str) -> Arc<Offering> {
     Arc::new(Offering::new(
         provider,
         Delivering::Bytes {
             key: "track/whole",
             extension: "wav",
-            bytes: Wav::new().text(TITLE, "San Tropez").frames(441_000).build(),
+            bytes: Wav::new()
+                .text(TITLE, "Harbour Lights")
+                .frames(441_000)
+                .build(),
         },
     ))
 }
@@ -1486,8 +1511,8 @@ fn a_delivery_refused_from_one_provider_is_asked_of_the_next() -> Result<()> {
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
 
-    let wrong = half_of_san_tropez();
-    let right = the_whole_of_san_tropez("store");
+    let wrong = half_of_harbour_lights();
+    let right = the_whole_of_harbour_lights("store");
 
     let summary = library
         .poll(asking_in_turn(&[&wrong, &right]), PollOptions::default())?
@@ -1518,7 +1543,7 @@ fn an_offer_that_cannot_be_opened_falls_through_to_the_next_provider() -> Result
 
     let broken = Arc::new(Offering::new("broken", Delivering::Unopenable));
     let gone = Arc::new(Offering::new("gone", Delivering::GoneWhenOpened));
-    let right = the_whole_of_san_tropez("store");
+    let right = the_whole_of_harbour_lights("store");
 
     let summary = library
         .poll(
@@ -1552,7 +1577,10 @@ fn an_offer_found_gone_is_told_to_its_provider_which_is_asked_again_without_it()
     let only = Arc::new(Offering::new(
         "only",
         Delivering::GoneUntilTold {
-            bytes: Wav::new().text(TITLE, "San Tropez").frames(441_000).build(),
+            bytes: Wav::new()
+                .text(TITLE, "Harbour Lights")
+                .frames(441_000)
+                .build(),
         },
     ));
     let linked = MediaLocation::new(
@@ -1585,11 +1613,11 @@ fn an_offer_the_race_did_not_take_is_never_opened() -> Result<()> {
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
 
     let first = Arc::new(
-        Arc::into_inner(the_whole_of_san_tropez("first"))
+        Arc::into_inner(the_whole_of_harbour_lights("first"))
             .expect("one holder")
             .answering_after(TURNED_TO_APART + Duration::from_millis(500)),
     );
-    let second = the_whole_of_san_tropez("second");
+    let second = the_whole_of_harbour_lights("second");
 
     let summary = library
         .poll(asking_in_turn(&[&first, &second]), PollOptions::default())?
@@ -1618,7 +1646,7 @@ fn an_offer_held_back_by_the_race_is_opened_when_the_one_taken_cannot_be() -> Re
         Offering::new("first", Delivering::Unopenable)
             .answering_after(TURNED_TO_APART + Duration::from_millis(500)),
     );
-    let second = the_whole_of_san_tropez("second");
+    let second = the_whole_of_harbour_lights("second");
 
     let summary = library
         .poll(asking_in_turn(&[&first, &second]), PollOptions::default())?
@@ -1645,13 +1673,13 @@ fn an_offer_refused_as_not_the_song_is_declined_by_the_next_poll_which_starts_el
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
 
-    let wrong = half_of_san_tropez();
+    let wrong = half_of_harbour_lights();
 
     library
         .poll(wrong.registered(), PollOptions::default())?
         .join()?;
 
-    let right = the_whole_of_san_tropez("store");
+    let right = the_whole_of_harbour_lights("store");
 
     let summary = library
         .poll(
@@ -1674,7 +1702,7 @@ fn a_refused_offer_is_offered_again_once_the_want_is_asked_for_again() -> Result
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
 
-    let wrong = half_of_san_tropez();
+    let wrong = half_of_harbour_lights();
 
     library
         .poll(wrong.registered(), PollOptions::default())?
@@ -1710,7 +1738,10 @@ fn a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_do
     let before = every_file_under(tree.path());
 
     let summary = library
-        .poll(half_of_san_tropez().registered(), PollOptions::default())?
+        .poll(
+            half_of_harbour_lights().registered(),
+            PollOptions::default(),
+        )?
         .join()?;
 
     assert_eq!(
@@ -1729,7 +1760,7 @@ fn a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_do
     assert!(
         all(&library)?
             .iter()
-            .all(|track| track.title != "San Tropez")
+            .all(|track| track.title != "Harbour Lights")
     );
 
     let refused = library.wants()?[0].clone();
@@ -1773,7 +1804,10 @@ fn a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_fil
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+        &Wav::new()
+            .text(TITLE, "Harbour Lights")
+            .frames(8_820)
+            .build(),
     );
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
@@ -1781,9 +1815,9 @@ fn a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_fil
 
     scan(&library, &options(&orbits))?;
 
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
 
-    orbits.write("4.wav", &orbits_track("San Tropez", 4).build());
+    orbits.write("4.wav", &orbits_track("Harbour Lights", 4).build());
 
     let provider = Arc::new(PairedAsItAnswers {
         source: source("inbox"),
@@ -1800,20 +1834,24 @@ fn a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_fil
 
     assert_eq!((summary.stats.kept, summary.stats.unkept), (0, 1));
 
-    let tropez: Vec<Track> = all(&library)?
+    let harbour: Vec<Track> = all(&library)?
         .into_iter()
-        .filter(|track| track.title == "San Tropez")
+        .filter(|track| track.title == "Harbour Lights")
         .collect();
 
-    assert_eq!(tropez.len(), 1, "the delivery became a row beside the file");
-    assert!(!tropez[0].delivered);
+    assert_eq!(
+        harbour.len(),
+        1,
+        "the delivery became a row beside the file"
+    );
+    assert!(!harbour[0].delivered);
 
     let wants = library.wants()?;
 
     assert_eq!(wants[0].id, want);
     assert_eq!(
         wants[0].held,
-        Some(tropez[0].id),
+        Some(harbour[0].id),
         "the delivery took the pairing from the listener's own file"
     );
     assert!(library.vault_objects()?.is_empty());
@@ -1827,13 +1865,13 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
 
@@ -1856,7 +1894,7 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
         "a want whose delivery was forgotten waits out an offer's six hours"
     );
 
-    let want = wanted_san_tropez(&library)?;
+    let want = wanted_harbour_lights(&library)?;
     let summary = library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
@@ -1871,7 +1909,10 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
         Delivering::Bytes {
             key: "track/55391743",
             extension: "wav",
-            bytes: Wav::new().text(TITLE, "San Tropez").frames(4_410).build(),
+            bytes: Wav::new()
+                .text(TITLE, "Harbour Lights")
+                .frames(4_410)
+                .build(),
         },
     ));
     let providers = Arc::new(
@@ -1909,14 +1950,17 @@ fn a_delivery_forgotten_once_a_second_provider_brought_the_same_audio_is_decline
 -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    let song = Wav::new().text(TITLE, "San Tropez").frames(4_410).build();
+    let song = Wav::new()
+        .text(TITLE, "Harbour Lights")
+        .frames(4_410)
+        .build();
 
     let delivered = tree.write("delivered.wav", &song);
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
     let shop = Arc::new(Offering::new(
@@ -1977,13 +2021,13 @@ fn a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_ag
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered.clone())));
 
@@ -1998,7 +2042,10 @@ fn a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_ag
     thread::sleep(Duration::from_millis(50));
     tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "San Tropez").frames(6_615).build(),
+        &Wav::new()
+            .text(TITLE, "Harbour Lights")
+            .frames(6_615)
+            .build(),
     );
 
     let summary = library
@@ -2017,7 +2064,7 @@ fn a_delivery_the_vault_refuses_waits_longer_before_it_is_fetched_again() -> Res
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let shop = Arc::new(Offering::new(
         "shop",
@@ -2064,8 +2111,8 @@ fn a_last_resort_is_not_asked_in_a_later_round_after_an_earlier_provider_refused
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
 
     let broken = Unanswering::new("broken", unreachable_server);
-    let wrong = half_of_san_tropez();
-    let tube = the_whole_of_san_tropez("tube");
+    let wrong = half_of_harbour_lights();
+    let tube = the_whole_of_harbour_lights("tube");
 
     let providers = Arc::new(
         Providers::none()
@@ -2096,8 +2143,8 @@ fn a_last_resort_is_asked_after_an_earlier_offer_was_not_the_song() -> Result<()
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
 
-    let wrong = half_of_san_tropez();
-    let tube = the_whole_of_san_tropez("tube");
+    let wrong = half_of_harbour_lights();
+    let tube = the_whole_of_harbour_lights("tube");
 
     let providers = Arc::new(
         Providers::none()
@@ -2120,10 +2167,10 @@ fn a_last_resort_is_never_foreseen_nor_started_by_a_search() -> Result<()> {
 
     scan(&library, &options(&orbits))?;
 
-    let fake = meddle_fake();
-    let found = library.found_elsewhere(&fake, "echoes")?;
+    let fake = low_tide_fake();
+    let found = library.found_elsewhere(&fake, "lantern")?;
     let empty = Arc::new(Offering::new("shop", Delivering::Nothing));
-    let tube = a_provider_offering_echoes("tube");
+    let tube = a_provider_offering_slow_water("tube");
 
     let providers = Providers::none()
         .and(Arc::clone(&empty) as Arc<dyn Provider>)
@@ -2143,21 +2190,21 @@ fn a_refusal_heard_while_foreseeing_bars_the_last_resort_and_the_miss_from_the_p
 
     scan(&library, &options(&orbits))?;
 
-    let mut release = meddle_release();
+    let mut release = low_tide_release();
 
     for row in &mut release.media[0].tracks {
         row.length = Some(Duration::from_secs(1_411));
     }
 
     let fake = Fake::new(Canned {
-        found_songs: vec![echoes_found()],
+        found_songs: vec![slow_water_found()],
         releases: vec![release],
         ..Canned::default()
     });
-    let found = library.found_elsewhere(&fake, "echoes")?;
+    let found = library.found_elsewhere(&fake, "lantern")?;
     let broken = Unanswering::new("broken", unreachable_server);
-    let short = a_provider_offering_echoes("shop");
-    let tube = a_provider_offering_echoes("tube");
+    let short = a_provider_offering_slow_water("shop");
+    let tube = a_provider_offering_slow_water("tube");
 
     let providers = Arc::new(
         Providers::none()

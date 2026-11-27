@@ -638,19 +638,19 @@ mod tests {
     fn a_line_timed_ttml_reads_its_lines_and_an_untimed_one_reads_as_words_alone() {
         let lined = read_whole(
             r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Line"><body><div>
-                <p begin="00:01.000" end="00:02.500">All that   you touch</p>
-                <p begin="00:03.000">All that you see</p>
+                <p begin="00:01.000" end="00:02.500">Every lamp   you lit</p>
+                <p begin="00:03.000">Each road I know</p>
             </div></body></tt>"#,
         );
 
         assert_eq!(lined.detail(), Detail::Lines);
-        assert_eq!(lined.lines()[0].text, "All that you touch");
+        assert_eq!(lined.lines()[0].text, "Every lamp you lit");
         assert_eq!(lined.lines()[0].until, Some(Duration::from_millis(2_500)));
         assert_eq!(lined.lines()[1].until, None);
 
         let untimed = read_ttml(
             source(),
-            r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p>All that you touch</p><p>All that you see</p></div></body></tt>"#,
+            r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p>Every lamp you lit</p><p>Each road I know</p></div></body></tt>"#,
         )
         .expect("the document reads");
 
@@ -659,7 +659,7 @@ mod tests {
         let untimed = untimed.lyrics.expect("the words are there");
 
         assert_eq!(untimed.timing(), Timing::Unsynced);
-        assert_eq!(untimed.lines()[1].text, "All that you see");
+        assert_eq!(untimed.lines()[1].text, "Each road I know");
     }
 
     #[test]

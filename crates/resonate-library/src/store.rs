@@ -2918,13 +2918,13 @@ mod tests {
     use super::*;
     use crate::schema;
 
-    const ALBUM: &str = "Meddle";
+    const ALBUM: &str = "Tideline";
 
     fn dated(date: Option<&str>) -> TrackRecord {
         TrackRecord {
             root_id: 1,
-            path: PathBuf::from("/music/Meddle/Echoes.wav"),
-            sleeve: Some(PathBuf::from("/music/Meddle")),
+            path: PathBuf::from("/music/Tideline/Lantern.wav"),
+            sleeve: Some(PathBuf::from("/music/Tideline")),
             existing: None,
             file_size: 0,
             modified: UNIX_EPOCH,

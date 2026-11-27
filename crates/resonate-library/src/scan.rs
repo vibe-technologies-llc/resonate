@@ -2452,7 +2452,7 @@ mod tests {
         assert_eq!(spelt("  cd_11  "), Some(11));
         assert_eq!(spelt("DISC.4"), Some(4));
 
-        assert_eq!(spelt("The Wall"), None);
+        assert_eq!(spelt("The Lighthouse"), None);
         assert_eq!(spelt("cd"), None);
         assert_eq!(spelt("Discography"), None);
     }

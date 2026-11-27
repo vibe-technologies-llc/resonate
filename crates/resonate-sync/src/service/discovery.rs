@@ -303,8 +303,8 @@ mod tests {
         Recording {
             mbid: None,
             title: title.into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: Some(Duration::from_secs(400)),
         }
     }
@@ -525,13 +525,13 @@ mod tests {
             sync.shown().standing == Standing::Connected
         });
 
-        sync.fetch(vec![song("Echoes")], PEER);
-        sync.fetch(vec![song("One of These Days")], PEER);
+        sync.fetch(vec![song("Slow Water")], PEER);
+        sync.fetch(vec![song("Small Hours")], PEER);
 
         eventually(
             "a command behind a punch",
             A_COMMAND_IS_ANSWERED_WITHIN,
-            || waiting_on(sync, &song("One of These Days")),
+            || waiting_on(sync, &song("Small Hours")),
         );
 
         assert_eq!(sync.shown().standing, Standing::Connected);

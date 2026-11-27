@@ -220,9 +220,9 @@ mod tests {
         Track {
             explicit: None,
             id: TrackId::new(1).expect("a valid id"),
-            location: MediaLocation::local("/music/Echoes.flac"),
-            title: "Echoes (2011 Remaster)".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            location: MediaLocation::local("/music/Lantern.flac"),
+            title: "Lantern (2011 Remaster)".to_owned(),
+            artist: Some("Example Band".to_owned()),
             artist_id: None,
             album_id: None,
             track_number: None,
@@ -297,14 +297,14 @@ mod tests {
         let song = TheSong::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_44100));
         let lossless = TheSong::of(&track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100));
 
-        assert!(song.is_bettered_by(served("Echoes", "Pink Floyd", 1_413, true)));
-        assert!(song.is_bettered_by(served("ECHOES", "pink floyd", 1_410, true)));
+        assert!(song.is_bettered_by(served("Lantern", "Example Band", 1_413, true)));
+        assert!(song.is_bettered_by(served("LANTERN", "example band", 1_410, true)));
 
-        assert!(!song.is_bettered_by(served("Echoes", "Pink Floyd", 1_413, false)));
-        assert!(!song.is_bettered_by(served("Echoes", "Pink Floyd", 1_300, true)));
-        assert!(!song.is_bettered_by(served("Time", "Pink Floyd", 1_413, true)));
-        assert!(!song.is_bettered_by(served("Echoes", "Someone Else", 1_413, true)));
-        assert!(!lossless.is_bettered_by(served("Echoes", "Pink Floyd", 1_413, true)));
+        assert!(!song.is_bettered_by(served("Lantern", "Example Band", 1_413, false)));
+        assert!(!song.is_bettered_by(served("Lantern", "Example Band", 1_300, true)));
+        assert!(!song.is_bettered_by(served("Time", "Example Band", 1_413, true)));
+        assert!(!song.is_bettered_by(served("Lantern", "Someone Else", 1_413, true)));
+        assert!(!lossless.is_bettered_by(served("Lantern", "Example Band", 1_413, true)));
     }
 
     #[test]
@@ -326,9 +326,9 @@ mod tests {
 
     #[test]
     fn a_rating_is_offered_only_where_the_track_is_not_already_it() {
-        let explicit = rated(1, Some(true), "Echoes");
-        let clean = rated(2, None, "Echoes (Clean)");
-        let unmarked = rated(3, None, "Echoes");
+        let explicit = rated(1, Some(true), "Lantern");
+        let clean = rated(2, None, "Lantern (Clean)");
+        let unmarked = rated(3, None, "Lantern");
 
         assert_eq!(
             VersionSought::offered_for(rating_of(&explicit)),
@@ -353,12 +353,12 @@ mod tests {
 
     #[test]
     fn a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked() {
-        let explicit = rated(1, Some(true), "Echoes");
+        let explicit = rated(1, Some(true), "Lantern");
         let found = vec![
-            rated(1, Some(true), "Echoes"),
-            rated(2, None, "Echoes"),
-            rated(3, None, "Echoes (Clean)"),
-            rated(4, Some(true), "Echoes"),
+            rated(1, Some(true), "Lantern"),
+            rated(2, None, "Lantern"),
+            rated(3, None, "Lantern (Clean)"),
+            rated(4, Some(true), "Lantern"),
             rated(5, None, "Time"),
         ];
 
@@ -366,7 +366,7 @@ mod tests {
             .iter()
             .map(|copy| copy.id.get())
             .collect();
-        let unmarked = rated(9, None, "Echoes");
+        let unmarked = rated(9, None, "Lantern");
         let marked: Vec<u64> = rated_held(&unmarked, Rating::Explicit, found.clone())
             .iter()
             .map(|copy| copy.id.get())
@@ -384,10 +384,10 @@ mod tests {
     #[test]
     fn the_words_asked_are_the_bare_title_and_the_artist_where_there_is_one() {
         assert_eq!(
-            TheSong::words("Echoes (2011 Remaster)", Some("Pink Floyd")),
-            "Echoes Pink Floyd"
+            TheSong::words("Lantern (2011 Remaster)", Some("Example Band")),
+            "Lantern Example Band"
         );
-        assert_eq!(TheSong::words("Echoes", Some("  ")), "Echoes");
-        assert_eq!(TheSong::words("Echoes", None), "Echoes");
+        assert_eq!(TheSong::words("Lantern", Some("  ")), "Lantern");
+        assert_eq!(TheSong::words("Lantern", None), "Lantern");
     }
 }

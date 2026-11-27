@@ -23,8 +23,8 @@ use resonate_library::{
 };
 
 use crate::support::{
-    ALBUM, ALBUM_ARTIST, ARTIST, MEDDLE_SHEET, RATE, TITLE, TRACK, TrashedByTheDesktop, Tree, Wav,
-    YEAR, all, beside, link_to_directory, link_to_file, matched, moved, narrowed, one_song,
+    ALBUM, ALBUM_ARTIST, ARTIST, LOW_TIDE_SHEET, RATE, TITLE, TRACK, TrashedByTheDesktop, Tree,
+    Wav, YEAR, all, beside, link_to_directory, link_to_file, matched, moved, narrowed, one_song,
     only_album, options, png, scan, scanned_sheet, scanned_two_discs, settled, stored, titles,
 };
 #[cfg(unix)]
@@ -447,9 +447,9 @@ fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> R
 #[test]
 fn a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns() -> Result<()> {
     let tree = Tree::new();
-    let bytes = Wav::new().text(TITLE, "Echoes").build();
+    let bytes = Wav::new().text(TITLE, "Lantern").build();
 
-    let echoes = tree.write("echoes.wav", &bytes);
+    let slow_water = tree.write("lantern.wav", &bytes);
 
     tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
@@ -459,7 +459,11 @@ fn a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns(
 
     for _ in 0..2 {
         let counted = library
-            .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+            .track_played(
+                &MediaLocation::local(&slow_water),
+                None,
+                Duration::from_secs(2),
+            )?
             .expect("a counted play");
 
         library.listened(counted.listen, Duration::from_secs(2))?;
@@ -467,9 +471,9 @@ fn a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns(
 
     let before = library.statistics(Window::Everything)?;
 
-    fs::remove_file(&echoes).expect("the file goes");
+    fs::remove_file(&slow_water).expect("the file goes");
 
-    assert_eq!(library.forget_the_gone(slice::from_ref(&echoes))?, 1);
+    assert_eq!(library.forget_the_gone(slice::from_ref(&slow_water))?, 1);
 
     let after = library.statistics(Window::Everything)?;
 
@@ -478,11 +482,14 @@ fn a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns(
     assert_eq!(after.plays, before.plays);
     assert_eq!(after.listened, before.listened);
 
-    tree.write("echoes.wav", &bytes);
+    tree.write("lantern.wav", &bytes);
     scan(&library, &options(&tree))?;
 
     assert_eq!(
-        library.track_at(&echoes, None)?.expect("held again").plays,
+        library
+            .track_at(&slow_water, None)?
+            .expect("held again")
+            .plays,
         2
     );
     assert_eq!(library.statistics(Window::Everything)?.plays, 2);
@@ -1315,13 +1322,13 @@ fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<
 fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("Tideline.wav", &Wav::new().frames(44_100).build());
     fs::write(
         tree.path()
             .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
-                b"Meddle\xe9.cue",
+                b"Tideline\xe9.cue",
             )),
-        MEDDLE_SHEET.as_bytes(),
+        LOW_TIDE_SHEET.as_bytes(),
     )
     .expect("a sheet with a name that is not text");
 
@@ -1345,12 +1352,12 @@ fn a_cue_sheet_cannot_name_a_file_whose_name_is_not_text_so_the_file_is_scanned_
     fs::write(
         tree.path()
             .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
-                b"Meddle\xe9.wav",
+                b"Tideline\xe9.wav",
             )),
         Wav::new().frames(44_100).build(),
     )
     .expect("a file with a name that is not text");
-    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let library = Library::open_in_memory()?;
 
@@ -1468,7 +1475,7 @@ fn a_root_that_is_not_a_directory_is_refused() -> Result<()> {
 fn the_names_stamp_moves_for_a_title_written_and_stands_through_a_play_and_a_favourite()
 -> Result<()> {
     let tree = Tree::new();
-    let path = tree.write("one.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let path = tree.write("one.wav", &Wav::new().text(TITLE, "Lantern").build());
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
@@ -1495,7 +1502,7 @@ fn the_names_stamp_moves_for_a_title_written_and_stands_through_a_play_and_a_fav
 fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrived() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("one.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("one.wav", &Wav::new().text(TITLE, "Lantern").build());
     tree.write("two.wav", &Wav::new().text(TITLE, "Time").build());
 
     let library = Library::open_in_memory()?;
@@ -1503,10 +1510,10 @@ fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrive
     scan(&library, &options(&tree))?;
 
     let held = all(&library)?;
-    let echoes = held
+    let slow_water = held
         .iter()
-        .find(|track| track.title == "Echoes")
-        .expect("Echoes")
+        .find(|track| track.title == "Lantern")
+        .expect("Lantern")
         .id;
     let time = held
         .iter()
@@ -1522,7 +1529,7 @@ fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrive
 
     let moved = library.names_moved_since(named);
 
-    assert!(moved.names(Some(echoes)));
+    assert!(moved.names(Some(slow_water)));
     assert!(
         !moved.names(Some(time)),
         "a row nothing retitled is named as moved"
@@ -1540,7 +1547,7 @@ fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrive
     let moved = library.names_moved_since(retitled);
 
     assert!(moved.names(None), "a row arriving is not said to have");
-    assert!(!moved.names(Some(echoes)));
+    assert!(!moved.names(Some(slow_water)));
     Ok(())
 }
 
@@ -2505,7 +2512,7 @@ fn a_file_library_survives_being_closed_and_reopened() -> Result<()> {
 fn a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("06 Echoes.wav", &one_song(16, 44_100));
+    tree.write("06 Lantern.wav", &one_song(16, 44_100));
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
@@ -2569,7 +2576,7 @@ fn removing_a_track_from_the_library_keeps_its_file_and_survives_a_rescan() -> R
         !library.hide_track(removed.id, true)?,
         "hiding twice should be harmless"
     );
-    assert!(tree.path().join("Meddle.wav").exists());
+    assert!(tree.path().join("Tideline.wav").exists());
     assert!(
         library.track(removed.id)?.is_some(),
         "the stored row was deleted"
@@ -2586,7 +2593,7 @@ fn removing_a_track_from_the_library_keeps_its_file_and_survives_a_rescan() -> R
         },
     )?;
 
-    assert!(tree.path().join("Meddle.wav").exists());
+    assert!(tree.path().join("Tideline.wav").exists());
     assert!(library.track(removed.id)?.is_some());
     assert_eq!(library.tracks(&TrackQuery::default())?.len(), 2);
     Ok(())
@@ -2676,31 +2683,31 @@ fn the_hidden_tracks_are_listed_by_title_counted_past_the_list_and_shown_again_a
 fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist() -> Result<()> {
     let tree = Tree::new();
     let before = tree.write(
-        "loose/echoes.wav",
+        "loose/lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .build(),
     );
 
     tree.write(
-        "loose/seamus.wav",
-        &Wav::new().text(TITLE, "Seamus").build(),
+        "loose/marlow.wav",
+        &Wav::new().text(TITLE, "Marlow").build(),
     );
 
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
 
-    let echoes = library
+    let slow_water = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
         .track
         .expect("the play was counted against a row");
 
-    library.favour(Favoured::Track(echoes.id), true)?;
+    library.favour(Favoured::Track(slow_water.id), true)?;
 
-    let playlist = library.create_playlist("Meddle")?;
+    let playlist = library.create_playlist("Tideline")?;
 
     library.add_to_playlist(playlist, &[Cut::whole(MediaLocation::local(&before))])?;
 
@@ -2708,7 +2715,7 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
 
     library.hold_lyrics_ahead(&MediaLocation::local(&before), None, ahead)?;
 
-    let after = tree.path().join("filed/Pink Floyd/06 Echoes.wav");
+    let after = tree.path().join("filed/Example Band/06 Lantern.wav");
 
     moved(&before, &after);
 
@@ -2722,7 +2729,7 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
         .track_at(&after, None)?
         .expect("the row followed the file");
 
-    assert_eq!(row.id, echoes.id);
+    assert_eq!(row.id, slow_water.id);
     assert_eq!(row.plays, 1);
     assert!(row.favourite.is_some());
     assert_eq!(
@@ -2746,16 +2753,13 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
 fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()> {
     let tree = Tree::new();
 
-    for (file, title) in [
-        ("01.wav", "One of These Days"),
-        ("02.wav", "A Pillow of Winds"),
-    ] {
+    for (file, title) in [("01.wav", "Small Mercies"), ("02.wav", "A Quilt of Winds")] {
         tree.write(
             &format!("rips/{file}"),
             &Wav::new()
                 .text(TITLE, title)
-                .text(ARTIST, "Pink Floyd")
-                .text(ALBUM, "Meddle")
+                .text(ARTIST, "Example Band")
+                .text(ALBUM, "Tideline")
                 .build(),
         );
     }
@@ -2771,7 +2775,7 @@ fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()
     for file in ["01.wav", "02.wav"] {
         moved(
             &tree.path().join("rips").join(file),
-            &tree.path().join("Pink Floyd/Meddle").join(file),
+            &tree.path().join("Example Band/Tideline").join(file),
         );
     }
 
@@ -2793,16 +2797,16 @@ fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()
 #[test]
 fn two_files_alike_in_every_way_are_not_guessed_between_when_they_move() -> Result<()> {
     let tree = Tree::new();
-    let twin = Wav::new().text(TITLE, "Echoes").build();
+    let twin = Wav::new().text(TITLE, "Lantern").build();
 
-    let first = tree.write("a/echoes.wav", &twin);
-    let second = tree.write("b/echoes.wav", &twin);
+    let first = tree.write("a/lantern.wav", &twin);
+    let second = tree.write("b/lantern.wav", &twin);
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
 
-    moved(&first, &tree.path().join("c/echoes.wav"));
-    moved(&second, &tree.path().join("d/echoes.wav"));
+    moved(&first, &tree.path().join("c/lantern.wav"));
+    moved(&second, &tree.path().join("d/lantern.wav"));
 
     let stats = scan(&library, &options(&tree))?;
 
@@ -2815,10 +2819,10 @@ fn two_files_alike_in_every_way_are_not_guessed_between_when_they_move() -> Resu
 #[test]
 fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() -> Result<()> {
     let tree = Tree::new();
-    let twin = Wav::new().text(TITLE, "Echoes").build();
+    let twin = Wav::new().text(TITLE, "Lantern").build();
 
-    let first = tree.write("vinyl/echoes.wav", &twin);
-    let second = tree.write("tape/echoes.wav", &twin);
+    let first = tree.write("vinyl/lantern.wav", &twin);
+    let second = tree.write("tape/lantern.wav", &twin);
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
@@ -2829,8 +2833,8 @@ fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() 
         .track
         .expect("the play was counted against a row");
 
-    let filed_first = tree.path().join("filed/vinyl/echoes.wav");
-    let filed_second = tree.path().join("filed/tape/echoes.wav");
+    let filed_first = tree.path().join("filed/vinyl/lantern.wav");
+    let filed_second = tree.path().join("filed/tape/lantern.wav");
 
     moved(&first, &filed_first);
     moved(&second, &filed_second);
@@ -2862,12 +2866,12 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
     let tree = Tree::new();
     let before = tree.write(
         "incoming/track01.wav",
-        &Wav::new().frames(7_919).text(TITLE, "Echoes").build(),
+        &Wav::new().frames(7_919).text(TITLE, "Lantern").build(),
     );
 
     tree.write(
         "incoming/track02.wav",
-        &Wav::new().frames(7_907).text(TITLE, "Seamus").build(),
+        &Wav::new().frames(7_907).text(TITLE, "Marlow").build(),
     );
 
     let library = Library::open_in_memory()?;
@@ -2883,12 +2887,12 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
     fs::remove_file(&before).expect("the file is taken away");
 
     let after = tree.write(
-        "Pink Floyd/Meddle/06 Echoes.wav",
+        "Example Band/Tideline/06 Lantern.wav",
         &Wav::new()
             .frames(7_919)
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
-            .text(ALBUM, "Meddle")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
+            .text(ALBUM, "Tideline")
             .build(),
     );
     let stats = scan(&library, &options(&tree))?;
@@ -2915,7 +2919,7 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
         "incoming/track01.wav",
         &Wav::new()
             .frames(SECONDS_HEARD * RATE as usize)
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .build(),
     );
     let database = tree.path().join("library.db");
@@ -2952,11 +2956,11 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
     fs::remove_file(&before).expect("the file is taken away");
 
     let after = tree.write(
-        "Pink Floyd/Meddle/06 Money.wav",
+        "Example Band/Tideline/06 Money.wav",
         &Wav::new()
             .frames(SECONDS_HEARD * RATE as usize)
             .text(TITLE, "Money")
-            .text(ARTIST, "Pink Floyd")
+            .text(ARTIST, "Example Band")
             .build(),
     );
     let stats = scan(&library, &options(&tree))?;
@@ -2978,7 +2982,7 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
     let tree = Tree::new();
     let before = tree.write(
         "incoming/track01.wav",
-        &Wav::new().frames(9_973).text(TITLE, "Echoes").build(),
+        &Wav::new().frames(9_973).text(TITLE, "Lantern").build(),
     );
     let library = Library::open_in_memory()?;
 
@@ -2993,11 +2997,11 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
     fs::remove_file(&before).expect("the file is taken away");
 
     let after = tree.write(
-        "Pink Floyd/Meddle/06 Money.wav",
+        "Example Band/Tideline/06 Money.wav",
         &Wav::new()
             .frames(9_973)
             .text(TITLE, "Money")
-            .text(ARTIST, "Pink Floyd")
+            .text(ARTIST, "Example Band")
             .build(),
     );
     let stats = scan(&library, &options(&tree))?;
@@ -3011,16 +3015,16 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
     assert_eq!(row.title, "Money", "the row kept the title it was heard as");
-    assert_eq!(row.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(row.artist.as_deref(), Some("Example Band"));
     assert_eq!(
         row.file_size,
         fs::metadata(&after).expect("the file is there").len(),
         "the row kept the size of the file before it was retagged"
     );
     assert_eq!(narrowed(&library, "money")?, vec!["Money"]);
-    assert_eq!(narrowed(&library, "artist:floyd")?, vec!["Money"]);
+    assert_eq!(narrowed(&library, "artist:example")?, vec!["Money"]);
     assert!(
-        narrowed(&library, "echoes")?.is_empty(),
+        narrowed(&library, "lantern")?.is_empty(),
         "the index still held the title the file had before it moved"
     );
     Ok(())
@@ -3030,25 +3034,25 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
 fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
-    tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("rip/Tideline.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
 
-    let echoes = library
+    let slow_water = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the sheet's third row");
 
-    library.track_played(&echoes.location, echoes.span, Duration::ZERO)?;
+    library.track_played(&slow_water.location, slow_water.span, Duration::ZERO)?;
 
-    fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
+    fs::create_dir_all(tree.path().join("Example Band")).expect("a writable temporary directory");
     fs::rename(
         tree.path().join("rip"),
-        tree.path().join("Pink Floyd/Meddle"),
+        tree.path().join("Example Band/Tideline"),
     )
     .expect("the rip is moved by hand");
 
@@ -3059,12 +3063,12 @@ fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<(
 
     let moved = library
         .track_at(
-            &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
-            echoes.span,
+            &tree.path().join("Example Band/Tideline/Tideline.wav"),
+            slow_water.span,
         )?
         .expect("the row followed the file");
 
-    assert_eq!(moved.id, echoes.id);
+    assert_eq!(moved.id, slow_water.id);
     assert_eq!(moved.plays, 1);
     Ok(())
 }
@@ -3074,30 +3078,30 @@ fn a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited
 -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
-    tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("rip/Tideline.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
 
-    let echoes = library
+    let slow_water = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the sheet's third row");
 
-    library.track_played(&echoes.location, echoes.span, Duration::ZERO)?;
+    library.track_played(&slow_water.location, slow_water.span, Duration::ZERO)?;
 
-    fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
+    fs::create_dir_all(tree.path().join("Example Band")).expect("a writable temporary directory");
     fs::rename(
         tree.path().join("rip"),
-        tree.path().join("Pink Floyd/Meddle"),
+        tree.path().join("Example Band/Tideline"),
     )
     .expect("the rip is moved by hand");
     tree.write(
-        "Pink Floyd/Meddle/Meddle.cue",
-        MEDDLE_SHEET.replace("Echoes", "Fearless").as_bytes(),
+        "Example Band/Tideline/Tideline.cue",
+        LOW_TIDE_SHEET.replace("Lantern", "Paper Boats").as_bytes(),
     );
 
     let stats = scan(&library, &options(&tree))?;
@@ -3107,17 +3111,17 @@ fn a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited
 
     let moved = library
         .track_at(
-            &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
-            echoes.span,
+            &tree.path().join("Example Band/Tideline/Tideline.wav"),
+            slow_water.span,
         )?
         .expect("the row followed the file");
 
-    assert_eq!(moved.id, echoes.id);
+    assert_eq!(moved.id, slow_water.id);
     assert_eq!(moved.plays, 1);
-    assert_eq!(moved.title, "Fearless");
-    assert_eq!(narrowed(&library, "fearless")?, vec!["Fearless"]);
+    assert_eq!(moved.title, "Paper Boats");
+    assert_eq!(narrowed(&library, "paper boats")?, vec!["Paper Boats"]);
     assert!(
-        narrowed(&library, "echoes")?.is_empty(),
+        narrowed(&library, "lantern")?.is_empty(),
         "the index still held the title the sheet had before it was edited"
     );
     Ok(())
@@ -3131,7 +3135,7 @@ fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can
 
     named.write("one.wav", &Wav::new().frames(100).build());
 
-    let before = beside.write("old/Echoes.wav", &Wav::new().frames(4_410).build());
+    let before = beside.write("old/Lantern.wav", &Wav::new().frames(4_410).build());
     let deleted = beside.write("deleted.wav", &Wav::new().frames(9_973).build());
     let library = Library::open_in_memory()?;
 
@@ -3145,7 +3149,7 @@ fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can
         .track
         .expect("the play was counted against a row");
 
-    let after = beside.path().join("new/Echoes.wav");
+    let after = beside.path().join("new/Lantern.wav");
 
     fs::create_dir_all(after.parent().expect("a folder")).expect("a writable folder");
     fs::rename(&before, &after).expect("the file is moved by hand");
@@ -3276,16 +3280,16 @@ fn a_file_moved_as_a_scan_stopped_short_of_following_it_keeps_its_row_favourite_
 -> Result<()> {
     let tree = Tree::new();
     let before = tree.write(
-        "loose/echoes.wav",
+        "loose/lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .build(),
     );
 
     tree.write(
-        "loose/seamus.wav",
-        &Wav::new().text(TITLE, "Seamus").build(),
+        "loose/marlow.wav",
+        &Wav::new().text(TITLE, "Marlow").build(),
     );
 
     let database = tree.path().join("library.db");
@@ -3293,13 +3297,13 @@ fn a_file_moved_as_a_scan_stopped_short_of_following_it_keeps_its_row_favourite_
 
     scan(&library, &options(&tree))?;
 
-    let echoes = library
+    let slow_water = library
         .track_at(&before, None)?
         .expect("the scan stored the song");
 
-    heard_favoured_and_queued(&library, &echoes)?;
+    heard_favoured_and_queued(&library, &slow_water)?;
 
-    let after = tree.path().join("filed/Pink Floyd/06 Echoes.wav");
+    let after = tree.path().join("filed/Example Band/06 Lantern.wav");
 
     moved(&before, &after);
     stopped_at_the_mark(&library, &database, &options(&tree))?;
@@ -3315,7 +3319,7 @@ fn a_file_moved_as_a_scan_stopped_short_of_following_it_keeps_its_row_favourite_
     assert_eq!(stats.added, 0);
     assert_eq!(stats.removed, 0);
     assert_eq!(all(&library)?.len(), 2);
-    followed_as_it_was(&library, &database, &echoes, &after)
+    followed_as_it_was(&library, &database, &slow_water, &after)
 }
 
 #[test]
@@ -3323,25 +3327,25 @@ fn a_file_a_sheet_cuts_moved_as_a_scan_stopped_short_of_following_it_keeps_every
 -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
-    tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("rip/Tideline.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
 
-    let echoes = library
+    let slow_water = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the sheet's third row");
 
-    heard_favoured_and_queued(&library, &echoes)?;
-    fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
+    heard_favoured_and_queued(&library, &slow_water)?;
+    fs::create_dir_all(tree.path().join("Example Band")).expect("a writable temporary directory");
     fs::rename(
         tree.path().join("rip"),
-        tree.path().join("Pink Floyd/Meddle"),
+        tree.path().join("Example Band/Tideline"),
     )
     .expect("the rip is moved by hand");
     stopped_at_the_mark(&library, &database, &options(&tree))?;
@@ -3354,8 +3358,8 @@ fn a_file_a_sheet_cuts_moved_as_a_scan_stopped_short_of_following_it_keeps_every
     followed_as_it_was(
         &library,
         &database,
-        &echoes,
-        &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
+        &slow_water,
+        &tree.path().join("Example Band/Tideline/Tideline.wav"),
     )
 }
 
@@ -3366,14 +3370,14 @@ fn a_file_moved_into_a_root_the_watch_scanned_alone_is_followed_by_the_next_scan
     let source = Tree::new();
     let destination = Tree::new();
     let before = source.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .build(),
     );
 
-    source.write("seamus.wav", &Wav::new().text(TITLE, "Seamus").build());
+    source.write("marlow.wav", &Wav::new().text(TITLE, "Marlow").build());
     destination.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     let database = catalog.path().join("library.db");
@@ -3383,13 +3387,13 @@ fn a_file_moved_into_a_root_the_watch_scanned_alone_is_followed_by_the_next_scan
         scan(&library, &options(tree))?;
     }
 
-    let echoes = library
+    let slow_water = library
         .track_at(&before, None)?
         .expect("the scan stored the song");
 
-    heard_favoured_and_queued(&library, &echoes)?;
+    heard_favoured_and_queued(&library, &slow_water)?;
 
-    let after = destination.path().join("Pink Floyd/Echoes.wav");
+    let after = destination.path().join("Example Band/Lantern.wav");
 
     moved(&before, &after);
     watched_alone(&library, &destination)?;
@@ -3405,7 +3409,7 @@ fn a_file_moved_into_a_root_the_watch_scanned_alone_is_followed_by_the_next_scan
     assert_eq!(stats.added, 0);
     assert_eq!(stats.removed, 0);
     assert!(library.track_at(&before, None)?.is_none());
-    followed_as_it_was(&library, &database, &echoes, &after)
+    followed_as_it_was(&library, &database, &slow_water, &after)
 }
 
 #[test]
@@ -3415,23 +3419,23 @@ fn a_song_moved_into_a_root_a_scan_names_alone_keeps_its_row_favourite_listens_a
     let source = Tree::new();
     let destination = Tree::new();
     let before = source.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
             .frames(8_820)
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .build(),
     );
     let stranger = source.write(
         "stranger.wav",
         &Wav::new()
             .frames(8_820)
-            .text(TITLE, "Echoez")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lanterm")
+            .text(ARTIST, "Example Band")
             .build(),
     );
 
-    source.write("seamus.wav", &Wav::new().text(TITLE, "Seamus").build());
+    source.write("marlow.wav", &Wav::new().text(TITLE, "Marlow").build());
     destination.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     let database = catalog.path().join("library.db");
@@ -3441,13 +3445,13 @@ fn a_song_moved_into_a_root_a_scan_names_alone_keeps_its_row_favourite_listens_a
         scan(&library, &options(tree))?;
     }
 
-    let echoes = library
+    let slow_water = library
         .track_at(&before, None)?
         .expect("the scan stored the song");
 
-    heard_favoured_and_queued(&library, &echoes)?;
+    heard_favoured_and_queued(&library, &slow_water)?;
 
-    let after = destination.path().join("Pink Floyd/Echoes.wav");
+    let after = destination.path().join("Example Band/Lantern.wav");
 
     assert_eq!(
         fs::metadata(&stranger).map(|held| held.len()).ok(),
@@ -3469,7 +3473,7 @@ fn a_song_moved_into_a_root_a_scan_names_alone_keeps_its_row_favourite_listens_a
     assert!(library.track_at(&before, None)?.is_none());
     assert!(library.track_at(&stranger, None)?.is_none());
     assert_eq!(all(&library)?.len(), 3);
-    followed_as_it_was(&library, &database, &echoes, &after)
+    followed_as_it_was(&library, &database, &slow_water, &after)
 }
 
 #[test]
@@ -3479,8 +3483,8 @@ fn a_file_a_sheet_cuts_moved_into_a_root_a_scan_names_alone_keeps_every_rows_ide
     let source = Tree::new();
     let destination = Tree::new();
 
-    source.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
-    source.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    source.write("rip/Tideline.wav", &Wav::new().frames(44_100).build());
+    source.write("rip/Tideline.cue", LOW_TIDE_SHEET.as_bytes());
     destination.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     let database = catalog.path().join("library.db");
@@ -3490,18 +3494,18 @@ fn a_file_a_sheet_cuts_moved_into_a_root_a_scan_names_alone_keeps_every_rows_ide
         scan(&library, &options(tree))?;
     }
 
-    let echoes = library
+    let slow_water = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the sheet's third row");
 
-    heard_favoured_and_queued(&library, &echoes)?;
-    fs::create_dir_all(destination.path().join("Pink Floyd"))
+    heard_favoured_and_queued(&library, &slow_water)?;
+    fs::create_dir_all(destination.path().join("Example Band"))
         .expect("a writable temporary directory");
     fs::rename(
         source.path().join("rip"),
-        destination.path().join("Pink Floyd/Meddle"),
+        destination.path().join("Example Band/Tideline"),
     )
     .expect("the rip is moved by hand");
 
@@ -3513,8 +3517,10 @@ fn a_file_a_sheet_cuts_moved_into_a_root_a_scan_names_alone_keeps_every_rows_ide
     followed_as_it_was(
         &library,
         &database,
-        &echoes,
-        &destination.path().join("Pink Floyd/Meddle/Meddle.wav"),
+        &slow_water,
+        &destination
+            .path()
+            .join("Example Band/Tideline/Tideline.wav"),
     )
 }
 
@@ -3525,8 +3531,8 @@ fn a_file_a_sheet_cuts_moved_into_a_root_the_watch_scanned_alone_keeps_every_row
     let source = Tree::new();
     let destination = Tree::new();
 
-    source.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
-    source.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    source.write("rip/Tideline.wav", &Wav::new().frames(44_100).build());
+    source.write("rip/Tideline.cue", LOW_TIDE_SHEET.as_bytes());
     destination.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     let database = catalog.path().join("library.db");
@@ -3536,18 +3542,18 @@ fn a_file_a_sheet_cuts_moved_into_a_root_the_watch_scanned_alone_keeps_every_row
         scan(&library, &options(tree))?;
     }
 
-    let echoes = library
+    let slow_water = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the sheet's third row");
 
-    heard_favoured_and_queued(&library, &echoes)?;
-    fs::create_dir_all(destination.path().join("Pink Floyd"))
+    heard_favoured_and_queued(&library, &slow_water)?;
+    fs::create_dir_all(destination.path().join("Example Band"))
         .expect("a writable temporary directory");
     fs::rename(
         source.path().join("rip"),
-        destination.path().join("Pink Floyd/Meddle"),
+        destination.path().join("Example Band/Tideline"),
     )
     .expect("the rip is moved by hand");
 
@@ -3561,8 +3567,10 @@ fn a_file_a_sheet_cuts_moved_into_a_root_the_watch_scanned_alone_keeps_every_row
     followed_as_it_was(
         &library,
         &database,
-        &echoes,
-        &destination.path().join("Pink Floyd/Meddle/Meddle.wav"),
+        &slow_water,
+        &destination
+            .path()
+            .join("Example Band/Tideline/Tideline.wav"),
     )
 }
 
@@ -3638,7 +3646,7 @@ fn a_followed_move_takes_the_advisory_and_the_frames_walked_the_arrival_was_prob
 fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed() -> Result<()> {
     let tree = Tree::new();
     let before = tree.write(
-        "The Orbiters - Echoes.wav",
+        "The Orbiters - Lantern.wav",
         &Wav::new().frames(7_919).build(),
     );
     let database = tree.path().join("library.db");
@@ -3647,7 +3655,7 @@ fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed(
     scan(&library, &options(&tree))?;
     beside(&database)
         .execute(
-            "UPDATE tracks SET title = 'Echoes (Answered)', answered = 1 WHERE path = ?1",
+            "UPDATE tracks SET title = 'Lantern (Answered)', answered = 1 WHERE path = ?1",
             rusqlite::params![settled(&before)],
         )
         .expect("the row is answered");
@@ -3655,7 +3663,7 @@ fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed(
     fs::remove_file(&before).expect("the file is renamed");
 
     let after = tree.write(
-        "The Orbiters - Echoes (2011).wav",
+        "The Orbiters - Lantern (2011).wav",
         &Wav::new().frames(7_919).text(b"TCOM", "Somebody").build(),
     );
 
@@ -3664,7 +3672,7 @@ fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed(
 
     let held = stored(&database, &after);
 
-    assert_eq!(held.title, "Echoes (Answered)");
+    assert_eq!(held.title, "Lantern (Answered)");
     assert!(
         held.answered.is_some(),
         "a rename was read as a retagging and the row asked about again"
@@ -3677,7 +3685,7 @@ fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Resul
     let tree = Tree::new();
     let gone = tree.write(
         "old.wav",
-        &Wav::new().frames(7_919).text(TITLE, "Echoes").build(),
+        &Wav::new().frames(7_919).text(TITLE, "Lantern").build(),
     );
     let library = Library::open_in_memory()?;
 
@@ -3689,7 +3697,7 @@ fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Resul
         &Wav::new()
             .frames(7_919)
             .sounding_from(1)
-            .text(TITLE, "Seamus")
+            .text(TITLE, "Marlow")
             .build(),
     );
 
@@ -3704,13 +3712,13 @@ fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Resul
 #[test]
 fn a_file_copied_rather_than_moved_is_a_row_of_its_own() -> Result<()> {
     let tree = Tree::new();
-    let source = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let source = tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
 
     fs::create_dir_all(tree.path().join("copy")).expect("a writable temporary directory");
-    fs::copy(&source, tree.path().join("copy/echoes.wav")).expect("a copy");
+    fs::copy(&source, tree.path().join("copy/lantern.wav")).expect("a copy");
 
     let stats = scan(&library, &options(&tree))?;
 

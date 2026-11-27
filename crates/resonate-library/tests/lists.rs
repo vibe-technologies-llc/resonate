@@ -44,7 +44,7 @@ fn a_playlist_keeps_the_order_rows_were_added_in() -> Result<()> {
         .map(|entry| entry.track.as_ref().map(|track| track.title.as_str()))
         .collect();
 
-    assert_eq!(titles, vec![Some("Dogs"), Some("Echoes"), Some("Sheep")]);
+    assert_eq!(titles, vec![Some("Dogs"), Some("Lantern"), Some("Sheep")]);
     assert_eq!(library.playlist_cuts(id)?, wanted);
     Ok(())
 }
@@ -765,9 +765,9 @@ fn a_saved_query_fills_itself_as_the_library_grows() -> Result<()> {
         .map(|entry| entry.track.as_ref().expect("a scanned row").title.as_str())
         .collect();
 
-    assert_eq!(titles, vec!["Dogs", "Echoes", "Sheep"]);
+    assert_eq!(titles, vec!["Dogs", "Lantern", "Sheep"]);
 
-    tree.write("d.wav", &Wav::new().text(TITLE, "Animals").build());
+    tree.write("d.wav", &Wav::new().text(TITLE, "Seasons").build());
     scan(&library, &options(&tree))?;
 
     assert_eq!(
@@ -838,7 +838,7 @@ fn a_saved_query_is_revised_where_it_stands() -> Result<()> {
     let saved = library.playlists_revision();
 
     let revised = SavedQuery {
-        text: Some("echoes".to_owned()),
+        text: Some("lantern".to_owned()),
         sort: SortOrder::Title,
         reading: SortOrder::Title.reads(),
         limit: Some(1),
@@ -1532,7 +1532,7 @@ fn a_saved_query_is_renamed_dropped_and_written_out_like_any_other() -> Result<(
     let id = library.save_query(
         "Evening",
         &SavedQuery {
-            text: Some("echoes".to_owned()),
+            text: Some("lantern".to_owned()),
             sort: SortOrder::Title,
             reading: SortOrder::Title.reads(),
             limit: None,
@@ -1553,7 +1553,7 @@ fn a_saved_query_is_renamed_dropped_and_written_out_like_any_other() -> Result<(
     let written = fs::read_to_string(&sheet).expect("the sheet was written");
 
     assert!(written.contains("a.wav\n"), "{written}");
-    assert!(written.contains(",Echoes\n"), "{written}");
+    assert!(written.contains(",Lantern\n"), "{written}");
 
     let read_back = library.import_playlist(&sheet, Some("A list"))?;
 
@@ -1641,10 +1641,10 @@ fn a_copy_refuses_the_playlist_it_came_from() -> Result<()> {
 #[test]
 fn a_search_narrowing_a_saved_query_is_read_beside_it_rather_than_into_it() -> Result<()> {
     let (_tree, library) = sortable_playlist_tree();
-    let floyd = library.save_query(
-        "Floyd",
+    let band = library.save_query(
+        "Band",
         &SavedQuery {
-            text: Some("\"pink floyd".to_owned()),
+            text: Some("\"example band".to_owned()),
             sort: SortOrder::Title,
             reading: SortOrder::Title.reads(),
             limit: None,
@@ -1652,12 +1652,12 @@ fn a_search_narrowing_a_saved_query_is_read_beside_it_rather_than_into_it() -> R
     )?;
 
     assert_eq!(
-        narrowed_to(&library, floyd, None)?,
+        narrowed_to(&library, band, None)?,
         vec!["Dogs"],
         "an unbalanced quote did not close at the end of the text it was written in"
     );
     assert_eq!(
-        narrowed_to(&library, floyd, Some("dogs"))?,
+        narrowed_to(&library, band, Some("dogs"))?,
         vec!["Dogs"],
         "the typed words were swallowed into the phrase the saved text left open"
     );
@@ -1691,9 +1691,9 @@ fn narrowed_to(library: &Library, id: PlaylistId, matching: Option<&str>) -> Res
 fn a_saved_query_is_frozen_into_a_list_by_copying_it() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let query = library.save_query(
-        "Floyd",
+        "Band",
         &SavedQuery {
-            text: Some("artist:floyd".to_owned()),
+            text: Some("artist:example".to_owned()),
             sort: SortOrder::Title,
             reading: SortOrder::Title.reads(),
             limit: None,
@@ -1707,8 +1707,8 @@ fn a_saved_query_is_frozen_into_a_list_by_copying_it() -> Result<()> {
     tree.write(
         "d.wav",
         &Wav::new()
-            .text(TITLE, "Pigs")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Pebbles")
+            .text(ARTIST, "Example Band")
             .build(),
     );
     scan(&library, &options(&tree))?;
@@ -1836,7 +1836,7 @@ fn a_row_no_scan_has_seen_survives_every_search_that_drops() -> Result<()> {
 #[test]
 fn a_saved_query_has_no_rows_to_drop() -> Result<()> {
     let (_tree, library) = sortable_playlist_tree();
-    let query = library.save_query("Floyd", &SavedQuery::default())?;
+    let query = library.save_query("Band", &SavedQuery::default())?;
 
     assert!(matches!(
         library.remove_matching(query, "dogs"),
@@ -2052,7 +2052,7 @@ fn a_kept_list_is_folded_and_stays_in_its_order() -> Result<()> {
 #[test]
 fn a_saved_query_has_no_doubles_to_fold() -> Result<()> {
     let (_tree, library) = sortable_playlist_tree();
-    let query = library.save_query("Floyd", &SavedQuery::default())?;
+    let query = library.save_query("Band", &SavedQuery::default())?;
 
     assert!(matches!(
         library.fold_doubles(query),
@@ -2133,7 +2133,7 @@ fn a_pinned_playlist_leads_every_order() -> Result<()> {
 fn a_smart_playlists_count_follows_the_catalog_it_is_counted_in() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("a.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("a.wav", &Wav::new().text(TITLE, "Lantern").build());
 
     let library = Library::open_in_memory()?;
 
@@ -2272,7 +2272,7 @@ fn a_duplicated_playlist_keeps_the_order_or_the_search_the_source_had() -> Resul
         .filter_map(|entry| entry.track.map(|track| track.title))
         .collect();
 
-    assert_eq!(titles, ["Dogs", "Echoes", "Sheep"]);
+    assert_eq!(titles, ["Dogs", "Lantern", "Sheep"]);
 
     let searched = library.playlist(query_copy)?.expect("the copy is there");
 
@@ -2485,11 +2485,11 @@ fn a_playlist_serves_its_shown_rows_a_page_at_a_time_and_counts_them_without_rea
 
     each.sort_unstable();
 
-    assert_eq!(whole, ["Echoes", "Sheep", "Echoes"]);
+    assert_eq!(whole, ["Lantern", "Sheep", "Lantern"]);
     assert_eq!(second, ["Sheep"]);
     assert!(past_the_end.is_empty());
     assert_eq!(sheep, ["Sheep"]);
-    assert_eq!(asked, ["Echoes", "Sheep"]);
+    assert_eq!(asked, ["Lantern", "Sheep"]);
     assert_eq!(asked_after_the_first, ["Sheep"]);
     assert_eq!(counted, (3, 1, 0, 2));
     assert_eq!(each, [(evening, 3), (first_two, 2), (empty, 0)]);

@@ -289,7 +289,7 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
     let tube = Tube::new();
 
     assert_eq!(
-        library.keep_song(song_to_keep("abc123", "San Tropez"))?,
+        library.keep_song(song_to_keep("abc123", "Harbour Lights"))?,
         KeptSong::Queued
     );
     assert_eq!(library.keeps_pending()?, 1);
@@ -307,7 +307,7 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
 
     let asked = tube.asked.lock()[0].clone();
 
-    assert_eq!(asked.title, "San Tropez");
+    assert_eq!(asked.title, "Harbour Lights");
     assert_eq!(asked.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(asked.album.as_deref(), Some("Kept Songs"));
     assert_eq!(asked.length, Some(Duration::from_secs(1)));
@@ -316,7 +316,7 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
         Some("https://music.youtube.com/watch?v=abc123")
     );
 
-    let track = track_titled(&library, "San Tropez")?;
+    let track = track_titled(&library, "Harbour Lights")?;
 
     assert_eq!(track.artist.as_deref(), Some("The Orbiters"));
 
@@ -329,7 +329,7 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
         track.location.as_path(),
         Some(
             tree.path()
-                .join("The Orbiters/Kept Songs/San Tropez.wav")
+                .join("The Orbiters/Kept Songs/Harbour Lights.wav")
                 .as_path()
         )
     );
@@ -338,7 +338,7 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
         .read(&track.location, Picturing::Whether)
         .expect("the file reads");
 
-    assert_eq!(tags.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(tags.tags.title.as_deref(), Some("Harbour Lights"));
     assert_eq!(tags.tags.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(tags.tags.album.as_deref(), Some("Kept Songs"));
     assert_eq!(tags.tags.album_artist, None);
@@ -354,14 +354,14 @@ fn a_song_kept_lands_with_the_picture_its_service_showed_for_it() -> Result<()> 
 
     library.keep_song(SongToKeep {
         cover: Some(address.to_owned()),
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     })?;
 
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
     assert_eq!(*tube.pictures_asked.lock(), [address]);
 
-    let track = track_titled(&library, "San Tropez")?;
+    let track = track_titled(&library, "Harbour Lights")?;
     let carried = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Copied)
         .expect("the file reads")
@@ -386,7 +386,7 @@ fn a_song_kept_bare_before_keeps_carried_their_picture_is_given_one_once() -> Re
     let (tree, library, database) = a_music_folder_on_disk()?;
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
@@ -397,7 +397,7 @@ fn a_song_kept_bare_before_keeps_carried_their_picture_is_given_one_once() -> Re
         )
         .expect("the keep is made one from before pictures");
 
-    let track = track_titled(&library, "San Tropez")?;
+    let track = track_titled(&library, "Harbour Lights")?;
     let bare = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Copied)
         .expect("the file reads");
@@ -426,7 +426,7 @@ fn a_song_kept_bare_before_keeps_carried_their_picture_is_given_one_once() -> Re
 
     assert_eq!(carried.bytes, png(64));
 
-    let album = track_titled(&library, "San Tropez")?
+    let album = track_titled(&library, "Harbour Lights")?
         .album_id
         .expect("the song names its album");
 
@@ -452,17 +452,17 @@ fn a_song_whose_picture_cannot_be_fetched_is_kept_all_the_same() -> Result<()> {
 
     library.keep_song(SongToKeep {
         cover: Some(A_PICTURE_THE_TUBE_REFUSES.to_owned()),
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     })?;
 
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
-    let track = track_titled(&library, "San Tropez")?;
+    let track = track_titled(&library, "Harbour Lights")?;
     let tags = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Copied)
         .expect("the file reads");
 
-    assert_eq!(tags.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(tags.tags.title.as_deref(), Some("Harbour Lights"));
     assert_eq!(tags.picture.into_copied(), None);
     Ok(())
 }
@@ -475,9 +475,9 @@ fn a_song_pressed_again_keeps_the_picture_it_was_first_pressed_with() -> Result<
 
     library.keep_song(SongToKeep {
         cover: Some(address.to_owned()),
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     })?;
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
@@ -495,7 +495,7 @@ fn a_keep_is_asked_of_its_own_provider_alone() -> Result<()> {
         .and(Arc::clone(&shop) as Arc<dyn Provider>)
         .and(Arc::clone(&tube) as Arc<dyn Provider>);
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let summary = library.keep_pending(&providers, &|| false)?;
 
@@ -521,7 +521,7 @@ fn a_last_resort_named_alone_is_asked_for_a_keep_whatever_else_is_registered() -
             Providers::none().and(last)
         };
 
-        library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+        library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
         let summary = library.keep_pending(&providers, &|| false)?;
 
@@ -544,14 +544,14 @@ fn a_keep_with_no_length_or_artist_is_still_asked_and_lands_whatever_it_lasts() 
         artist: None,
         album: None,
         length: None,
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     })?;
 
     let summary = pass(&library, &tube)?;
 
     assert_eq!(summary.landed, 1);
     assert_eq!(tube.videos_asked(), ["abc123"]);
-    assert_eq!(track_titled(&library, "San Tropez")?.artist, None);
+    assert_eq!(track_titled(&library, "Harbour Lights")?.artist, None);
     Ok(())
 }
 
@@ -652,11 +652,11 @@ fn a_song_kept_twice_is_queued_once() -> Result<()> {
     let tube = Tube::new();
 
     assert_eq!(
-        library.keep_song(song_to_keep("abc123", "San Tropez"))?,
+        library.keep_song(song_to_keep("abc123", "Harbour Lights"))?,
         KeptSong::Queued
     );
     assert_eq!(
-        library.keep_song(song_to_keep("abc123", "San Tropez"))?,
+        library.keep_song(song_to_keep("abc123", "Harbour Lights"))?,
         KeptSong::Queued
     );
     assert_eq!(library.keeps_pending()?, 1);
@@ -665,7 +665,7 @@ fn a_song_kept_twice_is_queued_once() -> Result<()> {
 
     assert_eq!(tube.videos_asked(), ["abc123"]);
     assert!(matches!(
-        library.keep_song(song_to_keep("abc123", "San Tropez"))?,
+        library.keep_song(song_to_keep("abc123", "Harbour Lights"))?,
         KeptSong::AlreadyHeld(_)
     ));
     assert_eq!(library.keeps_pending()?, 0);
@@ -679,7 +679,7 @@ fn a_song_kept_with_no_name_to_weigh_is_known_by_its_video_once_it_has_landed() 
     let by_link = SongToKeep {
         artist: None,
         length: None,
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     };
 
     library.keep_song(by_link.clone())?;
@@ -699,14 +699,14 @@ fn a_kept_song_deleted_by_hand_is_queued_again_when_pressed_again() -> Result<()
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
     pass(&library, &tube)?;
     for song in songs_under(&tree) {
         fs::remove_file(song).expect("the file goes");
     }
 
     assert_eq!(
-        library.keep_song(song_to_keep("abc123", "San Tropez"))?,
+        library.keep_song(song_to_keep("abc123", "Harbour Lights"))?,
         KeptSong::Queued
     );
     assert_eq!(library.keeps_pending()?, 1);
@@ -892,7 +892,7 @@ fn a_keep_longer_than_the_song_was_listed_is_not_kept() -> Result<()> {
         "abc123",
         &[TubeAnswer::Lasting(LONGER_THAN_ANY_LENGTH_AGREES)],
     );
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let summary = pass(&library, &tube)?;
 
@@ -916,7 +916,7 @@ fn bytes_that_do_not_decode_give_a_keep_up() -> Result<()> {
     let tube = Tube::new();
 
     tube.answering("abc123", &[TubeAnswer::Undecodable]);
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let summary = pass(&library, &tube)?;
 
@@ -932,7 +932,7 @@ fn a_video_gone_when_opened_gives_a_keep_up_and_a_second_press_asks_again() -> R
     let tube = Tube::new();
 
     tube.answering("abc123", &[TubeAnswer::Gone]);
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let summary = pass(&library, &tube)?;
 
@@ -945,7 +945,7 @@ fn a_video_gone_when_opened_gives_a_keep_up_and_a_second_press_asks_again() -> R
     );
     assert_eq!(library.keeps_pending()?, 0);
     assert_eq!(
-        library.keep_song(song_to_keep("abc123", "San Tropez"))?,
+        library.keep_song(song_to_keep("abc123", "Harbour Lights"))?,
         KeptSong::Queued
     );
     assert_eq!(library.keeps_pending()?, 1);
@@ -959,7 +959,7 @@ fn a_keep_with_no_delivery_folder_is_refused() -> Result<()> {
     let tube = Tube::new();
 
     assert!(matches!(
-        library.keep_song(song_to_keep("abc123", "San Tropez")),
+        library.keep_song(song_to_keep("abc123", "Harbour Lights")),
         Err(Error::NoDeliveryFolder)
     ));
     assert!(matches!(
@@ -971,7 +971,7 @@ fn a_keep_with_no_delivery_folder_is_refused() -> Result<()> {
     let tree = Tree::new();
 
     delivering_into(&library, &tree);
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
     library.deliver_into(None);
 
     assert!(matches!(
@@ -1026,7 +1026,7 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
     let library = Library::open(&tree.path().join("library.db"))?;
 
     delivering_into(&library, &tree);
-    library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "San Tropez")]))?;
+    library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "Harbour Lights")]))?;
 
     let this_test = crate::this_test();
     let mut killed = Command::new(env::current_exe().expect("the test binary"))
@@ -1057,7 +1057,7 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
     assert!(!staged.exists(), "the killed keep's staging file was left");
     assert!(staged_under(tree.path()).is_empty());
     assert_eq!(songs_under(&tree).len(), 1);
-    assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
+    assert_eq!(titles_in(&library, "Mix")?, ["Harbour Lights"]);
     assert_eq!(library.keeps_pending()?, 0);
     Ok(())
 }
@@ -1323,7 +1323,7 @@ fn a_video_a_want_filed_in_the_music_folder_is_not_fetched_again_for_a_keep() ->
     let (tree, library) = scanned_orbits()?;
 
     delivering_into(&library, &tree);
-    one_want_of(&library, "San Tropez")?;
+    one_want_of(&library, "Harbour Lights")?;
 
     assert_eq!(
         OffersVideo::registered("abc123")
@@ -1356,7 +1356,7 @@ fn a_video_a_want_kept_in_the_vault_is_not_fetched_again_for_a_keep() -> Result<
 
     scan(&library, &options(&tree))?;
     delivering_into(&library, &music);
-    one_want_of(&library, "San Tropez")?;
+    one_want_of(&library, "Harbour Lights")?;
 
     assert_eq!(
         OffersVideo::registered("abc123")
@@ -1385,7 +1385,7 @@ fn a_video_a_keep_landed_is_declined_by_the_poll_while_its_file_stands() -> Resu
     let (tree, library) = scanned_orbits()?;
 
     delivering_into(&library, &tree);
-    one_want_of(&library, "San Tropez")?;
+    one_want_of(&library, "Harbour Lights")?;
 
     let tube = Tube::new();
 
@@ -1468,11 +1468,13 @@ fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> 
         bytes,
     }) as Arc<dyn Provider>);
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     assert_eq!(library.keep_pending(&providers, &|| false)?.landed, 1);
 
-    let path = tree.path().join("The Orbiters/Kept Songs/San Tropez.mka");
+    let path = tree
+        .path()
+        .join("The Orbiters/Kept Songs/Harbour Lights.mka");
 
     assert!(path.is_file(), "{}", path.display());
 
@@ -1480,14 +1482,14 @@ fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> 
         .read(&MediaLocation::local(&path), Picturing::Whether)
         .expect("the file reads");
 
-    assert_eq!(read.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(read.tags.title.as_deref(), Some("Harbour Lights"));
     assert_eq!(read.tags.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(read.tags.album.as_deref(), Some("Kept Songs"));
 
     scan(&library, &options(&tree))?;
 
     assert_eq!(
-        track_titled(&library, "San Tropez")?.location,
+        track_titled(&library, "Harbour Lights")?.location,
         MediaLocation::local(&path)
     );
 
@@ -1495,7 +1497,7 @@ fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> 
 
     scan(&afresh, &options(&tree))?;
 
-    let read_afresh = track_titled(&afresh, "San Tropez")?;
+    let read_afresh = track_titled(&afresh, "Harbour Lights")?;
 
     assert_eq!(read_afresh.artist.as_deref(), Some("The Orbiters"));
 
@@ -1545,17 +1547,19 @@ fn a_kept_matroska_whose_own_cover_refuses_the_one_fetched_still_lands_with_its_
 
     library.keep_song(SongToKeep {
         cover: Some("https://lh3.googleusercontent.com/cover".to_owned()),
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     })?;
 
     assert_eq!(library.keep_pending(&providers, &|| false)?.landed, 1);
 
-    let path = tree.path().join("The Orbiters/Kept Songs/San Tropez.mka");
+    let path = tree
+        .path()
+        .join("The Orbiters/Kept Songs/Harbour Lights.mka");
     let read = FileTags::over(Sources::local())
         .read(&MediaLocation::local(&path), Picturing::Copied)
         .expect("the file reads");
 
-    assert_eq!(read.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(read.tags.title.as_deref(), Some("Harbour Lights"));
     assert_eq!(read.tags.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(read.tags.album.as_deref(), Some("Kept Songs"));
     assert_eq!(read.picture.into_copied(), Some(its_own));
@@ -1590,7 +1594,7 @@ fn a_busy_provider_leaves_the_song_queued_and_the_pass_goes_on() -> Result<()> {
 fn a_registry_without_the_provider_leaves_the_queue_as_it_stands() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
     library.deliver_into(None);
 
     let summary = library.keep_pending(&Tube::named("shop").registered(), &|| false)?;
@@ -1612,7 +1616,7 @@ fn a_keep_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not() -> 
 
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let summary = thread::scope(|scope| {
         let keeping = scope.spawn(|| pass(&library, &tube));
@@ -1637,7 +1641,7 @@ fn a_keep_cancelled_before_it_begins_asks_nothing() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let summary = library.keep_pending(&tube.registered(), &|| true)?;
 
@@ -1653,7 +1657,7 @@ fn a_keep_cancelled_part_way_through_a_download_leaves_the_song_queued() -> Resu
     let tube = Tube::new();
 
     tube.answering("abc123", &[TubeAnswer::Hanging]);
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let told = AtomicBool::new(false);
     let cancelled = || told.load(Ordering::SeqCst);
@@ -1926,7 +1930,7 @@ fn a_file_landed_that_no_scan_reached_is_read_at_the_head_of_the_next_pass() -> 
     let by_link = SongToKeep {
         artist: None,
         length: None,
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     };
 
     library.keep_playlist(PlaylistToKeep {
@@ -1948,7 +1952,7 @@ fn a_file_landed_that_no_scan_reached_is_read_at_the_head_of_the_next_pass() -> 
     let summary = pass(&library, &tube)?;
 
     assert_eq!(summary.landed, 1);
-    assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
+    assert_eq!(titles_in(&library, "Mix")?, ["Harbour Lights"]);
     assert_eq!(
         tube.videos_asked(),
         ["abc123"],
@@ -1969,7 +1973,7 @@ fn an_empty_queue_still_reads_a_landed_file_no_scan_reached() -> Result<()> {
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
     pass(&library, &tube)?;
     beside(&database)
         .execute("DELETE FROM tracks", [])
@@ -1978,7 +1982,10 @@ fn an_empty_queue_still_reads_a_landed_file_no_scan_reached() -> Result<()> {
     let summary = pass(&library, &tube)?;
 
     assert_eq!(summary, KeepSummary::default());
-    assert_eq!(track_titled(&library, "San Tropez")?.title, "San Tropez");
+    assert_eq!(
+        track_titled(&library, "Harbour Lights")?.title,
+        "Harbour Lights"
+    );
     assert_eq!(library.keeps_pending()?, 0);
     Ok(())
 }
@@ -2073,7 +2080,7 @@ fn a_poll_refused_while_a_keep_waits_on_the_meter_ends_the_wait() -> Result<()> 
 
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
 
     let providers = tube.registered();
     let begun = AtomicBool::new(false);
@@ -2307,7 +2314,7 @@ fn a_folder_forgotten_stays_forgotten_whatever_landed_in_it() -> Result<()> {
     let (_database, library) = on_disc(&tree)?;
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
     pass(&library, &tube)?;
 
     assert_eq!(library.roots()?.len(), 1);
@@ -2331,7 +2338,7 @@ fn a_landed_file_outside_every_root_owes_no_pass_once_the_music_folder_moved() -
     let (_database, library) = on_disc(&tree)?;
     let tube = Tube::new();
 
-    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    library.keep_song(song_to_keep("abc123", "Harbour Lights"))?;
     pass(&library, &tube)?;
 
     assert!(library.remove_root(tree.path())?);
@@ -2378,7 +2385,7 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
 
-    library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "San Tropez")]))?;
+    library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "Harbour Lights")]))?;
 
     assert_eq!(library.roots()?, Vec::<PathBuf>::new());
 
@@ -2407,7 +2414,7 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
 
     assert_eq!(pass(&library, &tube)?, KeepSummary::default());
 
-    assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
+    assert_eq!(titles_in(&library, "Mix")?, ["Harbour Lights"]);
     assert_eq!(library.keeps_pending()?, 0);
     assert!(tube.videos_asked().is_empty());
     Ok(())
@@ -2421,7 +2428,7 @@ fn a_press_of_a_song_landed_in_a_forgotten_folder_brings_the_folder_back() -> Re
     let by_link = SongToKeep {
         artist: None,
         length: None,
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     };
 
     library.keep_song(by_link.clone())?;
@@ -2455,7 +2462,7 @@ fn a_song_of_a_new_list_landed_in_a_forgotten_folder_is_read_by_the_pass() -> Re
     let by_link = SongToKeep {
         artist: None,
         length: None,
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     };
 
     library.keep_song(by_link.clone())?;
@@ -2470,7 +2477,7 @@ fn a_song_of_a_new_list_landed_in_a_forgotten_folder_is_read_by_the_pass() -> Re
     })?;
     pass(&library, &tube)?;
 
-    assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
+    assert_eq!(titles_in(&library, "Mix")?, ["Harbour Lights"]);
     assert_eq!(
         tube.videos_asked(),
         ["abc123"],
@@ -2517,14 +2524,14 @@ fn a_kept_song_folded_into_its_twin_is_still_known_by_its_video() -> Result<()> 
         artist: None,
         length: None,
         album: None,
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     };
 
     library.keep_song(by_link.clone())?;
     pass(&library, &tube)?;
 
-    let twin = tree.path().join("San Tropez.wav");
-    let copy = tree.path().join("San Tropez (1).wav");
+    let twin = tree.path().join("Harbour Lights.wav");
+    let copy = tree.path().join("Harbour Lights (1).wav");
 
     fs::copy(&twin, &copy).expect("a copy");
     scan(&library, &options(&tree))?;
@@ -2569,7 +2576,7 @@ fn a_song_kept_by_its_link_on_a_drive_unplugged_is_not_fetched_again() -> Result
     let by_link = SongToKeep {
         artist: None,
         length: None,
-        ..song_to_keep("abc123", "San Tropez")
+        ..song_to_keep("abc123", "Harbour Lights")
     };
 
     library.keep_song(by_link.clone())?;

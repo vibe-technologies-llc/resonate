@@ -21,13 +21,13 @@ use crate::support::{
 fn an_isrc_that_names_no_release_is_followed_up_by_asking_where_the_recording_sits() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ISRC, CODE),
     )?;
 
-    let bare = orbits_recording(RECORDING, "One of These Days", CODE, Vec::new());
-    let whole = orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(2));
+    let bare = orbits_recording(RECORDING, "Small Mercies", CODE, Vec::new());
+    let whole = orbits_recording(RECORDING, "Small Mercies", CODE, on_orbits(2));
 
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(isrc(CODE), bare)],
@@ -73,23 +73,23 @@ fn a_track_with_no_recording_id_is_placed_through_its_isrc_and_else_through_a_st
 -> Result<()> {
     let (_tree, coded, _, coded_file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ISRC, CODE),
     )?;
     let (_other_tree, named, _, named_file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
 
-    let bare = orbits_recording(RECORDING, "One of These Days", CODE, Vec::new());
-    let whole = orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(2));
+    let bare = orbits_recording(RECORDING, "Small Mercies", CODE, Vec::new());
+    let whole = orbits_recording(RECORDING, "Small Mercies", CODE, on_orbits(2));
 
     let fake = Fake::new(Canned {
         isrcs: vec![(isrc(CODE), bare)],
         recordings: vec![whole],
-        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        found_recordings: vec![recording_match(RECORDING, "Small Mercies")],
         ..Canned::default()
     });
     let coded_track = coded
@@ -148,7 +148,7 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
 
     let near = RecordingMatch {
         score: 61,
-        ..recording_match(RECORDING, "One of These Days")
+        ..recording_match(RECORDING, "Small Mercies")
     };
     let far = RecordingMatch {
         score: 34,
@@ -159,7 +159,7 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
         found_recordings_in_words: vec![far, near],
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(2),
         )],
@@ -169,7 +169,7 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
         .track_at(&file, None)?
         .expect("the catalog holds the track");
 
-    let offered = library.recordings_like(track.id, &fake, "One of These Days")?;
+    let offered = library.recordings_like(track.id, &fake, "Small Mercies")?;
     let ids: Vec<Mbid> = offered
         .iter()
         .map(|recording| recording.id.clone())
@@ -191,7 +191,7 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
         .track_at(&file, None)?
         .expect("the catalog still holds the track");
 
-    assert_eq!(taken.title, "One of These Days");
+    assert_eq!(taken.title, "Small Mercies");
     assert_eq!(taken.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(
         taken.track_number,
@@ -205,7 +205,7 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
 fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ISRC, CODE),
     )?;
@@ -215,9 +215,9 @@ fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(
             isrc(CODE),
-            orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(1)),
+            orbits_recording(RECORDING, "Small Mercies", CODE, on_orbits(1)),
         )],
-        found_recordings: vec![recording_match(ANOTHER_RECORDING, "One of These Days")],
+        found_recordings: vec![recording_match(ANOTHER_RECORDING, "Small Mercies")],
         artists: vec![orbiters()],
         ..Canned::default()
     }));
@@ -235,7 +235,7 @@ fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<
 
     let held = stored(&database, &file);
 
-    assert_eq!(held.title, "One of These Days");
+    assert_eq!(held.title, "Small Mercies");
     assert_eq!(held.release_title.as_deref(), Some("Orbits"));
     assert!(held.asked.is_some() && held.answered.is_some());
     assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
@@ -259,7 +259,7 @@ fn a_pass_tells_what_it_found_no_strict_match_for_apart_from_what_a_service_refu
 {
     let (_tree, library, _database, _file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake = Arc::new(Fake::new(Canned::default()));
@@ -278,7 +278,7 @@ fn a_pass_tells_what_it_found_no_strict_match_for_apart_from_what_a_service_refu
 
     let (_tree, library, _database, _file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake =
@@ -295,7 +295,7 @@ fn a_pass_tells_what_it_found_no_strict_match_for_apart_from_what_a_service_refu
 fn a_track_is_identified_by_the_recording_id_the_file_carries_before_any_search() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .identified(MUSICBRAINZ, RECORDING),
     )?;
@@ -309,11 +309,11 @@ fn a_track_is_identified_by_the_recording_id_the_file_carries_before_any_search(
     let fake = Arc::new(Fake::new(Canned {
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(1),
         )],
-        found_recordings: vec![recording_match(ANOTHER_RECORDING, "One of These Days")],
+        found_recordings: vec![recording_match(ANOTHER_RECORDING, "Small Mercies")],
         artists: vec![orbiters()],
         ..Canned::default()
     }));
@@ -339,14 +339,14 @@ fn a_track_is_identified_by_the_recording_id_the_file_carries_before_any_search(
 fn an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass() -> Result<()> {
     let (_tree, library, ..) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "An Orbiters Tribute")
             .identified(MUSICBRAINZ, RECORDING),
     )?;
     let fake = Arc::new(Fake::new(Canned {
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(1),
         )],
@@ -373,8 +373,7 @@ fn an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass(
 
 #[test]
 fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
-    let (_tree, library, database, file) =
-        scanned_lone(Wav::new().text(TITLE, "One of These Days"))?;
+    let (_tree, library, database, file) = scanned_lone(Wav::new().text(TITLE, "Small Mercies"))?;
 
     assert!(
         library.albums(&AlbumQuery::default())?.is_empty(),
@@ -382,10 +381,10 @@ fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
     );
 
     let fake = Arc::new(Fake::new(Canned {
-        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        found_recordings: vec![recording_match(RECORDING, "Small Mercies")],
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(1),
         )],
@@ -412,7 +411,7 @@ fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
         found_recordings: vec![recording_match(RECORDING, "1")],
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(1),
         )],
@@ -433,7 +432,7 @@ fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
 fn a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_name() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write(
-        "One of These Days.wav",
+        "Small Mercies.wav",
         &Wav::new().text(ARTIST, "The Orbiters").build(),
     );
     let database = tree.path().join("library.db");
@@ -444,10 +443,10 @@ fn a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_na
     assert_eq!(stored(&database, &file).tagged_title, None);
 
     let fake = Arc::new(Fake::new(Canned {
-        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        found_recordings: vec![recording_match(RECORDING, "Small Mercies")],
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(1),
         )],
@@ -466,7 +465,7 @@ fn a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_na
 fn a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release() -> Result<()> {
     let (_tree, library, ..) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ALBUM, "Orbits"),
     )?;
 
@@ -482,7 +481,7 @@ fn a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release(
         .filter(|called| called.op() == LookupOp::FindRecording)
         .collect();
     let asked = RecordingAsked {
-        title: "One of These Days".to_owned(),
+        title: "Small Mercies".to_owned(),
         artist: None,
         artist_mbid: None,
         release: Some("Orbits".to_owned()),
@@ -511,7 +510,7 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
     tree.write(
         "Orbits/1.wav",
         &Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM_ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
@@ -522,7 +521,7 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
     let unnamed = tree.write(
         "Orbits/2.wav",
         &Wav::new()
-            .text(TITLE, "A Pillow of Winds")
+            .text(TITLE, "A Quilt of Winds")
             .text(ALBUM_ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .text(TRACK, "2")
@@ -539,10 +538,10 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
     assert_eq!(stored(&database, &unnamed).artist, None);
 
     let fake = Arc::new(Fake::new(Canned {
-        found_recordings: vec![recording_match(RECORDING, "A Pillow of Winds")],
+        found_recordings: vec![recording_match(RECORDING, "A Quilt of Winds")],
         recordings: vec![orbits_recording(
             RECORDING,
-            "A Pillow of Winds",
+            "A Quilt of Winds",
             CODE,
             on_orbits(2),
         )],
@@ -560,7 +559,7 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
 
     assert!(
         searched.contains(&Called::FindRecording(RecordingAsked {
-            title: "A Pillow of Winds".to_owned(),
+            title: "A Quilt of Winds".to_owned(),
             artist: Some("The Orbiters".to_owned()),
             artist_mbid: None,
             release: None,
@@ -689,7 +688,7 @@ fn a_tagged_artist_id_the_reference_does_not_hold_falls_back_to_a_search_that_la
 
     tree.write(
         "Orbits/1.wav",
-        &orbits_track("One of These Days", 1)
+        &orbits_track("Small Mercies", 1)
             .described(MUSICBRAINZ_ARTIST, ADA)
             .build(),
     );
@@ -747,7 +746,7 @@ fn a_hit_one_track_short_lands_the_pressing_its_group_names_and_lists_the_missin
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
 
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![ReleaseMatch {
@@ -933,7 +932,7 @@ fn a_track_the_album_pass_already_paired_is_never_asked_about() -> Result<()> {
         .filter(|called| called.op() == LookupOp::FindRecording)
         .collect();
     let asked = RecordingAsked {
-        title: "Fearless".to_owned(),
+        title: "Paper Boats".to_owned(),
         artist: Some("The Orbiters".to_owned()),
         artist_mbid: None,
         release: None,
@@ -959,14 +958,14 @@ fn a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_a
 {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake = Arc::new(Fake::new(Canned {
-        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        found_recordings: vec![recording_match(RECORDING, "Small Mercies")],
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days (2011 Remaster)",
+            "Small Mercies (2011 Remaster)",
             CODE,
             on_orbits(1),
         )],
@@ -983,8 +982,8 @@ fn a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_a
 
     let held = stored(&database, &file);
 
-    assert_eq!(held.title, "One of These Days");
-    assert_eq!(held.tagged_title.as_deref(), Some("One of These Days"));
+    assert_eq!(held.title, "Small Mercies");
+    assert_eq!(held.tagged_title.as_deref(), Some("Small Mercies"));
     assert_eq!(held.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(held.release_title.as_deref(), Some("Orbits"));
     assert!(held.answered.is_some());
@@ -997,14 +996,14 @@ fn a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_
 -> Result<()> {
     let (tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake = Arc::new(Fake::new(Canned {
-        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        found_recordings: vec![recording_match(RECORDING, "Small Mercies")],
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(1),
         )],
@@ -1029,7 +1028,7 @@ fn a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_
     fs::write(
         &file,
         Wav::new()
-            .text(TITLE, "Fearless")
+            .text(TITLE, "Paper Boats")
             .text(ARTIST, "The Orbiters")
             .build(),
     )
@@ -1044,14 +1043,14 @@ fn a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_
 fn a_track_the_phrase_answered_nothing_for_is_searched_again_in_words() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake = Arc::new(Fake::new(Canned {
-        found_recordings_in_words: vec![recording_match(RECORDING, "One of These Days")],
+        found_recordings_in_words: vec![recording_match(RECORDING, "Small Mercies")],
         recordings: vec![orbits_recording(
             RECORDING,
-            "One of These Days",
+            "Small Mercies",
             CODE,
             on_orbits(1),
         )],
@@ -1062,7 +1061,7 @@ fn a_track_the_phrase_answered_nothing_for_is_searched_again_in_words() -> Resul
     let summary = enrich(&library, &fake, false)?;
 
     let asked = RecordingAsked {
-        title: "One of These Days".to_owned(),
+        title: "Small Mercies".to_owned(),
         artist: Some("The Orbiters".to_owned()),
         artist_mbid: None,
         release: None,
@@ -1095,13 +1094,13 @@ fn a_track_the_phrase_answered_nothing_for_is_searched_again_in_words() -> Resul
 fn a_recording_the_search_placed_is_landed_without_asking_for_it_again() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake = Arc::new(Fake::new(Canned {
         found_recordings: vec![RecordingMatch {
             releases: on_orbits(4),
-            ..recording_match(RECORDING, "One of These Days")
+            ..recording_match(RECORDING, "Small Mercies")
         }],
         artists: vec![orbiters()],
         ..Canned::default()
@@ -1139,14 +1138,14 @@ fn a_code_the_search_answer_named_is_written_without_asking_for_the_recording_ag
 {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake = Arc::new(Fake::new(Canned {
         found_recordings: vec![RecordingMatch {
             releases: on_orbits(4),
             isrcs: vec![isrc(CODE)],
-            ..recording_match(RECORDING, "One of These Days")
+            ..recording_match(RECORDING, "Small Mercies")
         }],
         artists: vec![orbiters()],
         ..Canned::default()
@@ -1173,7 +1172,7 @@ fn an_exact_identification_corrects_a_title_the_file_carried() -> Result<()> {
     let carried = tree.write(
         "1.wav",
         &Wav::new()
-            .text(TITLE, "one of these days")
+            .text(TITLE, "small mercies")
             .text(ARTIST, "The Orbiters")
             .text(ISRC, CODE)
             .build(),
@@ -1190,13 +1189,13 @@ fn an_exact_identification_corrects_a_title_the_file_carried() -> Result<()> {
         isrcs: vec![
             (
                 isrc(CODE),
-                orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(1)),
+                orbits_recording(RECORDING, "Small Mercies", CODE, on_orbits(1)),
             ),
             (
                 isrc(ANOTHER_CODE),
                 orbits_recording(
                     ANOTHER_RECORDING,
-                    "A Pillow of Winds",
+                    "A Quilt of Winds",
                     ANOTHER_CODE,
                     on_orbits(2),
                 ),
@@ -1212,13 +1211,13 @@ fn an_exact_identification_corrects_a_title_the_file_carried() -> Result<()> {
 
     let corrected = stored(&database, &carried);
 
-    assert_eq!(corrected.title, "One of These Days");
-    assert_eq!(corrected.tagged_title.as_deref(), Some("one of these days"));
+    assert_eq!(corrected.title, "Small Mercies");
+    assert_eq!(corrected.tagged_title.as_deref(), Some("small mercies"));
     assert_eq!(corrected.artist.as_deref(), Some("The Orbiters"));
 
     let filled = stored(&database, &bare);
 
-    assert_eq!(filled.title, "A Pillow of Winds");
+    assert_eq!(filled.title, "A Quilt of Winds");
     assert_eq!(filled.tagged_title, None);
     assert_eq!(filled.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(filled.tagged_artist, None);
@@ -1229,7 +1228,7 @@ fn an_exact_identification_corrects_a_title_the_file_carried() -> Result<()> {
 fn a_track_whose_album_never_answered_lands_the_release_its_recording_names() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .text(ISRC, CODE),
@@ -1242,7 +1241,7 @@ fn a_track_whose_album_never_answered_lands_the_release_its_recording_names() ->
         releases: vec![orbits(orbits_rows(), Vec::new())],
         isrcs: vec![(
             isrc(CODE),
-            orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(1)),
+            orbits_recording(RECORDING, "Small Mercies", CODE, on_orbits(1)),
         )],
         artists: vec![orbiters()],
         ..Canned::default()
@@ -1279,17 +1278,20 @@ fn a_track_whose_album_never_answered_lands_the_release_its_recording_names() ->
 fn a_corrected_title_is_what_the_search_index_finds_the_track_by() -> Result<()> {
     let (_tree, library, ..) = scanned_lone(
         Wav::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .text(ISRC, CODE),
     )?;
 
-    assert_eq!(titles(&library.search("Echos", 10)?.tracks), vec!["Echos"]);
+    assert_eq!(
+        titles(&library.search("Slow Watr", 10)?.tracks),
+        vec!["Slow Watr"]
+    );
 
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(
             isrc(CODE),
-            orbits_recording(RECORDING, "Echoes", CODE, on_orbits(1)),
+            orbits_recording(RECORDING, "Lantern", CODE, on_orbits(1)),
         )],
         artists: vec![orbiters()],
         ..Canned::default()
@@ -1299,11 +1301,11 @@ fn a_corrected_title_is_what_the_search_index_finds_the_track_by() -> Result<()>
     assert_eq!(summary.stats.named, 1);
 
     assert_eq!(
-        titles(&library.search("Echoes", 10)?.tracks),
-        vec!["Echoes"]
+        titles(&library.search("Lantern", 10)?.tracks),
+        vec!["Lantern"]
     );
     assert!(
-        library.search("Echos", 10)?.tracks.is_empty(),
+        library.search("Slow Watr", 10)?.tracks.is_empty(),
         "the title the file carried still finds the row the enrichment renamed"
     );
     Ok(())
@@ -1313,19 +1315,22 @@ fn a_corrected_title_is_what_the_search_index_finds_the_track_by() -> Result<()>
 fn an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again() -> Result<()> {
     let (_tree, library, ..) = scanned_lone(
         Wav::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM_ARTIST, "Zephyr Collective")
             .text(ALBUM, "Orbits")
             .text(ISRC, CODE),
     )?;
 
-    assert_eq!(titles(&library.search("Zephyr", 10)?.tracks), vec!["Echos"]);
+    assert_eq!(
+        titles(&library.search("Zephyr", 10)?.tracks),
+        vec!["Slow Watr"]
+    );
 
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(
             isrc(CODE),
-            orbits_recording(RECORDING, "Echoes", CODE, on_orbits(1)),
+            orbits_recording(RECORDING, "Lantern", CODE, on_orbits(1)),
         )],
         artists: vec![orbiters()],
         ..Canned::default()
@@ -1335,7 +1340,7 @@ fn an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again
 
     assert_eq!(
         titles(&library.search("Zephyr", 10)?.tracks),
-        vec!["Echoes"],
+        vec!["Lantern"],
         "the album artist no longer finds the track the enrichment indexed again"
     );
     Ok(())
@@ -1345,7 +1350,7 @@ fn an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again
 fn a_rescan_indexes_and_bills_the_names_the_lookup_kept() -> Result<()> {
     let tagged = || {
         Wav::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "Orbiterz")
             .text(ISRC, CODE)
     };
@@ -1354,7 +1359,7 @@ fn a_rescan_indexes_and_bills_the_names_the_lookup_kept() -> Result<()> {
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(
             isrc(CODE),
-            orbits_recording(RECORDING, "Echoes", CODE, on_orbits(1)),
+            orbits_recording(RECORDING, "Lantern", CODE, on_orbits(1)),
         )],
         artists: vec![orbiters()],
         ..Canned::default()
@@ -1362,22 +1367,22 @@ fn a_rescan_indexes_and_bills_the_names_the_lookup_kept() -> Result<()> {
 
     assert_eq!(enrich(&library, &fake, false)?.stats.named, 1);
 
-    let answered = library.search("Echoes", 10)?.tracks;
+    let answered = library.search("Lantern", 10)?.tracks;
 
-    assert_eq!(titles(&answered), vec!["Echoes"]);
+    assert_eq!(titles(&answered), vec!["Lantern"]);
 
     tree.write("1.wav", &tagged().build());
 
     assert_eq!(scan(&library, &options(&tree))?.updated, 1);
 
-    let rescanned = library.search("Echoes", 10)?.tracks;
+    let rescanned = library.search("Lantern", 10)?.tracks;
 
     assert_eq!(
         titles(&rescanned),
-        vec!["Echoes"],
+        vec!["Lantern"],
         "a rescan indexed the file's title over the one the row still shows"
     );
-    assert!(library.search("Echos", 10)?.tracks.is_empty());
+    assert!(library.search("Slow Watr", 10)?.tracks.is_empty());
     assert_eq!(rescanned[0].artist.as_deref(), Some("The Orbiters"));
     assert_eq!(
         rescanned[0].artist_id, answered[0].artist_id,

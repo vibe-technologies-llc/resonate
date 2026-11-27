@@ -76,7 +76,7 @@ fn a_sheet_another_player_wrote_names_itself_and_counts_what_it_could_not_take()
              #PLAYLIST:   Someone else's evening   \n\
              \n\
              # a line no tag defines\n\
-             #EXTINF:213,Pink Floyd - Echoes\n\
+             #EXTINF:213,Example Band - Lantern\n\
              a.wav\n\
              {root}/b.wav\n\
              http://stream.example/live.ogg\n\
@@ -361,9 +361,9 @@ fn a_playlist_of_cue_rows_exports_and_imports_as_the_rows_it_holds() -> Result<(
 
     assert!(cuts.iter().all(|cut| cut.span.is_some()));
 
-    let id = library.start_playlist("Meddle", &cuts)?;
+    let id = library.start_playlist("Tideline", &cuts)?;
 
-    for (name, format) in [("meddle.m3u8", "M3U"), ("meddle.xspf", "XSPF")] {
+    for (name, format) in [("tideline.m3u8", "M3U"), ("tideline.xspf", "XSPF")] {
         let sheet = tree.path().join(name);
 
         library.export_playlist(id, &sheet)?;
@@ -561,7 +561,7 @@ fn an_xspf_sheet_another_player_wrote_is_read_past_its_markup() -> Result<()> {
              <xspf:trackList>\n\
              <xspf:track>\
              <xspf:location>{root}/a.wav</xspf:location>\
-             <xspf:title>Echoes</xspf:title>\
+             <xspf:title>Lantern</xspf:title>\
              </xspf:track>\n\
              <xspf:track><xspf:location>b%2Ewav</xspf:location></xspf:track>\n\
              <xspf:track><xspf:location>http://stream.example/live.ogg</xspf:location></xspf:track>\n\
@@ -847,9 +847,9 @@ fn a_sheet_in_utf_16_or_a_cyrillic_code_page_comes_in_whole() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
 
-    tree.write("Кино.wav", b"a file no scan has read");
+    tree.write("Пример.wav", b"a file no scan has read");
 
-    let sheet = "#EXTM3U\n#PLAYLIST:Группа крови\nКино.wav\n";
+    let sheet = "#EXTM3U\n#PLAYLIST:Тихая вода\nПример.wav\n";
 
     let mut wide = vec![0xFF, 0xFE];
 
@@ -860,11 +860,11 @@ fn a_sheet_in_utf_16_or_a_cyrillic_code_page_comes_in_whole() -> Result<()> {
     let imported = library.import_playlist(&tree.write("wide.m3u8", &wide), None)?;
 
     assert_eq!(imported.encoding, TextEncoding::Utf16Le);
-    assert_eq!(imported.name, "Группа крови");
-    assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["Кино"]);
+    assert_eq!(imported.name, "Тихая вода");
+    assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["Пример"]);
 
     let cyrillic = resonate_core::text::encoded(
-        &sheet.replace("Группа крови", "Звезда по имени Солнце"),
+        &sheet.replace("Тихая вода", "Утренний прилив"),
         TextEncoding::Legacy(resonate_core::LegacyEncoding::WINDOWS_1251),
     )
     .expect("Cyrillic letters");
@@ -874,7 +874,7 @@ fn a_sheet_in_utf_16_or_a_cyrillic_code_page_comes_in_whole() -> Result<()> {
         imported.encoding,
         TextEncoding::Legacy(resonate_core::LegacyEncoding::WINDOWS_1251)
     );
-    assert_eq!(imported.name, "Звезда по имени Солнце");
+    assert_eq!(imported.name, "Утренний прилив");
     assert_eq!(imported.missing, 0);
     Ok(())
 }

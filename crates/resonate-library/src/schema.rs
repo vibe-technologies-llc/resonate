@@ -2348,11 +2348,11 @@ mod tests {
         connection
             .execute_batch(
                 "INSERT INTO albums (id, title, mbid, release_title, answered)
-                 VALUES (1, 'Uncredited', 'b84ee12a-09ef-421b-82de-0441a926375b', 'Meddle', 500),
-                        (2, 'Credited', 'a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e', 'Animals', 500),
+                 VALUES (1, 'Uncredited', 'b84ee12a-09ef-421b-82de-0441a926375b', 'Tideline', 500),
+                        (2, 'Credited', 'a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e', 'Seasons', 500),
                         (3, 'Never answered', NULL, NULL, NULL);
                  INSERT INTO release_credits (album_id, position, name, joined_by)
-                 VALUES (2, 0, 'Pink Floyd', '');",
+                 VALUES (2, 0, 'Example Band', '');",
             )
             .expect("albums landed earlier");
 
@@ -2508,7 +2508,7 @@ mod tests {
         connection
             .execute_batch(
                 "INSERT INTO retagged_sheets (sheet, file, scope, field, was, wrote)
-                 VALUES ('a.cue', 'a.flac', -1, 'TITLE', NULL, 'Meddle');",
+                 VALUES ('a.cue', 'a.flac', -1, 'TITLE', NULL, 'Tideline');",
             )
             .expect("a note kept earlier");
 
@@ -2651,8 +2651,8 @@ mod tests {
         connection
             .execute_batch(
                 "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'echoes.opus', 'Echoes', 48000, 2, 1, 7, 10, 1, 1, 1),
-                        (2, 'echoes.flac', 'Echoes', 44100, 2, 1, 1, 10, 1, 1, 1),
+                 VALUES (1, 'lantern.opus', 'Lantern', 48000, 2, 1, 7, 10, 1, 1, 1),
+                        (2, 'lantern.flac', 'Lantern', 44100, 2, 1, 1, 10, 1, 1, 1),
                         (3, 'time.opus', 'Time', 48000, 2, 1, 7, 10, 1, 1, 1);
                  INSERT INTO versions_chosen (track, held, served, chosen)
                  VALUES (1, 2, NULL, 1), (3, NULL, 'tidal:track/7', 1);",
@@ -2706,8 +2706,8 @@ mod tests {
         connection
             .execute_batch(
                 "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'echoes.opus', 'Echoes', 48000, 2, 1, 7, 10, 1, 1, 1),
-                        (2, 'echoes.flac', 'Echoes', 44100, 2, 1, 1, 10, 1, 1, 1);",
+                 VALUES (1, 'lantern.opus', 'Lantern', 48000, 2, 1, 7, 10, 1, 1, 1),
+                        (2, 'lantern.flac', 'Lantern', 44100, 2, 1, 1, 10, 1, 1, 1);",
             )
             .expect("tracks held before");
 
@@ -2771,7 +2771,7 @@ mod tests {
         let kept = |playlist: Option<&str>| {
             connection.execute(
                 "INSERT INTO kept_songs (source, video, title, playlist, asked)
-                 VALUES ('tube', 'abc123', 'San Tropez', ?1, 1)",
+                 VALUES ('tube', 'abc123', 'Harbour Lights', ?1, 1)",
                 params![playlist],
             )
         };
@@ -3071,10 +3071,10 @@ mod tests {
         lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
-                "INSERT INTO albums (id, title) VALUES (1, 'Meddle'), (2, 'Animals');
+                "INSERT INTO albums (id, title) VALUES (1, 'Tideline'), (2, 'Seasons');
                  INSERT INTO tracks (id, path, title, album_id, alternative_of, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'echoes.flac', 'Echoes', 1, NULL, 44100, 2, 1, 1, 10, 1, 1, 1),
-                        (2, 'echoes.mp3', 'Echoes', 1, 1, 44100, 2, 1, 1, 10, 1, 1, 1),
+                 VALUES (1, 'lantern.flac', 'Lantern', 1, NULL, 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (2, 'lantern.mp3', 'Lantern', 1, 1, 44100, 2, 1, 1, 10, 1, 1, 1),
                         (3, 'dogs.flac', 'Dogs', 2, NULL, 44100, 2, 1, 1, 10, 1, 1, 1);
                  UPDATE regroup_owed SET owed = 0;
                  DELETE FROM regroup_owed_tracks;",
@@ -3112,7 +3112,7 @@ mod tests {
 
         connection
             .execute(
-                "UPDATE albums SET release_title = 'Meddle' WHERE id = 1",
+                "UPDATE albums SET release_title = 'Tideline' WHERE id = 1",
                 [],
             )
             .expect("the release is billed");
@@ -3125,10 +3125,7 @@ mod tests {
 
         forgive();
         connection
-            .execute(
-                "UPDATE tracks SET title = 'One of These Days' WHERE id = 2",
-                [],
-            )
+            .execute("UPDATE tracks SET title = 'Small Mercies' WHERE id = 2", [])
             .expect("the copy is renamed");
 
         assert_eq!(
@@ -3168,7 +3165,7 @@ mod tests {
             .execute_batch(
                 "INSERT INTO tracks (path, title, artist, tagged_title, tagged_artist, title_sort, artist_sort, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
                  VALUES ('as-tagged.flac', 'The End', 'The Doors', 'The End', 'The Doors', 'End, The', 'Doors, The', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        ('renamed.flac', 'The Wall', 'Pink Floyd', 'the wal', 'pink floid', 'Wal, The', 'Floid, Pink', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        ('renamed.flac', 'The Lighthouse', 'Example Band', 'the lighthous', 'exampel band', 'Lighthous, The', 'Band, Exampel', 44100, 2, 1, 1, 10, 1, 1, 1),
                         ('unsorted.flac', 'Angel', 'Massive Attack', 'Angel', 'Massive Attack', NULL, NULL, 44100, 2, 1, 1, 10, 1, 1, 1);",
             )
             .expect("the rows are stored");
@@ -3192,8 +3189,8 @@ mod tests {
                 ),
                 (
                     "renamed.flac".to_owned(),
-                    "The Wall".to_owned(),
-                    "Pink Floyd".to_owned()
+                    "The Lighthouse".to_owned(),
+                    "Example Band".to_owned()
                 ),
                 (
                     "unsorted.flac".to_owned(),

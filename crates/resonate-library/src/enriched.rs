@@ -2225,14 +2225,14 @@ mod tests {
     const RELEASE: &str = "1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f";
     const RECORDING: &str = "83d91898-7763-47d7-b03b-b92132375c47";
     const TRACK: &str = "3e7f0f5c-4d8a-4a7e-9b2a-0d3f6b6f9c11";
-    const ALBUM: &str = "Meddle";
+    const ALBUM: &str = "Tideline";
     const GROUP: &str = "2f6a1b3c-7d8e-4f90-a1b2-c3d4e5f60718";
 
     fn scanned(title: &str, number: Option<u32>, recording: Option<&str>) -> TrackRecord {
         TrackRecord {
             root_id: 1,
-            path: PathBuf::from(format!("/music/Meddle/{title}.wav")),
-            sleeve: Some(PathBuf::from("/music/Meddle")),
+            path: PathBuf::from(format!("/music/Tideline/{title}.wav")),
+            sleeve: Some(PathBuf::from("/music/Tideline")),
             existing: None,
             file_size: 0,
             modified: UNIX_EPOCH,
@@ -2288,7 +2288,7 @@ mod tests {
         }
     }
 
-    fn meddle(tracks: Vec<ReleaseTrack>) -> Release {
+    fn low_tide(tracks: Vec<ReleaseTrack>) -> Release {
         Release {
             id: Mbid::new(RELEASE).expect("a well-formed mbid"),
             group: None,
@@ -2328,7 +2328,7 @@ mod tests {
         store::apply(
             tx,
             &mut cache,
-            &scanned("One of These Days", Some(1), None),
+            &scanned("Small Mercies", Some(1), None),
             0,
             false,
         )
@@ -2559,7 +2559,7 @@ mod tests {
         land_release(
             &tx,
             album,
-            &meddle(vec![row(1, "One of These Days", None)]),
+            &low_tide(vec![row(1, "Small Mercies", None)]),
             EXACTLY,
             asked,
         )
@@ -2598,7 +2598,7 @@ mod tests {
         land_release(
             &tx,
             album,
-            &meddle(vec![row(1, "One of These Days", None)]),
+            &low_tide(vec![row(1, "Small Mercies", None)]),
             EXACTLY,
             asked,
         )
@@ -2634,7 +2634,7 @@ mod tests {
 
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
-        let release = meddle(vec![row(1, "One of These Days", None)]);
+        let release = low_tide(vec![row(1, "Small Mercies", None)]);
 
         let fit = || -> Option<i64> {
             tx.query_row(
@@ -2694,7 +2694,7 @@ mod tests {
         land_release(
             &tx,
             album,
-            &meddle(vec![row(1, "One of These Days", None)]),
+            &low_tide(vec![row(1, "Small Mercies", None)]),
             EXACTLY,
             landed,
         )
@@ -2742,7 +2742,7 @@ mod tests {
         land_release(
             &tx,
             album,
-            &meddle(vec![row(1, "One of These Days", None)]),
+            &low_tide(vec![row(1, "Small Mercies", None)]),
             EXACTLY,
             landed,
         )
@@ -2771,9 +2771,9 @@ mod tests {
         let mut cache = Cache::default();
 
         for record in [
-            scanned("One of These Days", Some(3), Some(RECORDING)),
-            scanned("A Pillow of Winds", Some(2), None),
-            scanned("Fearless!", None, None),
+            scanned("Small Mercies", Some(3), Some(RECORDING)),
+            scanned("A Quilt of Winds", Some(2), None),
+            scanned("Paper Boats!", None, None),
         ] {
             store::apply(&tx, &mut cache, &record, 0, false).expect("the track is stored");
         }
@@ -2786,11 +2786,11 @@ mod tests {
         land_release(
             &tx,
             album,
-            &meddle(vec![
-                row(1, "One of These Days", Some(RECORDING)),
-                row(2, "A Pillow of Winds", None),
-                row(3, "Fearless", None),
-                row(4, "San Tropez", None),
+            &low_tide(vec![
+                row(1, "Small Mercies", Some(RECORDING)),
+                row(2, "A Quilt of Winds", None),
+                row(3, "Paper Boats", None),
+                row(4, "Harbour Lights", None),
             ]),
             EXACTLY,
             UNIX_EPOCH,
@@ -2816,9 +2816,9 @@ mod tests {
         assert_eq!(
             paired,
             vec![
-                (1, Some("One of These Days".to_owned())),
-                (2, Some("A Pillow of Winds".to_owned())),
-                (3, Some("Fearless!".to_owned())),
+                (1, Some("Small Mercies".to_owned())),
+                (2, Some("A Quilt of Winds".to_owned())),
+                (3, Some("Paper Boats!".to_owned())),
                 (4, None),
             ]
         );
@@ -2840,7 +2840,7 @@ mod tests {
         store::apply(
             &tx,
             &mut cache,
-            &scanned("One of These Days", Some(1), None),
+            &scanned("Small Mercies", Some(1), None),
             0,
             false,
         )
@@ -2854,7 +2854,7 @@ mod tests {
         land_release(
             &tx,
             album,
-            &meddle(vec![row(1, "One of These Days", Some(RECORDING))]),
+            &low_tide(vec![row(1, "Small Mercies", Some(RECORDING))]),
             EXACTLY,
             UNIX_EPOCH,
         )
@@ -2887,8 +2887,8 @@ mod tests {
         let mut cache = Cache::default();
 
         for record in [
-            tagged("One of These Days", Some(TRACK), None),
-            tagged("A Pillow of Winds", None, Some(TRACK)),
+            tagged("Small Mercies", Some(TRACK), None),
+            tagged("A Quilt of Winds", None, Some(TRACK)),
         ] {
             store::apply(&tx, &mut cache, &record, 0, false).expect("the track is stored");
         }
@@ -2901,7 +2901,7 @@ mod tests {
         land_release(
             &tx,
             album,
-            &meddle(vec![row_of_the_release(1, "San Tropez", TRACK)]),
+            &low_tide(vec![row_of_the_release(1, "Harbour Lights", TRACK)]),
             EXACTLY,
             UNIX_EPOCH,
         )
@@ -2921,13 +2921,13 @@ mod tests {
             )
             .expect("the pairing reads back");
 
-        assert_eq!(paired.as_deref(), Some("A Pillow of Winds"));
+        assert_eq!(paired.as_deref(), Some("A Quilt of Winds"));
     }
 
     #[test]
     fn a_title_is_folded_to_its_letters_and_digits_lowercased() {
-        assert_eq!(folded_title("Fearless!"), "fearless");
-        assert_eq!(folded_title("Echoes (Live) — Pt. 2"), "echoeslivept2");
+        assert_eq!(folded_title("Paper Boats!"), "paperboats");
+        assert_eq!(folded_title("Lantern (Live) — Pt. 2"), "lanternlivept2");
         assert_eq!(folded_title("ÉCHOES"), "échoes");
         assert_eq!(folded_title("   "), "");
     }

@@ -345,25 +345,25 @@ mod tests {
             "version: '1.0'
 metadata: {title: T, artist: A}
 lines:
-  - text: 'all that you touch'
+  - text: 'every lamp you lit'
     start_ms: 1000
     words:
-      - {text: all, start_ms: 1000}
-      - {text: that, start_ms: 1300}
+      - {text: every, start_ms: 1000}
+      - {text: lamp, start_ms: 1300}
       - {text: you, start_ms: 1600}
-      - {text: touch, start_ms: 1900, end_ms: 2400}
+      - {text: lit, start_ms: 1900, end_ms: 2400}
 ",
         );
         let lyrics = read.lyrics.expect("the document holds lines");
         let line = &lyrics.lines()[0];
 
-        assert_eq!(line.text, "all that you touch");
+        assert_eq!(line.text, "every lamp you lit");
         assert_eq!(
             line.words
                 .iter()
                 .map(|word| word.text.as_str())
                 .collect::<Vec<_>>(),
-            ["all ", "that ", "you ", "touch"]
+            ["every ", "lamp ", "you ", "lit"]
         );
     }
 

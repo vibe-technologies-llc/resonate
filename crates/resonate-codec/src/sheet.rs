@@ -605,10 +605,10 @@ mod tests {
     use super::*;
     use crate::cue::read;
 
-    const MEDDLE: &str = "REM GENRE \"Progressive Rock\"\r\nPERFORMER \"Pink Floyd\"\r\nTITLE \"Meddle\"\r\nFILE \"Meddle.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"One of These Days\"\r\n    INDEX 01 00:00:00\r\n  TRACK 02 AUDIO\r\n    INDEX 01 05:57:00\r\n";
+    const LOW_TIDE: &str = "REM GENRE \"Progressive Rock\"\r\nPERFORMER \"Example Band\"\r\nTITLE \"Low Tide\"\r\nFILE \"Low Tide.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"Small Hours\"\r\n    INDEX 01 00:00:00\r\n  TRACK 02 AUDIO\r\n    INDEX 01 05:57:00\r\n";
 
     fn location() -> MediaLocation {
-        MediaLocation::local("/music/Meddle.cue")
+        MediaLocation::local("/music/Low Tide.cue")
     }
 
     fn edit(scope: SheetScope, field: SheetField, value: Option<&str>) -> SheetEdit {
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn a_title_edited_in_place_leaves_every_other_byte_of_the_sheet() {
-        let sheet = SheetText::read(MEDDLE.as_bytes());
+        let sheet = SheetText::read(LOW_TIDE.as_bytes());
 
         let written = sheet
             .edited(
@@ -637,20 +637,20 @@ mod tests {
                 &[edit(
                     SheetScope::Track(1),
                     SheetField::Title,
-                    Some("One of These Days (Live)"),
+                    Some("Small Hours (Live)"),
                 )],
             )
             .expect("an edit the sheet can hold");
 
         assert_eq!(
             String::from_utf8(written).expect("still UTF-8"),
-            MEDDLE.replace("One of These Days", "One of These Days (Live)")
+            LOW_TIDE.replace("Small Hours", "Small Hours (Live)")
         );
     }
 
     #[test]
     fn a_title_a_track_lacks_is_written_into_its_own_block_before_its_index() {
-        let sheet = SheetText::read(MEDDLE.as_bytes());
+        let sheet = SheetText::read(LOW_TIDE.as_bytes());
 
         let written = sheet
             .edited(
@@ -658,29 +658,30 @@ mod tests {
                 &[edit(
                     SheetScope::Track(2),
                     SheetField::Title,
-                    Some("Echoes"),
+                    Some("Slow Water"),
                 )],
             )
             .expect("an edit the sheet can hold");
 
         assert!(
-            String::from_utf8_lossy(&written)
-                .contains("  TRACK 02 AUDIO\r\n    TITLE \"Echoes\"\r\n    INDEX 01 05:57:00\r\n"),
+            String::from_utf8_lossy(&written).contains(
+                "  TRACK 02 AUDIO\r\n    TITLE \"Slow Water\"\r\n    INDEX 01 05:57:00\r\n"
+            ),
             "{}",
             String::from_utf8_lossy(&written)
         );
         assert_eq!(
             titles(&written),
             vec![
-                Some("One of These Days".to_owned()),
-                Some("Echoes".to_owned())
+                Some("Small Hours".to_owned()),
+                Some("Slow Water".to_owned())
             ]
         );
     }
 
     #[test]
     fn an_album_wide_field_is_written_ahead_of_the_first_file() {
-        let sheet = SheetText::read(MEDDLE.as_bytes());
+        let sheet = SheetText::read(LOW_TIDE.as_bytes());
 
         let written = sheet
             .edited(
@@ -690,7 +691,7 @@ mod tests {
                     edit(
                         SheetScope::Disc,
                         SheetField::Title,
-                        Some("Meddle (Remastered)"),
+                        Some("Low Tide (Remastered)"),
                     ),
                 ],
             )
@@ -699,20 +700,20 @@ mod tests {
 
         assert!(
             String::from_utf8_lossy(&written)
-                .contains("TITLE \"Meddle (Remastered)\"\r\nREM DATE 1971\r\nFILE"),
+                .contains("TITLE \"Low Tide (Remastered)\"\r\nREM DATE 1971\r\nFILE"),
             "{}",
             String::from_utf8_lossy(&written)
         );
 
         let tags = &read_back.files[0].tracks[1].tags;
 
-        assert_eq!(tags.album.as_deref(), Some("Meddle (Remastered)"));
+        assert_eq!(tags.album.as_deref(), Some("Low Tide (Remastered)"));
         assert_eq!(tags.date.as_deref(), Some("1971"));
     }
 
     #[test]
     fn a_field_taken_away_is_the_line_that_said_it_gone() {
-        let sheet = SheetText::read(MEDDLE.as_bytes());
+        let sheet = SheetText::read(LOW_TIDE.as_bytes());
 
         let written = sheet
             .edited(
@@ -723,13 +724,13 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(written).expect("still UTF-8"),
-            MEDDLE.replace("REM GENRE \"Progressive Rock\"\r\n", "")
+            LOW_TIDE.replace("REM GENRE \"Progressive Rock\"\r\n", "")
         );
     }
 
     #[test]
     fn an_edit_and_its_reverse_give_the_sheet_back_byte_for_byte() {
-        let sheet = SheetText::read(MEDDLE.as_bytes());
+        let sheet = SheetText::read(LOW_TIDE.as_bytes());
         let was = sheet.own(SheetScope::Track(1), SheetField::Title);
 
         let written = sheet
@@ -738,7 +739,7 @@ mod tests {
                 &[edit(
                     SheetScope::Track(1),
                     SheetField::Title,
-                    Some("Echoes"),
+                    Some("Slow Water"),
                 )],
             )
             .expect("an edit the sheet can hold");
@@ -748,7 +749,7 @@ mod tests {
             rewritten
                 .own(SheetScope::Track(1), SheetField::Title)
                 .as_deref(),
-            Some("Echoes")
+            Some("Slow Water")
         );
 
         let back = rewritten
@@ -762,7 +763,7 @@ mod tests {
             )
             .expect("the edit walked back");
 
-        assert_eq!(back, MEDDLE.as_bytes());
+        assert_eq!(back, LOW_TIDE.as_bytes());
     }
 
     #[test]
@@ -817,7 +818,7 @@ mod tests {
 
     #[test]
     fn a_wide_sheet_keeps_its_mark_and_its_width() {
-        let text = "\u{feff}TITLE \"Meddle\"\r\nFILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n";
+        let text = "\u{feff}TITLE \"Low Tide\"\r\nFILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n";
         let bytes = encoded(text, TextEncoding::Utf16Le).expect("a wide sheet");
         let sheet = SheetText::read(&bytes);
 
@@ -850,14 +851,14 @@ mod tests {
 
     #[test]
     fn a_track_the_sheet_does_not_name_once_is_refused() {
-        let sheet = SheetText::read(MEDDLE.as_bytes());
+        let sheet = SheetText::read(LOW_TIDE.as_bytes());
 
         let refused = sheet.edited(
             &location(),
             &[edit(
                 SheetScope::Track(7),
                 SheetField::Title,
-                Some("Seamus"),
+                Some("Marlow"),
             )],
         );
 
@@ -869,7 +870,7 @@ mod tests {
 
     #[test]
     fn a_value_over_two_lines_is_refused() {
-        let sheet = SheetText::read(MEDDLE.as_bytes());
+        let sheet = SheetText::read(LOW_TIDE.as_bytes());
 
         let refused = sheet.edited(
             &location(),
@@ -889,12 +890,12 @@ mod tests {
     #[test]
     fn a_line_said_after_a_file_line_but_before_a_track_is_the_discs() {
         let text =
-            "FILE \"one.flac\" WAVE\nTITLE \"Meddle\"\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n";
+            "FILE \"one.flac\" WAVE\nTITLE \"Low Tide\"\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n";
         let sheet = SheetText::read(text.as_bytes());
 
         assert_eq!(
             sheet.own(SheetScope::Disc, SheetField::Title).as_deref(),
-            Some("Meddle")
+            Some("Low Tide")
         );
         assert_eq!(sheet.own(SheetScope::Track(1), SheetField::Title), None);
     }

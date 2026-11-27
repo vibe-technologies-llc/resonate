@@ -197,12 +197,12 @@ mod tests {
         for text in [
             "stand by",
             "by the way",
-            "pink floyd",
-            "- echoes",
-            "echoes -",
-            "title:echoes by pink floyd",
-            "\"echoes\" by pink floyd",
-            "echoes by -pink floyd",
+            "example band",
+            "- lantern",
+            "lantern -",
+            "title:lantern by example band",
+            "\"lantern\" by example band",
+            "lantern by -example band",
         ] {
             assert_eq!(ByArtist::read(text), None, "{text}");
         }

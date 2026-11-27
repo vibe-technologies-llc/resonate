@@ -244,12 +244,12 @@ mod tests {
         }
     }
 
-    fn echoes() -> Recording {
+    fn slow_water() -> Recording {
         Recording {
             mbid: None,
-            title: "Echoes".into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            title: "Slow Water".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: Some(Duration::from_secs(1_403)),
         }
     }
@@ -263,7 +263,7 @@ mod tests {
 
     fn answered(answer: Answer) -> Change {
         Change::Answer(AnswerNote {
-            recording: echoes(),
+            recording: slow_water(),
             stamp: stamp(),
             answer,
         })
@@ -271,7 +271,7 @@ mod tests {
 
     fn lyrics() -> Change {
         answered(Answer::Lyrics(SharedLyrics {
-            text: "Overhead the albatross".into(),
+            text: "Sunlight the fireflies".into(),
             synced: false,
         }))
     }

@@ -1297,28 +1297,31 @@ mod tests {
 
     #[test]
     fn plain_text_is_words_and_nothing_else() {
-        assert!(terms("dark side of the moon").is_empty());
-        assert_eq!(worded("dark side of the moon").len(), 5);
+        assert!(terms("far side of the lake").is_empty());
+        assert_eq!(worded("far side of the lake").len(), 5);
         assert!(
-            worded("dark side of the moon")
+            worded("far side of the lake")
                 .iter()
                 .all(|word| word.column.is_none())
         );
-        assert_eq!(Search::read("dark side of the moon").clauses.len(), 5);
+        assert_eq!(Search::read("far side of the lake").clauses.len(), 5);
     }
 
     #[test]
     fn a_quoted_run_is_one_word() {
-        let held = worded("\"pink floyd\" live");
+        let held = worded("\"example band\" live");
 
-        assert_eq!(words("\"pink floyd\" live"), vec!["\"pink floyd\"", "live"]);
+        assert_eq!(
+            words("\"example band\" live"),
+            vec!["\"example band\"", "live"]
+        );
         assert_eq!(held.first().map(|word| word.reach), Some(Reach::Phrase));
         assert_eq!(held.last().map(|word| word.reach), Some(Reach::Begins));
     }
 
     #[test]
     fn a_column_scopes_the_words_it_names() {
-        let held = worded("artist:\"pink floyd\" moon");
+        let held = worded("artist:\"example band\" moon");
 
         assert_eq!(
             held.first().map(|word| word.column),
@@ -1567,7 +1570,7 @@ mod tests {
 
         for text in [
             "artist:=\"Air\"",
-            "-album:=\"The Wall\"",
+            "-album:=\"The Lighthouse\"",
             "genre:=\"trip hop\"",
         ] {
             assert_eq!(
@@ -1934,13 +1937,13 @@ mod tests {
 
     #[test]
     fn a_word_lights_the_whole_of_every_token_it_begins() {
-        assert_eq!(lit("One of These Days", "these", Column::Title), ["These"]);
-        assert_eq!(lit("One of These Days", "th", Column::Title), ["These"]);
+        assert_eq!(lit("Two of Those Years", "those", Column::Title), ["Those"]);
+        assert_eq!(lit("Two of Those Years", "th", Column::Title), ["Those"]);
         assert_eq!(
-            lit("One of These Days", "one days", Column::Title),
-            ["One", "Days"]
+            lit("Two of Those Years", "two years", Column::Title),
+            ["Two", "Years"]
         );
-        assert!(lit("One of These Days", "echoes", Column::Title).is_empty());
+        assert!(lit("Two of Those Years", "lantern", Column::Title).is_empty());
     }
 
     #[test]
@@ -1971,31 +1974,31 @@ mod tests {
 
     #[test]
     fn a_word_scoped_to_a_column_lights_nothing_in_another() {
-        assert_eq!(lit("Echoes", "title:echoes", Column::Title), ["Echoes"]);
-        assert!(lit("Echoes", "title:echoes", Column::Artist).is_empty());
-        assert_eq!(lit("Echoes", "echoes", Column::Artist), ["Echoes"]);
+        assert_eq!(lit("Lantern", "title:lantern", Column::Title), ["Lantern"]);
+        assert!(lit("Lantern", "title:lantern", Column::Artist).is_empty());
+        assert_eq!(lit("Lantern", "lantern", Column::Artist), ["Lantern"]);
     }
 
     #[test]
     fn a_denied_word_and_a_term_light_nothing() {
-        assert!(lit("Echoes", "-echoes", Column::Title).is_empty());
+        assert!(lit("Lantern", "-lantern", Column::Title).is_empty());
         assert!(lit("1971", "year:1971", Column::Title).is_empty());
     }
 
     #[test]
     fn a_phrase_lights_the_run_between_its_ends_and_a_word_lights_only_its_own() {
         assert_eq!(
-            lit("One of These Days", "\"of these\"", Column::Title),
-            ["of These"]
+            lit("Two of Those Years", "\"of those\"", Column::Title),
+            ["of Those"]
         );
-        assert!(lit("These of One Days", "\"of these\"", Column::Title).is_empty());
+        assert!(lit("Those of Two Years", "\"of those\"", Column::Title).is_empty());
     }
 
     #[test]
     fn runs_that_meet_are_one_run() {
         assert_eq!(
-            lit("Echoes", "ech echoes echo", Column::Title),
-            ["Echoes"],
+            lit("Lantern", "lan lantern lante", Column::Title),
+            ["Lantern"],
             "one token matched three ways was lit three times over"
         );
         assert_eq!(

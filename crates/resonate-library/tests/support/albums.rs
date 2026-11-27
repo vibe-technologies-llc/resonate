@@ -14,22 +14,22 @@ use crate::support::{
     TRACK, Tree, Wav, artist_release, credited, isrc, mbid, options, release_row, scan,
 };
 
-pub(crate) const MEDDLE_SHEET: &str = r#"REM DATE 1971
-PERFORMER "Pink Floyd"
-TITLE "Meddle"
-FILE "Meddle.wav" WAVE
+pub(crate) const LOW_TIDE_SHEET: &str = r#"REM DATE 1971
+PERFORMER "Example Band"
+TITLE "Tideline"
+FILE "Tideline.wav" WAVE
   TRACK 01 AUDIO
-    TITLE "One of These Days"
+    TITLE "Small Mercies"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "A Pillow of Winds"
+    TITLE "A Quilt of Winds"
     INDEX 01 00:00:20
   TRACK 03 AUDIO
-    TITLE "Echoes"
+    TITLE "Lantern"
     INDEX 01 00:00:40
 "#;
 
-pub(crate) const TWO_DISC_SHEET: &str = "PERFORMER \"Pink Floyd\"\nTITLE \"The Wall\"\nFILE \"CD1/wall.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"In the Flesh?\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"The Thin Ice\"\n    INDEX 01 00:00:40\nFILE \"cd2\\\\wall.wav\" WAVE\n  TRACK 03 AUDIO\n    TITLE \"Hey You\"\n    INDEX 01 00:00:00\n";
+pub(crate) const TWO_DISC_SHEET: &str = "PERFORMER \"Example Band\"\nTITLE \"The Lighthouse\"\nFILE \"CD1/lighthouse.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Open the Gate?\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"The Narrow Bridge\"\n    INDEX 01 00:00:40\nFILE \"cd2\\\\lighthouse.wav\" WAVE\n  TRACK 03 AUDIO\n    TITLE \"Another Door\"\n    INDEX 01 00:00:00\n";
 
 pub(crate) fn orbits(tracks: Vec<ReleaseTrack>, links: Vec<Link>) -> Release {
     Release {
@@ -103,9 +103,9 @@ pub(crate) fn orbits_tree() -> Tree {
     let tree = Tree::new();
 
     for (file, title, number) in [
-        ("1.wav", "One of These Days", Some("1")),
-        ("2.wav", "A Pillow of Winds", Some("2")),
-        ("3.wav", "Fearless!", None),
+        ("1.wav", "Small Mercies", Some("1")),
+        ("2.wav", "A Quilt of Winds", Some("2")),
+        ("3.wav", "Paper Boats!", None),
     ] {
         let mut track = Wav::new()
             .text(TITLE, title)
@@ -146,7 +146,7 @@ pub(crate) fn orbits_track(title: &str, number: u32) -> Wav {
         .text(TRACK, &number.to_string())
 }
 
-pub(crate) const ORBITS_TITLES: [&str; 3] = ["One of These Days", "A Pillow of Winds", "Fearless"];
+pub(crate) const ORBITS_TITLES: [&str; 3] = ["Small Mercies", "A Quilt of Winds", "Paper Boats"];
 
 pub(crate) fn write_orbits(tree: &Tree, tagged: bool) {
     for (index, title) in ORBITS_TITLES.into_iter().enumerate() {
@@ -317,7 +317,7 @@ pub(crate) fn orbiters_groups() -> Vec<ArtistRelease> {
             &["Soundtrack"],
             Some("2003-11"),
         ),
-        artist_release(SINGLE_GROUP, "San Tropez", Some("Single"), &[], None),
+        artist_release(SINGLE_GROUP, "Harbour Lights", Some("Single"), &[], None),
         artist_release(
             BROADCAST_GROUP,
             "A Broadcast",
@@ -330,7 +330,7 @@ pub(crate) fn orbiters_groups() -> Vec<ArtistRelease> {
 
 pub(crate) const DAYBREAK: &str = "d3c9e2f0-3333-4444-8555-666677778888";
 
-pub(crate) const HOURS_FEARLESS: &str = "e4daf301-4444-4555-8666-777788889999";
+pub(crate) const HOURS_PAPER_BOATS: &str = "e4daf301-4444-4555-8666-777788889999";
 
 pub(crate) const HOURS_REISSUE: &str = "f5eb0412-5555-4666-8777-88889999aaaa";
 
@@ -369,14 +369,14 @@ pub(crate) fn hours_pressings() -> Vec<Release> {
             "2011",
             &[
                 ("Daybreak", DAYBREAK),
-                ("Fearless", HOURS_FEARLESS),
+                ("Paper Boats", HOURS_PAPER_BOATS),
                 ("Daybreak (demo)", HOURS_BONUS),
             ],
         ),
         hours_pressed(
             HOURS,
             "1996-05-06",
-            &[("Daybreak", DAYBREAK), ("Fearless", HOURS_FEARLESS)],
+            &[("Daybreak", DAYBREAK), ("Paper Boats", HOURS_PAPER_BOATS)],
         ),
     ]
 }
@@ -412,12 +412,12 @@ pub(crate) fn orbits_recording(
     }
 }
 
-pub(crate) fn meddle(title: &str, number: &str) -> Vec<u8> {
+pub(crate) fn low_tide(title: &str, number: &str) -> Vec<u8> {
     Wav::new()
         .text(TITLE, title)
-        .text(ARTIST, "Pink Floyd")
-        .text(ALBUM_ARTIST, "Pink Floyd")
-        .text(ALBUM, "Meddle")
+        .text(ARTIST, "Example Band")
+        .text(ALBUM_ARTIST, "Example Band")
+        .text(ALBUM, "Tideline")
         .text(TRACK, number)
         .build()
 }
@@ -432,23 +432,23 @@ pub(crate) fn orbits_file(tree: &Tree, name: &str) -> MediaLocation {
     )
 }
 
-pub(crate) const ECHOES: &str = "d7c2a3f0-3333-4444-8555-666677778888";
+pub(crate) const SLOW_WATER: &str = "d7c2a3f0-3333-4444-8555-666677778888";
 
-pub(crate) const MEDDLE: &str = "e8d3b4a1-4444-4555-8666-777788889999";
+pub(crate) const LOW_TIDE: &str = "e8d3b4a1-4444-4555-8666-777788889999";
 
-pub(crate) fn meddle_release() -> Release {
-    let mut echoes = release_row(2, "Echoes", Vec::new());
+pub(crate) fn low_tide_release() -> Release {
+    let mut slow_water = release_row(2, "Lantern", Vec::new());
 
-    echoes.recording = Some(mbid(ECHOES));
+    slow_water.recording = Some(mbid(SLOW_WATER));
 
-    let mut seamus = release_row(1, "Seamus", Vec::new());
+    let mut marlow = release_row(1, "Marlow", Vec::new());
 
-    seamus.recording = Some(mbid(ANOTHER_RECORDING));
+    marlow.recording = Some(mbid(ANOTHER_RECORDING));
     Release {
-        id: mbid(MEDDLE),
+        id: mbid(LOW_TIDE),
         group: None,
-        title: "Meddle".to_owned(),
-        credit: credited(Some("Pink Floyd"), None),
+        title: "Tideline".to_owned(),
+        credit: credited(Some("Example Band"), None),
         date: Some("1971-10-30".to_owned()),
         country: None,
         label: None,
@@ -462,31 +462,31 @@ pub(crate) fn meddle_release() -> Release {
             position: 1,
             format: None,
             title: None,
-            tracks: vec![seamus, echoes],
+            tracks: vec![marlow, slow_water],
         }],
     }
 }
 
-pub(crate) fn echoes_found() -> RecordingMatch {
+pub(crate) fn slow_water_found() -> RecordingMatch {
     RecordingMatch {
-        recording: mbid(ECHOES),
+        recording: mbid(SLOW_WATER),
         score: 100,
-        title: "Echoes".to_owned(),
-        credit: credited(Some("Pink Floyd"), None),
+        title: "Lantern".to_owned(),
+        credit: credited(Some("Example Band"), None),
         length: Some(Duration::from_secs(1_411)),
         isrcs: Vec::new(),
         releases: vec![
             RecordingRelease {
                 id: mbid(HOURS),
-                title: "Echoes: The Best Of".to_owned(),
+                title: "Lantern: The Best Of".to_owned(),
                 date: Some("2001-11-05".to_owned()),
                 disc: None,
                 position: None,
                 issued: Issued::default(),
             },
             RecordingRelease {
-                id: mbid(MEDDLE),
-                title: "Meddle".to_owned(),
+                id: mbid(LOW_TIDE),
+                title: "Tideline".to_owned(),
                 date: Some("1971-10-30".to_owned()),
                 disc: None,
                 position: None,
@@ -496,21 +496,21 @@ pub(crate) fn echoes_found() -> RecordingMatch {
     }
 }
 
-pub(crate) fn a_provider_offering_echoes(source: &str) -> Arc<Offering> {
+pub(crate) fn a_provider_offering_slow_water(source: &str) -> Arc<Offering> {
     Arc::new(Offering::new(
         source,
         Delivering::Bytes {
             key: "track/1411",
             extension: "wav",
-            bytes: Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+            bytes: Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
         },
     ))
 }
 
-pub(crate) fn meddle_fake() -> Fake {
+pub(crate) fn low_tide_fake() -> Fake {
     Fake::new(Canned {
-        found_songs: vec![echoes_found()],
-        releases: vec![meddle_release()],
+        found_songs: vec![slow_water_found()],
+        releases: vec![low_tide_release()],
         ..Canned::default()
     })
 }

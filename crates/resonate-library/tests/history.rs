@@ -17,10 +17,10 @@ use resonate_library::{
 };
 
 use crate::support::{
-    ALBUM, ARTIST, Delivering, HOURS, ISRC, MEDDLE_SHEET, MUSICBRAINZ, Offering, RECORDING, TITLE,
-    TRACK, Told, Tree, Wav, album_titled, all, artist_named, beside,
+    ALBUM, ARTIST, Delivering, HOURS, ISRC, LOW_TIDE_SHEET, MUSICBRAINZ, Offering, RECORDING,
+    TITLE, TRACK, Told, Tree, Wav, album_titled, all, artist_named, beside,
     cancelled_once_a_batch_is_written, many_short_songs, matched, mbid, opened_with_a_vault,
-    options, orbits_tree, scan, scanned_shapes, the_row_of, titles, wanted_san_tropez,
+    options, orbits_tree, scan, scanned_shapes, the_row_of, titles, wanted_harbour_lights,
 };
 
 fn resumable(path: &str) -> Resumable {
@@ -168,8 +168,8 @@ fn each_restored_queue_row_names_the_catalog_row_of_its_own_cut_and_a_pruned_one
 -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
-    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("Tideline.wav", &Wav::new().frames(44_100).build());
+    tree.write("Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     let pruned = tree.write(
         "gone.wav",
@@ -193,7 +193,7 @@ fn each_restored_queue_row_names_the_catalog_row_of_its_own_cut_and_a_pruned_one
 
     assert_eq!(library.track_at(&pruned, None)?, None);
 
-    let [first, second, third] = ["One of These Days", "A Pillow of Winds", "Echoes"].map(held);
+    let [first, second, third] = ["Small Mercies", "A Quilt of Winds", "Lantern"].map(held);
 
     let (first, second, third) = (first?, second?, third?);
 
@@ -1527,9 +1527,9 @@ fn listening_time_is_the_time_that_was_heard() -> Result<()> {
     let tree = Tree::new();
 
     tree.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits")
             .build(),
@@ -1561,7 +1561,7 @@ fn listening_time_is_the_time_that_was_heard() -> Result<()> {
         most.tracks
             .first()
             .map(|row| (row.name.as_str(), row.listened)),
-        Some(("Echoes", HEARD_FOR)),
+        Some(("Lantern", HEARD_FOR)),
         "the track heard for three minutes is not the one most listened to"
     );
     assert_eq!(
@@ -1590,14 +1590,14 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_h
 
     let tree = Tree::new();
     let unheld = tree.write(
-        "later/echoes.wav",
-        &Wav::new().text(TITLE, "Echoes").build(),
+        "later/lantern.wav",
+        &Wav::new().text(TITLE, "Lantern").build(),
     );
     let library = Library::open_in_memory()?;
 
     tree.write(
-        "scanned/seamus.wav",
-        &Wav::new().text(TITLE, "Seamus").build(),
+        "scanned/marlow.wav",
+        &Wav::new().text(TITLE, "Marlow").build(),
     );
     scan(
         &library,
@@ -1718,12 +1718,12 @@ fn an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_on
 
     let tree = Tree::new();
     let credited = tree.write(
-        "scanned/echoes.wav",
-        &Wav::new().text(TITLE, "Echoes").build(),
+        "scanned/lantern.wav",
+        &Wav::new().text(TITLE, "Lantern").build(),
     );
     let still_unheld = tree.write(
-        "later/seamus.wav",
-        &Wav::new().text(TITLE, "Seamus").build(),
+        "later/marlow.wav",
+        &Wav::new().text(TITLE, "Marlow").build(),
     );
     let library = Library::open_in_memory()?;
 
@@ -1776,7 +1776,7 @@ fn what_is_playing_is_billed_with_the_code_and_the_release_group_the_catalog_hol
     let heard = tree.write(
         "1.wav",
         &Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Winter")
             .text(ISRC, "gb-aye-71-00195")
@@ -1806,9 +1806,9 @@ fn what_is_playing_is_billed_with_the_code_and_the_release_group_the_catalog_hol
 #[test]
 fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() -> Result<()> {
     let tree = Tree::new();
-    let bytes = Wav::new().text(TITLE, "Echoes").build();
+    let bytes = Wav::new().text(TITLE, "Lantern").build();
 
-    let echoes = tree.write("echoes.wav", &bytes);
+    let slow_water = tree.write("lantern.wav", &bytes);
 
     tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
@@ -1818,7 +1818,11 @@ fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() 
 
     for _ in 0..2 {
         let counted = library
-            .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+            .track_played(
+                &MediaLocation::local(&slow_water),
+                None,
+                Duration::from_secs(2),
+            )?
             .expect("a counted play");
 
         library.listened(counted.listen, Duration::from_secs(2))?;
@@ -1826,7 +1830,7 @@ fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() 
 
     let before = library.statistics(Window::Everything)?;
 
-    fs::remove_file(&echoes).expect("the file goes");
+    fs::remove_file(&slow_water).expect("the file goes");
     scan(&library, &options(&tree))?;
 
     let after = library.statistics(Window::Everything)?;
@@ -1836,11 +1840,14 @@ fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() 
     assert_eq!(after.plays, before.plays);
     assert_eq!(after.listened, before.listened);
 
-    tree.write("echoes.wav", &bytes);
+    tree.write("lantern.wav", &bytes);
     scan(&library, &options(&tree))?;
 
     assert_eq!(
-        library.track_at(&echoes, None)?.expect("held again").plays,
+        library
+            .track_at(&slow_water, None)?
+            .expect("held again")
+            .plays,
         2
     );
     assert_eq!(library.statistics(Window::Everything)?.plays, 2);
@@ -1851,9 +1858,9 @@ fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() 
 fn a_song_back_in_a_scan_cancelled_partway_is_credited_its_listens_once_by_an_unchanged_rescan()
 -> Result<()> {
     let tree = Tree::new();
-    let bytes = Wav::new().text(TITLE, "Echoes").build();
+    let bytes = Wav::new().text(TITLE, "Lantern").build();
 
-    let echoes = tree.write("echoes.wav", &bytes);
+    let slow_water = tree.write("lantern.wav", &bytes);
 
     many_short_songs(&tree.path().join("many"));
 
@@ -1862,14 +1869,18 @@ fn a_song_back_in_a_scan_cancelled_partway_is_credited_its_listens_once_by_an_un
     scan(&library, &options(&tree))?;
     for _ in 0..2 {
         let counted = library
-            .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+            .track_played(
+                &MediaLocation::local(&slow_water),
+                None,
+                Duration::from_secs(2),
+            )?
             .expect("a counted play");
 
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
-    fs::remove_file(&echoes).expect("the file goes");
+    fs::remove_file(&slow_water).expect("the file goes");
     scan(&library, &options(&tree))?;
-    tree.write("echoes.wav", &bytes);
+    tree.write("lantern.wav", &bytes);
     cancelled_once_a_batch_is_written(
         &library,
         &ScanOptions {
@@ -1879,7 +1890,7 @@ fn a_song_back_in_a_scan_cancelled_partway_is_credited_its_listens_once_by_an_un
     )?;
 
     let arrived = library
-        .track_at(&echoes, None)?
+        .track_at(&slow_water, None)?
         .expect("the cancelled scan wrote the song back");
 
     assert_eq!(arrived.plays, 0, "the cancelled scan credited the listens");
@@ -1889,7 +1900,7 @@ fn a_song_back_in_a_scan_cancelled_partway_is_credited_its_listens_once_by_an_un
     assert_eq!(unchanged.added, 0);
     assert_eq!(unchanged.updated, 0);
     assert_eq!(
-        library.track_at(&echoes, None)?.expect("held").plays,
+        library.track_at(&slow_water, None)?.expect("held").plays,
         2,
         "the listens kept against the song were not credited"
     );
@@ -1897,7 +1908,7 @@ fn a_song_back_in_a_scan_cancelled_partway_is_credited_its_listens_once_by_an_un
 
     scan(&library, &options(&tree))?;
 
-    assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 2);
+    assert_eq!(library.track_at(&slow_water, None)?.expect("held").plays, 2);
     assert_eq!(library.statistics(Window::Everything)?.plays, 2);
     Ok(())
 }
@@ -1908,14 +1919,14 @@ fn a_delivered_row_forgotten_keeps_its_listens() -> Result<()> {
     let held = Tree::new();
     let delivered = tree.write(
         "delivered.wav",
-        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        &Wav::new().text(TITLE, "Lantern").frames(8_820).build(),
     );
 
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
 
     scan(&library, &options(&orbits))?;
-    wanted_san_tropez(&library)?;
+    wanted_harbour_lights(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
 

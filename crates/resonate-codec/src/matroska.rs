@@ -1345,7 +1345,7 @@ mod tests {
     #[test]
     fn the_segment_duration_is_its_ticks_scaled_by_the_timestamp_scale() {
         assert_eq!(
-            read_segment(&mut Cursor::new(file("Echoes"))).duration(),
+            read_segment(&mut Cursor::new(file("Slow Water"))).duration(),
             Some(Duration::from_millis(2_003))
         );
     }
@@ -1354,7 +1354,7 @@ mod tests {
     fn a_duration_the_segment_does_not_declare_is_left_unknown() {
         let mut info = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
 
-        info.extend_from_slice(&element(TITLE, b"Echoes"));
+        info.extend_from_slice(&element(TITLE, b"Slow Water"));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
 
@@ -1382,16 +1382,16 @@ mod tests {
     #[test]
     fn the_segment_title_is_found_past_the_elements_before_it() {
         assert_eq!(
-            read_segment(&mut Cursor::new(file("Echoes")))
+            read_segment(&mut Cursor::new(file("Slow Water")))
                 .title
                 .as_deref(),
-            Some("Echoes")
+            Some("Slow Water")
         );
     }
 
     #[test]
     fn the_scan_leaves_the_stream_where_it_found_it() {
-        let mut source = Cursor::new(file("Echoes"));
+        let mut source = Cursor::new(file("Slow Water"));
 
         let _ = read_segment(&mut source);
 
@@ -1403,7 +1403,7 @@ mod tests {
         let mut segment = SEGMENT.to_be_bytes().to_vec();
 
         segment.push(UNBOUNDED);
-        segment.extend_from_slice(&element(INFO, &titled("Echoes")));
+        segment.extend_from_slice(&element(INFO, &titled("Slow Water")));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
 
@@ -1411,7 +1411,7 @@ mod tests {
 
         assert_eq!(
             read_segment(&mut Cursor::new(bytes)).title.as_deref(),
-            Some("Echoes")
+            Some("Slow Water")
         );
     }
 
@@ -2068,7 +2068,7 @@ mod tests {
     }
 
     fn depths_of(entries: &[Vec<u8>]) -> Segment {
-        let mut segment = element(INFO, &titled("Echoes"));
+        let mut segment = element(INFO, &titled("Slow Water"));
 
         segment.extend_from_slice(&element(TRACKS, &entries.concat()));
 
@@ -2109,7 +2109,7 @@ mod tests {
     #[test]
     fn a_file_declaring_no_bit_depth_leaves_it_unknown() {
         assert_eq!(
-            read_segment(&mut Cursor::new(file("Echoes"))).bit_depth_of(1),
+            read_segment(&mut Cursor::new(file("Slow Water"))).bit_depth_of(1),
             None
         );
     }

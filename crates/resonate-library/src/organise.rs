@@ -3705,12 +3705,12 @@ mod tests {
 
     const NOWHERE: &str = "/nowhere/resonate";
 
-    fn comfortably_numb() -> Named<'static> {
+    fn gently_adrift() -> Named<'static> {
         Named {
-            album_artist: Some("Pink Floyd"),
-            artist: Some("Pink Floyd"),
-            album: Some("The Wall"),
-            title: "Comfortably Numb",
+            album_artist: Some("Example Band"),
+            artist: Some("Example Band"),
+            album: Some("The Lighthouse"),
+            title: "Gently Adrift",
             year: Some(1979),
             disc: NonZeroU32::new(2),
             discs: 2,
@@ -4043,7 +4043,7 @@ mod tests {
     fn a_destination_that_fits_is_the_one_an_unlimited_volume_gets() {
         let layout = read(DEFAULT_LAYOUT);
         let reach = Reach::legacy(Path::new(r"C:\Music"));
-        let named = a_long_track("Echoes", "Pink Floyd", "Meddle");
+        let named = a_long_track("Lantern", "Example Band", "Tideline");
 
         assert_eq!(
             layout
@@ -4076,7 +4076,7 @@ mod tests {
 
         assert_eq!(
             layout.rendered_within(
-                &a_long_track("Echoes", "Pink Floyd", "Meddle"),
+                &a_long_track("Lantern", "Example Band", "Tideline"),
                 Naming::Portable,
                 &reach
             ),
@@ -4132,7 +4132,7 @@ mod tests {
         ));
 
         let layout = read("{albumartist}/{title}");
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
         named.album_artist = Some("/etc");
         named.title = "../../passwd";
@@ -4152,7 +4152,7 @@ mod tests {
                 Piece::Literal("}".into()),
             ]
         );
-        assert_eq!(rendered(&layout, &comfortably_numb()), "{The Wall}.flac");
+        assert_eq!(rendered(&layout, &gently_adrift()), "{The Lighthouse}.flac");
 
         assert_eq!(fault("{album}/{title"), (8, LayoutFault::Unclosed));
         assert_eq!(fault("{album}/a}b"), (9, LayoutFault::Unopened));
@@ -4163,8 +4163,8 @@ mod tests {
     fn the_default_layout_reads_back_as_the_one_this_build_ships() {
         assert_eq!(Layout::default(), read(DEFAULT_LAYOUT));
         assert_eq!(
-            rendered(&Layout::default(), &comfortably_numb()),
-            "Pink Floyd/The Wall/2-06 Comfortably Numb.flac"
+            rendered(&Layout::default(), &gently_adrift()),
+            "Example Band/The Lighthouse/2-06 Gently Adrift.flac"
         );
     }
 
@@ -4203,86 +4203,86 @@ mod tests {
     fn a_segment_that_resolves_to_nothing_is_dropped_and_a_file_name_that_does_leaves_no_destination()
      {
         let layout = read(DEFAULT_LAYOUT);
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
         named.album_artist = None;
 
         assert_eq!(
             rendered(&layout, &named),
-            "The Wall/2-06 Comfortably Numb.flac"
+            "The Lighthouse/2-06 Gently Adrift.flac"
         );
 
         let ending_in_a_year = read("{album}/{year}");
-        let mut undated = comfortably_numb();
+        let mut undated = gently_adrift();
 
         undated.year = None;
 
         assert_eq!(ending_in_a_year.render(&undated, Naming::Anything), None);
         assert_eq!(
-            rendered(&ending_in_a_year, &comfortably_numb()),
-            "The Wall/1979.flac"
+            rendered(&ending_in_a_year, &gently_adrift()),
+            "The Lighthouse/1979.flac"
         );
     }
 
     #[test]
     fn a_track_number_is_two_digits_and_an_unknown_one_is_nothing() {
         let layout = read("{track} {title}");
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
-        assert_eq!(rendered(&layout, &named), "06 Comfortably Numb.flac");
+        assert_eq!(rendered(&layout, &named), "06 Gently Adrift.flac");
 
         named.track = Some(112);
 
-        assert_eq!(rendered(&layout, &named), "112 Comfortably Numb.flac");
+        assert_eq!(rendered(&layout, &named), "112 Gently Adrift.flac");
 
         named.track = None;
 
-        assert_eq!(rendered(&layout, &named), "Comfortably Numb.flac");
+        assert_eq!(rendered(&layout, &named), "Gently Adrift.flac");
     }
 
     #[test]
     fn a_disc_is_written_only_where_the_release_has_more_than_one_of_them() {
         let layout = read("{disc}{track} {title}");
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
-        assert_eq!(rendered(&layout, &named), "2-06 Comfortably Numb.flac");
+        assert_eq!(rendered(&layout, &named), "2-06 Gently Adrift.flac");
 
         named.discs = 1;
         named.disc = NonZeroU32::new(1);
 
-        assert_eq!(rendered(&layout, &named), "06 Comfortably Numb.flac");
+        assert_eq!(rendered(&layout, &named), "06 Gently Adrift.flac");
 
         named.discs = 2;
         named.disc = None;
 
-        assert_eq!(rendered(&layout, &named), "06 Comfortably Numb.flac");
+        assert_eq!(rendered(&layout, &named), "06 Gently Adrift.flac");
     }
 
     #[test]
     fn the_extension_is_appended_only_where_the_layout_does_not_name_it() {
-        let named = comfortably_numb();
+        let named = gently_adrift();
 
-        assert_eq!(rendered(&read("{title}"), &named), "Comfortably Numb.flac");
+        assert_eq!(rendered(&read("{title}"), &named), "Gently Adrift.flac");
         assert_eq!(
             rendered(&read("{title}.{ext}"), &named),
-            "Comfortably Numb.flac"
+            "Gently Adrift.flac"
         );
         assert_eq!(
             rendered(&read("{track} {title} [{ext}]"), &named),
-            "06 Comfortably Numb [flac]"
+            "06 Gently Adrift [flac]"
         );
 
         let mut unlabelled = named;
 
         unlabelled.extension = None;
 
-        assert_eq!(rendered(&read("{title}"), &unlabelled), "Comfortably Numb");
+        assert_eq!(rendered(&read("{title}"), &unlabelled), "Gently Adrift");
     }
 
     #[test]
     fn a_long_name_cut_to_fit_keeps_the_extension_the_layout_names() {
         let chanted = "音".repeat(300);
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
         named.title = &chanted;
 
@@ -4291,12 +4291,12 @@ mod tests {
         assert!(file.ends_with(".flac"), "{file} lost its extension");
         assert!(file.len() <= COMPONENT_BYTES);
         assert_eq!(
-            rendered(&read("{title}.{ext}"), &comfortably_numb()),
-            "Comfortably Numb.flac"
+            rendered(&read("{title}.{ext}"), &gently_adrift()),
+            "Gently Adrift.flac"
         );
         assert_eq!(
-            rendered(&read("{track}.{title}.{ext}"), &comfortably_numb()),
-            "06.Comfortably Numb.flac"
+            rendered(&read("{track}.{title}.{ext}"), &gently_adrift()),
+            "06.Gently Adrift.flac"
         );
     }
 
@@ -4330,7 +4330,7 @@ mod tests {
     #[test]
     fn a_separator_in_a_name_is_replaced_and_a_control_character_is_dropped() {
         let layout = read("{artist}/{title}");
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
         named.artist = Some("AC/DC");
         named.title = "Ba\u{7}ck in Bla\u{7f}ck\nAgain";
@@ -4342,7 +4342,7 @@ mod tests {
     fn a_component_is_cut_to_the_bytes_a_filesystem_holds_and_never_mid_character() {
         let chanted = "音".repeat(300);
         let layout = read("{album}/{title}");
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
         named.album = Some(&chanted);
         named.title = &chanted;
@@ -4375,12 +4375,12 @@ mod tests {
 
         let cut_on_a_space = format!("{}{}", "a".repeat(249), " bbbbbbbbbb");
 
-        named.album = Some("The Wall");
+        named.album = Some("The Lighthouse");
         named.title = &cut_on_a_space;
 
         assert_eq!(
             rendered(&layout, &named),
-            format!("The Wall/{}.flac", "a".repeat(249))
+            format!("The Lighthouse/{}.flac", "a".repeat(249))
         );
     }
 
@@ -4415,11 +4415,11 @@ mod tests {
             .parks()
         );
 
-        let shorter = folder.join("01 Echoes.flac");
+        let shorter = folder.join("01 Lantern.flac");
 
         assert_eq!(
             noted_staging(&library, &shorter).expect("a staging name"),
-            folder.join(format!("01 Echoes.flac{STAGED}"))
+            folder.join(format!("01 Lantern.flac{STAGED}"))
         );
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
@@ -4451,14 +4451,14 @@ mod tests {
     #[test]
     fn a_component_is_never_hidden_and_one_that_is_only_dots_or_only_spaces_resolves_to_nothing() {
         let layout = read("{album}/{title}");
-        let mut named = comfortably_numb();
+        let mut named = gently_adrift();
 
         for nothing in ["...", "   ", "..", ".", " . "] {
             named.album = Some(nothing);
 
             assert_eq!(
                 rendered(&layout, &named),
-                "Comfortably Numb.flac",
+                "Gently Adrift.flac",
                 "{nothing:?} was kept as a folder"
             );
         }
@@ -4467,7 +4467,7 @@ mod tests {
 
         assert_eq!(
             rendered(&layout, &named),
-            "And Justice for All/Comfortably Numb.flac"
+            "And Justice for All/Gently Adrift.flac"
         );
 
         named.title = "Alive.";
@@ -4507,11 +4507,11 @@ mod tests {
             id: TrackId::new(id).expect("a non-zero id"),
             path: PathBuf::from(path),
             root: PathBuf::from(NOWHERE),
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
+            title: "Lantern".to_owned(),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Tideline".to_owned()),
             album_id: AlbumId::new(1).ok(),
-            album_artist: Some("Pink Floyd".to_owned()),
+            album_artist: Some("Example Band".to_owned()),
             year: Some(1971),
             track: Some(1),
             disc: None,
@@ -4565,7 +4565,10 @@ mod tests {
 
     #[test]
     fn a_track_already_where_the_layout_puts_it_is_counted_unchanged_and_never_planned() {
-        let row = row(1, &format!("{NOWHERE}/Pink Floyd/Meddle/01 Echoes.wav"));
+        let row = row(
+            1,
+            &format!("{NOWHERE}/Example Band/Tideline/01 Lantern.wav"),
+        );
         let (plan, stats) = preview(slice::from_ref(&row), DEFAULT_LAYOUT);
 
         assert_eq!(plan.unchanged, 1);
@@ -4622,7 +4625,7 @@ mod tests {
         assert_eq!(plan.moves[0].from, rows[0].path);
         assert_eq!(
             plan.moves[0].to,
-            PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/01 Echoes.wav"))
+            PathBuf::from(format!("{NOWHERE}/Example Band/Tideline/01 Lantern.wav"))
         );
         assert_eq!(
             plan.refused,
@@ -4738,7 +4741,7 @@ mod tests {
         let first = row(1, &format!("{NOWHERE}/a.wav"));
         let mut second = row(2, &format!("{NOWHERE}/b.wav"));
 
-        second.title = "ECHOES".to_owned();
+        second.title = "LANTERN".to_owned();
 
         let rows = [first, second];
 
@@ -4763,12 +4766,12 @@ mod tests {
     fn a_folder_is_blind_to_case_when_its_flipped_name_is_the_same_file() {
         let folder = a_folder_of_its_own();
 
-        fs::write(folder.join("Echoes.wav"), b"").expect("a file");
+        fs::write(folder.join("Lantern.wav"), b"").expect("a file");
 
-        let sensitive = !fs::exists(folder.join("eCHOES.WAV")).expect("the folder answers");
+        let sensitive = !fs::exists(folder.join("lANTERN.WAV")).expect("the folder answers");
 
         assert_eq!(case_blind_beside(&folder), !sensitive);
-        assert_eq!(case_flipped("Echoes.wav").as_deref(), Some("eCHOES.WAV"));
+        assert_eq!(case_flipped("Lantern.wav").as_deref(), Some("lANTERN.WAV"));
         assert_eq!(case_flipped("1234"), None);
 
         fs::remove_dir_all(&folder).expect("the folder goes");
@@ -4847,7 +4850,7 @@ mod tests {
         let mut second = row(2, &format!("{}/b.wav", root.display()));
 
         second.root = root.to_path_buf();
-        second.title = "ECHOES".to_owned();
+        second.title = "LANTERN".to_owned();
         vec![first, second]
     }
 
@@ -4862,7 +4865,7 @@ mod tests {
         let sensitive = volume.join("plain");
 
         for folder in [&blind, &sensitive] {
-            fs::write(folder.join("Echoes.wav"), b"").expect("a file");
+            fs::write(folder.join("Lantern.wav"), b"").expect("a file");
         }
 
         assert!(case_blind_beside(&blind));
@@ -4891,13 +4894,13 @@ mod tests {
 
     #[test]
     fn the_rows_cut_out_of_one_file_file_it_by_their_folder_and_leave_it_the_name_it_has() {
-        let mut first = row(1, &format!("{NOWHERE}/rips/Meddle.wav"));
+        let mut first = row(1, &format!("{NOWHERE}/rips/Tideline.wav"));
 
-        first.title = "One of These Days".to_owned();
+        first.title = "Small Mercies".to_owned();
 
-        let mut second = row(2, &format!("{NOWHERE}/rips/Meddle.wav"));
+        let mut second = row(2, &format!("{NOWHERE}/rips/Tideline.wav"));
 
-        second.title = "Echoes".to_owned();
+        second.title = "Lantern".to_owned();
         second.track = Some(6);
 
         let (plan, stats) = preview(&[first, second], DEFAULT_LAYOUT);
@@ -4906,17 +4909,17 @@ mod tests {
         assert_eq!(plan.moves.len(), 1);
         assert_eq!(
             plan.moves[0].to,
-            PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/Meddle.wav"))
+            PathBuf::from(format!("{NOWHERE}/Example Band/Tideline/Tideline.wav"))
         );
         assert_eq!(plan.moves[0].rows, 2);
     }
 
     #[test]
     fn the_rows_cut_out_of_one_file_that_name_two_folders_leave_it_unidentified() {
-        let first = row(1, &format!("{NOWHERE}/rips/Meddle.wav"));
-        let mut second = row(2, &format!("{NOWHERE}/rips/Meddle.wav"));
+        let first = row(1, &format!("{NOWHERE}/rips/Tideline.wav"));
+        let mut second = row(2, &format!("{NOWHERE}/rips/Tideline.wav"));
 
-        second.album = Some("Obscured by Clouds".to_owned());
+        second.album = Some("Hidden by Fog".to_owned());
 
         let (plan, stats) = preview(&[first, second], DEFAULT_LAYOUT);
 
@@ -4928,13 +4931,13 @@ mod tests {
 
     #[test]
     fn a_folder_spelling_a_disc_names_the_disc_where_no_tag_does() {
-        let mut first = row(1, &format!("{NOWHERE}/The Wall/CD1/a.wav"));
+        let mut first = row(1, &format!("{NOWHERE}/The Lighthouse/CD1/a.wav"));
 
-        first.title = "In the Flesh".to_owned();
+        first.title = "Open the Gate".to_owned();
 
-        let mut second = row(2, &format!("{NOWHERE}/The Wall/CD2/b.wav"));
+        let mut second = row(2, &format!("{NOWHERE}/The Lighthouse/CD2/b.wav"));
 
-        second.title = "Hey You".to_owned();
+        second.title = "Another Door".to_owned();
 
         let (plan, _) = preview(&[first, second], DEFAULT_LAYOUT);
 
@@ -4944,8 +4947,12 @@ mod tests {
                 .map(|planned| planned.to.clone())
                 .collect::<Vec<_>>(),
             vec![
-                PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/1-01 In the Flesh.wav")),
-                PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/2-01 Hey You.wav")),
+                PathBuf::from(format!(
+                    "{NOWHERE}/Example Band/Tideline/1-01 Open the Gate.wav"
+                )),
+                PathBuf::from(format!(
+                    "{NOWHERE}/Example Band/Tideline/2-01 Another Door.wav"
+                )),
             ]
         );
     }
@@ -4954,8 +4961,8 @@ mod tests {
     fn a_destination_another_file_already_holds_collides_and_a_source_that_has_gone_fails() {
         let folder = a_folder_of_its_own();
 
-        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
-        fs::write(folder.join("Meddle/Echoes.wav"), b"held").expect("a writable temporary file");
+        fs::create_dir_all(folder.join("Tideline")).expect("a writable temporary directory");
+        fs::write(folder.join("Tideline/Lantern.wav"), b"held").expect("a writable temporary file");
         fs::write(folder.join("here.wav"), b"standing").expect("a writable temporary file");
 
         let mut standing = row(1, "");
@@ -4971,7 +4978,7 @@ mod tests {
             vec![Refused {
                 from: standing.path.clone(),
                 refusal: Refusal::Collided {
-                    with: folder.join("Meddle/Echoes.wav")
+                    with: folder.join("Tideline/Lantern.wav")
                 },
             }]
         );
@@ -5002,31 +5009,31 @@ mod tests {
         let rips = folder.join("rips");
 
         fs::create_dir_all(&rips).expect("a writable temporary directory");
-        fs::write(rips.join("Meddle.wav"), b"audio").expect("a writable temporary file");
-        fs::write(rips.join("Meddle.cue"), b"sheet").expect("a writable temporary file");
-        fs::write(rips.join("Meddle.wav.log"), b"rip").expect("a writable temporary file");
-        fs::write(rips.join("Meddlesome.txt"), b"another").expect("a writable temporary file");
+        fs::write(rips.join("Tideline.wav"), b"audio").expect("a writable temporary file");
+        fs::write(rips.join("Tideline.cue"), b"sheet").expect("a writable temporary file");
+        fs::write(rips.join("Tideline.wav.log"), b"rip").expect("a writable temporary file");
+        fs::write(rips.join("Tidelinesome.txt"), b"another").expect("a writable temporary file");
 
         let mut track = row(1, "");
 
         track.root = folder.clone();
-        track.path = rips.join("Meddle.wav");
+        track.path = rips.join("Tideline.wav");
 
         let (plan, _) = preview(slice::from_ref(&track), DEFAULT_LAYOUT);
 
-        let landing = folder.join("Pink Floyd/Meddle");
+        let landing = folder.join("Example Band/Tideline");
 
         assert_eq!(plan.moves.len(), 1);
         assert_eq!(
             plan.moves[0].sidecars,
             vec![
                 Sidecar {
-                    from: rips.join("Meddle.cue"),
-                    to: landing.join("01 Echoes.cue"),
+                    from: rips.join("Tideline.cue"),
+                    to: landing.join("01 Lantern.cue"),
                 },
                 Sidecar {
-                    from: rips.join("Meddle.wav.log"),
-                    to: landing.join("01 Echoes.wav.log"),
+                    from: rips.join("Tideline.wav.log"),
+                    to: landing.join("01 Lantern.wav.log"),
                 },
             ]
         );
@@ -5035,7 +5042,7 @@ mod tests {
             "a folder still holding a file nothing moves is not one the moves empty"
         );
 
-        fs::remove_file(rips.join("Meddlesome.txt")).expect("the odd file goes away");
+        fs::remove_file(rips.join("Tidelinesome.txt")).expect("the odd file goes away");
 
         let (plan, _) = preview(slice::from_ref(&track), DEFAULT_LAYOUT);
 
@@ -5048,8 +5055,8 @@ mod tests {
     fn a_track_moving_onto_a_file_that_is_itself_moving_is_ordered_behind_it() {
         let folder = a_folder_of_its_own();
 
-        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
-        fs::write(folder.join("Meddle/Echoes.wav"), b"held").expect("a writable temporary file");
+        fs::create_dir_all(folder.join("Tideline")).expect("a writable temporary directory");
+        fs::write(folder.join("Tideline/Lantern.wav"), b"held").expect("a writable temporary file");
         fs::write(folder.join("here.wav"), b"standing").expect("a writable temporary file");
 
         let mut arriving = row(1, "");
@@ -5060,8 +5067,8 @@ mod tests {
         let mut vacating = row(2, "");
 
         vacating.root = folder.clone();
-        vacating.path = folder.join("Meddle/Echoes.wav");
-        vacating.title = "Fearless".to_owned();
+        vacating.path = folder.join("Tideline/Lantern.wav");
+        vacating.title = "Paper Boats".to_owned();
 
         let (plan, stats) = preview(&[arriving.clone(), vacating.clone()], "{album}/{title}");
 
@@ -5076,8 +5083,11 @@ mod tests {
                 .map(|planned| (planned.from.clone(), planned.to.clone()))
                 .collect::<Vec<_>>(),
             vec![
-                (vacating.path.clone(), folder.join("Meddle/Fearless.wav")),
-                (arriving.path.clone(), folder.join("Meddle/Echoes.wav")),
+                (
+                    vacating.path.clone(),
+                    folder.join("Tideline/Paper Boats.wav")
+                ),
+                (arriving.path.clone(), folder.join("Tideline/Lantern.wav")),
             ]
         );
 
@@ -5155,30 +5165,30 @@ mod tests {
     fn two_tracks_moving_onto_each_other_trade_places_through_a_parked_name() {
         let folder = a_folder_of_its_own();
 
-        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
-        for named in ["Echoes", "Fearless"] {
-            fs::write(folder.join(format!("Meddle/{named}.wav")), b"held")
+        fs::create_dir_all(folder.join("Tideline")).expect("a writable temporary directory");
+        for named in ["Lantern", "Paper Boats"] {
+            fs::write(folder.join(format!("Tideline/{named}.wav")), b"held")
                 .expect("a writable temporary file");
         }
 
         let mut one = row(1, "");
 
         one.root = folder.clone();
-        one.path = folder.join("Meddle/Echoes.wav");
-        one.title = "Fearless".to_owned();
+        one.path = folder.join("Tideline/Lantern.wav");
+        one.title = "Paper Boats".to_owned();
 
         let mut other = row(2, "");
 
         other.root = folder.clone();
-        other.path = folder.join("Meddle/Fearless.wav");
-        other.title = "Echoes".to_owned();
+        other.path = folder.join("Tideline/Paper Boats.wav");
+        other.title = "Lantern".to_owned();
 
         let (plan, stats) = preview(&[one.clone(), other.clone()], "{album}/{title}");
 
         assert!(plan.refused.is_empty(), "{:?}", plan.refused);
         assert_eq!(stats.collided, 0);
 
-        let parked = folder.join(format!("Meddle/Echoes.{PARKED}-{}.wav", process::id()));
+        let parked = folder.join(format!("Tideline/Lantern.{PARKED}-{}.wav", process::id()));
         let steps: Vec<(PathBuf, PathBuf)> = plan
             .moves
             .iter()
@@ -5201,8 +5211,8 @@ mod tests {
     fn a_track_moving_onto_a_file_that_is_already_where_it_belongs_collides_with_it() {
         let folder = a_folder_of_its_own();
 
-        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
-        fs::write(folder.join("Meddle/Echoes.wav"), b"held").expect("a writable temporary file");
+        fs::create_dir_all(folder.join("Tideline")).expect("a writable temporary directory");
+        fs::write(folder.join("Tideline/Lantern.wav"), b"held").expect("a writable temporary file");
         fs::write(folder.join("here.wav"), b"standing").expect("a writable temporary file");
 
         let mut arriving = row(1, "");
@@ -5213,7 +5223,7 @@ mod tests {
         let mut standing = row(2, "");
 
         standing.root = folder.clone();
-        standing.path = folder.join("Meddle/Echoes.wav");
+        standing.path = folder.join("Tideline/Lantern.wav");
 
         let (plan, stats) = preview(&[arriving.clone(), standing.clone()], "{album}/{title}");
 
@@ -5238,13 +5248,13 @@ mod tests {
     fn a_destination_that_is_the_track_itself_under_another_case_is_never_a_collision() {
         let folder = a_folder_of_its_own();
 
-        fs::create_dir_all(folder.join("meddle")).expect("a writable temporary directory");
-        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
-        fs::write(folder.join("meddle/echoes.wav"), b"held").expect("a writable temporary file");
-        fs::write(folder.join("meddle/Time.wav"), b"held").expect("a writable temporary file");
+        fs::create_dir_all(folder.join("tideline")).expect("a writable temporary directory");
+        fs::create_dir_all(folder.join("Tideline")).expect("a writable temporary directory");
+        fs::write(folder.join("tideline/lantern.wav"), b"held").expect("a writable temporary file");
+        fs::write(folder.join("tideline/Time.wav"), b"held").expect("a writable temporary file");
         for (spelled, as_the_layout_spells_it) in [
-            ("meddle/echoes.wav", "Meddle/Echoes.wav"),
-            ("meddle/Time.wav", "Meddle/Time.wav"),
+            ("tideline/lantern.wav", "Tideline/Lantern.wav"),
+            ("tideline/Time.wav", "Tideline/Time.wav"),
         ] {
             let named_twice =
                 fs::hard_link(folder.join(spelled), folder.join(as_the_layout_spells_it));
@@ -5258,19 +5268,19 @@ mod tests {
             );
         }
 
-        let mut echoes = row(1, "");
+        let mut slow_water = row(1, "");
 
-        echoes.root = folder.clone();
-        echoes.path = folder.join("meddle/echoes.wav");
+        slow_water.root = folder.clone();
+        slow_water.path = folder.join("tideline/lantern.wav");
 
         let mut time = row(2, "");
 
         time.root = folder.clone();
-        time.path = folder.join("meddle/Time.wav");
+        time.path = folder.join("tideline/Time.wav");
         time.title = "Time".to_owned();
         time.album_id = AlbumId::new(2).ok();
 
-        let (plan, stats) = preview(&[echoes.clone(), time], "{album}/{title}");
+        let (plan, stats) = preview(&[slow_water.clone(), time], "{album}/{title}");
 
         assert!(plan.refused.is_empty(), "{:?}", plan.refused);
         assert_eq!(stats.collided, 0);
@@ -5283,13 +5293,13 @@ mod tests {
                 .iter()
                 .map(|planned| (planned.from.clone(), planned.to.clone()))
                 .collect::<Vec<_>>(),
-            vec![(echoes.path.clone(), folder.join("meddle/Echoes.wav"))],
+            vec![(slow_water.path.clone(), folder.join("tideline/Lantern.wav"))],
             "a folder differing only in case was moved into rather than kept"
         );
 
         let onto_itself = Move {
-            from: echoes.path.clone(),
-            to: folder.join("Meddle/Echoes.wav"),
+            from: slow_water.path.clone(),
+            to: folder.join("Tideline/Lantern.wav"),
             rows: 1,
             companions: Vec::new(),
             sidecars: Vec::new(),
@@ -5302,10 +5312,10 @@ mod tests {
 
     #[test]
     fn only_a_destination_the_volume_folds_onto_the_track_is_kept_in_the_tracks_own_folder() {
-        let from = PathBuf::from(format!("{NOWHERE}/downloads/echoes.wav"));
-        let filed = PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/02 Echoes.wav"));
-        let recased = PathBuf::from(format!("{NOWHERE}/Downloads/Echoes.wav"));
-        let in_its_own_folder = PathBuf::from(format!("{NOWHERE}/downloads/Echoes.wav"));
+        let from = PathBuf::from(format!("{NOWHERE}/downloads/lantern.wav"));
+        let filed = PathBuf::from(format!("{NOWHERE}/Example Band/Tideline/02 Lantern.wav"));
+        let recased = PathBuf::from(format!("{NOWHERE}/Downloads/Lantern.wav"));
+        let in_its_own_folder = PathBuf::from(format!("{NOWHERE}/downloads/Lantern.wav"));
 
         assert_eq!(
             landing_named(&from, filed.clone(), Sameness::AnotherName),
@@ -5315,7 +5325,7 @@ mod tests {
         assert_eq!(landing_named(&from, filed.clone(), Sameness::Apart), filed);
         assert_eq!(
             landing_named(&from, filed.clone(), Sameness::ItsOwnName),
-            PathBuf::from(format!("{NOWHERE}/downloads/02 Echoes.wav")),
+            PathBuf::from(format!("{NOWHERE}/downloads/02 Lantern.wav")),
             "the track's own entry under another spelling left its folder"
         );
         assert_eq!(
@@ -5345,11 +5355,11 @@ mod tests {
 
         let blind =
             PathBuf::from(env::var_os(CASEFOLD_AT).expect("the casefold volume")).join("blind");
-        let spelled = blind.join("meddle/echoes.wav");
-        let filed = blind.join("Meddle/Echoes.wav");
-        let downloaded = blind.join("downloads/echoes.wav");
+        let spelled = blind.join("tideline/lantern.wav");
+        let filed = blind.join("Tideline/Lantern.wav");
+        let downloaded = blind.join("downloads/lantern.wav");
 
-        fs::create_dir_all(blind.join("meddle")).expect("a folder on the volume");
+        fs::create_dir_all(blind.join("tideline")).expect("a folder on the volume");
         fs::create_dir_all(blind.join("downloads")).expect("a folder on the volume");
         fs::write(&spelled, b"held").expect("a file on the volume");
         fs::hard_link(&spelled, &downloaded).expect("a second name on the volume");
@@ -5358,7 +5368,7 @@ mod tests {
         assert_eq!(sameness(&downloaded, &spelled), Sameness::AnotherName);
         assert_eq!(
             as_the_volume_names_it(&spelled, filed),
-            blind.join("meddle/Echoes.wav")
+            blind.join("tideline/Lantern.wav")
         );
         assert_eq!(
             as_the_volume_names_it(&downloaded, spelled.clone()),
@@ -5369,11 +5379,11 @@ mod tests {
     #[test]
     fn a_name_in_another_folder_is_another_name_of_the_file_and_a_copy_is_apart() {
         let folder = a_folder_of_its_own();
-        let filed = folder.join("Meddle/02 Echoes.wav");
-        let downloaded = folder.join("downloads/echoes.wav");
+        let filed = folder.join("Tideline/02 Lantern.wav");
+        let downloaded = folder.join("downloads/lantern.wav");
         let copied = folder.join("downloads/copy.wav");
 
-        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
+        fs::create_dir_all(folder.join("Tideline")).expect("a writable temporary directory");
         fs::create_dir_all(folder.join("downloads")).expect("a writable temporary directory");
         fs::write(&filed, b"held").expect("a writable temporary file");
         fs::hard_link(&filed, &downloaded).expect("a second name for a temporary file");
@@ -5435,7 +5445,7 @@ mod tests {
     #[test]
     fn a_preview_names_the_folders_it_would_empty_deepest_first() {
         let folder = a_folder_of_its_own();
-        let set = folder.join("The Wall");
+        let set = folder.join("The Lighthouse");
 
         for disc in ["CD1", "CD2"] {
             fs::create_dir_all(set.join(disc)).expect("a writable temporary directory");
@@ -5465,19 +5475,19 @@ mod tests {
     fn a_sheet_rewritten_beside_a_moved_file_stands_back_from_a_stage_a_living_writer_holds() {
         let folder = a_folder_of_its_own();
         let library = Library::open_in_memory().expect("a catalog");
-        let sheet = folder.join("Meddle.cue");
-        let staged = folder.join(format!("Meddle.cue{STAGED}"));
+        let sheet = folder.join("Tideline.cue");
+        let staged = folder.join(format!("Tideline.cue{STAGED}"));
 
         fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
 
         let living = Held::made(&staged).expect("a stage another run holds");
-        let refused = staged_over(&library, &sheet, b"FILE \"Meddle.wav\" WAVE\n");
+        let refused = staged_over(&library, &sheet, b"FILE \"Tideline.wav\" WAVE\n");
         let held_through = staged.exists();
         let unchanged = fs::read(&sheet).expect("the sheet");
 
         drop(living);
 
-        staged_over(&library, &sheet, b"FILE \"Meddle.wav\" WAVE\n")
+        staged_over(&library, &sheet, b"FILE \"Tideline.wav\" WAVE\n")
             .expect("the sheet is rewritten once the stage is let go");
 
         assert!(matches!(
@@ -5491,7 +5501,7 @@ mod tests {
         assert_eq!(unchanged, b"FILE \"old.wav\" WAVE\n");
         assert_eq!(
             fs::read(&sheet).expect("the sheet"),
-            b"FILE \"Meddle.wav\" WAVE\n"
+            b"FILE \"Tideline.wav\" WAVE\n"
         );
         assert!(!staged.exists(), "the stage was left beside the sheet");
         assert!(library.staged_writes().expect("the notes").is_empty());
@@ -5505,10 +5515,10 @@ mod tests {
         let catalog = folder.join("library.db");
         let library = Library::open(&catalog).expect("a catalog");
 
-        let killed = folder.join(format!("01 Echoes.wav{STAGED}"));
-        let still_writing = folder.join(format!("02 Fearless.wav{STAGED}"));
-        let not_ours = folder.join("03 San Tropez.wav");
-        let sandboxed = folder.join(format!("04 One of These Days.wav{STAGED}"));
+        let killed = folder.join(format!("01 Lantern.wav{STAGED}"));
+        let still_writing = folder.join(format!("02 Paper Boats.wav{STAGED}"));
+        let not_ours = folder.join("03 Harbour Lights.wav");
+        let sandboxed = folder.join(format!("04 Small Mercies.wav{STAGED}"));
 
         for (left, bytes) in [
             (&killed, b"half a file".as_slice()),
@@ -5577,8 +5587,9 @@ mod tests {
         let catalog = folder.join("library.db");
         let library = Library::open(&catalog).expect("a catalog");
 
-        let killed = folder.join(format!(".01 Echoes.flac.7-0.{}", filed::STAGED_SUFFIX));
-        let this_process = folder.join(format!(".02 Fearless.flac.8-0.{}", filed::STAGED_SUFFIX));
+        let killed = folder.join(format!(".01 Lantern.flac.7-0.{}", filed::STAGED_SUFFIX));
+        let this_process =
+            folder.join(format!(".02 Paper Boats.flac.8-0.{}", filed::STAGED_SUFFIX));
 
         for left in [&killed, &this_process] {
             fs::write(left, b"part of a stream").expect("a writable folder");
@@ -5610,7 +5621,7 @@ mod tests {
     fn a_staging_file_is_noted_while_it_is_written_and_let_go_once_it_lands() {
         let folder = a_folder_of_its_own();
         let library = Library::open(&folder.join("library.db")).expect("a catalog");
-        let sheet = folder.join("Meddle.cue");
+        let sheet = folder.join("Tideline.cue");
 
         fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
 
@@ -5643,7 +5654,7 @@ mod tests {
 
         let folder = a_folder_of_its_own();
         let library = Library::open(&folder.join("library.db")).expect("a catalog");
-        let sheet = folder.join("Meddle.cue");
+        let sheet = folder.join("Tideline.cue");
 
         fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
         fs::set_permissions(&sheet, fs::Permissions::from_mode(0o640)).expect("a mode");
@@ -5716,21 +5727,21 @@ mod tests {
         let archive = folder.join("Archive");
 
         let moved = Move {
-            from: inbox.join("echoes.flac"),
-            to: archive.join("Pink Floyd/Meddle/echoes.flac"),
+            from: inbox.join("lantern.flac"),
+            to: archive.join("Example Band/Tideline/lantern.flac"),
             rows: 1,
             companions: Vec::new(),
             sidecars: Vec::new(),
         };
-        let made = not_there_yet(&archive.join("Pink Floyd/Meddle"));
+        let made = not_there_yet(&archive.join("Example Band/Tideline"));
 
         let folders = folders_to_settle(slice::from_ref(&moved), &made);
 
         assert_eq!(
             folders,
             [
-                archive.join("Pink Floyd/Meddle").as_path(),
-                archive.join("Pink Floyd").as_path(),
+                archive.join("Example Band/Tideline").as_path(),
+                archive.join("Example Band").as_path(),
                 archive.as_path(),
                 inbox.as_path(),
                 folder.as_path(),
@@ -5814,7 +5825,7 @@ mod tests {
         fs::write(&one, b"RIFF").expect("a file");
         fs::write(&two, b"RIFF").expect("a file");
         fs::write(
-            folder.join("rip/Meddle.cue"),
+            folder.join("rip/Tideline.cue"),
             b"FILE \"one.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\nFILE \"two.wav\" WAVE\n  TRACK 02 AUDIO\n    INDEX 01 00:00:00\n",
         )
         .expect("a sheet");
@@ -5826,8 +5837,8 @@ mod tests {
             ..row(id, &path.to_string_lossy())
         };
         let rows = [
-            rooted(1, &one, 1, "One of These Days"),
-            rooted(2, &two, 2, "Echoes"),
+            rooted(1, &one, 1, "Small Mercies"),
+            rooted(2, &two, 2, "Lantern"),
         ];
 
         let layout = read(DEFAULT_LAYOUT);
@@ -5913,36 +5924,36 @@ mod tests {
     fn a_swap_is_planned_as_one_run_of_moves_though_a_track_was_planned_between_its_halves() {
         let folder = a_folder_of_its_own();
 
-        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
-        for named in ["Echoes", "Fearless", "Seamus"] {
-            fs::write(folder.join(format!("Meddle/{named}.wav")), b"held")
+        fs::create_dir_all(folder.join("Tideline")).expect("a writable temporary directory");
+        for named in ["Lantern", "Paper Boats", "Marlow"] {
+            fs::write(folder.join(format!("Tideline/{named}.wav")), b"held")
                 .expect("a writable temporary file");
         }
 
         let mut one = row(1, "");
 
         one.root = folder.clone();
-        one.path = folder.join("Meddle/Echoes.wav");
-        one.title = "Fearless".to_owned();
+        one.path = folder.join("Tideline/Lantern.wav");
+        one.title = "Paper Boats".to_owned();
 
         let mut other = row(2, "");
 
         other.root = folder.clone();
-        other.path = folder.join("Meddle/Fearless.wav");
-        other.title = "Echoes".to_owned();
+        other.path = folder.join("Tideline/Paper Boats.wav");
+        other.title = "Lantern".to_owned();
 
         let mut third = row(3, "");
 
         third.root = folder.clone();
-        third.path = folder.join("Meddle/Seamus.wav");
-        third.title = "San Tropez".to_owned();
+        third.path = folder.join("Tideline/Marlow.wav");
+        third.title = "Harbour Lights".to_owned();
 
         let (plan, _) = preview(
             &[one.clone(), other.clone(), third.clone()],
             "{album}/{title}",
         );
 
-        let parked = folder.join(format!("Meddle/Echoes.{PARKED}-{}.wav", process::id()));
+        let parked = folder.join(format!("Tideline/Lantern.{PARKED}-{}.wav", process::id()));
         let steps: Vec<(PathBuf, PathBuf)> = plan
             .moves
             .iter()
@@ -5955,7 +5966,10 @@ mod tests {
                 (one.path.clone(), parked.clone()),
                 (other.path.clone(), one.path.clone()),
                 (parked, other.path.clone()),
-                (third.path.clone(), folder.join("Meddle/San Tropez.wav")),
+                (
+                    third.path.clone(),
+                    folder.join("Tideline/Harbour Lights.wav")
+                ),
             ]
         );
         assert_eq!(unit_length(&plan.moves), 3);

@@ -400,15 +400,15 @@ mod tests {
             3,
             MILLISECONDS,
             &[
-                (b"Overhead the albatross", 4_750),
-                (b"Hangs motionless", 71_020),
+                (b"Sunlight the fireflies", 4_750),
+                (b"Sways in silence", 71_020),
             ],
             &[0],
         );
 
         assert_eq!(
             as_lrc(&bytes, None).as_deref(),
-            Some("[00:04.750]Overhead the albatross\n[01:11.020]Hangs motionless\n"),
+            Some("[00:04.750]Sunlight the fireflies\n[01:11.020]Sways in silence\n"),
         );
     }
 
@@ -418,11 +418,11 @@ mod tests {
             3,
             MILLISECONDS,
             &[
-                (b"\nOver", 1_000),
-                (b"head ", 1_400),
-                (b"the albatross", 1_900),
-                (b"\nHangs", 5_000),
-                (b" motionless", 5_600),
+                (b"\nSun", 1_000),
+                (b"light ", 1_400),
+                (b"the fireflies", 1_900),
+                (b"\nSways", 5_000),
+                (b" in silence", 5_600),
             ],
             &[0],
         );
@@ -430,8 +430,8 @@ mod tests {
         assert_eq!(
             as_lrc(&bytes, None).as_deref(),
             Some(
-                "[00:01.000]<00:01.000>Over<00:01.400>head <00:01.900>the albatross\n\
-                 [00:05.000]<00:05.000>Hangs<00:05.600> motionless\n"
+                "[00:01.000]<00:01.000>Sun<00:01.400>light <00:01.900>the fireflies\n\
+                 [00:05.000]<00:05.000>Sways<00:05.600> in silence\n"
             ),
         );
     }
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn only_a_frame_of_lyrics_or_a_transcription_is_read_as_words() {
-        let entries: &[(&[u8], u32)] = &[(b"Overhead", 1_000)];
+        let entries: &[(&[u8], u32)] = &[(b"Sunlight", 1_000)];
         let chords = framed_as(5, 3, MILLISECONDS, entries, &[0]);
         let events = framed_as(3, 3, MILLISECONDS, entries, &[0]);
         let transcribed = framed_as(CONTENT_OF_A_TRANSCRIPTION, 3, MILLISECONDS, entries, &[0]);
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(as_lrc(&events, None), None);
         assert_eq!(
             as_lrc(&transcribed, None).as_deref(),
-            Some("[00:01.000]Overhead\n")
+            Some("[00:01.000]Sunlight\n")
         );
     }
 
@@ -470,13 +470,13 @@ mod tests {
         let bytes = frame(
             3,
             MPEG_FRAMES,
-            &[(b"Overhead", 0), (b"Hangs", 1_000), (b"Still", 2_000_000)],
+            &[(b"Sunlight", 0), (b"Sways", 1_000), (b"Still", 2_000_000)],
             &[0],
         );
 
         assert_eq!(
             as_lrc(&bytes, clock).as_deref(),
-            Some("[00:00.000]Overhead\n[00:26.122]Hangs\n[870:44.897]Still\n"),
+            Some("[00:00.000]Sunlight\n[00:26.122]Sways\n[870:44.897]Still\n"),
         );
     }
 
@@ -488,19 +488,19 @@ mod tests {
         let bytes = frame(
             3,
             MPEG_FRAMES,
-            &[(b"Overhead", 0), (b"Hangs", 1), (b"Still", 1_000)],
+            &[(b"Sunlight", 0), (b"Sways", 1), (b"Still", 1_000)],
             &[0],
         );
 
         assert_eq!(
             as_lrc(&bytes, Some(clock)).as_deref(),
-            Some("[00:00.000]Overhead\n[00:00.001]Hangs\n[00:26.097]Still\n"),
+            Some("[00:00.000]Sunlight\n[00:00.001]Sways\n[00:26.097]Still\n"),
         );
     }
 
     #[test]
     fn a_frame_timed_in_mpeg_frames_of_a_stream_with_no_frames_is_left_unread() {
-        let bytes = frame(3, MPEG_FRAMES, &[(b"Overhead", 12)], &[0]);
+        let bytes = frame(3, MPEG_FRAMES, &[(b"Sunlight", 12)], &[0]);
 
         assert_eq!(as_lrc(&bytes, None), None);
         assert_eq!(FrameClock::of(CODEC_ID_FLAC, SampleRate::HZ_44100), None);
@@ -531,13 +531,13 @@ mod tests {
 
     #[test]
     fn a_frame_cut_short_keeps_the_entries_it_holds_whole() {
-        let mut bytes = frame(3, MILLISECONDS, &[(b"Overhead", 1_000)], &[0]);
+        let mut bytes = frame(3, MILLISECONDS, &[(b"Sunlight", 1_000)], &[0]);
 
-        bytes.extend_from_slice(b"Hangs\0\0\0");
+        bytes.extend_from_slice(b"Sways\0\0\0");
 
         assert_eq!(
             as_lrc(&bytes, None).as_deref(),
-            Some("[00:01.000]Overhead\n")
+            Some("[00:01.000]Sunlight\n")
         );
     }
 
@@ -552,8 +552,8 @@ mod tests {
             UTF8,
             MILLISECONDS,
             &[
-                (b"Overhead the albatross", 4_750),
-                (b"Hangs motionless", 71_020),
+                (b"Sunlight the fireflies", 4_750),
+                (b"Sways in silence", 71_020),
             ],
             &[0],
         );
@@ -561,18 +561,18 @@ mod tests {
             UTF8,
             MILLISECONDS,
             &[
-                (b"\nOver", 1_000),
-                (b"head ", 1_400),
-                (b"the albatross", 1_900),
-                (b"\nHangs", 5_000),
-                (b" motionless", 5_600),
+                (b"\nSun", 1_000),
+                (b"light ", 1_400),
+                (b"the fireflies", 1_900),
+                (b"\nSways", 5_000),
+                (b" in silence", 5_600),
             ],
             &[0],
         );
 
         for (bytes, words) in [
-            (lines, "Overhead the albatross\nHangs motionless"),
-            (syllables, "Overhead the albatross\nHangs motionless"),
+            (lines, "Sunlight the fireflies\nSways in silence"),
+            (syllables, "Sunlight the fireflies\nSways in silence"),
         ] {
             let sheet = as_lrc(&bytes, None).expect("a sheet");
             let timed = timed(&sheet, ENGLISH).expect("a sheet a frame can hold");
@@ -588,9 +588,9 @@ mod tests {
             UTF8,
             MILLISECONDS,
             &[
-                (b"[offset:5] overhead", 1_000),
-                (b"[00:09.00] the albatross", 9_000),
-                (b"[Chorus] hangs", 12_000),
+                (b"[offset:5] sunlight", 1_000),
+                (b"[00:09.00] the fireflies", 9_000),
+                (b"[Chorus] sways", 12_000),
             ],
             &[0],
         );
@@ -600,14 +600,14 @@ mod tests {
 
         assert_eq!(
             sheet,
-            "[00:01.000]\\[offset:5] overhead\n\
-             [00:09.000]\\[00:09.00] the albatross\n\
-             [00:12.000][Chorus] hangs\n",
+            "[00:01.000]\\[offset:5] sunlight\n\
+             [00:09.000]\\[00:09.00] the fireflies\n\
+             [00:12.000][Chorus] sways\n",
         );
         assert_eq!(timed.frame, bytes);
         assert_eq!(
             timed.words,
-            "[offset:5] overhead\n[00:09.00] the albatross\n[Chorus] hangs"
+            "[offset:5] sunlight\n[00:09.00] the fireflies\n[Chorus] sways"
         );
     }
 
@@ -616,7 +616,7 @@ mod tests {
         let bytes = frame(
             UTF8,
             MILLISECONDS,
-            &[(b"\n[offset:5] over", 1_000), (b"head", 1_400)],
+            &[(b"\n[offset:5] sun", 1_000), (b"light", 1_400)],
             &[0],
         );
 
@@ -624,7 +624,7 @@ mod tests {
 
         assert_eq!(
             sheet,
-            "[00:01.000]<00:01.000>[offset:5] over<00:01.400>head\n"
+            "[00:01.000]<00:01.000>[offset:5] sun<00:01.400>light\n"
         );
         assert_eq!(timed(&sheet, ENGLISH).map(|timed| timed.frame), Some(bytes));
     }
@@ -632,13 +632,13 @@ mod tests {
     #[test]
     fn a_sheet_no_frame_reads_as_is_not_framed() {
         for sheet in [
-            "[00:01.00]Overhead the albatross\n",
-            "[00:01.000]Overhead the albatross",
-            "[00:4294967295.000]Overhead the albatross\n",
-            "[00:4294968.000]Overhead the albatross\n",
-            "[71582:48.000]Overhead the albatross\n",
-            "[ar:Pink Floyd]\n[00:01.000]Overhead the albatross\n",
-            "Overhead the albatross\n",
+            "[00:01.00]Sunlight the fireflies\n",
+            "[00:01.000]Sunlight the fireflies",
+            "[00:4294967295.000]Sunlight the fireflies\n",
+            "[00:4294968.000]Sunlight the fireflies\n",
+            "[71582:48.000]Sunlight the fireflies\n",
+            "[ar:Example Band]\n[00:01.000]Sunlight the fireflies\n",
+            "Sunlight the fireflies\n",
             "",
         ] {
             assert_eq!(timed(sheet, ENGLISH), None, "{sheet:?}");
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn only_a_frame_of_words_is_one_lyrics_take_the_place_of() {
-        let entries: &[(&[u8], u32)] = &[(b"Overhead", 1_000)];
+        let entries: &[(&[u8], u32)] = &[(b"Sunlight", 1_000)];
 
         assert!(holds_words(&frame(UTF8, MILLISECONDS, entries, &[0])));
         assert!(holds_words(&framed_as(

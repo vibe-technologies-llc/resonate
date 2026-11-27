@@ -526,9 +526,9 @@ mod tests {
             entry: EntryId([2; ENTRY_BYTES]),
             recording: Recording {
                 mbid: None,
-                title: "Echoes".to_owned(),
-                artist: "Pink Floyd".to_owned(),
-                album: "Meddle".to_owned(),
+                title: "Slow Water".to_owned(),
+                artist: "Example Band".to_owned(),
+                album: "Low Tide".to_owned(),
                 length: Some(Duration::from_secs(1_400)),
             },
             place: Place::first(),

@@ -24,21 +24,21 @@ use crate::support::{
     ALBUM, ALBUM_ARTIST, ANSWERED, ARTIST, ASKED, CHANNELS, Canned, FRONT_COVER, Fake,
     MUSICBRAINZ_ALBUM, ORBITS_TITLES, RATE, RELEASE, RELEASE_GROUP, TITLE, TRACK, Tree, USER_TEXT,
     UTF8, Wav, allow_writing, answer_track, applied, beside, can_write, enrich, ffmpeg, fields_of,
-    forbid_writing, frame, landings, mbid, meddle, moved, only_album, options, orbits,
+    forbid_writing, frame, landings, low_tide, mbid, moved, only_album, options, orbits,
     orbits_match, orbits_rows, png_art, retagged, scan, scanned_lone, settled, stored, synchsafe,
     words,
 };
 
 const REQUIRED_BY: &str = "RESONATE_LIBRARY_FFMPEG_TESTS";
 
-const MEDDLE_AIFF_SHEET: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
-FILE "Meddle.aiff" AIFF
+const LOW_TIDE_AIFF_SHEET: &str = r#"PERFORMER "Example Band"
+TITLE "Tideline"
+FILE "Tideline.aiff" AIFF
   TRACK 01 AUDIO
-    TITLE "One of These Days"
+    TITLE "Small Mercies"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "Echoes"
+    TITLE "Lantern"
     INDEX 01 00:00:20
 "#;
 
@@ -181,7 +181,7 @@ fn why_passed_over(summary: &RetagSummary) -> Vec<Unwritten> {
 fn a_track_number_read_off_the_file_name_is_never_written_into_the_file() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write(
-        "03 - Echos.aiff",
+        "03 - Slow Watr.aiff",
         &Aiff::new().text(ARTIST, "The Orbiters").build(),
     );
     let database = tree.path().join("library.db");
@@ -198,7 +198,7 @@ fn a_track_number_read_off_the_file_name_is_never_written_into_the_file() -> Res
         "the file name numbered nothing"
     );
 
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let preview = retagged(&library, false)?;
 
@@ -217,7 +217,7 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -225,7 +225,7 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let preview = retagged(&library, false)?;
 
@@ -237,7 +237,7 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     assert_eq!(preview.stats.written, 0, "a preview wrote something");
     assert_eq!(
         tags_of(&file).title.as_deref(),
-        Some("Echos"),
+        Some("Slow Watr"),
         "a preview changed the file"
     );
 
@@ -245,7 +245,7 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
 
     assert_eq!(applied.stats.written, 1);
     assert_eq!(applied.stats.fields, 1);
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Lantern"));
     assert_eq!(
         tags_of(&file).artist.as_deref(),
         Some("The Orbiters"),
@@ -263,7 +263,7 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     Ok(())
 }
 
-const LEFT_BY_A_DEAD_WRITER: &str = "01 Echoes.aiff.resonate-staging";
+const LEFT_BY_A_DEAD_WRITER: &str = "01 Lantern.aiff.resonate-staging";
 
 struct TwoRoots {
     one: Tree,
@@ -285,7 +285,7 @@ impl TwoRoots {
                 .build()
         };
 
-        let in_one = one.write("1.aiff", &misspelt("Echos"));
+        let in_one = one.write("1.aiff", &misspelt("Slow Watr"));
         let in_other = other.write("2.aiff", &misspelt("Fearles"));
         let database = one.path().join("library.db");
         let library = Library::open(&database)?;
@@ -297,8 +297,14 @@ impl TwoRoots {
                 ..options(&one)
             },
         )?;
-        answer_track(&database, &in_one, "Echoes", "The Orbiters", "Orbits");
-        answer_track(&database, &in_other, "Fearless", "The Orbiters", "Orbits");
+        answer_track(&database, &in_one, "Lantern", "The Orbiters", "Orbits");
+        answer_track(
+            &database,
+            &in_other,
+            "Paper Boats",
+            "The Orbiters",
+            "Orbits",
+        );
         Ok(Self {
             one,
             other,
@@ -348,7 +354,7 @@ fn a_retag_naming_one_root_writes_into_that_root_and_leaves_the_other_byte_for_b
     assert_eq!(named.stats.written, 1);
     assert_eq!(named.retagging.writes.len(), 1);
     assert_eq!(named.retagging.writes[0].path, roots.in_one);
-    assert_eq!(tags_of(&roots.in_one).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&roots.in_one).title.as_deref(), Some("Lantern"));
     assert_eq!(
         roots.bytes()[1],
         before[1],
@@ -360,7 +366,10 @@ fn a_retag_naming_one_root_writes_into_that_root_and_leaves_the_other_byte_for_b
     let rest = roots.retagged_under(vec![roots.other.path().to_path_buf()], true)?;
 
     assert_eq!(rest.stats.written, 1);
-    assert_eq!(tags_of(&roots.in_other).title.as_deref(), Some("Fearless"));
+    assert_eq!(
+        tags_of(&roots.in_other).title.as_deref(),
+        Some("Paper Boats")
+    );
     Ok(())
 }
 
@@ -482,21 +491,21 @@ fn lyrics_tagged(library: &Library, tracks: Vec<TrackId>, apply: bool) -> Result
 fn fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_them_out()
 -> Result<()> {
     const SHEET: &str =
-        "[00:01.00]Overhead the albatross\n[00:05.00]Hangs motionless upon the air\n";
+        "[00:01.00]Sunlight the fireflies\n[00:05.00]Sways in silence over the bay\n";
 
     let tree = Tree::new();
     let sung = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .build(),
     );
     let unsung = tree.write(
         "2.aiff",
         &Aiff::new()
-            .text(TITLE, "One of These Days")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Small Mercies")
+            .text(ARTIST, "Example Band")
             .build(),
     );
     let database = tree.path().join("library.db");
@@ -559,7 +568,7 @@ fn fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_t
     assert_eq!(again.stats.unchanged, 1);
     assert_eq!(put_back.stats.written, 1);
     assert_eq!(tags_of(&sung).lyrics, None);
-    assert_eq!(tags_of(&sung).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&sung).title.as_deref(), Some("Lantern"));
     Ok(())
 }
 
@@ -635,7 +644,7 @@ fn lyric_frames_of(file: &Path) -> Vec<([u8; 4], Vec<u8>)> {
 #[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn the_walk_back_puts_back_the_tags_of_a_file_whose_name_is_not_text() -> Result<()> {
-    const SHEET: &str = "[00:01.00]Overhead the albatross\n";
+    const SHEET: &str = "[00:01.00]Sunlight the fireflies\n";
 
     let tree = Tree::new();
     let sung = tree
@@ -647,8 +656,8 @@ fn the_walk_back_puts_back_the_tags_of_a_file_whose_name_is_not_text() -> Result
     fs::write(
         &sung,
         Aiff::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .build(),
     )
     .expect("a file with a name that is not text");
@@ -687,25 +696,25 @@ fn the_walk_back_puts_back_the_tags_of_a_file_whose_name_is_not_text() -> Result
 #[test]
 fn lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_frame_back()
 -> Result<()> {
-    const FETCHED: &str = "[00:02.00]Strangers passing in the street\n";
-    const TIMED_AS: &str = "[00:01.000]Overhead the albatross\n[00:05.000]Hangs motionless\n";
+    const FETCHED: &str = "[00:02.00]Neighbours waving from the pier\n";
+    const TIMED_AS: &str = "[00:01.000]Sunlight the fireflies\n[00:05.000]Sways in silence\n";
 
     let tree = Tree::new();
     let sung = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .framed(
                 TIMED_LYRICS,
                 &timed_lyrics(&[
-                    ("Overhead the albatross", 1_000),
-                    ("Hangs motionless", 5_000),
+                    ("Sunlight the fireflies", 1_000),
+                    ("Sways in silence", 5_000),
                 ]),
             )
             .framed(
                 UNTIMED_LYRICS,
-                &untimed_lyrics("Overhead the albatross\nHangs motionless"),
+                &untimed_lyrics("Sunlight the fireflies\nSways in silence"),
             )
             .framed(PRIVATE, HELD_PRIVATELY)
             .build(),
@@ -750,7 +759,7 @@ fn lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_
             .any(|(id, body)| id == PRIVATE && body == HELD_PRIVATELY),
         "a frame nobody asked to change was lost"
     );
-    assert_eq!(tags_of(&sung).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&sung).title.as_deref(), Some("Lantern"));
     Ok(())
 }
 
@@ -760,7 +769,7 @@ fn walking_a_tag_run_back_leaves_a_field_another_tagger_changed_since() -> Resul
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -768,15 +777,15 @@ fn walking_a_tag_run_back_leaves_a_field_another_tagger_changed_since() -> Resul
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
     retagged(&library, true)?;
 
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Lantern"));
 
     fs::write(
         &file,
         Aiff::new()
-            .text(TITLE, "Echoes (Live)")
+            .text(TITLE, "Lantern (Live)")
             .text(ARTIST, "The Orbiters")
             .build(),
     )
@@ -785,7 +794,7 @@ fn walking_a_tag_run_back_leaves_a_field_another_tagger_changed_since() -> Resul
 
     assert_eq!(
         tags_of(&file).title.as_deref(),
-        Some("Echoes (Live)"),
+        Some("Lantern (Live)"),
         "the walk back wrote over a title edited since the run"
     );
     Ok(())
@@ -798,7 +807,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -806,7 +815,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let location = MediaLocation::local(&file);
     let track = library
@@ -823,7 +832,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
 
     retagged(&library, true)?;
 
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Lantern"));
     assert!(library.retag_walks_back()?);
 
     let preview = walked_back(&library, false)?;
@@ -832,14 +841,14 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     assert_eq!(preview.stats.written, 0);
     assert_eq!(
         tags_of(&file).title.as_deref(),
-        Some("Echoes"),
+        Some("Lantern"),
         "a preview wrote"
     );
 
     let undone = walked_back(&library, true)?;
 
     assert_eq!(undone.stats.written, 1);
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echos"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Slow Watr"));
     assert_eq!(tags_of(&file).artist.as_deref(), Some("The Orbiters"));
     assert_eq!(
         FileTags::default()
@@ -849,7 +858,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     );
     assert_eq!(
         stored(&database, &file).tagged_title.as_deref(),
-        Some("Echos"),
+        Some("Slow Watr"),
         "the catalog did not follow the file put back"
     );
 
@@ -857,7 +866,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
 
     assert_eq!(
         tags_of(&file).title.as_deref(),
-        Some("Echoes"),
+        Some("Lantern"),
         "putting the walk back did not write the run again"
     );
     assert_eq!(
@@ -875,7 +884,7 @@ fn a_tag_run_keeps_the_study_of_every_file_it_wrote() -> Result<()> {
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -890,7 +899,7 @@ fn a_tag_run_keeps_the_study_of_every_file_it_wrote() -> Result<()> {
         .study_of(&location, None)?
         .expect("the enrichment studied the file");
 
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let applied = retagged(&library, true)?;
 
@@ -912,7 +921,7 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
         tree.write(
             name,
             &Aiff::new()
-                .text(TITLE, "Echos")
+                .text(TITLE, "Slow Watr")
                 .text(ARTIST, "The Orbiters")
                 .build(),
         )
@@ -927,7 +936,7 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
     let found_at = MediaLocation::local(&found);
     let missed_at = MediaLocation::local(&missed);
 
-    library.keep_lyrics(&found_at, None, Some(&words("Overhead the albatross")))?;
+    library.keep_lyrics(&found_at, None, Some(&words("Sunlight the fireflies")))?;
     library.keep_lyrics(&missed_at, None, None)?;
     beside(&database)
         .execute(
@@ -936,8 +945,8 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
         )
         .expect("a refusal is written");
 
-    answer_track(&database, &found, "Echoes", "The Orbiters", "Orbits");
-    answer_track(&database, &missed, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &found, "Lantern", "The Orbiters", "Orbits");
+    answer_track(&database, &missed, "Lantern", "The Orbiters", "Orbits");
 
     let applied = retagged(&library, true)?;
 
@@ -948,7 +957,7 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
             .kept_lyrics(&found_at, None)?
             .and_then(|kept| kept.sung)
             .map(|sung| sung.text),
-        Some("Overhead the albatross".to_owned()),
+        Some("Sunlight the fireflies".to_owned()),
         "writing the tags threw away the words of a song it did not touch"
     );
     assert!(
@@ -1049,9 +1058,9 @@ impl TagSink for Interrupting {
 }
 
 const MISSPELT_AND_RIGHT: [(&str, &str); 3] = [
-    ("Echos", "Echoes"),
-    ("Fearles", "Fearless"),
-    ("San Trope", "San Tropez"),
+    ("Slow Watr", "Lantern"),
+    ("Fearles", "Paper Boats"),
+    ("San Trope", "Harbour Lights"),
 ];
 
 fn titles_where(put_back: [bool; 3]) -> Vec<Option<String>> {
@@ -1250,12 +1259,12 @@ fn a_tag_walk_back_that_finds_a_file_missing_keeps_its_notes_until_the_file_is_b
 #[test]
 fn a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("loose/echoes.wav", &meddle("Echos", "2"));
+    let file = tree.write("loose/lantern.wav", &low_tide("Slow Watr", "2"));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "Pink Floyd", "Meddle");
+    answer_track(&database, &file, "Lantern", "Example Band", "Tideline");
     retagged(&library, true)?;
 
     let organised = applied(&library)?;
@@ -1266,7 +1275,7 @@ fn a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote() -> Result<()>
         .expect("the tagged file was filed");
 
     assert!(!file.exists(), "organise left the file where it stood");
-    assert_eq!(tags_of(&landed).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&landed).title.as_deref(), Some("Lantern"));
 
     let undone = walked_back(&library, true)?;
 
@@ -1276,22 +1285,22 @@ fn a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote() -> Result<()>
         undone.retagging.passed_over
     );
     assert!(undone.retagging.passed_over.is_empty());
-    assert_eq!(tags_of(&landed).title.as_deref(), Some("Echos"));
+    assert_eq!(tags_of(&landed).title.as_deref(), Some("Slow Watr"));
     Ok(())
 }
 
 #[test]
 fn a_tag_run_is_put_back_after_a_hand_move_the_scan_followed() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("loose/echoes.wav", &meddle("Echos", "2"));
+    let file = tree.write("loose/lantern.wav", &low_tide("Slow Watr", "2"));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "Pink Floyd", "Meddle");
+    answer_track(&database, &file, "Lantern", "Example Band", "Tideline");
     retagged(&library, true)?;
 
-    let after = tree.path().join("filed/Pink Floyd/02 Echoes.wav");
+    let after = tree.path().join("filed/Example Band/02 Lantern.wav");
 
     moved(&file, &after);
 
@@ -1304,7 +1313,7 @@ fn a_tag_run_is_put_back_after_a_hand_move_the_scan_followed() -> Result<()> {
         "{:?}",
         undone.retagging.passed_over
     );
-    assert_eq!(tags_of(&after).title.as_deref(), Some("Echos"));
+    assert_eq!(tags_of(&after).title.as_deref(), Some("Slow Watr"));
     Ok(())
 }
 
@@ -1358,7 +1367,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1366,7 +1375,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let misheard = library
         .retag(
@@ -1386,7 +1395,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
         misheard.retagging.passed_over[0].why,
         Unwritten::Unconfirmed
     );
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes misheard"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Lantern misheard"));
     assert!(
         library.retag_walks_back()?,
         "a write that landed was dropped from what can be put back"
@@ -1394,7 +1403,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
 
     walked_back(&library, true)?;
 
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echos"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Slow Watr"));
     Ok(())
 }
 
@@ -1474,7 +1483,7 @@ fn an_edit_another_program_lands_while_a_write_is_read_back_is_read_by_the_next_
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1482,7 +1491,7 @@ fn an_edit_another_program_lands_while_a_write_is_read_back_is_read_by_the_next_
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let retagged = library
         .retag(
@@ -1520,7 +1529,7 @@ fn a_tag_run_the_catalog_cannot_note_writes_no_file() -> Result<()> {
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1528,7 +1537,7 @@ fn a_tag_run_the_catalog_cannot_note_writes_no_file() -> Result<()> {
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
     beside(&database)
         .execute_batch(
             "CREATE TRIGGER refused BEFORE INSERT ON retagged
@@ -1542,7 +1551,7 @@ fn a_tag_run_the_catalog_cannot_note_writes_no_file() -> Result<()> {
     );
     assert_eq!(
         tags_of(&file).title.as_deref(),
-        Some("Echos"),
+        Some("Slow Watr"),
         "a file was written ahead of the note that would put it back"
     );
     Ok(())
@@ -1554,7 +1563,7 @@ fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
     let file = tree.write(
         "shut/1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1562,7 +1571,7 @@ fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     forbid_writing(&file);
     if can_write(&file) {
@@ -1608,9 +1617,9 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
     let mut files = Vec::new();
 
     for (file, title, number) in [
-        ("1.wav", "One of These Days", "1"),
-        ("2.wav", "A Pillow of Winds", "2"),
-        ("3.wav", "Fearless!", "3"),
+        ("1.wav", "Small Mercies", "1"),
+        ("2.wav", "A Quilt of Winds", "2"),
+        ("3.wav", "Paper Boats!", "3"),
     ] {
         files.push(
             tree.write(
@@ -1727,9 +1736,9 @@ fn a_cover_under_the_small_size_held_before_the_step_is_asked_once_for_a_larger_
     let held = drawn_png(500);
 
     for (file, title, number) in [
-        ("1.wav", "One of These Days", "1"),
-        ("2.wav", "A Pillow of Winds", "2"),
-        ("3.wav", "Fearless!", "3"),
+        ("1.wav", "Small Mercies", "1"),
+        ("2.wav", "A Quilt of Winds", "2"),
+        ("3.wav", "Paper Boats!", "3"),
     ] {
         tree.write(
             file,
@@ -1811,7 +1820,7 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1881,7 +1890,7 @@ fn a_play_count_is_written_into_a_file_nobody_marked_a_favourite() -> Result<()>
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echoes")
+            .text(TITLE, "Lantern")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1917,7 +1926,7 @@ fn a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew() -> Result
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1925,14 +1934,14 @@ fn a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew() -> Result
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
     retagged(&library, true)?;
 
     let held = stored(&database, &file);
 
     assert_eq!(
         held.tagged_title.as_deref(),
-        Some("Echoes"),
+        Some("Lantern"),
         "the catalog did not follow the file it had just written"
     );
     assert!(held.answered.is_some());
@@ -1947,7 +1956,7 @@ fn a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew() -> Result
 
     let after = stored(&database, &file);
 
-    assert_eq!(after.title, "Echoes");
+    assert_eq!(after.title, "Lantern");
     assert!(
         after.answered.is_some(),
         "a rescan read this build's own write as a retagging and asked again"
@@ -2016,9 +2025,9 @@ fn a_cover_the_catalog_holds_is_written_into_a_file_that_carries_none() -> Resul
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
-            .text(ALBUM_ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
+            .text(ALBUM_ARTIST, "Example Band")
             .build(),
     );
     let library = Library::open_in_memory()?;
@@ -2089,7 +2098,7 @@ fn a_matroska_under_an_album_with_a_cover_takes_its_names_and_is_offered_no_pict
     let Some(file) = matroska_named(
         &tree,
         "1.mka",
-        &["title=Echos", "artist=The Orbiters", "album=Orbits"],
+        &["title=Slow Watr", "artist=The Orbiters", "album=Orbits"],
     ) else {
         return Ok(());
     };
@@ -2098,7 +2107,7 @@ fn a_matroska_under_an_album_with_a_cover_takes_its_names_and_is_offered_no_pict
 
     scan(&library, &options(&tree))?;
     covered(&library, &png_art(512))?;
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let preview = retagged(&library, false)?;
 
@@ -2108,7 +2117,7 @@ fn a_matroska_under_an_album_with_a_cover_takes_its_names_and_is_offered_no_pict
     let applied = retagged(&library, true)?;
 
     assert_eq!(applied.stats.written, 1, "{:?}", why_passed_over(&applied));
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Lantern"));
 
     let again = retagged(&library, true)?;
 
@@ -2125,9 +2134,9 @@ fn a_file_that_carries_a_picture_keeps_the_one_it_has() -> Result<()> {
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
-            .text(TITLE, "Echoes")
-            .text(ALBUM, "Meddle")
-            .text(ALBUM_ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ALBUM, "Tideline")
+            .text(ALBUM_ARTIST, "Example Band")
             .picture(&held.bytes)
             .build(),
     );
@@ -2150,7 +2159,7 @@ fn a_file_that_carries_a_picture_keeps_the_one_it_has() -> Result<()> {
 #[test]
 fn a_track_under_no_album_is_offered_no_picture() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("1.aiff", &Aiff::new().text(TITLE, "Echoes").build());
+    let file = tree.write("1.aiff", &Aiff::new().text(TITLE, "Lantern").build());
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
@@ -2167,23 +2176,23 @@ fn a_track_under_no_album_is_offered_no_picture() -> Result<()> {
 fn a_wave_file_is_written_into_and_read_back_as_what_was_written() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "Echos")
+            .text(TITLE, "Slow Watr")
             .text(ARTIST, "The Orbiters")
             .id3_in_a_chunk(),
     )?;
 
     assert_eq!(
         stored(&database, &file).tagged_title.as_deref(),
-        Some("Echos"),
+        Some("Slow Watr"),
         "the scan did not read the ID3 chunk"
     );
 
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let applied = retagged(&library, true)?;
 
     assert_eq!(applied.stats.written, 1, "{:?}", why_passed_over(&applied));
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Lantern"));
     assert_eq!(tags_of(&file).artist.as_deref(), Some("The Orbiters"));
 
     let again = retagged(&library, false)?;
@@ -2199,10 +2208,13 @@ fn a_wave_file_is_written_into_and_read_back_as_what_was_written() -> Result<()>
 #[test]
 fn a_wave_file_tagged_ahead_of_its_riff_header_has_the_tag_moved_into_a_chunk_and_written()
 -> Result<()> {
-    let (_tree, library, database, file) =
-        scanned_lone(Wav::new().text(TITLE, "Echos").text(ARTIST, "The Orbiters"))?;
+    let (_tree, library, database, file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "Slow Watr")
+            .text(ARTIST, "The Orbiters"),
+    )?;
 
-    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &file, "Lantern", "The Orbiters", "Orbits");
 
     let before = decoded_samples(&file);
 
@@ -2216,7 +2228,7 @@ fn a_wave_file_tagged_ahead_of_its_riff_header_has_the_tag_moved_into_a_chunk_an
         written.starts_with(b"RIFF"),
         "a tag still stands ahead of the header"
     );
-    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Lantern"));
     assert_eq!(
         tags_of(&file).artist.as_deref(),
         Some("The Orbiters"),
@@ -2245,7 +2257,7 @@ fn decoded_samples(file: &Path) -> Vec<u8> {
 fn a_format_this_build_would_not_read_its_own_write_back_from_is_passed_over() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("1.caf", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write("1.caf", &Wav::new().text(TITLE, "Lantern").build());
 
     let library = Library::open_in_memory()?;
 
@@ -2262,8 +2274,8 @@ fn a_format_this_build_would_not_read_its_own_write_back_from_is_passed_over() -
 #[test]
 fn a_row_cut_out_of_a_file_it_shares_never_has_its_names_written_into_the_file() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
-    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let file = tree.write("Tideline.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Tideline.cue", LOW_TIDE_AIFF_SHEET.as_bytes());
     let library = Library::open_in_memory()?;
 
     scan(&library, &options(&tree))?;
@@ -2290,7 +2302,7 @@ fn a_row_cut_out_of_a_file_it_shares_never_has_its_names_written_into_the_file()
     );
     assert_eq!(
         fs::read_to_string(&sheet).expect("the sheet is still there"),
-        MEDDLE_AIFF_SHEET
+        LOW_TIDE_AIFF_SHEET
     );
     Ok(())
 }
@@ -2322,13 +2334,13 @@ fn titles_held(library: &Library) -> Result<Vec<String>> {
 #[test]
 fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
-    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let file = tree.write("Tideline.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Tideline.cue", LOW_TIDE_AIFF_SHEET.as_bytes());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_the_cut(&database, &file, true, "Echoes (Live)", "Pink Floyd");
+    answer_the_cut(&database, &file, true, "Lantern (Live)", "Example Band");
 
     let held = fs::read(&file).expect("the cut file is there");
 
@@ -2341,13 +2353,13 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
         vec![SheetEdit {
             scope: SheetScope::Track(2),
             field: SheetField::Title,
-            value: Some("Echoes (Live)".to_owned()),
+            value: Some("Lantern (Live)".to_owned()),
         }],
         "the artist the sheet already bills by its performer was offered as well"
     );
     assert_eq!(
         fs::read_to_string(&sheet).expect("the sheet is there"),
-        MEDDLE_AIFF_SHEET,
+        LOW_TIDE_AIFF_SHEET,
         "a preview changed the sheet"
     );
 
@@ -2358,7 +2370,7 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
     assert_eq!(applied.stats.fields, 1);
     assert_eq!(
         fs::read_to_string(&sheet).expect("the sheet is still there"),
-        MEDDLE_AIFF_SHEET.replace("TITLE \"Echoes\"", "TITLE \"Echoes (Live)\""),
+        LOW_TIDE_AIFF_SHEET.replace("TITLE \"Lantern\"", "TITLE \"Lantern (Live)\""),
         "more of the sheet moved than the one title"
     );
     assert_eq!(
@@ -2387,7 +2399,7 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
 
     assert_eq!(
         titles_held(&library)?,
-        vec!["Echoes (Live)".to_owned(), "One of These Days".to_owned()],
+        vec!["Lantern (Live)".to_owned(), "Small Mercies".to_owned()],
         "the rescan did not read the sheet as the catalog had followed it"
     );
 
@@ -2409,15 +2421,15 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
 #[test]
 fn a_sheet_edited_since_the_scan_read_it_is_not_written_over() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
-    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let file = tree.write("Tideline.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Tideline.cue", LOW_TIDE_AIFF_SHEET.as_bytes());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_the_cut(&database, &file, true, "Echoes (Live)", "Pink Floyd");
+    answer_the_cut(&database, &file, true, "Lantern (Live)", "Example Band");
 
-    let edited = MEDDLE_AIFF_SHEET.replace("Meddle\"\nFILE", "Meddle (Remastered)\"\nFILE");
+    let edited = LOW_TIDE_AIFF_SHEET.replace("Tideline\"\nFILE", "Tideline (Remastered)\"\nFILE");
 
     fs::write(&sheet, &edited).expect("the sheet is writable");
     fs::File::options()
@@ -2440,14 +2452,14 @@ fn a_sheet_edited_since_the_scan_read_it_is_not_written_over() -> Result<()> {
 #[test]
 fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
-    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let file = tree.write("Tideline.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Tideline.cue", LOW_TIDE_AIFF_SHEET.as_bytes());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_the_cut(&database, &file, false, "One of These Days", "Ada");
-    answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+    answer_the_cut(&database, &file, false, "Small Mercies", "Ada");
+    answer_the_cut(&database, &file, true, "Lantern (Live)", "Ada");
 
     let applied = retagged(&library, true)?;
 
@@ -2457,7 +2469,7 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
 
     assert!(
         written
-            .contains("    TITLE \"Echoes (Live)\"\n    PERFORMER \"Ada\"\n    INDEX 01 00:00:20"),
+            .contains("    TITLE \"Lantern (Live)\"\n    PERFORMER \"Ada\"\n    INDEX 01 00:00:20"),
         "{written}"
     );
     assert!(
@@ -2479,7 +2491,7 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
     assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
     assert_eq!(
         fs::read_to_string(&sheet).expect("the sheet is there"),
-        MEDDLE_AIFF_SHEET,
+        LOW_TIDE_AIFF_SHEET,
         "the walk back did not give the sheet back as it was"
     );
 
@@ -2498,16 +2510,16 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
 fn a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and_its_file()
 -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+    let file = tree.write("Tideline.aiff", &Aiff::new().frames(44_100).build());
 
-    tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    tree.write("Tideline.cue", LOW_TIDE_AIFF_SHEET.as_bytes());
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_the_cut(&database, &file, false, "One of These Days", "Ada");
-    answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+    answer_the_cut(&database, &file, false, "Small Mercies", "Ada");
+    answer_the_cut(&database, &file, true, "Lantern (Live)", "Ada");
 
     let written = retagged(&library, true)?;
 
@@ -2519,10 +2531,10 @@ fn a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and
         .map(|(_, to)| to)
         .next()
         .expect("the file a sheet cuts was filed");
-    let sheet = landed.with_file_name("Meddle.cue");
+    let sheet = landed.with_file_name("Tideline.cue");
 
     assert!(sheet.exists(), "the sheet did not travel with the file");
-    assert!(!tree.path().join("Meddle.cue").exists());
+    assert!(!tree.path().join("Tideline.cue").exists());
 
     let put_back = walked_back(&library, true)?;
 
@@ -2531,31 +2543,31 @@ fn a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and
 
     let read = fs::read_to_string(&sheet).expect("the sheet is where organise put it");
 
-    assert!(read.contains("    TITLE \"Echoes\"\n"), "{read}");
-    assert!(!read.contains("Echoes (Live)"), "{read}");
+    assert!(read.contains("    TITLE \"Lantern\"\n"), "{read}");
+    assert!(!read.contains("Lantern (Live)"), "{read}");
     Ok(())
 }
 
 #[test]
 fn a_tag_run_written_into_a_sheet_is_put_back_after_a_hand_move_the_scan_followed() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("rip/Meddle.aiff", &Aiff::new().frames(44_100).build());
+    let file = tree.write("rip/Tideline.aiff", &Aiff::new().frames(44_100).build());
 
-    tree.write("rip/Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    tree.write("rip/Tideline.cue", LOW_TIDE_AIFF_SHEET.as_bytes());
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
     scan(&library, &options(&tree))?;
-    answer_the_cut(&database, &file, false, "One of These Days", "Ada");
-    answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+    answer_the_cut(&database, &file, false, "Small Mercies", "Ada");
+    answer_the_cut(&database, &file, true, "Lantern (Live)", "Ada");
 
     let written = retagged(&library, true)?;
 
     assert!(why_passed_over(&written).is_empty(), "{written:?}");
 
     fs::create_dir_all(tree.path().join("filed")).expect("a writable temporary directory");
-    fs::rename(tree.path().join("rip"), tree.path().join("filed/Meddle"))
+    fs::rename(tree.path().join("rip"), tree.path().join("filed/Tideline"))
         .expect("the rip is moved by hand");
 
     let stats = scan(&library, &options(&tree))?;
@@ -2567,11 +2579,11 @@ fn a_tag_run_written_into_a_sheet_is_put_back_after_a_hand_move_the_scan_followe
     assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
     assert_eq!(put_back.retagging.sheets.len(), 1, "{put_back:?}");
 
-    let read = fs::read_to_string(tree.path().join("filed/Meddle/Meddle.cue"))
+    let read = fs::read_to_string(tree.path().join("filed/Tideline/Tideline.cue"))
         .expect("the sheet is where the hand put it");
 
-    assert!(read.contains("    TITLE \"Echoes\"\n"), "{read}");
-    assert!(!read.contains("Echoes (Live)"), "{read}");
+    assert!(read.contains("    TITLE \"Lantern\"\n"), "{read}");
+    assert!(!read.contains("Lantern (Live)"), "{read}");
     Ok(())
 }
 
@@ -2582,11 +2594,11 @@ fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused
             .map(|letter| u8::try_from(u32::from(letter)).expect("a Latin-1 letter"))
             .collect::<Vec<u8>>()
     };
-    let sheet_text = "PERFORMER \"Ad\u{e9}la\u{ef}de\"\nTITLE \"Caf\u{e9} cr\u{e8}me\"\nFILE \"Meddle.aiff\" AIFF\n  TRACK 01 AUDIO\n    TITLE \"Entr\u{e9}e\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Fl\u{e2}nerie\"\n    INDEX 01 00:00:20\n";
+    let sheet_text = "PERFORMER \"Ad\u{e9}la\u{ef}de\"\nTITLE \"Caf\u{e9} cr\u{e8}me\"\nFILE \"Tideline.aiff\" AIFF\n  TRACK 01 AUDIO\n    TITLE \"Entr\u{e9}e\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Fl\u{e2}nerie\"\n    INDEX 01 00:00:20\n";
     let tree = Tree::new();
-    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+    let file = tree.write("Tideline.aiff", &Aiff::new().frames(44_100).build());
 
-    let sheet = tree.write("Meddle.cue", &latin(sheet_text));
+    let sheet = tree.write("Tideline.cue", &latin(sheet_text));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 

@@ -46,14 +46,14 @@ fn followed_across_roots_as_heard(heard: impl Fn(&Path, &Path) -> Vec<Event>) ->
     let source = Tree::new();
     let destination = Tree::new();
     let before = source.write(
-        "echoes.wav",
+        "lantern.wav",
         &Wav::new()
-            .text(TITLE, "Echoes")
-            .text(ARTIST, "Pink Floyd")
+            .text(TITLE, "Lantern")
+            .text(ARTIST, "Example Band")
             .build(),
     );
 
-    source.write("seamus.wav", &Wav::new().text(TITLE, "Seamus").build());
+    source.write("marlow.wav", &Wav::new().text(TITLE, "Marlow").build());
     destination.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     let library = Library::open(&catalog.path().join("library.db"))?;
@@ -62,13 +62,13 @@ fn followed_across_roots_as_heard(heard: impl Fn(&Path, &Path) -> Vec<Event>) ->
         scan(&library, &options(tree))?;
     }
 
-    let echoes = library
+    let slow_water = library
         .track_at(&before, None)?
         .expect("the scan stored the song");
 
-    library.favour(Favoured::Track(echoes.id), true)?;
+    library.favour(Favoured::Track(slow_water.id), true)?;
 
-    let after = destination.path().join("Pink Floyd/Echoes.wav");
+    let after = destination.path().join("Example Band/Lantern.wav");
 
     moved(&before, &after);
 
@@ -93,7 +93,10 @@ fn followed_across_roots_as_heard(heard: impl Fn(&Path, &Path) -> Vec<Event>) ->
         .track_at(&after, None)?
         .expect("the row followed the file");
 
-    assert_eq!(now.id, echoes.id, "the file was catalogued as a new song");
+    assert_eq!(
+        now.id, slow_water.id,
+        "the file was catalogued as a new song"
+    );
     assert!(now.favourite.is_some(), "the favourite stayed behind");
     assert!(library.track_at(&before, None)?.is_none());
     assert_eq!(owed.len(), 2, "both roots of the move were not owed a scan");
@@ -140,7 +143,7 @@ fn a_file_moved_across_roots_heard_as_taken_away_and_made_keeps_its_id_and_favou
 #[test]
 fn a_file_taken_away_with_nothing_arriving_is_forgotten_without_a_scan() -> Result<()> {
     let tree = Tree::new();
-    let gone = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let gone = tree.write("lantern.wav", &Wav::new().text(TITLE, "Lantern").build());
     let overheard = Overheard::over(&[tree.path().to_path_buf()]);
 
     fs::remove_file(&gone).expect("the file taken away");
@@ -172,8 +175,8 @@ fn a_song_added_while_its_root_was_uncovered_is_catalogued_once_the_watch_covers
     assert!(watch.leaves_a_root_uncovered());
 
     fs::write(
-        away.join("echoes.wav"),
-        Wav::new().text(TITLE, "Echoes").build(),
+        away.join("lantern.wav"),
+        Wav::new().text(TITLE, "Lantern").build(),
     )
     .expect("a song added while nothing watched");
     fs::rename(&away, root.path()).expect("the root brought back");
@@ -190,7 +193,7 @@ fn a_song_added_while_its_root_was_uncovered_is_catalogued_once_the_watch_covers
 
     assert!(
         library
-            .track_at(&root.path().join("echoes.wav"), None)?
+            .track_at(&root.path().join("lantern.wav"), None)?
             .is_some(),
         "the song added while the root was uncovered waits for another file to change"
     );

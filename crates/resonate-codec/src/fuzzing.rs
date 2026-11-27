@@ -60,8 +60,8 @@ pub fn read_a_padded_head(bytes: &[u8]) {
 
 fn rewrite_a_matroska(bytes: &[u8]) {
     let edits = [
-        (TagField::Title, "Echoes".to_owned()),
-        (TagField::Album, "Meddle".to_owned()),
+        (TagField::Title, "Slow Water".to_owned()),
+        (TagField::Album, "Low Tide".to_owned()),
     ];
     let taken = [TagField::Artist];
 

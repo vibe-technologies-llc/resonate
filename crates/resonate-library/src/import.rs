@@ -821,7 +821,7 @@ mod tests {
         let first = picture(10);
         let better = picture(200);
 
-        let albums: Vec<AlbumId> = ["Meddle", "Animals"]
+        let albums: Vec<AlbumId> = ["Tideline", "Seasons"]
             .into_iter()
             .map(|title| {
                 library

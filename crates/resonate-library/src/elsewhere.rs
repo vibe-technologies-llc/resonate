@@ -912,18 +912,18 @@ mod tests {
 
     #[test]
     fn only_the_names_a_search_asks_for_are_asked_elsewhere() {
-        assert_eq!(words_asked("echoes pink"), vec!["echoes", "pink"]);
+        assert_eq!(words_asked("lantern example"), vec!["lantern", "example"]);
         assert_eq!(
-            words_asked("title:echoes artist:\"pink floyd\" year:1971 -live genre:rock"),
-            vec!["echoes", "pink floyd"]
+            words_asked("title:lantern artist:\"example band\" year:1971 -live genre:rock"),
+            vec!["lantern", "example band"]
         );
         assert!(words_asked("year:1971 is:hires").is_empty());
-        assert!(words_asked("lyrics:\"overhead the albatross\"").is_empty());
+        assert!(words_asked("lyrics:\"sunlight the fireflies\"").is_empty());
     }
 
     #[test]
     fn a_search_is_asked_elsewhere_only_once_it_names_enough_to_find() {
-        assert!(asks_elsewhere("echoes"));
+        assert!(asks_elsewhere("lantern"));
         assert!(asks_elsewhere("ab c"));
         assert!(!asks_elsewhere("ab"));
         assert!(!asks_elsewhere("year:1971"));
@@ -932,12 +932,12 @@ mod tests {
 
     #[test]
     fn a_song_found_twice_is_offered_once_and_what_the_catalog_holds_not_at_all() {
-        let meddle = || vec![issued(ONE, "1971-10-30", "Album", &[], "Official")];
+        let low_tide = || vec![issued(ONE, "1971-10-30", "Album", &[], "Official")];
         let found = found_among(
             vec![
-                matched(ONE, "Echoes", "Pink Floyd", meddle()),
-                matched(TWO, "echoes", "Pink Floyd", meddle()),
-                matched(THREE, "Echoes (live)", "Pink Floyd", meddle()),
+                matched(ONE, "Lantern", "Example Band", low_tide()),
+                matched(TWO, "lantern", "Example Band", low_tide()),
+                matched(THREE, "Lantern (live)", "Example Band", low_tide()),
             ],
             None,
             |recording| recording.as_str() == THREE,
@@ -945,7 +945,7 @@ mod tests {
 
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].recording.as_str(), ONE);
-        assert_eq!(found[0].artist, "Pink Floyd");
+        assert_eq!(found[0].artist, "Example Band");
     }
 
     #[test]
@@ -966,7 +966,7 @@ mod tests {
             },
         ];
 
-        let unidentified = matched(THREE, "Echoes", "Pink Floyd", released());
+        let unidentified = matched(THREE, "Lantern", "Example Band", released());
 
         let found = found_among(vec![collaboration, unidentified], None, |_| false);
 
@@ -1278,8 +1278,8 @@ mod tests {
         let found = found_among(
             vec![matched(
                 ONE,
-                "Echoes",
-                "Pink Floyd",
+                "Lantern",
+                "Example Band",
                 vec![
                     issued(ONE, "1971-01-01", "Single", &[], "Official"),
                     issued(TWO, "1970-06-01", "Album", &["Compilation"], "Official"),
@@ -1370,8 +1370,8 @@ mod tests {
     #[test]
     fn a_search_is_asked_in_one_spelling_however_it_was_typed() {
         assert_eq!(
-            songs_asked("Pink  Floyd").map(|asked| asked.words),
-            Some("pink floyd".to_owned())
+            songs_asked("Example  Band").map(|asked| asked.words),
+            Some("example band".to_owned())
         );
         assert_eq!(
             songs_asked("You F O by  Stela Cole"),
@@ -1386,8 +1386,8 @@ mod tests {
             "the word naming the artist is not asked for"
         );
         assert_eq!(
-            songs_asked("pink floyd year:1971"),
-            songs_asked("PINK floyd")
+            songs_asked("example band year:1971"),
+            songs_asked("EXAMPLE band")
         );
         assert_eq!(songs_asked("ab"), None);
     }
@@ -1480,14 +1480,14 @@ mod tests {
     #[test]
     fn songs_found_for_fewer_words_are_narrowed_to_those_still_answering_more() {
         let answered = [
-            found(ONE, "Time", "Pink Floyd", "The Dark Side of the Moon"),
-            found(TWO, "Echoes", "Pink Floyd", "Meddle"),
-            found(THREE, "Pink Moon", "Nick Drake", "Pink Moon"),
+            found(ONE, "Time", "Example Band", "The Far Side of the Lake"),
+            found(TWO, "Lantern", "Example Band", "Tideline"),
+            found(THREE, "Example Moon", "Another Band", "Example Moon"),
         ];
 
-        let narrowed = still_answering(&answered, "pink floyd ti");
-        let by_release = still_answering(&answered, "pink medd");
-        let accented = still_answering(&answered, "ÉCHO");
+        let narrowed = still_answering(&answered, "example band fa");
+        let by_release = still_answering(&answered, "example tide");
+        let accented = still_answering(&answered, "LÁNT");
 
         assert_eq!(narrowed, vec![answered[0].clone()]);
         assert_eq!(by_release, vec![answered[1].clone()]);
@@ -1506,23 +1506,23 @@ mod tests {
             first_released: None,
         };
         let albums = [
-            album("Meddle", "Pink Floyd"),
-            album("Pink Moon", "Nick Drake"),
+            album("Tideline", "Example Band"),
+            album("Example Moon", "Another Band"),
         ];
         let artists = [ArtistFound {
             mbid: Mbid::new(TWO).expect("an mbid"),
-            name: "Pink Floyd".to_owned(),
+            name: "Example Band".to_owned(),
         }];
 
         assert_eq!(
-            albums_still_answering(&albums, "pink medd"),
+            albums_still_answering(&albums, "example tide"),
             vec![albums[0].clone()]
         );
         assert_eq!(
-            artists_still_answering(&artists, "pink fl"),
+            artists_still_answering(&artists, "example ba"),
             artists.to_vec()
         );
-        assert!(artists_still_answering(&artists, "pink floyd echoes").is_empty());
+        assert!(artists_still_answering(&artists, "example band lantern").is_empty());
         assert!(albums_still_answering(&albums, "").is_empty());
     }
 }

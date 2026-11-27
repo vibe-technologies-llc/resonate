@@ -550,7 +550,7 @@ mod tests {
     fn time_spent_passing_through_tracks_is_listening_time_and_no_play() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
 
-        counted_at(&library, "Echoes", &[(Duration::ZERO, A_MINUTE)]);
+        counted_at(&library, "Lantern", &[(Duration::ZERO, A_MINUTE)]);
         library
             .passed(Duration::from_secs(40))
             .expect("the catalog keeps a passing listen");
@@ -589,7 +589,7 @@ mod tests {
 
         counted_at(
             &library,
-            "Echoes",
+            "Lantern",
             &[(Duration::ZERO, A_MINUTE), (TWO_DAYS, A_MINUTE)],
         );
 
@@ -713,7 +713,7 @@ mod tests {
     fn a_ranked_row_says_who_made_it_and_what_pictures_it() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
 
-        counted_at(&library, "Echoes", &[(Duration::ZERO, A_MINUTE)]);
+        counted_at(&library, "Lantern", &[(Duration::ZERO, A_MINUTE)]);
         library
             .inner()
             .write(|transaction| {

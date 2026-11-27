@@ -149,15 +149,15 @@ mod tests {
         Answered {
             recording: Recording {
                 mbid: None,
-                title: "Echoes".into(),
-                artist: "Pink Floyd".into(),
-                album: "Meddle".into(),
+                title: "Slow Water".into(),
+                artist: "Example Band".into(),
+                album: "Low Tide".into(),
                 length: None,
             },
             at,
             id,
             answer: Answer::Lyrics(SharedLyrics {
-                text: "Overhead the albatross".into(),
+                text: "Sunlight the fireflies".into(),
                 synced: false,
             }),
         }

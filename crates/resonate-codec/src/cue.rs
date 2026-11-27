@@ -1052,28 +1052,28 @@ mod tests {
 
     use super::*;
 
-    const MEDDLE: &str = r#"REM GENRE "Progressive Rock"
+    const LOW_TIDE: &str = r#"REM GENRE "Progressive Rock"
 REM DATE 1971
-PERFORMER "Pink Floyd"
-TITLE "Meddle"
-FILE "Meddle.flac" WAVE
+PERFORMER "Example Band"
+TITLE "Low Tide"
+FILE "Low Tide.flac" WAVE
   TRACK 01 AUDIO
-    TITLE "One of These Days"
-    PERFORMER "Pink Floyd"
+    TITLE "Small Hours"
+    PERFORMER "Example Band"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "A Pillow of Winds"
-    SONGWRITER "Gilmour"
+    TITLE "A Quilt of Winds"
+    SONGWRITER "Marsh"
     INDEX 00 05:57:25
     INDEX 01 05:57:50
   TRACK 06 AUDIO
-    TITLE "Echoes"
+    TITLE "Slow Water"
     REM REPLAYGAIN_TRACK_GAIN -7.06 dB
     INDEX 01 21:10:00
 "#;
 
-    fn meddle() -> CueFile {
-        let sheet = read(MEDDLE.as_bytes());
+    fn low_tide() -> CueFile {
+        let sheet = read(LOW_TIDE.as_bytes());
 
         assert_eq!(sheet.files.len(), 1);
         sheet.files.into_iter().next().expect("one file")
@@ -1081,8 +1081,8 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_sheet_whose_lines_end_in_a_carriage_return_alone_reads_as_the_same_sheet() {
-        let alone = read(MEDDLE.replace('\n', "\r").as_bytes());
-        let paired = read(MEDDLE.replace('\n', "\r\n").as_bytes());
+        let alone = read(LOW_TIDE.replace('\n', "\r").as_bytes());
+        let paired = read(LOW_TIDE.replace('\n', "\r\n").as_bytes());
         let tracks = |sheet: &CueSheet| {
             sheet
                 .files
@@ -1097,23 +1097,23 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_sheet_names_the_file_its_tracks_are_cut_from() {
-        let sheet = read(MEDDLE.as_bytes());
+        let sheet = read(LOW_TIDE.as_bytes());
 
-        assert_eq!(sheet.claims().collect::<Vec<_>>(), vec!["Meddle.flac"]);
+        assert_eq!(sheet.claims().collect::<Vec<_>>(), vec!["Low Tide.flac"]);
         assert_eq!(sheet.encoding, TextEncoding::Utf8);
     }
 
     #[test]
     fn a_track_takes_its_own_tags_and_the_albums_around_them() {
-        let file = meddle();
+        let file = low_tide();
         let first = &file.tracks[0];
 
         assert_eq!(first.number, 1);
         assert_eq!(first.kind, CueTrackKind::Audio);
-        assert_eq!(first.tags.title.as_deref(), Some("One of These Days"));
-        assert_eq!(first.tags.artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(first.tags.album.as_deref(), Some("Meddle"));
-        assert_eq!(first.tags.album_artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(first.tags.title.as_deref(), Some("Small Hours"));
+        assert_eq!(first.tags.artist.as_deref(), Some("Example Band"));
+        assert_eq!(first.tags.album.as_deref(), Some("Low Tide"));
+        assert_eq!(first.tags.album_artist.as_deref(), Some("Example Band"));
         assert_eq!(first.tags.date.as_deref(), Some("1971"));
         assert_eq!(first.tags.genre.as_deref(), Some("Progressive Rock"));
         assert_eq!(first.tags.track_total, Some(3));
@@ -1121,13 +1121,13 @@ FILE "Meddle.flac" WAVE
         assert_eq!(file.tracks[2].tags.track_number, Some(6));
         assert_eq!(
             file.tracks[1].tags.credits.composer.as_deref(),
-            Some("Gilmour")
+            Some("Marsh")
         );
     }
 
     #[test]
     fn a_track_that_declares_both_indexes_starts_where_the_music_does() {
-        let file = meddle();
+        let file = low_tide();
 
         assert_eq!(
             file.tracks[1].start,
@@ -1156,7 +1156,7 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_pregap_inside_one_file_is_heard_as_the_head_of_the_track_it_leads_into() {
-        let file = meddle();
+        let file = low_tide();
         let rate = SampleRate::HZ_44100;
         let gap = CueStamp::new(5, 57, 25).at(rate);
 
@@ -1173,12 +1173,12 @@ FILE "Meddle.flac" WAVE
         assert_eq!(
             file.cut_at(gap, rate)
                 .and_then(|row| row.tags.title.as_deref()),
-            Some("A Pillow of Winds")
+            Some("A Quilt of Winds")
         );
         assert_eq!(
             file.cut_at(CueStamp::new(5, 57, 50).at(rate), rate)
                 .and_then(|row| row.tags.title.as_deref()),
-            Some("A Pillow of Winds"),
+            Some("A Quilt of Winds"),
             "a row a catalog cut at its first index no longer named its track"
         );
     }
@@ -1209,23 +1209,25 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_span_is_read_back_as_the_row_it_was_cut_for() {
-        let file = meddle();
+        let file = low_tide();
         let rate = SampleRate::HZ_44100;
 
-        let echoes = file
+        let slow_water = file
             .span_of(2, rate, None)
             .expect("the last track is a span");
 
-        let row = file.cut_at(echoes.start(), rate).expect("the row it names");
+        let row = file
+            .cut_at(slow_water.start(), rate)
+            .expect("the row it names");
 
-        assert_eq!(row.tags.title.as_deref(), Some("Echoes"));
+        assert_eq!(row.tags.title.as_deref(), Some("Slow Water"));
         assert_eq!(
             row.tags.replay_gain.track_gain,
             Decibels::new(-7.06).ok(),
             "the row's own gain was not read back"
         );
         assert!(
-            file.cut_at(Frames(echoes.start().get() + 1), rate)
+            file.cut_at(Frames(slow_water.start().get() + 1), rate)
                 .is_none(),
             "a frame no track starts on named a row"
         );
@@ -1233,7 +1235,7 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_row_a_sheet_never_titled_is_billed_by_its_number() {
-        let sheet = read(b"FILE \"Meddle.flac\" WAVE\n TRACK 04 AUDIO\n  INDEX 01 00:00:00\n");
+        let sheet = read(b"FILE \"Low Tide.flac\" WAVE\n TRACK 04 AUDIO\n  INDEX 01 00:00:00\n");
         let row = &sheet.files[0].tracks[0];
 
         assert_eq!(row.tags.title, None);
@@ -1308,7 +1310,7 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_track_ends_where_the_next_one_begins_and_the_last_runs_on() {
-        let file = meddle();
+        let file = low_tide();
         let rate = SampleRate::HZ_44100;
 
         let first = file.span_of(0, rate, None).expect("a first span");
@@ -1328,7 +1330,7 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_track_that_starts_where_the_file_ends_has_no_span() {
-        let file = meddle();
+        let file = low_tide();
         let rate = SampleRate::HZ_44100;
 
         let second = file.span_of(1, rate, None).expect("a second span");
@@ -1352,7 +1354,7 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_track_with_no_index_at_all_still_starts_at_the_head_of_the_file() {
-        let sheet = read(b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Echoes\"\n");
+        let sheet = read(b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Slow Water\"\n");
 
         assert_eq!(sheet.files[0].tracks[0].start, CueStart::default());
     }
@@ -1429,14 +1431,15 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_file_name_keeps_its_spaces_and_loses_its_type() {
-        let sheet =
-            read(b"FILE \"Pink Floyd - Meddle.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n");
+        let sheet = read(
+            b"FILE \"Example Band - Low Tide.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n",
+        );
 
-        assert_eq!(sheet.files[0].named, "Pink Floyd - Meddle.flac");
+        assert_eq!(sheet.files[0].named, "Example Band - Low Tide.flac");
 
-        let bare = read(b"FILE Meddle.flac WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n");
+        let bare = read(b"FILE Low Tide.flac WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n");
 
-        assert_eq!(bare.files[0].named, "Meddle.flac");
+        assert_eq!(bare.files[0].named, "Low Tide.flac");
     }
 
     #[test]
@@ -1607,7 +1610,7 @@ FILE "Meddle.flac" WAVE
     #[test]
     fn the_disc_the_composer_and_the_catalogue_a_sheet_names_reach_every_track() {
         let sheet = read(
-            b"REM DISCNUMBER 2\nREM TOTALDISCS 3\nREM COMPOSER \"Bach\"\nCATALOG 0724356757828\nSONGWRITER \"Gilmour\"\nFILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    REM COMPOSER \"Waters\"\n    INDEX 01 04:00:00\n",
+            b"REM DISCNUMBER 2\nREM TOTALDISCS 3\nREM COMPOSER \"Bach\"\nCATALOG 0724356757828\nSONGWRITER \"Marsh\"\nFILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    REM COMPOSER \"Reed\"\n    INDEX 01 04:00:00\n",
         );
         let [first, second] = sheet.files[0].tracks.as_slice() else {
             panic!("two tracks: {:?}", sheet.files[0].tracks);
@@ -1616,8 +1619,8 @@ FILE "Meddle.flac" WAVE
         assert_eq!(first.tags.disc_number, Some(2));
         assert_eq!(first.tags.disc_total, Some(3));
         assert_eq!(first.tags.barcode.as_deref(), Some("0724356757828"));
-        assert_eq!(first.tags.credits.composer.as_deref(), Some("Gilmour"));
-        assert_eq!(second.tags.credits.composer.as_deref(), Some("Waters"));
+        assert_eq!(first.tags.credits.composer.as_deref(), Some("Marsh"));
+        assert_eq!(second.tags.credits.composer.as_deref(), Some("Reed"));
         assert_eq!(second.tags.disc_number, Some(2));
 
         let slashed = read(
@@ -1631,9 +1634,9 @@ FILE "Meddle.flac" WAVE
     #[test]
     fn a_block_cut_is_billed_by_the_album_its_file_is_tagged_as() {
         let file = TagSet {
-            title: Some("Meddle".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
+            title: Some("Low Tide".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Low Tide".to_owned()),
             date: Some("1971".to_owned()),
             isrc: Some("GBN9Y1100001".to_owned()),
             track_number: Some(1),
@@ -1667,8 +1670,8 @@ FILE "Meddle.flac" WAVE
 
         let second = &cut.tracks[1].tags;
 
-        assert_eq!(second.album.as_deref(), Some("Meddle"));
-        assert_eq!(second.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(second.album.as_deref(), Some("Low Tide"));
+        assert_eq!(second.artist.as_deref(), Some("Example Band"));
         assert_eq!(second.date.as_deref(), Some("1971"));
         assert_eq!(second.title, None);
         assert_eq!(second.isrc, None);
@@ -1840,11 +1843,11 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn a_per_track_replay_gain_is_the_only_one_a_single_file_rip_carries() {
-        let file = meddle();
-        let echoes = &file.tracks[2];
+        let file = low_tide();
+        let slow_water = &file.tracks[2];
 
         assert_eq!(
-            echoes.tags.replay_gain.track_gain.map(Decibels::get),
+            slow_water.tags.replay_gain.track_gain.map(Decibels::get),
             Some(-7.06)
         );
         assert_eq!(file.tracks[0].tags.replay_gain.track_gain, None);
@@ -1852,37 +1855,30 @@ FILE "Meddle.flac" WAVE
 
     #[test]
     fn carriage_returns_do_not_reach_the_names_a_sheet_carries() {
-        let sheet = read(b"TITLE \"Meddle\"\r\nFILE \"Meddle.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"Echoes\"\r\n    INDEX 01 00:00:00\r\n");
+        let sheet = read(b"TITLE \"Low Tide\"\r\nFILE \"Low Tide.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"Slow Water\"\r\n    INDEX 01 00:00:00\r\n");
 
         assert_eq!(
             sheet.files[0].tracks[0].tags.title.as_deref(),
-            Some("Echoes")
+            Some("Slow Water")
         );
         assert_eq!(
             sheet.files[0].tracks[0].tags.album.as_deref(),
-            Some("Meddle")
+            Some("Low Tide")
         );
-        assert_eq!(sheet.files[0].named, "Meddle.flac");
+        assert_eq!(sheet.files[0].named, "Low Tide.flac");
     }
 
     #[test]
     fn a_renamed_sheet_names_the_audio_by_its_new_name_and_keeps_every_other_byte() {
-        let written = renamed(
-            MEDDLE.as_bytes(),
-            "Meddle.flac",
-            "01 One of These Days.flac",
-        )
-        .expect("a sheet naming the file once is rewritten");
+        let written = renamed(LOW_TIDE.as_bytes(), "Low Tide.flac", "01 Small Hours.flac")
+            .expect("a sheet naming the file once is rewritten");
         let text = String::from_utf8(written).expect("a UTF-8 sheet stays UTF-8");
 
         assert_eq!(
             text,
-            MEDDLE.replace("\"Meddle.flac\"", "\"01 One of These Days.flac\"")
+            LOW_TIDE.replace("\"Low Tide.flac\"", "\"01 Small Hours.flac\"")
         );
-        assert_eq!(
-            read(text.as_bytes()).files[0].named,
-            "01 One of These Days.flac"
-        );
+        assert_eq!(read(text.as_bytes()).files[0].named, "01 Small Hours.flac");
     }
 
     #[test]
@@ -1907,7 +1903,7 @@ FILE "Meddle.flac" WAVE
     #[test]
     fn a_sheet_that_does_not_name_the_file_once_is_left_as_it_was() {
         assert_eq!(
-            renamed(MEDDLE.as_bytes(), "Obscured.flac", "one.flac"),
+            renamed(LOW_TIDE.as_bytes(), "Hidden.flac", "one.flac"),
             None
         );
 

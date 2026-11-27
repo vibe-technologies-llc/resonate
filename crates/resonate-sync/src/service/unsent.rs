@@ -159,8 +159,8 @@ mod tests {
         Recording {
             mbid: None,
             title: title.into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: None,
         }
     }
@@ -225,13 +225,13 @@ mod tests {
         let mut unsent = Unsent::default();
         let mut shown = Shown::default();
 
-        for title in ["Echoes", "Time"] {
+        for title in ["Slow Water", "Time"] {
             shown.queued(&song(title), device);
         }
         unsent.queue(
             device,
             Work::Fetch {
-                recordings: vec![song("Echoes")],
+                recordings: vec![song("Slow Water")],
                 asked: true,
                 answers: None,
             },

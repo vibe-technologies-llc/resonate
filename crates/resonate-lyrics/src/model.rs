@@ -615,9 +615,9 @@ mod tests {
         Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(10), "and everything under the sun is in tune"),
-                LyricLine::sung(at(0), "all that you touch"),
-                LyricLine::sung(at(5), "all that you see"),
+                LyricLine::sung(at(10), "and every window on the quay is in tune"),
+                LyricLine::sung(at(0), "every lamp you lit"),
+                LyricLine::sung(at(5), "each road I know"),
             ],
         )
         .expect("every line is timed")
@@ -635,16 +635,16 @@ mod tests {
                 .map(|line| line.text.as_str())
                 .collect::<Vec<_>>(),
             [
-                "all that you touch",
-                "all that you see",
-                "and everything under the sun is in tune",
+                "every lamp you lit",
+                "each road I know",
+                "and every window on the quay is in tune",
             ]
         );
     }
 
     #[test]
     fn a_set_with_no_line_carrying_a_moment_cannot_be_synced() {
-        let untimed = Lyrics::synced(source(), vec![LyricLine::untimed("all that you touch")]);
+        let untimed = Lyrics::synced(source(), vec![LyricLine::untimed("every lamp you lit")]);
 
         assert!(matches!(untimed, Err(Error::NoLineTimed)));
     }
@@ -653,12 +653,12 @@ mod tests {
         Lyrics::synced(
             source(),
             vec![
-                LyricLine::untimed("Echoes"),
-                LyricLine::sung(at(30), "and everything under the sun is in tune"),
-                LyricLine::sung(at(0), "all that you touch"),
+                LyricLine::untimed("Slow Water"),
+                LyricLine::sung(at(30), "and every window on the quay is in tune"),
+                LyricLine::sung(at(0), "every lamp you lit"),
                 LyricLine::untimed("(Chorus)"),
-                LyricLine::untimed("everything you touch"),
-                LyricLine::sung(at(10), "all that you see"),
+                LyricLine::untimed("everything you lit"),
+                LyricLine::sung(at(10), "each road I know"),
             ],
         )
         .expect("a line is timed")
@@ -695,7 +695,7 @@ mod tests {
     fn an_untimed_line_ahead_of_every_timed_one_heads_the_set() {
         let lyrics = with_asides();
 
-        assert_eq!(lyrics.lines()[0].text, "Echoes");
+        assert_eq!(lyrics.lines()[0].text, "Slow Water");
         assert_eq!(lyrics.line_at(Duration::ZERO), Some(1));
         assert_eq!(lyrics.voices_in_play(Duration::ZERO), [Some(1), None]);
     }
@@ -725,9 +725,9 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "all that you touch"),
+                LyricLine::sung(at(0), "every lamp you lit"),
                 LyricLine::untimed("(Chorus)"),
-                LyricLine::sung(at(4), "all that you see"),
+                LyricLine::sung(at(4), "each road I know"),
             ],
         )
         .expect("a line is timed");
@@ -741,9 +741,9 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "all that you touch"),
+                LyricLine::sung(at(0), "every lamp you lit"),
                 LyricLine::untimed("(Chorus)"),
-                LyricLine::sung(at(40), "all that you see"),
+                LyricLine::sung(at(40), "each road I know"),
             ],
         )
         .expect("a line is timed");
@@ -759,8 +759,8 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "all that you touch"),
-                LyricLine::untimed("Written by Roger Waters"),
+                LyricLine::sung(at(0), "every lamp you lit"),
+                LyricLine::untimed("Written by Another Band"),
             ],
         )
         .expect("a line is timed");
@@ -818,7 +818,7 @@ mod tests {
 
     #[test]
     fn a_position_ahead_of_the_first_line_is_between_lines_rather_than_on_one() {
-        let lyrics = Lyrics::synced(source(), vec![LyricLine::sung(at(3), "all that you touch")])
+        let lyrics = Lyrics::synced(source(), vec![LyricLine::sung(at(3), "every lamp you lit")])
             .expect("every line is timed");
 
         assert_eq!(lyrics.line_at(at(2)), None);
@@ -1161,7 +1161,7 @@ mod tests {
             source(),
             vec![
                 LyricLine::sung(at(0), "oh").ending(at(9)),
-                LyricLine::sung(at(30), "all that you touch"),
+                LyricLine::sung(at(30), "every lamp you lit"),
             ],
         )
         .expect("every line is timed");
@@ -1197,8 +1197,8 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "all that you touch"),
-                LyricLine::sung(at(120), "all that you see"),
+                LyricLine::sung(at(0), "every lamp you lit"),
+                LyricLine::sung(at(120), "each road I know"),
             ],
         )
         .expect("every line is timed");
@@ -1224,7 +1224,7 @@ mod tests {
     #[test]
     fn a_longer_line_is_held_lit_for_longer() {
         assert_eq!(sung_for("oh"), SUNG_AT_LEAST);
-        assert!(sung_for("and everything under the sun is in tune") > sung_for("all that you see"));
+        assert!(sung_for("and every window on the quay is in tune") > sung_for("each road I know"));
         assert_eq!(sung_for(&"la ".repeat(200)), LIT_AT_MOST);
     }
 
@@ -1242,8 +1242,8 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "touch"),
-                LyricLine::sung(at(33), "all that you see"),
+                LyricLine::sung(at(0), "lit"),
+                LyricLine::sung(at(33), "each road I know"),
             ],
         )
         .expect("every line is timed");
@@ -1271,8 +1271,8 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "touch"),
-                LyricLine::sung(at(5), "see"),
+                LyricLine::sung(at(0), "lit"),
+                LyricLine::sung(at(5), "know"),
                 LyricLine::sung(at(60), "taste"),
             ],
         )
@@ -1294,7 +1294,7 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "and everything under the sun is in tune"),
+                LyricLine::sung(at(0), "and every window on the quay is in tune"),
                 LyricLine::sung(at(4), ""),
                 LyricLine::sung(at(20), "but the sun is eclipsed by the moon"),
             ],
@@ -1318,7 +1318,7 @@ mod tests {
     fn the_time_before_the_first_line_counts_down_to_it() {
         let lyrics = Lyrics::synced(
             source(),
-            vec![LyricLine::sung(at(20), "all that you touch")],
+            vec![LyricLine::sung(at(20), "every lamp you lit")],
         )
         .expect("every line is timed");
 
@@ -1337,8 +1337,8 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(20), "touch"),
-                LyricLine::sung(at(24), "see"),
+                LyricLine::sung(at(20), "lit"),
+                LyricLine::sung(at(24), "know"),
                 LyricLine::sung(at(40), ""),
                 LyricLine::sung(at(60), "taste"),
             ],
@@ -1359,7 +1359,7 @@ mod tests {
         }
 
         assert!(
-            !Lyrics::plain(source(), vec!["touch".to_owned()]).breathes_before(0),
+            !Lyrics::plain(source(), vec!["lit".to_owned()]).breathes_before(0),
             "an unsynced set breathed"
         );
     }
@@ -1375,7 +1375,7 @@ mod tests {
 
     #[test]
     fn an_unsynced_set_never_claims_a_line_is_in_play() {
-        let lyrics = Lyrics::plain(source(), vec!["all that you touch".to_owned()]);
+        let lyrics = Lyrics::plain(source(), vec!["every lamp you lit".to_owned()]);
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
         assert_eq!(lyrics.line_at(at(30)), None);

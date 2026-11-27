@@ -1624,7 +1624,7 @@ mod tests {
         file.extend_from_slice(&size_bytes(body.len() as u64, MAX_LENGTH_BYTES).expect("a size"));
         file.extend_from_slice(&body);
 
-        let edits = [(TagField::Title, "Echoes".to_owned())];
+        let edits = [(TagField::Title, "Slow Water".to_owned())];
 
         let refused = rewritten(&mut Cursor::new(&file), &edits, &[]);
 
@@ -1647,7 +1647,7 @@ mod tests {
     #[test]
     fn tags_and_a_picture_laid_together_land_as_each_laid_in_turn_would() {
         let bare = a_bare_segment();
-        let edits = [(TagField::Title, "Echoes".to_owned())];
+        let edits = [(TagField::Title, "Slow Water".to_owned())];
 
         for file in [bare.clone(), titled(&bare, "Old")] {
             let tags = rewritten(&mut Cursor::new(&file), &edits, &[]).expect("the tags");
@@ -1677,7 +1677,7 @@ mod tests {
             &bare,
             &attached(&mut Cursor::new(&bare), &A_COVER).expect("a first picture"),
         );
-        let edits = [(TagField::Title, "Echoes".to_owned())];
+        let edits = [(TagField::Title, "Slow Water".to_owned())];
 
         let refused = tagged_and_pictured(&mut Cursor::new(&pictured), &edits, &[], Some(&A_COVER));
         let unpictured = tagged_and_pictured(&mut Cursor::new(&pictured), &edits, &[], None);

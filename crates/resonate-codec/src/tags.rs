@@ -1359,13 +1359,13 @@ mod tests {
     #[test]
     fn an_info_id_written_under_another_of_its_names_is_read_the_same_way() {
         let set = absorb_info(&[
-            info("titl", "Echoes"),
+            info("titl", "Slow Water"),
             info("TRCK", "2/12"),
             info("GENR", "Progressive Rock"),
             info("YEAR", "1971"),
         ]);
 
-        assert_eq!(set.title.as_deref(), Some("Echoes"));
+        assert_eq!(set.title.as_deref(), Some("Slow Water"));
         assert_eq!(set.track_number, Some(2));
         assert_eq!(set.genre.as_deref(), Some("Progressive Rock"));
         assert_eq!(set.date.as_deref(), Some("1971"));
@@ -1633,20 +1633,20 @@ mod tests {
         let held = logged(vec![
             revision(vec![mapped(
                 "TPE1",
-                "Pink Floyd",
-                StandardTag::Artist(text("Pink Floyd")),
+                "Example Band",
+                StandardTag::Artist(text("Example Band")),
             )]),
             revision(vec![mapped(
                 "TIT2",
-                "Echoes",
-                StandardTag::TrackTitle(text("Echoes")),
+                "Slow Water",
+                StandardTag::TrackTitle(text("Slow Water")),
             )]),
         ]);
 
         let set = set_of(&held);
 
-        assert_eq!(set.artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(set.title.as_deref(), Some("Echoes"));
+        assert_eq!(set.artist.as_deref(), Some("Example Band"));
+        assert_eq!(set.title.as_deref(), Some("Slow Water"));
     }
 
     #[test]
@@ -1659,12 +1659,12 @@ mod tests {
             )]),
             revision(vec![mapped(
                 "TIT2",
-                "Echoes",
-                StandardTag::TrackTitle(text("Echoes")),
+                "Slow Water",
+                StandardTag::TrackTitle(text("Slow Water")),
             )]),
         ]);
 
-        assert_eq!(set_of(&held).title.as_deref(), Some("Echoes"));
+        assert_eq!(set_of(&held).title.as_deref(), Some("Slow Water"));
     }
 
     #[test]
@@ -1718,8 +1718,8 @@ mod tests {
                 0,
                 vec![mapped(
                     "TIT2",
-                    "Echoes",
-                    StandardTag::TrackTitle(text("Echoes")),
+                    "Slow Water",
+                    StandardTag::TrackTitle(text("Slow Water")),
                 )],
             ),
             for_track(
@@ -1732,7 +1732,7 @@ mod tests {
             ),
         ]);
 
-        assert_eq!(set_of(&held).title.as_deref(), Some("Echoes"));
+        assert_eq!(set_of(&held).title.as_deref(), Some("Slow Water"));
         assert_eq!(
             read(&held, 1, &Prescan::default(), true, None)
                 .title
@@ -1761,17 +1761,17 @@ mod tests {
         let set = absorb(&[
             mapped(
                 "ALBUM@ARTIST",
-                "Pink Floyd",
-                StandardTag::AlbumArtist(text("Pink Floyd")),
+                "Example Band",
+                StandardTag::AlbumArtist(text("Example Band")),
             ),
-            keyed("ALBUM@ALBUM", "Meddle"),
+            keyed("ALBUM@ALBUM", "Low Tide"),
             keyed("ALBUM@ALBUM_ARTIST", "Various Artists"),
             keyed("ALBUM@DATE", "1971"),
             keyed("ALBUM@PART_NUMBER", "2"),
         ]);
 
-        assert_eq!(set.artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(set.album.as_deref(), Some("Meddle"));
+        assert_eq!(set.artist.as_deref(), Some("Example Band"));
+        assert_eq!(set.album.as_deref(), Some("Low Tide"));
         assert_eq!(set.album_artist.as_deref(), Some("Various Artists"));
         assert_eq!(set.date.as_deref(), Some("1971"));
         assert_eq!(set.track_number, Some(2));
@@ -1780,22 +1780,26 @@ mod tests {
     #[test]
     fn a_target_the_matroska_spec_names_keeps_the_meaning_that_spec_gives_it() {
         let set = absorb(&[
-            mapped("ALBUM@TITLE", "Meddle", StandardTag::Album(text("Meddle"))),
+            mapped(
+                "ALBUM@TITLE",
+                "Low Tide",
+                StandardTag::Album(text("Low Tide")),
+            ),
             mapped(
                 "ALBUM@ARTIST",
-                "Pink Floyd",
-                StandardTag::AlbumArtist(text("Pink Floyd")),
+                "Example Band",
+                StandardTag::AlbumArtist(text("Example Band")),
             ),
             mapped(
                 "TRACK@TITLE",
-                "Echoes",
-                StandardTag::TrackTitle(text("Echoes")),
+                "Slow Water",
+                StandardTag::TrackTitle(text("Slow Water")),
             ),
         ]);
 
-        assert_eq!(set.album.as_deref(), Some("Meddle"));
-        assert_eq!(set.album_artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(set.title.as_deref(), Some("Echoes"));
+        assert_eq!(set.album.as_deref(), Some("Low Tide"));
+        assert_eq!(set.album_artist.as_deref(), Some("Example Band"));
+        assert_eq!(set.title.as_deref(), Some("Slow Water"));
         assert_eq!(set.artist, None);
     }
 
@@ -1884,18 +1888,18 @@ mod tests {
 
     #[test]
     fn one_vorbis_only_name_is_enough_to_read_the_rest_as_vorbis_comments() {
-        let alone = absorb(&[keyed("PERFORMER", "Pink Floyd"), keyed("DATE", "1971")]);
+        let alone = absorb(&[keyed("PERFORMER", "Example Band"), keyed("DATE", "1971")]);
 
         assert_eq!(alone.credits.performer, None);
         assert_eq!(alone.date, None);
 
         let beside = absorb(&[
             keyed("ORIGINALDATE", "1971-10-30"),
-            keyed("PERFORMER", "Pink Floyd"),
+            keyed("PERFORMER", "Example Band"),
             keyed("DATE", "1971"),
         ]);
 
-        assert_eq!(beside.credits.performer.as_deref(), Some("Pink Floyd"));
+        assert_eq!(beside.credits.performer.as_deref(), Some("Example Band"));
         assert_eq!(beside.date.as_deref(), Some("1971"));
     }
 
@@ -2100,24 +2104,24 @@ mod tests {
         assert_eq!(blank.artist, None);
         assert_eq!(blank.credits.composer, None);
 
-        let padded = absorb(&[tag(StandardTag::TrackTitle(text("  Echoes \n")))]);
+        let padded = absorb(&[tag(StandardTag::TrackTitle(text("  Slow Water \n")))]);
 
-        assert_eq!(padded.title.as_deref(), Some("Echoes"));
+        assert_eq!(padded.title.as_deref(), Some("Slow Water"));
 
         let blanked_after = absorb(&[
-            tag(StandardTag::TrackTitle(text("Echoes"))),
+            tag(StandardTag::TrackTitle(text("Slow Water"))),
             tag(StandardTag::TrackTitle(text(" "))),
         ]);
 
-        assert_eq!(blanked_after.title.as_deref(), Some("Echoes"));
+        assert_eq!(blanked_after.title.as_deref(), Some("Slow Water"));
 
         let named_after = absorb(&[
             tag(StandardTag::TrackTitle(text(" "))),
-            tag(StandardTag::TrackTitle(text("Echoes"))),
-            tag(StandardTag::TrackTitle(text("Fearless"))),
+            tag(StandardTag::TrackTitle(text("Slow Water"))),
+            tag(StandardTag::TrackTitle(text("Paper Boats"))),
         ]);
 
-        assert_eq!(named_after.title.as_deref(), Some("Fearless"));
+        assert_eq!(named_after.title.as_deref(), Some("Paper Boats"));
     }
 
     #[test]
@@ -2188,14 +2192,14 @@ mod tests {
 
     #[test]
     fn the_words_a_file_carries_reach_the_set_whichever_name_its_writer_used() {
-        let carried = absorb(&[tag(StandardTag::Lyrics(text("all that you touch")))]);
+        let carried = absorb(&[tag(StandardTag::Lyrics(text("every lamp you lit")))]);
         let vorbis = absorb(&[
             keyed("TRACKNUMBER", "2"),
-            keyed("UNSYNCEDLYRICS", "all that you see"),
+            keyed("UNSYNCEDLYRICS", "each road I know"),
         ]);
 
-        assert_eq!(carried.lyrics.as_deref(), Some("all that you touch"));
-        assert_eq!(vorbis.lyrics.as_deref(), Some("all that you see"));
+        assert_eq!(carried.lyrics.as_deref(), Some("every lamp you lit"));
+        assert_eq!(vorbis.lyrics.as_deref(), Some("each road I know"));
         assert_eq!(
             absorb(&[keyed("LYRICS", "nothing says vorbis")]).lyrics,
             None
@@ -2223,16 +2227,16 @@ mod tests {
     fn a_synchronised_frame_outranks_the_plain_words_beside_it_as_a_timed_sheet() {
         let mut frame = vec![3, b'e', b'n', b'g', 2, 1, 0];
 
-        frame.extend_from_slice(b"all that you touch\0");
+        frame.extend_from_slice(b"every lamp you lit\0");
         frame.extend_from_slice(&1_500_u32.to_be_bytes());
 
         let synced = Tag::new(RawTag::new("SYLT", frame.as_slice()));
 
-        let set = absorb(&[synced, tag(StandardTag::Lyrics(text("all that you touch")))]);
+        let set = absorb(&[synced, tag(StandardTag::Lyrics(text("every lamp you lit")))]);
 
         assert_eq!(
             set.lyrics.as_deref(),
-            Some("[00:01.500]all that you touch\n")
+            Some("[00:01.500]every lamp you lit\n")
         );
     }
 
@@ -2250,13 +2254,13 @@ mod tests {
         };
 
         let set = absorb(&[
-            synced(b"eng", "all that you touch"),
+            synced(b"eng", "every lamp you lit"),
             synced(b"deu", "alles was du beruhrst"),
         ]);
 
         assert_eq!(
             set.lyrics.as_deref(),
-            Some("[00:01.500]all that you touch\n")
+            Some("[00:01.500]every lamp you lit\n")
         );
     }
 
@@ -2265,8 +2269,8 @@ mod tests {
         let set = absorb_info(&[
             info("IENG", "Alan Parsons"),
             info("IMUS", "Richard Wright"),
-            info("IWRI", "Roger Waters"),
-            info("IPRO", "Pink Floyd"),
+            info("IWRI", "Another Band"),
+            info("IPRO", "Example Band"),
             info("ICOP", "(c) 1971 Harvest"),
             info("ISFT", "Exact Audio Copy"),
             info("ICMT", "ripped from the 1994 remaster"),
@@ -2274,8 +2278,8 @@ mod tests {
 
         assert_eq!(set.credits.engineer.as_deref(), Some("Alan Parsons"));
         assert_eq!(set.credits.composer.as_deref(), Some("Richard Wright"));
-        assert_eq!(set.credits.lyricist.as_deref(), Some("Roger Waters"));
-        assert_eq!(set.credits.producer.as_deref(), Some("Pink Floyd"));
+        assert_eq!(set.credits.lyricist.as_deref(), Some("Another Band"));
+        assert_eq!(set.credits.producer.as_deref(), Some("Example Band"));
         assert_eq!(set.copyright.as_deref(), Some("(c) 1971 Harvest"));
         assert_eq!(set.encoder.as_deref(), Some("Exact Audio Copy"));
         assert_eq!(
@@ -2297,12 +2301,16 @@ mod tests {
                 "2016 Remaster",
                 StandardTag::EditionTitle(text("2016 Remaster")),
             ),
-            mapped("ALBUM@TITLE", "Meddle", StandardTag::Album(text("Meddle"))),
+            mapped(
+                "ALBUM@TITLE",
+                "Low Tide",
+                StandardTag::Album(text("Low Tide")),
+            ),
         ]);
 
         assert_eq!(set.collection.as_deref(), Some("The Early Years"));
         assert_eq!(set.edition.as_deref(), Some("2016 Remaster"));
-        assert_eq!(set.album.as_deref(), Some("Meddle"));
+        assert_eq!(set.album.as_deref(), Some("Low Tide"));
     }
 
     #[test]
@@ -2311,20 +2319,20 @@ mod tests {
             keyed("TRACKNUMBER", "2/12"),
             keyed("COMPOSER", "Richard Wright"),
             keyed("CONDUCTOR", "Ron Goodwin"),
-            keyed("LYRICIST", "Roger Waters"),
-            keyed("PERFORMER", "David Gilmour"),
+            keyed("LYRICIST", "Another Band"),
+            keyed("PERFORMER", "Third Band"),
             keyed("REMIXER", "James Guthrie"),
             keyed("ENGINEER", "Alan Parsons"),
-            keyed("PRODUCER", "Pink Floyd"),
+            keyed("PRODUCER", "Example Band"),
         ]);
 
         assert_eq!(set.credits.composer.as_deref(), Some("Richard Wright"));
         assert_eq!(set.credits.conductor.as_deref(), Some("Ron Goodwin"));
-        assert_eq!(set.credits.lyricist.as_deref(), Some("Roger Waters"));
-        assert_eq!(set.credits.performer.as_deref(), Some("David Gilmour"));
+        assert_eq!(set.credits.lyricist.as_deref(), Some("Another Band"));
+        assert_eq!(set.credits.performer.as_deref(), Some("Third Band"));
         assert_eq!(set.credits.remixer.as_deref(), Some("James Guthrie"));
         assert_eq!(set.credits.engineer.as_deref(), Some("Alan Parsons"));
-        assert_eq!(set.credits.producer.as_deref(), Some("Pink Floyd"));
+        assert_eq!(set.credits.producer.as_deref(), Some("Example Band"));
     }
 
     #[test]

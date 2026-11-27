@@ -1619,13 +1619,13 @@ mod tests {
     fn row() -> TrackToTag {
         TrackToTag {
             id: TrackId::new(1).expect("a namable track"),
-            path: PathBuf::from("/music/echoes.flac"),
+            path: PathBuf::from("/music/lantern.flac"),
             album_id: Some(AlbumId::new(1).expect("a namable album")),
             cut: false,
             vaulted: false,
             answered: true,
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            title: "Lantern".to_owned(),
+            artist: Some("Example Band".to_owned()),
             artist_sort: None,
             artist_mbid: Some("83d91898-7763-47d7-b03b-b92132375c47".to_owned()),
             mbid: Some("b1a9c0de-1111-4222-8333-444455556666".to_owned()),
@@ -1634,9 +1634,9 @@ mod tests {
             track_number: Some(6),
             disc_number: None,
             album_answered: true,
-            album: Some("Meddle".to_owned()),
+            album: Some("Tideline".to_owned()),
             album_artist_answered: true,
-            album_artist: Some("Pink Floyd".to_owned()),
+            album_artist: Some("Example Band".to_owned()),
             album_artist_sort: None,
             album_artist_mbid: None,
             album_mbid: Some("1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f".to_owned()),
@@ -1664,10 +1664,10 @@ mod tests {
     fn a_tag_the_file_already_carries_is_not_written_again() {
         let row = row();
         let held = TagSet {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
-            album_artist: Some("Pink Floyd".to_owned()),
+            title: Some("Lantern".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Tideline".to_owned()),
+            album_artist: Some("Example Band".to_owned()),
             track_number: Some(6),
             track_total: Some(6),
             disc_number: None,
@@ -1711,7 +1711,7 @@ mod tests {
     fn an_album_artists_sort_name_waits_for_the_artist_to_be_answered() {
         let row = TrackToTag {
             album_artist_answered: false,
-            album_artist_sort: Some("Floyd, Pink".to_owned()),
+            album_artist_sort: Some("Band, Example".to_owned()),
             ..row()
         };
 
@@ -1722,10 +1722,10 @@ mod tests {
     fn only_the_fields_that_differ_are_written() {
         let row = row();
         let held = TagSet {
-            title: Some("Echos".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
-            album_artist: Some("Pink Floyd".to_owned()),
+            title: Some("Slow Watr".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Tideline".to_owned()),
+            album_artist: Some("Example Band".to_owned()),
             track_number: Some(6),
             track_total: Some(6),
             disc_total: Some(1),
@@ -1866,10 +1866,10 @@ mod tests {
     fn what_was_written_is_what_the_catalog_follows() {
         let write = Written {
             track: TrackId::new(1).expect("a namable track"),
-            path: PathBuf::from("/music/echoes.flac"),
+            path: PathBuf::from("/music/lantern.flac"),
             edits: vec![TagEdit {
                 field: TagField::Title,
-                value: "Echoes".to_owned(),
+                value: "Lantern".to_owned(),
             }],
             taken: vec![TagField::Album],
             picture: None,
@@ -1880,7 +1880,7 @@ mod tests {
 
         assert_eq!(
             wrote(&write, TagField::Title),
-            Some(Some("Echoes".to_owned()))
+            Some(Some("Lantern".to_owned()))
         );
         assert_eq!(wrote(&write, TagField::Album), Some(None));
         assert_eq!(wrote(&write, TagField::Artist), None);

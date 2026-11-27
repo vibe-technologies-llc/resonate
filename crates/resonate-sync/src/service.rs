@@ -4200,7 +4200,7 @@ mod tests {
     use super::*;
     use crate::{routes::NEXT_ROUTE_AFTER, wire::SERVER_ALPN};
 
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
     const A_ROUTE_SETTLES_WITHIN: Duration = Duration::from_secs(5);
     const FRAMES_A_HOSTILE_SERVER_SENDS: u32 = 64;
     const THE_READER_SETTLES_WITHIN: Duration = Duration::from_millis(300);
@@ -4374,22 +4374,22 @@ mod tests {
         Recording {
             mbid: None,
             title: title.into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: None,
         }
     }
 
     fn identified(title: &str) -> Recording {
         Recording {
-            mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+            mbid: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
             ..named(title)
         }
     }
 
     #[test]
     fn a_fetch_batch_stops_waiting_once_an_outcome_is_overdue_and_answers_the_rest_as_unanswered() {
-        let asked = vec![named("Echoes"), named("Time"), named("Money")];
+        let asked = vec![named("Slow Water"), named("Time"), named("Money")];
         let (answers, answered) = std_mpsc::channel();
 
         let batch = AskedToFetch::new(
@@ -4401,7 +4401,7 @@ mod tests {
         let answers = FetchAnswers(answers);
 
         answers.told(&named("Time"), FetchOutcome::Arrived);
-        answers.told(&named("Echoes"), FetchOutcome::Claimed);
+        answers.told(&named("Slow Water"), FetchOutcome::Claimed);
 
         let started = std::time::Instant::now();
         let outcomes = batch.outcomes();
@@ -4410,7 +4410,7 @@ mod tests {
         assert_eq!(
             outcomes,
             [
-                (named("Echoes"), FetchOutcome::Claimed),
+                (named("Slow Water"), FetchOutcome::Claimed),
                 (named("Time"), FetchOutcome::Arrived),
                 (named("Money"), FetchOutcome::Unanswered),
             ]
@@ -4423,7 +4423,7 @@ mod tests {
     fn a_fetch_batch_whose_work_was_dropped_answers_every_song_as_unanswered_at_once() {
         let (answers, answered) = std_mpsc::channel();
         let batch = AskedToFetch::new(
-            vec![named("Echoes")],
+            vec![named("Slow Water")],
             answered,
             Duration::from_secs(60),
             Duration::from_secs(60),
@@ -4435,7 +4435,7 @@ mod tests {
 
         assert_eq!(
             batch.outcomes(),
-            [(named("Echoes"), FetchOutcome::Unanswered)]
+            [(named("Slow Water"), FetchOutcome::Unanswered)]
         );
         assert!(started.elapsed() < Duration::from_secs(2));
     }
@@ -4444,14 +4444,14 @@ mod tests {
     fn a_song_claimed_by_its_mbid_is_claimed_by_its_tags_too_until_released() {
         let claims = Claims::default();
 
-        assert!(claims.claim(&identified("Echoes")));
-        assert!(!claims.claim(&named("Echoes")));
-        assert!(!claims.claim(&identified("Echoes")));
+        assert!(claims.claim(&identified("Slow Water")));
+        assert!(!claims.claim(&named("Slow Water")));
+        assert!(!claims.claim(&identified("Slow Water")));
         assert!(claims.claim(&named("Time")));
 
-        claims.release(&identified("Echoes"));
+        claims.release(&identified("Slow Water"));
 
-        assert!(claims.claim(&named("Echoes")));
+        assert!(claims.claim(&named("Slow Water")));
     }
 
     #[test]
@@ -4459,15 +4459,15 @@ mod tests {
         let device = DeviceId([1; 16]);
         let mut shown = Shown::default();
 
-        shown.transfer(&identified("Echoes"), device, |transfer| {
+        shown.transfer(&identified("Slow Water"), device, |transfer| {
             transfer.state = TransferState::Failed;
         });
-        shown.queued(&named("Echoes"), device);
+        shown.queued(&named("Slow Water"), device);
 
         assert_eq!(shown.transfers.len(), 1);
         assert_eq!(shown.transfers[0].state, TransferState::Waiting);
 
-        shown.unlisted_waiting(&named("Echoes"), device);
+        shown.unlisted_waiting(&named("Slow Water"), device);
 
         assert!(shown.transfers.is_empty());
     }

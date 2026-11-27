@@ -454,26 +454,26 @@ fn a_tracks_title_words_are_kept_as_it_is_named_and_a_held_song_is_found_by_them
                      INSERT INTO tracks (root_id, path, title, artist, artist_id, sample_rate,
                                          channels, sample_format, codec, file_size, modified,
                                          added, seen)
-                     VALUES (NULL, '/a.flac', 'Wish You Were Here!', 'Ada', 1, 44100, 2, 1, 1,
+                     VALUES (NULL, '/a.flac', 'Glad You Came By!', 'Ada', 1, 44100, 2, 1, 1,
                              1, 1, 1, 1);",
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))
         })
         .expect("a track is written");
 
-    assert_eq!(words(&library).as_deref(), Some("wish you were here"));
+    assert_eq!(words(&library).as_deref(), Some("glad you came by"));
 
     library
         .inner
         .write(|transaction| {
             transaction
-                .execute("UPDATE tracks SET title = 'Hey You'", [])
+                .execute("UPDATE tracks SET title = 'Another Door'", [])
                 .map(drop)
                 .map_err(|source| Error::store(StoreOp::Update, source))
         })
         .expect("the track is renamed");
 
-    assert_eq!(words(&library).as_deref(), Some("hey you"));
+    assert_eq!(words(&library).as_deref(), Some("another door"));
 
     for sql in [MISSING_FROM_AN_ARTISTS_ALBUMS, ALBUMS_NOT_HELD_BY_AN_ARTIST] {
         let steps: Vec<String> = library
@@ -1400,9 +1400,9 @@ fn suggested(library: &Library, text: &str) -> Option<String> {
 fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
     let library = Library::open_in_memory().expect("an in-memory catalog");
 
-    titled(&library, "Echoes");
+    titled(&library, "Lantern");
 
-    assert_eq!(suggested(&library, "ekhoes"), Some("Echoes".to_owned()));
+    assert_eq!(suggested(&library, "lontern"), Some("Lantern".to_owned()));
 
     library
         .inner
@@ -1412,8 +1412,8 @@ fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
         .expect("a table holding no name is written");
 
     assert_eq!(
-        suggested(&library, "ekhoes"),
-        Some("Echoes".to_owned()),
+        suggested(&library, "lontern"),
+        Some("Lantern".to_owned()),
         "the vocabulary was read again for a write that could not move a name"
     );
 
@@ -1436,22 +1436,22 @@ fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
         .inner
         .writer
         .lock()
-        .execute("UPDATE tracks SET title = 'Fearless'", [])
+        .execute("UPDATE tracks SET title = 'Moorings'", [])
         .expect("the title is rewritten");
 
     assert_eq!(
-        suggested(&library, "ekhoes"),
+        suggested(&library, "lontern"),
         None,
         "a write that moved a name left the vocabulary that was read before it standing"
     );
-    assert_eq!(suggested(&library, "fearliss"), Some("Fearless".to_owned()));
+    assert_eq!(suggested(&library, "moorongs"), Some("Moorings".to_owned()));
 }
 
 #[test]
 fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> Result<()> {
     let library = Library::open_in_memory()?;
 
-    titled(&library, "Echoes");
+    titled(&library, "Lantern");
     titled(&library, "Time");
 
     let written = |sql: &str| {
@@ -1527,7 +1527,7 @@ fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> R
 fn a_plan_is_stamped_stale_by_what_it_reads_and_not_by_a_play_or_a_favourite() {
     let library = Library::open_in_memory().expect("an in-memory catalog");
 
-    titled(&library, "Echoes");
+    titled(&library, "Lantern");
 
     let planned = library.plans_stamp();
     let written = |sql: &str| {
@@ -1555,7 +1555,7 @@ fn a_plan_is_stamped_stale_by_what_it_reads_and_not_by_a_play_or_a_favourite() {
 
     let renumbered = library.plans_stamp();
 
-    written("INSERT INTO albums (title) VALUES ('Meddle')");
+    written("INSERT INTO albums (title) VALUES ('Tideline')");
 
     let albumed = library.plans_stamp();
 
@@ -1585,17 +1585,17 @@ fn the_vocabulary_is_read_again_once_another_connection_has_written_the_catalog(
     let path = scratch.path.join("catalog.db");
     let window = Library::open(&path).expect("a catalog on disc");
 
-    titled(&window, "Echoes");
+    titled(&window, "Lantern");
 
-    assert_eq!(suggested(&window, "ekhoes"), Some("Echoes".to_owned()));
+    assert_eq!(suggested(&window, "lontern"), Some("Lantern".to_owned()));
 
     let scan = Library::open(&path).expect("the same catalog opened again");
 
-    titled(&scan, "Fearless");
+    titled(&scan, "Moorings");
 
     assert_eq!(
-        suggested(&window, "fearliss"),
-        Some("Fearless".to_owned()),
+        suggested(&window, "moorongs"),
+        Some("Moorings".to_owned()),
         "a name another connection wrote was never offered to this one"
     );
 }
@@ -1609,7 +1609,7 @@ fn what_another_connection_writes_moves_the_stamp_and_what_this_one_writes_does_
 
     assert!(before.is_some(), "the stamp went unread");
 
-    titled(&window, "Echoes");
+    titled(&window, "Lantern");
 
     assert_eq!(
         window.written_elsewhere(),
@@ -1619,7 +1619,7 @@ fn what_another_connection_writes_moves_the_stamp_and_what_this_one_writes_does_
 
     let model = Library::open(&path).expect("the same catalog opened again");
 
-    titled(&model, "Fearless");
+    titled(&model, "Moorings");
 
     assert_ne!(
         window.written_elsewhere(),
@@ -1721,7 +1721,7 @@ fn a_narrowing_with_nothing_a_search_reads_matches_nothing_rather_than_everythin
     assert!(matches!(cuts_matching("???", "e"), Narrowed::Nothing));
     assert!(matches!(cuts_matching("!!!", "e"), Narrowed::Nothing));
     assert!(matches!(cuts_matching("", "e"), Narrowed::Unasked));
-    assert!(matches!(cuts_matching("echoes", "e"), Narrowed::To(_)));
+    assert!(matches!(cuts_matching("lantern", "e"), Narrowed::To(_)));
     assert!(scoped(&TrackQuery::default(), Some("???"), MusicFilters::default()).is_none());
     assert!(scoped(&TrackQuery::default(), None, MusicFilters::default()).is_some());
 }
@@ -2073,14 +2073,14 @@ fn the_tracks_among_some_paths_are_those_the_named_roots_hold_however_many_are_a
 {
     let library = Library::open_in_memory()?;
 
-    titled(&library, "Echoes");
+    titled(&library, "Lantern");
     titled(&library, "Days");
 
-    let echoes = PathBuf::from("/music/Echoes.wav");
+    let slow_water = PathBuf::from("/music/Lantern.wav");
     let days = PathBuf::from("/music/Days.wav");
     let absent = PathBuf::from("/music/Absent.wav");
 
-    let asked = [echoes.as_path(), days.as_path(), absent.as_path()];
+    let asked = [slow_water.as_path(), days.as_path(), absent.as_path()];
 
     let everywhere = library.tracks_among(&[], &asked)?;
     let under_music = library.tracks_among(&[PathBuf::from("/music")], &asked)?;
@@ -2088,20 +2088,20 @@ fn the_tracks_among_some_paths_are_those_the_named_roots_hold_however_many_are_a
 
     assert_eq!(
         everywhere,
-        AHashSet::from_iter([echoes.clone(), days.clone()])
+        AHashSet::from_iter([slow_water.clone(), days.clone()])
     );
     assert_eq!(under_music, everywhere);
     assert!(under_nothing.is_empty());
 
     let many: Vec<PathBuf> = (0..PATHS_ASKED_AT_ONCE * 2 + 1)
         .map(|at| PathBuf::from(format!("/music/{at}.wav")))
-        .chain([echoes.clone()])
+        .chain([slow_water.clone()])
         .collect();
     let many: Vec<&Path> = many.iter().map(PathBuf::as_path).collect();
 
     assert_eq!(
         library.tracks_among(&[], &many)?,
-        AHashSet::from_iter([echoes])
+        AHashSet::from_iter([slow_water])
     );
     Ok(())
 }

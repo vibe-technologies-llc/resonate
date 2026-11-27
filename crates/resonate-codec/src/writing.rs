@@ -2258,15 +2258,15 @@ mod tests {
         const NEVER_A_PROCESS: u32 = 999_999_999;
 
         let folder = Folder::new();
-        let track = folder.root.join("Echoes.flac");
+        let track = folder.root.join("Slow Water.flac");
         let left = folder
             .root
-            .join(format!(".Echoes.{NEVER_A_PROCESS}-3.flac"));
+            .join(format!(".Slow Water.{NEVER_A_PROCESS}-3.flac"));
         let ours = folder
             .root
-            .join(format!(".Echoes.{}-0.flac", process::id()));
+            .join(format!(".Slow Water.{}-0.flac", process::id()));
         let another = folder.root.join(format!(".Time.{NEVER_A_PROCESS}-0.flac"));
-        let hidden = folder.root.join(".Echoes.live.flac");
+        let hidden = folder.root.join(".Slow Water.live.flac");
 
         for path in [&track, &left, &ours, &another, &hidden] {
             fs::write(path, b"fLaC").expect("a writable temporary file");
@@ -2275,7 +2275,7 @@ mod tests {
 
         let sandboxed = folder
             .root
-            .join(format!(".Echoes.{NEVER_A_PROCESS}-4.flac"));
+            .join(format!(".Slow Water.{NEVER_A_PROCESS}-4.flac"));
         let held = Held::made(&sandboxed).expect("a copy a writer in another namespace holds");
 
         sweep_what_a_dead_writer_staged(&track);
@@ -2328,12 +2328,12 @@ mod tests {
     #[test]
     fn the_first_write_after_a_crash_finishes_what_the_dead_writer_left_and_then_lands() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.wav", &wave_with(&[(b"INAM", "Ech")]));
+        let location = folder.holding("slow water.wav", &wave_with(&[(b"INAM", "Ech")]));
         let path = location.as_path().expect("a local file").to_path_buf();
         let copy = left_whole_by_a_dead_writer(&path, &wave());
         let tags = FileTags::default();
 
-        let written = tags.write(&location, just(&[edited(TagField::Artist, "Pink Floyd")]));
+        let written = tags.write(&location, just(&[edited(TagField::Artist, "Example Band")]));
         let read = tags
             .read(&location, Picturing::Whether)
             .expect("a readable WAVE")
@@ -2342,7 +2342,10 @@ mod tests {
         written.expect("the track mended and then written");
 
         assert!(!copy.exists(), "the dead writer's whole copy was left");
-        assert_eq!(TagField::Artist.read(&read).as_deref(), Some("Pink Floyd"));
+        assert_eq!(
+            TagField::Artist.read(&read).as_deref(),
+            Some("Example Band")
+        );
         assert_eq!(TagField::Title.read(&read), None);
     }
 
@@ -2357,12 +2360,12 @@ mod tests {
 
         torn.extend_from_slice(&[TORN; TORN_RUN]);
 
-        let location = folder.holding("echoes.wav", &torn);
+        let location = folder.holding("slow water.wav", &torn);
         let path = location.as_path().expect("a local file").to_path_buf();
         let copy = left_whole_by_a_dead_writer(&path, &whole);
         let tags = FileTags::default();
 
-        let written = tags.write(&location, just(&[edited(TagField::Title, "Echoes")]));
+        let written = tags.write(&location, just(&[edited(TagField::Title, "Slow Water")]));
         let rewritten = fs::read(&path).expect("the file");
         let read = tags
             .read(&location, Picturing::Whether)
@@ -2378,7 +2381,7 @@ mod tests {
                 .any(|window| window.iter().all(|byte| *byte == TORN)),
             "the bytes the dead writer tore were kept"
         );
-        assert_eq!(TagField::Title.read(&read).as_deref(), Some("Echoes"));
+        assert_eq!(TagField::Title.read(&read).as_deref(), Some("Slow Water"));
     }
 
     const ID3_HEADER_BYTES: u64 = 10;
@@ -2409,11 +2412,11 @@ mod tests {
 
         bytes.extend_from_slice(&wave());
 
-        let location = folder.holding("echoes.wav", &bytes);
+        let location = folder.holding("slow water.wav", &bytes);
         let path = location.as_path().expect("a local file").to_path_buf();
 
         let written =
-            FileTags::default().write(&location, just(&[edited(TagField::Title, "Echoes")]));
+            FileTags::default().write(&location, just(&[edited(TagField::Title, "Slow Water")]));
 
         let Err(Error::Id3ChunkTooLarge {
             bytes: held, most, ..
@@ -2435,7 +2438,7 @@ mod tests {
     fn a_picture_that_would_grow_a_waves_id3_chunk_past_what_it_is_read_at_is_refused_before_anything_is_staged()
      {
         let folder = Folder::new();
-        let location = folder.holding("echoes.wav", &wave());
+        let location = folder.holding("slow water.wav", &wave());
         let path = location.as_path().expect("a local file").to_path_buf();
         let picture = CoverArt {
             format: ImageFormat::Png,
@@ -2560,16 +2563,16 @@ mod tests {
         let folder = Folder::new();
 
         for uncounted_pad in [false, true] {
-            let mut bytes = an_id3_tag_naming("Pink Floyd");
+            let mut bytes = an_id3_tag_naming("Example Band");
 
             bytes.extend_from_slice(&a_wave_of_odd_length(uncounted_pad));
 
-            let location = folder.holding("echoes.wav", &bytes);
+            let location = folder.holding("slow water.wav", &bytes);
             let path = location.as_path().expect("a local file");
             let riff_at = tag_in_front_of_a_riff(path)
                 .expect("a readable file")
                 .expect("a tag before the RIFF");
-            let staged = folder.root.join("echoes.staged");
+            let staged = folder.root.join("slow water.staged");
             let file = File::create(&staged).expect("a staging file");
 
             chunked(path, &file, riff_at).expect("a wave of odd length is chunked");
@@ -2596,15 +2599,15 @@ mod tests {
     #[test]
     fn a_wave_of_odd_size_behind_an_id3_tag_keeps_its_tags_when_one_is_written() {
         let folder = Folder::new();
-        let mut bytes = an_id3_tag_naming("Pink Floyd");
+        let mut bytes = an_id3_tag_naming("Example Band");
 
         bytes.extend_from_slice(&a_wave_of_odd_length(false));
 
-        let location = folder.holding("echoes.wav", &bytes);
+        let location = folder.holding("slow water.wav", &bytes);
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
 
-        tags.write(&location, just(&[edited(TagField::Title, "Echoes")]))
+        tags.write(&location, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("a written WAVE");
 
         let rewritten = fs::read(&path).expect("the file");
@@ -2623,10 +2626,13 @@ mod tests {
             "the tag still stands before the RIFF"
         );
         assert!(found.id3.is_some(), "riff.rs finds no id3 chunk");
-        assert_eq!(id3.artist().as_deref(), Some("Pink Floyd"));
-        assert_eq!(id3.title().as_deref(), Some("Echoes"));
-        assert_eq!(TagField::Artist.read(&read).as_deref(), Some("Pink Floyd"));
-        assert_eq!(TagField::Title.read(&read).as_deref(), Some("Echoes"));
+        assert_eq!(id3.artist().as_deref(), Some("Example Band"));
+        assert_eq!(id3.title().as_deref(), Some("Slow Water"));
+        assert_eq!(
+            TagField::Artist.read(&read).as_deref(),
+            Some("Example Band")
+        );
+        assert_eq!(TagField::Title.read(&read).as_deref(), Some("Slow Water"));
     }
 
     fn aiff() -> Vec<u8> {
@@ -2822,10 +2828,10 @@ mod tests {
 
     fn named_and_identified() -> Vec<TagEdit> {
         vec![
-            edited(TagField::Title, "Echoes"),
-            edited(TagField::Artist, "Pink Floyd"),
-            edited(TagField::Album, "Meddle"),
-            edited(TagField::AlbumArtist, "Pink Floyd"),
+            edited(TagField::Title, "Slow Water"),
+            edited(TagField::Artist, "Example Band"),
+            edited(TagField::Album, "Low Tide"),
+            edited(TagField::AlbumArtist, "Example Band"),
             edited(TagField::TrackNumber, "6"),
             edited(TagField::TrackTotal, "6"),
             edited(TagField::DiscNumber, "1"),
@@ -2860,29 +2866,29 @@ mod tests {
                 "f5093c06-23e3-404f-aeaa-40f72885ee3a",
             ),
             edited(TagField::Genre, "Progressive Rock"),
-            edited(TagField::Composer, "Roger Waters"),
+            edited(TagField::Composer, "Another Band"),
             edited(TagField::Conductor, "Ron Geesin"),
-            edited(TagField::Lyricist, "Roger Waters"),
-            edited(TagField::Performer, "David Gilmour"),
+            edited(TagField::Lyricist, "Another Band"),
+            edited(TagField::Performer, "Third Band"),
             edited(TagField::Remixer, "James Guthrie"),
             edited(TagField::Engineer, "John Leckie"),
-            edited(TagField::Producer, "Pink Floyd"),
+            edited(TagField::Producer, "Example Band"),
             edited(TagField::Comment, "Side two, whole"),
             edited(TagField::BeatsPerMinute, "68"),
             edited(TagField::Compilation, "1"),
-            edited(TagField::Grouping, "Meddle sessions"),
-            edited(TagField::Copyright, "1971 Pink Floyd Music Ltd"),
+            edited(TagField::Grouping, "Low Tide sessions"),
+            edited(TagField::Copyright, "1971 Example Band Music Ltd"),
             edited(TagField::ReplayGainTrackGain, "-6.50 dB"),
             edited(TagField::ReplayGainTrackPeak, "0.988547"),
             edited(TagField::ReplayGainAlbumGain, "-7.25 dB"),
             edited(TagField::ReplayGainAlbumPeak, "0.999969"),
-            edited(TagField::ArtistSort, "Floyd, Pink"),
-            edited(TagField::AlbumArtistSort, "Pink Floyd"),
-            edited(TagField::TitleSort, "Echoes"),
-            edited(TagField::AlbumSort, "Meddle"),
+            edited(TagField::ArtistSort, "Band, Example"),
+            edited(TagField::AlbumArtistSort, "Example Band"),
+            edited(TagField::TitleSort, "Slow Water"),
+            edited(TagField::AlbumSort, "Low Tide"),
             edited(
                 TagField::Lyrics,
-                "[00:01.00]Overhead the albatross\n[00:05.00]Hangs motionless upon the air",
+                "[00:01.00]Sunlight the fireflies\n[00:05.00]Sways in silence over the bay",
             ),
         ]
     }
@@ -2914,7 +2920,7 @@ mod tests {
         use std::os::unix::fs::MetadataExt as _;
 
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let before = fs::metadata(&path).expect("a file").ino();
         let lengthens_in_place = Fallocate
@@ -2964,7 +2970,7 @@ mod tests {
     #[test]
     fn every_field_written_into_a_vorbis_comment_reads_back() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let tags = FileTags::default();
         let edits = named_and_identified();
 
@@ -3035,7 +3041,7 @@ mod tests {
     #[test]
     fn a_file_nobody_may_write_is_refused_rather_than_replaced() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut permissions = fs::metadata(&path).expect("a file").permissions();
 
@@ -3063,7 +3069,7 @@ mod tests {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let before = fs::metadata(&path).expect("a file").ino();
 
@@ -3086,7 +3092,7 @@ mod tests {
         let written = tags.write(&location, just(&edits));
         let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
 
-        let ours = format!(".echoes.flac.{}-", process::id());
+        let ours = format!(".slow water.flac.{}-", process::id());
         let left: Vec<PathBuf> = crate::spool::mended_under()
             .iter()
             .filter_map(|spool| fs::read_dir(spool).ok())
@@ -3116,7 +3122,7 @@ mod tests {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 
         let folder = Folder::new();
-        let location = folder.holding("echoes.wav", &a_wave_behind_an_id3_tag(0));
+        let location = folder.holding("slow water.wav", &a_wave_behind_an_id3_tag(0));
         let path = location.as_path().expect("a local file").to_path_buf();
         let before = fs::metadata(&path).expect("a file").ino();
 
@@ -3134,12 +3140,12 @@ mod tests {
         }
 
         let tags = FileTags::default();
-        let edits = [edited(TagField::Title, "Echoes")];
+        let edits = [edited(TagField::Title, "Slow Water")];
 
         let written = tags.write(&location, just(&edits));
         let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
 
-        let ours = format!(".echoes.wav.{}-", process::id());
+        let ours = format!(".slow water.wav.{}-", process::id());
         let left: Vec<PathBuf> = crate::spool::mended_under()
             .iter()
             .filter_map(|spool| fs::read_dir(spool).ok())
@@ -3166,7 +3172,7 @@ mod tests {
                         .tags
                 )
                 .as_deref(),
-            Some("Echoes")
+            Some("Slow Water")
         );
     }
 
@@ -3179,7 +3185,7 @@ mod tests {
         const SHARED_WITH_THE_GROUP: u32 = 0o640;
 
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
 
         fs::set_permissions(&path, fs::Permissions::from_mode(SHARED_WITH_THE_GROUP))
@@ -3188,7 +3194,7 @@ mod tests {
         let mode_of =
             |path: &Path| fs::metadata(path).expect("a file").permissions().mode() & 0o777;
         let tags = FileTags::default();
-        let edits = [edited(TagField::Title, &"Echoes ".repeat(4096))];
+        let edits = [edited(TagField::Title, &"Slow Water ".repeat(2606))];
 
         let staged = Staged::beside(&path).expect("a staged copy");
         let staged_mode = mode_of(&staged.path);
@@ -3207,7 +3213,7 @@ mod tests {
     #[test]
     fn a_file_another_program_changed_meanwhile_no_longer_stands_as_taken() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let taken = Taken::of(&path).expect("a writable file");
 
@@ -3227,7 +3233,7 @@ mod tests {
     #[test]
     fn an_edit_in_place_is_refused_where_another_program_changed_the_file_meanwhile() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
 
         FileTags::default()
@@ -3246,7 +3252,7 @@ mod tests {
 
         let before = fs::read(&path).expect("the file");
 
-        let landed = retitled_after(&path, &location, "Echoes (Live)", taken, &Refusing);
+        let landed = retitled_after(&path, &location, "Slow Water (Live)", taken, &Refusing);
 
         assert!(
             matches!(landed, Err(Error::ChangedWhileWritten { .. })),
@@ -3259,7 +3265,7 @@ mod tests {
     #[cfg(unix)]
     fn an_edit_the_padding_holds_lands_in_the_file_itself_rather_than_a_copy() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
 
@@ -3269,7 +3275,7 @@ mod tests {
         let standing = fs::metadata(&path).expect("the file");
 
         assert!(
-            retitled(&path, &location, "Echoes (Live)").expect("an edit in place"),
+            retitled(&path, &location, "Slow Water (Live)").expect("an edit in place"),
             "an edit the padding holds was not landed in place"
         );
 
@@ -3283,7 +3289,7 @@ mod tests {
                 .tags
                 .title
                 .as_deref(),
-            Some("Echoes (Live)")
+            Some("Slow Water (Live)")
         );
         assert_eq!(
             fs::read_dir(&folder.root).expect("the folder").count(),
@@ -3336,14 +3342,14 @@ mod tests {
     fn a_tag_after_the_audio_of_a_wave_file_is_rewritten_in_place_whatever_the_size_of_the_file() {
         let folder = Folder::new();
         let location = folder.holding(
-            "echoes.wav",
-            &wave_long_with_a_title_after_the_audio("Echoes"),
+            "slow water.wav",
+            &wave_long_with_a_title_after_the_audio("Slow Water"),
         );
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
         let standing = fs::metadata(&path).expect("the file");
 
-        let longer = "Echoes (Live at Pompeii, the director's cut)";
+        let longer = "Slow Water (Live at the Quarry, the director's cut)";
 
         assert!(
             retitled(&path, &location, longer).expect("an edit in place"),
@@ -3393,7 +3399,7 @@ mod tests {
     #[cfg(unix)]
     fn an_edit_a_leading_id3_tag_has_room_for_lands_in_the_file_itself() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.mp3", &mp3());
+        let location = folder.holding("slow water.mp3", &mp3());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
 
@@ -3403,7 +3409,7 @@ mod tests {
         let standing = fs::metadata(&path).expect("the file");
 
         assert!(
-            retitled(&path, &location, "Echoes (Live)").expect("an edit in place"),
+            retitled(&path, &location, "Slow Water (Live)").expect("an edit in place"),
             "an edit the tag's padding holds was not landed in place"
         );
 
@@ -3417,19 +3423,19 @@ mod tests {
             .expect("a readable MP3")
             .tags;
 
-        assert_eq!(read.title.as_deref(), Some("Echoes (Live)"));
-        assert_eq!(read.album.as_deref(), Some("Meddle"));
+        assert_eq!(read.title.as_deref(), Some("Slow Water (Live)"));
+        assert_eq!(read.album.as_deref(), Some("Low Tide"));
     }
 
     #[test]
     fn an_edit_that_moves_the_audio_is_left_to_a_whole_copy() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let before = fs::read(&path).expect("the file");
 
         assert!(
-            !retitled(&path, &location, &"Echoes ".repeat(4096)).expect("a refusal"),
+            !retitled(&path, &location, &"Slow Water ".repeat(2606)).expect("a refusal"),
             "an edit that moved the audio was landed in place"
         );
         assert_eq!(fs::read(&path).expect("the file"), before);
@@ -3455,7 +3461,7 @@ mod tests {
     #[test]
     fn a_staged_copy_is_read_and_written_through_its_held_handle_whatever_its_name_now_names() {
         let folder = Folder::new();
-        let staged = Staged::beside(&folder.root.join("echoes.flac")).expect("a staged copy");
+        let staged = Staged::beside(&folder.root.join("slow water.flac")).expect("a staged copy");
 
         staged
             .held
@@ -3479,7 +3485,7 @@ mod tests {
     #[test]
     fn a_handle_on_a_staged_copy_starts_at_its_head_wherever_the_copy_was_left() {
         let folder = Folder::new();
-        let staged = Staged::beside(&folder.root.join("echoes.flac")).expect("a staged copy");
+        let staged = Staged::beside(&folder.root.join("slow water.flac")).expect("a staged copy");
 
         staged.held.file().write_all(b"0123456789").expect("a copy");
 
@@ -3513,13 +3519,13 @@ mod tests {
     #[cfg(unix)]
     fn a_head_outgrowing_its_room_is_given_room_at_the_head_and_lands_in_the_file_itself() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
         let standing = fs::read(&path).expect("the file");
         let old_head = head_length(FileType::Flac, &path);
         let inode = fs::metadata(&path).expect("the file").ino();
-        let title = "Echoes ".repeat(4096).trim_end().to_owned();
+        let title = "Slow Water ".repeat(2606).trim_end().to_owned();
 
         assert!(
             retitled_through(&path, &location, &title, &Copying { block: BLOCK })
@@ -3556,12 +3562,12 @@ mod tests {
     #[test]
     fn a_head_the_filesystem_cannot_lengthen_is_left_to_a_whole_copy() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let standing = fs::read(&path).expect("the file");
 
         assert!(
-            !retitled_through(&path, &location, &"Echoes ".repeat(4096), &Refusing)
+            !retitled_through(&path, &location, &"Slow Water ".repeat(2606), &Refusing)
                 .expect("a refusal"),
         );
         assert_eq!(fs::read(&path).expect("the file"), standing);
@@ -3575,9 +3581,9 @@ mod tests {
     #[test]
     fn a_copy_of_a_head_that_outgrew_its_room_is_made_with_the_grown_head_and_the_audio_whole() {
         for (name, bytes, kind) in [
-            ("echoes.flac", flac(), FileType::Flac),
-            ("echoes.mp3", mp3(), FileType::Mpeg),
-            ("echoes.opus", opus(), FileType::Opus),
+            ("slow water.flac", flac(), FileType::Flac),
+            ("slow water.mp3", mp3(), FileType::Mpeg),
+            ("slow water.opus", opus(), FileType::Opus),
         ] {
             let folder = Folder::new();
             let location = folder.holding(name, &bytes);
@@ -3593,7 +3599,7 @@ mod tests {
 
             let tag = tagged.primary_tag_mut().expect("a primary tag");
 
-            tag.insert_text(ItemKey::TrackTitle, "Echoes ".repeat(4096));
+            tag.insert_text(ItemKey::TrackTitle, "Slow Water ".repeat(2606));
 
             let saving = Saving {
                 kind,
@@ -3643,12 +3649,12 @@ mod tests {
     #[test]
     fn an_untagged_mp3_is_given_a_tag_and_room_for_the_next_edit_at_its_head() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.mp3", &mp3());
+        let location = folder.holding("slow water.mp3", &mp3());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
 
         assert!(
-            retitled_through(&path, &location, "Echoes", &Copying { block: BLOCK })
+            retitled_through(&path, &location, "Slow Water", &Copying { block: BLOCK })
                 .expect("an edit in place"),
             "a tag grown from nothing was not given room at the head"
         );
@@ -3661,16 +3667,16 @@ mod tests {
             "a head of {head}"
         );
         assert_eq!(landed[head..], mp3());
-        assert_eq!(titled(&tags, &location).as_deref(), Some("Echoes"));
+        assert_eq!(titled(&tags, &location).as_deref(), Some("Slow Water"));
         assert!(
-            retitled(&path, &location, &"Echoes ".repeat(500)).expect("an edit in place"),
+            retitled(&path, &location, &"Slow Water ".repeat(318)).expect("an edit in place"),
             "the padding left at the head did not hold the next edit"
         );
     }
 
     #[test]
     fn a_write_through_a_copy_leaves_padding_enough_for_the_next_edit_to_land_in_place() {
-        for (name, bytes) in [("echoes.flac", flac()), ("echoes.mp3", mp3())] {
+        for (name, bytes) in [("slow water.flac", flac()), ("slow water.mp3", mp3())] {
             let folder = Folder::new();
             let location = folder.holding(name, &bytes);
             let path = location.as_path().expect("a local file").to_path_buf();
@@ -3682,7 +3688,7 @@ mod tests {
             let standing = fs::metadata(&path).expect("the file");
 
             assert!(
-                retitled(&path, &location, &"Echoes ".repeat(600)).expect("an edit in place"),
+                retitled(&path, &location, &"Slow Water ".repeat(382)).expect("an edit in place"),
                 "{name} was left without the padding for an edit of four kilobytes"
             );
             assert_eq!(fs::metadata(&path).expect("the file").len(), standing.len());
@@ -3742,7 +3748,7 @@ mod tests {
     #[test]
     fn an_opus_comment_is_written_through_a_copy_with_room_left_and_its_audio_pages_whole() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.opus", &opus());
+        let location = folder.holding("slow water.opus", &opus());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
         let edits = named_and_identified();
@@ -3775,7 +3781,7 @@ mod tests {
     #[cfg(unix)]
     fn an_opus_edit_the_comment_has_room_for_lands_in_its_header_pages_alone() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.opus", &opus());
+        let location = folder.holding("slow water.opus", &opus());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
 
@@ -3786,7 +3792,7 @@ mod tests {
         let inode = fs::metadata(&path).expect("the file").ino();
 
         assert!(
-            retitled(&path, &location, "Echoes (Live)").expect("an edit in place"),
+            retitled(&path, &location, "Slow Water (Live)").expect("an edit in place"),
             "an edit the comment's padding holds was not landed in place"
         );
 
@@ -3797,7 +3803,10 @@ mod tests {
         assert!(ogg::pages_are_whole(&landed));
         assert_eq!(audio_of(&landed), audio_of(&standing));
         assert_ne!(landed, standing);
-        assert_eq!(titled(&tags, &location).as_deref(), Some("Echoes (Live)"));
+        assert_eq!(
+            titled(&tags, &location).as_deref(),
+            Some("Slow Water (Live)")
+        );
         assert_eq!(
             fs::read_dir(&folder.root).expect("the folder").count(),
             1,
@@ -3808,11 +3817,11 @@ mod tests {
     #[test]
     fn an_opus_comment_that_outgrew_its_room_is_given_more_at_the_head_without_moving_its_pages() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.opus", &opus());
+        let location = folder.holding("slow water.opus", &opus());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
         let standing = fs::read(&path).expect("the file");
-        let title = "Echoes ".repeat(500).trim_end().to_owned();
+        let title = "Slow Water ".repeat(318).trim_end().to_owned();
 
         assert!(
             retitled_through(&path, &location, &title, &Copying { block: BLOCK })
@@ -3836,8 +3845,8 @@ mod tests {
                 .pages
         };
         let short = "test".to_owned();
-        let long = "Echoes ".repeat(3_000);
-        let longer = "Echoes ".repeat(6_000);
+        let long = "Slow Water ".repeat(1_909);
+        let longer = "Slow Water ".repeat(3_818);
 
         for (standing_vendor, landing_vendor) in [
             (&short, &long),
@@ -3907,11 +3916,11 @@ mod tests {
     #[test]
     fn an_opus_comment_that_needs_another_page_is_renumbered_through_a_copy() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.opus", &opus());
+        let location = folder.holding("slow water.opus", &opus());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
         let standing = fs::read(&path).expect("the file");
-        let title = "Echoes ".repeat(3000).trim_end().to_owned();
+        let title = "Slow Water ".repeat(1909).trim_end().to_owned();
 
         assert!(
             !retitled_through(&path, &location, &title, &Copying { block: BLOCK })
@@ -3936,9 +3945,9 @@ mod tests {
     #[test]
     fn a_filesystem_that_inserts_ranges_lengthens_a_head_where_it_stands() {
         for (name, bytes, kind) in [
-            ("echoes.flac", flac(), FileType::Flac),
-            ("echoes.opus", opus(), FileType::Opus),
-            ("echoes.mp3", mp3(), FileType::Mpeg),
+            ("slow water.flac", flac(), FileType::Flac),
+            ("slow water.opus", opus(), FileType::Opus),
+            ("slow water.mp3", mp3(), FileType::Mpeg),
         ] {
             let folder = Folder::new();
             let location = folder.holding(name, &bytes);
@@ -3953,7 +3962,7 @@ mod tests {
             let standing = fs::read(&path).expect("the file");
             let old_head = head_length(kind, &path);
             let tags = FileTags::default();
-            let title = "Echoes ".repeat(if kind == FileType::Opus { 500 } else { 4096 });
+            let title = "Slow Water ".repeat(if kind == FileType::Opus { 318 } else { 2606 });
             let title = title.trim_end();
 
             assert!(
@@ -3972,7 +3981,7 @@ mod tests {
     #[test]
     fn every_field_written_into_an_id3_tag_reads_back() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.aiff", &aiff());
+        let location = folder.holding("slow water.aiff", &aiff());
         let tags = FileTags::default();
         let edits = named_and_identified();
 
@@ -4023,14 +4032,14 @@ mod tests {
     #[test]
     fn writing_leaves_the_tags_it_was_not_asked_about_where_they_stood() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let tags = FileTags::default();
 
         tags.write(&location, just(&named_and_identified()))
             .expect("a written FLAC");
         tags.write(
             &location,
-            just(&[edited(TagField::Title, "Echoes (2011 Remaster)")]),
+            just(&[edited(TagField::Title, "Slow Water (2011 Remaster)")]),
         )
         .expect("a rewritten FLAC");
 
@@ -4039,8 +4048,8 @@ mod tests {
             .expect("a readable FLAC")
             .tags;
 
-        assert_eq!(read.title.as_deref(), Some("Echoes (2011 Remaster)"));
-        assert_eq!(read.album.as_deref(), Some("Meddle"));
+        assert_eq!(read.title.as_deref(), Some("Slow Water (2011 Remaster)"));
+        assert_eq!(read.album.as_deref(), Some("Low Tide"));
         assert_eq!(
             read.musicbrainz_album_id.as_deref(),
             Some("1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f")
@@ -4099,9 +4108,9 @@ mod tests {
         let folder = Folder::new();
         let tags = FileTags::default();
         for (name, bytes) in [
-            ("echoes.flac", flac()),
-            ("echoes.aiff", aiff()),
-            ("echoes.wav", wave()),
+            ("slow water.flac", flac()),
+            ("slow water.aiff", aiff()),
+            ("slow water.wav", wave()),
         ] {
             let location = folder.holding(name, &bytes);
 
@@ -4153,9 +4162,9 @@ mod tests {
         let folder = Folder::new();
         let tags = FileTags::default();
         for (name, bytes) in [
-            ("echoes.flac", flac()),
-            ("echoes.aiff", aiff()),
-            ("echoes.wav", wave()),
+            ("slow water.flac", flac()),
+            ("slow water.aiff", aiff()),
+            ("slow water.wav", wave()),
         ] {
             let location = folder.holding(name, &bytes);
 
@@ -4191,9 +4200,9 @@ mod tests {
         let folder = Folder::new();
         let tags = FileTags::default();
         for (name, bytes) in [
-            ("echoes.flac", flac()),
-            ("echoes.aiff", aiff()),
-            ("echoes.wav", wave()),
+            ("slow water.flac", flac()),
+            ("slow water.aiff", aiff()),
+            ("slow water.wav", wave()),
         ] {
             let location = folder.holding(name, &bytes);
             let heard = Popularity {
@@ -4230,7 +4239,7 @@ mod tests {
     #[test]
     fn a_count_another_player_wrote_is_read_as_the_files_own() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut comments = VorbisComments::default();
 
@@ -4250,7 +4259,7 @@ mod tests {
     #[test]
     fn a_write_keeps_the_comments_it_has_no_name_for() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut comments = VorbisComments::default();
 
@@ -4261,7 +4270,7 @@ mod tests {
             .expect("a commented FLAC");
 
         FileTags::default()
-            .write(&location, just(&[edited(TagField::Title, "Echoes")]))
+            .write(&location, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("a written FLAC");
 
         let kept = Counted::read_in(&mut File::open(&path).expect("a file"), FileType::Flac)
@@ -4294,7 +4303,7 @@ mod tests {
                 .write(
                     &location,
                     just(&[
-                        edited(TagField::Title, "Echoes"),
+                        edited(TagField::Title, "Slow Water"),
                         edited(TagField::Date, "1971-10-30"),
                     ]),
                 )
@@ -4310,7 +4319,7 @@ mod tests {
             );
             assert_eq!(
                 titled(&FileTags::default(), &location).as_deref(),
-                Some("Echoes")
+                Some("Slow Water")
             );
         }
     }
@@ -4320,7 +4329,7 @@ mod tests {
         use lofty::id3::v2::PrivateFrame;
 
         let folder = Folder::new();
-        let location = folder.holding("echoes.mp3", &mp3());
+        let location = folder.holding("slow water.mp3", &mp3());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut frames = Id3v2Tag::new();
 
@@ -4331,7 +4340,7 @@ mod tests {
             .expect("a framed MP3");
 
         FileTags::default()
-            .write(&location, just(&[edited(TagField::Title, "Echoes")]))
+            .write(&location, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("a written MP3");
         FileTags::default()
             .write(
@@ -4360,7 +4369,7 @@ mod tests {
     #[test]
     fn a_performer_written_into_an_id3_tag_keeps_the_instrument_it_was_credited_with() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.mp3", &mp3());
+        let location = folder.holding("slow water.mp3", &mp3());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut frames = Id3v2Tag::new();
 
@@ -4368,8 +4377,8 @@ mod tests {
             FrameId::Valid(MUSICIAN_CREDITS.into()),
             TextEncoding::UTF8,
             vec![
-                (Cow::from("guitar"), Cow::from("David Gilmour")),
-                (Cow::from("bass"), Cow::from("Roger Waters")),
+                (Cow::from("guitar"), Cow::from("Third Band")),
+                (Cow::from("bass"), Cow::from("Another Band")),
             ],
         )));
         frames
@@ -4380,7 +4389,7 @@ mod tests {
 
         tags.write(
             &location,
-            just(&[edited(TagField::Performer, "David Gilmour; Nick Mason")]),
+            just(&[edited(TagField::Performer, "Third Band; Nick Mason")]),
         )
         .expect("a written MP3");
 
@@ -4398,7 +4407,7 @@ mod tests {
         assert_eq!(
             credits.key_value_pairs.as_ref(),
             [
-                (Cow::from("guitar"), Cow::from("David Gilmour")),
+                (Cow::from("guitar"), Cow::from("Third Band")),
                 (Cow::from(""), Cow::from("Nick Mason")),
             ]
         );
@@ -4409,7 +4418,7 @@ mod tests {
                 .credits
                 .performer
                 .as_deref(),
-            Some("David Gilmour; Nick Mason")
+            Some("Third Band; Nick Mason")
         );
 
         tags.write(
@@ -4434,7 +4443,7 @@ mod tests {
     #[test]
     fn a_rating_another_player_wrote_is_left_where_it_stands() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut tagged = lofty::read_from_path(&path).expect("a readable FLAC");
 
@@ -4489,7 +4498,7 @@ mod tests {
     #[test]
     fn a_picture_written_into_a_vorbis_comment_reads_back() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let tags = FileTags::default();
         let cover = painted(200);
 
@@ -4507,7 +4516,7 @@ mod tests {
     #[test]
     fn a_picture_written_into_an_id3_tag_reads_back() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.aiff", &aiff());
+        let location = folder.holding("slow water.aiff", &aiff());
         let tags = FileTags::default();
         let cover = painted(137);
 
@@ -4525,7 +4534,7 @@ mod tests {
     #[test]
     fn a_picture_takes_the_place_of_the_front_cover_rather_than_standing_beside_it() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let tags = FileTags::default();
         let first = painted(40);
         let second = painted(210);
@@ -4546,7 +4555,7 @@ mod tests {
     #[test]
     fn a_file_with_no_picture_in_it_answers_with_none() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let tags = FileTags::default();
 
         tags.write(&location, just(&named_and_identified()))
@@ -4570,7 +4579,7 @@ mod tests {
     #[test]
     fn one_read_answers_the_fields_and_whether_a_picture_is_there_without_copying_it() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let tags = FileTags::default();
         let picture = painted(0x40);
         let edits = named_and_identified();
@@ -4607,7 +4616,7 @@ mod tests {
     #[test]
     fn a_picture_rides_beside_the_fields_in_one_write() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let tags = FileTags::default();
         let edits = named_and_identified();
         let cover = painted(90);
@@ -4645,7 +4654,7 @@ mod tests {
     #[test]
     fn every_field_and_the_picture_written_into_a_wave_file_read_back() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.wav", &wave());
+        let location = folder.holding("slow water.wav", &wave());
         let tags = FileTags::default();
         let edits = named_and_identified();
         let cover = painted(77);
@@ -4684,7 +4693,7 @@ mod tests {
     #[cfg(unix)]
     fn a_track_reached_through_a_link_is_written_where_the_link_points_and_stays_a_link() {
         let folder = Folder::new();
-        let target = folder.holding("echoes.flac", &flac());
+        let target = folder.holding("slow water.flac", &flac());
         let link = folder.root.join("linked.flac");
 
         unix_fs::symlink(target.as_path().expect("a local file"), &link).expect("a link");
@@ -4692,33 +4701,33 @@ mod tests {
         let linked = MediaLocation::local(&link);
         let tags = FileTags::default();
 
-        tags.write(&linked, just(&[edited(TagField::Title, "Echoes")]))
+        tags.write(&linked, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("a file written through its link");
 
         assert!(
             fs::symlink_metadata(&link).is_ok_and(|held| held.is_symlink()),
             "the link became a file of its own"
         );
-        assert_eq!(titled(&tags, &target).as_deref(), Some("Echoes"));
+        assert_eq!(titled(&tags, &target).as_deref(), Some("Slow Water"));
     }
 
     #[test]
     #[cfg(unix)]
     fn a_track_with_two_names_keeps_both_and_both_read_the_write() {
         let folder = Folder::new();
-        let first = folder.holding("echoes.flac", &flac());
+        let first = folder.holding("slow water.flac", &flac());
         let second = folder.root.join("also.flac");
 
         fs::hard_link(first.as_path().expect("a local file"), &second).expect("a hard link");
 
         let tags = FileTags::default();
 
-        tags.write(&first, just(&[edited(TagField::Title, "Echoes")]))
+        tags.write(&first, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("a hard-linked file written");
 
         let also = MediaLocation::local(&second);
 
-        assert_eq!(titled(&tags, &also).as_deref(), Some("Echoes"));
+        assert_eq!(titled(&tags, &also).as_deref(), Some("Slow Water"));
         assert_eq!(
             fs::metadata(&second).expect("the second name").nlink(),
             2,
@@ -4745,7 +4754,7 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     fn a_track_with_two_names_a_reader_holds_is_not_shifted_under_it() {
         let folder = Folder::new();
-        let first = folder.holding("echoes.flac", &flac());
+        let first = folder.holding("slow water.flac", &flac());
         let path = first.as_path().expect("a local file").to_path_buf();
         let second = folder.root.join("also.flac");
 
@@ -4754,7 +4763,7 @@ mod tests {
         let reader = File::open(&second).expect("a reader of the second name");
         let tags = FileTags::default();
 
-        let written = tags.write(&first, just(&[edited(TagField::Title, "Echoes")]));
+        let written = tags.write(&first, just(&[edited(TagField::Title, "Slow Water")]));
 
         assert!(
             matches!(written, Err(Error::HeldOpenElsewhere { .. })),
@@ -4768,10 +4777,10 @@ mod tests {
         );
 
         drop(reader);
-        tags.write(&first, just(&[edited(TagField::Title, "Echoes")]))
+        tags.write(&first, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("the write once the reader let go");
 
-        assert_eq!(titled(&tags, &first).as_deref(), Some("Echoes"));
+        assert_eq!(titled(&tags, &first).as_deref(), Some("Slow Water"));
     }
 
     #[test]
@@ -4780,7 +4789,7 @@ mod tests {
         use crate::insert::HeldElsewhere;
 
         let folder = Folder::new();
-        let first = folder.holding("echoes.flac", &flac());
+        let first = folder.holding("slow water.flac", &flac());
         let path = first.as_path().expect("a local file").to_path_buf();
 
         fs::hard_link(&path, folder.root.join("also.flac")).expect("a hard link");
@@ -4807,7 +4816,7 @@ mod tests {
         const NAME: &str = "user.resonate.kept";
 
         let folder = Folder::new();
-        let location = folder.holding("echoes.flac", &flac());
+        let location = folder.holding("slow water.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
 
         if rustix::fs::setxattr(&path, NAME, b"yes", XattrFlags::empty()).is_err() {
@@ -4817,7 +4826,7 @@ mod tests {
 
         let tags = FileTags::default();
 
-        tags.write(&location, just(&[edited(TagField::Title, "Echoes")]))
+        tags.write(&location, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("a written file");
 
         let mut held = [0_u8; 8];
@@ -4826,18 +4835,18 @@ mod tests {
             rustix::fs::getxattr(&path, NAME, &mut held[..]).expect("the attribute is there");
 
         assert_eq!(held.get(..read), Some(b"yes".as_slice()));
-        assert_eq!(titled(&tags, &location).as_deref(), Some("Echoes"));
+        assert_eq!(titled(&tags, &location).as_deref(), Some("Slow Water"));
     }
 
     #[test]
     fn a_field_cleared_from_a_wave_file_is_gone_from_its_info_list_too() {
         let folder = Folder::new();
-        let listed = wave_with(&[(b"INAM", "Untitled"), (b"IART", "Pink Floyd")]);
+        let listed = wave_with(&[(b"INAM", "Untitled"), (b"IART", "Example Band")]);
 
-        let location = folder.holding("echoes.wav", &listed);
+        let location = folder.holding("slow water.wav", &listed);
         let tags = FileTags::default();
 
-        tags.write(&location, just(&[edited(TagField::Album, "Meddle")]))
+        tags.write(&location, just(&[edited(TagField::Album, "Low Tide")]))
             .expect("a written WAV");
         tags.write(
             &location,
@@ -4857,19 +4866,19 @@ mod tests {
             .tags;
 
         assert_eq!(read.title, None, "the INFO list's title came back");
-        assert_eq!(read.artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(read.album.as_deref(), Some("Meddle"));
+        assert_eq!(read.artist.as_deref(), Some("Example Band"));
+        assert_eq!(read.album.as_deref(), Some("Low Tide"));
     }
 
     #[test]
     fn a_title_written_into_a_wave_file_outranks_the_info_list_beside_it() {
         let folder = Folder::new();
-        let listed = wave_with(&[(b"INAM", "Untitled"), (b"IART", "Pink Floyd")]);
+        let listed = wave_with(&[(b"INAM", "Untitled"), (b"IART", "Example Band")]);
 
-        let location = folder.holding("echoes.wav", &listed);
+        let location = folder.holding("slow water.wav", &listed);
         let tags = FileTags::default();
 
-        tags.write(&location, just(&[edited(TagField::Title, "Echoes")]))
+        tags.write(&location, just(&[edited(TagField::Title, "Slow Water")]))
             .expect("a written WAV");
 
         let read = tags
@@ -4877,14 +4886,14 @@ mod tests {
             .expect("a readable WAV")
             .tags;
 
-        assert_eq!(read.title.as_deref(), Some("Echoes"));
-        assert_eq!(read.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(read.title.as_deref(), Some("Slow Water"));
+        assert_eq!(read.artist.as_deref(), Some("Example Band"));
     }
 
     #[test]
     fn a_format_whose_tags_this_build_would_not_read_back_is_refused() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.mpc", b"MPCK");
+        let location = folder.holding("slow water.mpc", b"MPCK");
         let tags = FileTags::default();
 
         assert!(
@@ -4893,7 +4902,7 @@ mod tests {
         );
         assert!(
             matches!(
-                tags.write(&location, just(&[edited(TagField::Title, "Echoes")])),
+                tags.write(&location, just(&[edited(TagField::Title, "Slow Water")])),
                 Err(Error::Unwritable { .. })
             ),
             "a Musepack was written rather than refused"
@@ -4904,13 +4913,13 @@ mod tests {
     fn a_location_with_no_path_behind_it_is_refused() {
         let location = MediaLocation::new(
             resonate_core::SourceId::new("elsewhere").expect("a nameable source"),
-            "echoes.flac",
+            "slow water.flac",
         );
         let tags = FileTags::default();
 
         assert!(!tags.writes(&location));
         assert!(matches!(
-            tags.write(&location, just(&[edited(TagField::Title, "Echoes")])),
+            tags.write(&location, just(&[edited(TagField::Title, "Slow Water")])),
             Err(Error::LocatorNotUsable { .. })
         ));
     }
@@ -4922,7 +4931,7 @@ mod tests {
 
         musepack.resize(64, 0);
 
-        let location = folder.holding("echoes.flac", &musepack);
+        let location = folder.holding("slow water.flac", &musepack);
         let tags = FileTags::default();
 
         assert!(
@@ -4931,7 +4940,7 @@ mod tests {
         );
         assert!(
             matches!(
-                tags.write(&location, just(&[edited(TagField::Title, "Echoes")])),
+                tags.write(&location, just(&[edited(TagField::Title, "Slow Water")])),
                 Err(Error::Unwritable { .. })
             ),
             "a Musepack named .flac was written rather than refused"
@@ -5042,7 +5051,7 @@ mod tests {
         let folder = Folder::new();
         let original = four_pages_and_a_tail();
 
-        let location = folder.holding("echoes.bin", &original);
+        let location = folder.holding("slow water.bin", &original);
         let path = location.as_path().expect("a local file").to_path_buf();
         let saving = Staging::over(&path, &folder, left_cut_short);
 
@@ -5063,7 +5072,7 @@ mod tests {
         let folder = Folder::new();
         let original = four_pages_and_a_tail();
 
-        let location = folder.holding("echoes.bin", &original);
+        let location = folder.holding("slow water.bin", &original);
         let path = location.as_path().expect("a local file").to_path_buf();
         let saving = Staging::over(&path, &folder, left_as_it_is);
         let staged_when_changed = Rc::new(Cell::new(0));
@@ -5101,7 +5110,7 @@ mod tests {
         let folder = Folder::new();
         let original = four_pages_and_a_tail();
 
-        let location = folder.holding("echoes.bin", &original);
+        let location = folder.holding("slow water.bin", &original);
         let path = location.as_path().expect("a local file").to_path_buf();
         let saving = Staging::over(&path, &folder, left_as_it_is);
 
@@ -5139,7 +5148,7 @@ mod tests {
         let path = location.as_path().expect("a local file").to_path_buf();
 
         let written =
-            FileTags::default().write(&location, just(&[edited(TagField::Title, "Echoes")]));
+            FileTags::default().write(&location, just(&[edited(TagField::Title, "Slow Water")]));
 
         assert!(
             matches!(&written, Err(Error::Io { source, .. }) if source.kind() == io::ErrorKind::InvalidData),
@@ -5155,7 +5164,7 @@ mod tests {
         let folder = Folder::new();
         let whole = a_wave_behind_an_id3_tag(0);
 
-        let location = folder.holding("echoes.wav", &whole);
+        let location = folder.holding("slow water.wav", &whole);
         let path = location.as_path().expect("a local file").to_path_buf();
         let staged_when_changed = Rc::new(Cell::new(0));
 
@@ -5174,7 +5183,7 @@ mod tests {
         });
 
         let written =
-            FileTags::default().write(&location, just(&[edited(TagField::Title, "Echoes")]));
+            FileTags::default().write(&location, just(&[edited(TagField::Title, "Slow Water")]));
         let mut changed = whole.clone();
 
         changed.push(0xaa);
@@ -5194,7 +5203,7 @@ mod tests {
         let folder = Folder::new();
         let original = four_pages_and_a_tail();
 
-        let location = folder.holding("echoes.bin", &original);
+        let location = folder.holding("slow water.bin", &original);
         let path = location.as_path().expect("a local file").to_path_buf();
 
         fs::hard_link(&path, folder.root.join("also.bin")).expect("a hard link");

@@ -2129,8 +2129,8 @@ mod tests {
     fn tags_found_ahead_of_the_container_reach_the_tag_set() {
         let wav = Wav::pcm(16)
             .with_text(b"TIT2", "Several Species")
-            .with_text(b"TPE1", "Pink Floyd")
-            .with_text(b"TALB", "Ummagumma")
+            .with_text(b"TPE1", "Example Band")
+            .with_text(b"TALB", "Gumdrop")
             .with_text(b"TRCK", "5")
             .with_text(b"TDRC", "1969-10-25")
             .with_user_text("REPLAYGAIN_TRACK_GAIN", "-7.06 dB")
@@ -2140,8 +2140,8 @@ mod tests {
         let (_, info) = open(wav);
 
         assert_eq!(info.tags.title.as_deref(), Some("Several Species"));
-        assert_eq!(info.tags.artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(info.tags.album.as_deref(), Some("Ummagumma"));
+        assert_eq!(info.tags.artist.as_deref(), Some("Example Band"));
+        assert_eq!(info.tags.album.as_deref(), Some("Gumdrop"));
         assert_eq!(info.tags.track_number, Some(5));
         assert_eq!(info.tags.date.as_deref(), Some("1969-10-25"));
         assert_eq!(
@@ -2234,14 +2234,14 @@ mod tests {
         );
     }
 
-    const SHEET: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
-FILE "Meddle.wav" WAVE
+    const SHEET: &str = r#"PERFORMER "Example Band"
+TITLE "Low Tide"
+FILE "Low Tide.wav" WAVE
   TRACK 01 AUDIO
-    TITLE "One of These Days"
+    TITLE "Small Hours"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "Echoes"
+    TITLE "Slow Water"
     REM REPLAYGAIN_TRACK_GAIN -7.06 dB
     INDEX 01 00:00:30
 "#;
@@ -2262,17 +2262,17 @@ FILE "Meddle.wav" WAVE
 
             fs::create_dir_all(&folder).expect("a writable temporary folder");
             fs::write(
-                folder.join("Meddle.wav"),
+                folder.join("Low Tide.wav"),
                 Wav::pcm(16).build(&ramp(16)).into_inner(),
             )
             .expect("a writable temporary file");
-            fs::write(folder.join("Meddle.cue"), sheet).expect("a writable temporary file");
+            fs::write(folder.join("Low Tide.cue"), sheet).expect("a writable temporary file");
 
             Self { folder }
         }
 
         fn file(&self) -> MediaLocation {
-            MediaLocation::local(self.folder.join("Meddle.wav"))
+            MediaLocation::local(self.folder.join("Low Tide.wav"))
         }
 
         fn second_row(&self) -> FrameSpan {
@@ -2296,8 +2296,8 @@ FILE "Meddle.wav" WAVE
         let (_, info) = Decoder::open_span(&Sources::local(), &rip.file(), span)
             .expect("a wav a sheet beside it cuts");
 
-        assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
-        assert_eq!(info.tags.album.as_deref(), Some("Meddle"));
+        assert_eq!(info.tags.title.as_deref(), Some("Slow Water"));
+        assert_eq!(info.tags.album.as_deref(), Some("Low Tide"));
         assert_eq!(info.tags.track_number, Some(2));
         assert_eq!(
             info.tags.replay_gain.track_gain,
@@ -2585,7 +2585,7 @@ FILE "Meddle.wav" WAVE
     fn a_source_that_cannot_seek_is_spooled_and_keeps_even_the_tags_after_its_audio() {
         let wav = Wav::pcm(16)
             .with_info(b"INAM", "Speak to Me")
-            .with_info(b"IART", "Pink Floyd")
+            .with_info(b"IART", "Example Band")
             .with_info_after_the_data()
             .build(&vec![0; PAST_ANY_HEAD]);
 
@@ -2594,7 +2594,7 @@ FILE "Meddle.wav" WAVE
 
         assert!(piped.is_seekable, "a short pipe was not spooled");
         assert_eq!(piped.tags.title.as_deref(), Some("Speak to Me"));
-        assert_eq!(piped.tags.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(piped.tags.artist.as_deref(), Some("Example Band"));
         assert_eq!(piped.tags, seekable.tags);
     }
 
@@ -2612,8 +2612,8 @@ FILE "Meddle.wav" WAVE
     fn a_riff_info_list_reaches_the_tag_set_symphonia_never_exposes() {
         let wav = Wav::pcm(16)
             .with_info(b"INAM", "Speak to Me")
-            .with_info(b"IART", "Pink Floyd")
-            .with_info(b"IPRD", "The Dark Side of the Moon")
+            .with_info(b"IART", "Example Band")
+            .with_info(b"IPRD", "The Far Side of the Lake")
             .with_info(b"IGNR", "Progressive Rock")
             .with_info(b"ICRD", "1973-03-01")
             .with_info(b"ITRK", "1/10")
@@ -2622,11 +2622,8 @@ FILE "Meddle.wav" WAVE
         let (_, info) = open(wav);
 
         assert_eq!(info.tags.title.as_deref(), Some("Speak to Me"));
-        assert_eq!(info.tags.artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(
-            info.tags.album.as_deref(),
-            Some("The Dark Side of the Moon")
-        );
+        assert_eq!(info.tags.artist.as_deref(), Some("Example Band"));
+        assert_eq!(info.tags.album.as_deref(), Some("The Far Side of the Lake"));
         assert_eq!(info.tags.genre.as_deref(), Some("Progressive Rock"));
         assert_eq!(info.tags.date.as_deref(), Some("1973-03-01"));
         assert_eq!(info.tags.track_number, Some(1));
@@ -2635,11 +2632,11 @@ FILE "Meddle.wav" WAVE
     #[test]
     fn the_info_ids_that_credit_a_recording_reach_the_tag_set_the_same_way() {
         let wav = Wav::pcm(16)
-            .with_info(b"INAM", "Us and Them")
+            .with_info(b"INAM", "Near and Far")
             .with_info(b"IMUS", "Richard Wright")
-            .with_info(b"IWRI", "Roger Waters")
+            .with_info(b"IWRI", "Another Band")
             .with_info(b"IENG", "Alan Parsons")
-            .with_info(b"IPRO", "Pink Floyd")
+            .with_info(b"IPRO", "Example Band")
             .with_info(b"ICOP", "(c) 1973 Harvest")
             .with_info(b"ISFT", "Exact Audio Copy")
             .with_info(b"ICMT", "ripped from the 1994 remaster")
@@ -2648,11 +2645,11 @@ FILE "Meddle.wav" WAVE
         let (_, info) = open(wav);
         let tags = &info.tags;
 
-        assert_eq!(tags.title.as_deref(), Some("Us and Them"));
+        assert_eq!(tags.title.as_deref(), Some("Near and Far"));
         assert_eq!(tags.credits.composer.as_deref(), Some("Richard Wright"));
-        assert_eq!(tags.credits.lyricist.as_deref(), Some("Roger Waters"));
+        assert_eq!(tags.credits.lyricist.as_deref(), Some("Another Band"));
         assert_eq!(tags.credits.engineer.as_deref(), Some("Alan Parsons"));
-        assert_eq!(tags.credits.producer.as_deref(), Some("Pink Floyd"));
+        assert_eq!(tags.credits.producer.as_deref(), Some("Example Band"));
         assert_eq!(tags.copyright.as_deref(), Some("(c) 1973 Harvest"));
         assert_eq!(tags.encoder.as_deref(), Some("Exact Audio Copy"));
         assert_eq!(
@@ -2666,12 +2663,12 @@ FILE "Meddle.wav" WAVE
         let wav = Wav::pcm(16)
             .with_info(b"INAM", "Untitled")
             .with_info(b"IART", "Unknown Artist")
-            .with_text(b"TIT2", "Echoes")
+            .with_text(b"TIT2", "Slow Water")
             .build(&ramp(16));
 
         let (_, info) = open(wav);
 
-        assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
+        assert_eq!(info.tags.title.as_deref(), Some("Slow Water"));
         assert_eq!(info.tags.artist.as_deref(), Some("Unknown Artist"));
     }
 
@@ -2682,7 +2679,7 @@ FILE "Meddle.wav" WAVE
         std::fs::write(
             &path,
             Wav::pcm(24)
-                .with_text(b"TIT2", "Echoes")
+                .with_text(b"TIT2", "Slow Water")
                 .build(&ramp(24))
                 .into_inner(),
         )
@@ -2697,7 +2694,7 @@ FILE "Meddle.wav" WAVE
 
         assert_eq!(probed, opened);
         assert_eq!(probed.spec.format, SampleFormat::S24);
-        assert_eq!(probed.tags.title.as_deref(), Some("Echoes"));
+        assert_eq!(probed.tags.title.as_deref(), Some("Slow Water"));
     }
 
     struct Standing {
@@ -2716,8 +2713,8 @@ FILE "Meddle.wav" WAVE
             (*location == self.row && span == self.span).then(|| crate::StoodIn {
                 location: self.object.clone(),
                 tags: TagSet {
-                    title: Some("Echoes".to_owned()),
-                    lyrics: Some("Overhead the albatross".to_owned()),
+                    title: Some("Slow Water".to_owned()),
+                    lyrics: Some("Sunlight the fireflies".to_owned()),
                     ..TagSet::default()
                 },
                 bits: self.bits,
@@ -2734,7 +2731,7 @@ FILE "Meddle.wav" WAVE
 
         fs::write(&object, Wav::pcm(16).build(&samples).into_inner()).expect("a writable temp dir");
 
-        let row = MediaLocation::local("/music/gone/Meddle.flac");
+        let row = MediaLocation::local("/music/gone/Low Tide.flac");
         let span = FrameSpan::between(Frames(44_100), Frames(88_200));
 
         let sources = Sources::local().standing_in(std::sync::Arc::new(Standing {
@@ -2756,8 +2753,8 @@ FILE "Meddle.wav" WAVE
             decoded, samples,
             "the span was applied to an object that is the span"
         );
-        assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
-        assert_eq!(info.tags.lyrics.as_deref(), Some("Overhead the albatross"));
+        assert_eq!(info.tags.title.as_deref(), Some("Slow Water"));
+        assert_eq!(info.tags.lyrics.as_deref(), Some("Sunlight the fireflies"));
         assert_eq!(
             info.bits_per_coded_sample,
             Some(SOURCE_BITS),

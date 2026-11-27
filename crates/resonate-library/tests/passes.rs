@@ -130,7 +130,7 @@ fn a_portrait_is_fetched_only_where_the_profile_names_an_image_and_none_is_held(
 
     tree.write(
         "Orbits/1.wav",
-        &orbits_track("One of These Days", 1)
+        &orbits_track("Small Mercies", 1)
             .described(MUSICBRAINZ_ARTIST, ORBITERS)
             .build(),
     );
@@ -391,7 +391,7 @@ fn a_rescan_that_adds_a_track_takes_it_off_the_missing_count_without_asking_agai
 
     tree.write(
         "Orbits/1.wav",
-        &orbits_track("One of These Days", 1)
+        &orbits_track("Small Mercies", 1)
             .described(MUSICBRAINZ_ALBUM, RELEASE)
             .build(),
     );
@@ -411,7 +411,7 @@ fn a_rescan_that_adds_a_track_takes_it_off_the_missing_count_without_asking_agai
 
     tree.write(
         "Orbits/2.wav",
-        &orbits_track("A Pillow of Winds", 2)
+        &orbits_track("A Quilt of Winds", 2)
             .described(MUSICBRAINZ_ALBUM, RELEASE)
             .build(),
     );
@@ -1231,7 +1231,7 @@ fn an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_
 -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters"),
     )?;
 
@@ -1239,7 +1239,7 @@ fn an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_
         .track_at(&file, None)?
         .expect("the catalog holds the track");
 
-    let whole = orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(2));
+    let whole = orbits_recording(RECORDING, "Small Mercies", CODE, on_orbits(2));
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(isrc(CODE), whole.clone())],
         recordings: vec![whole],
@@ -1296,14 +1296,14 @@ fn a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else
     tree.write(
         "1.wav",
         &Wav::new()
-            .text(TITLE, "One of These Days")
+            .text(TITLE, "Small Mercies")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
     tree.write(
         "2.wav",
         &Wav::new()
-            .text(TITLE, "Fearless")
+            .text(TITLE, "Paper Boats")
             .text(ARTIST, "The Orbiters")
             .build(),
     );
@@ -1318,7 +1318,7 @@ fn a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else
     let song = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|track| track.title == "Fearless")
+        .find(|track| track.title == "Paper Boats")
         .expect("the catalog holds the song")
         .id;
     let looked_up = look_up_the_song(&library, &fake, song)?;

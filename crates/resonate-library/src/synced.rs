@@ -1907,8 +1907,8 @@ mod tests {
 
         for (id, value) in [
             (b"INAM", title),
-            (b"IART", "Pink Floyd"),
-            (b"IPRD", "Meddle"),
+            (b"IART", "Example Band"),
+            (b"IPRD", "Tideline"),
         ] {
             let mut text = value.as_bytes().to_vec();
 
@@ -1933,8 +1933,8 @@ mod tests {
         Recording {
             mbid: None,
             title: title.into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            artist: "Example Band".into(),
+            album: "Tideline".into(),
             length: Some(Duration::from_secs(1)),
         }
     }
@@ -2003,7 +2003,7 @@ mod tests {
 
         let recording = Recording {
             mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("id")),
-            ..song("Echoes")
+            ..song("Lantern")
         };
 
         library
@@ -2023,8 +2023,8 @@ mod tests {
                     })
                     .expect("track");
 
-                assert_eq!(recovered.0, "Echoes");
-                assert_eq!(recovered.1.as_deref(), Some("Pink Floyd"));
+                assert_eq!(recovered.0, "Lantern");
+                assert_eq!(recovered.1.as_deref(), Some("Example Band"));
                 assert_eq!(recovered.2, recording.mbid.map(|id| id.to_string()));
                 Ok(())
             })
@@ -2039,7 +2039,7 @@ mod tests {
         let catalog = scratch.path.join("catalog.db");
 
         fs::create_dir_all(&music).expect("a folder");
-        fs::write(music.join("echoes.wav"), named_wav("Echoes")).expect("a written song");
+        fs::write(music.join("lantern.wav"), named_wav("Lantern")).expect("a written song");
 
         let window = Library::open(&catalog).expect("a catalog on disc");
         let other = Library::open(&catalog).expect("the same catalog opened again");
@@ -2054,7 +2054,7 @@ mod tests {
         let unheld = other
             .inner()
             .write(|_| credit(window.inner(), &song("Absent"), &[1; 16], 7, 1_000, heard));
-        let held = credit(window.inner(), &song("Echoes"), &[1; 16], 8, 1_000, heard);
+        let held = credit(window.inner(), &song("Lantern"), &[1; 16], 8, 1_000, heard);
 
         assert!(!unheld.expect("answered while the write is held elsewhere"));
         assert!(held.expect("credited"));
@@ -2063,12 +2063,12 @@ mod tests {
     #[test]
     fn a_song_filed_but_not_yet_catalogued_is_held_while_its_file_stands() {
         let scratch = Scratch::new("filed-unscanned");
-        let path = scratch.path.join("San Tropez.wav");
+        let path = scratch.path.join("Harbour Lights.wav");
 
-        fs::write(&path, named_wav("San Tropez")).expect("a written song");
+        fs::write(&path, named_wav("Harbour Lights")).expect("a written song");
 
         let library = Library::open_in_memory().expect("a catalog");
-        let asked = song("San Tropez (2011 Remaster)");
+        let asked = song("Harbour Lights (2011 Remaster)");
 
         library
             .note_song_received_at(&asked, &path, ReceivedAt::NewlyPlaced)
@@ -2090,7 +2090,7 @@ mod tests {
         let drive = scratch.path.join("drive");
 
         fs::create_dir_all(&drive).expect("a folder");
-        fs::write(drive.join("echoes.wav"), named_wav("Echoes")).expect("a written song");
+        fs::write(drive.join("lantern.wav"), named_wav("Lantern")).expect("a written song");
 
         let library = Library::open_in_memory().expect("a catalog");
 
@@ -2105,13 +2105,13 @@ mod tests {
             .and_then(PassHandle::join)
             .expect("a scan");
 
-        let echoes = song("Echoes");
+        let slow_water = song("Lantern");
 
-        assert!(library.holds_recording(&echoes).expect("asked"));
+        assert!(library.holds_recording(&slow_water).expect("asked"));
 
         fs::rename(&drive, scratch.path.join("elsewhere")).expect("the drive goes");
 
-        let unremembered = library.holds_recording(&echoes).expect("asked");
+        let unremembered = library.holds_recording(&slow_water).expect("asked");
 
         library
             .inner()
@@ -2126,7 +2126,7 @@ mod tests {
             })
             .expect("a remembered volume");
 
-        let remembered = library.holds_recording(&echoes).expect("asked");
+        let remembered = library.holds_recording(&slow_water).expect("asked");
 
         assert!(!unremembered);
         assert!(remembered);

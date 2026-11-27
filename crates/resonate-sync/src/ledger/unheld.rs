@@ -291,9 +291,9 @@ mod tests {
     fn identified() -> Recording {
         Recording {
             mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid")),
-            title: "Echoes".into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            title: "Slow Water".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             length: Some(Duration::from_secs(1_400)),
         }
     }
@@ -320,7 +320,7 @@ mod tests {
             .expect("a state row");
 
         let words = Answer::Lyrics(SharedLyrics {
-            text: "Overhead the albatross".into(),
+            text: "Sunlight the fireflies".into(),
             synced: false,
         });
 

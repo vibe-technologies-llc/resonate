@@ -204,10 +204,13 @@ fn an_observer_is_told_of_each_file_once_in_name_order() -> Result<()> {
 #[test]
 fn a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time() -> Result<()> {
     let tree = Tree::new();
-    let real = tree.wav("albums/meddle/echoes.wav");
+    let real = tree.wav("albums/tideline/lantern.wav");
 
     for named in ["a link", "z link"] {
-        if !link_to_directory(&tree.path().join("albums/meddle"), &tree.path().join(named)) {
+        if !link_to_directory(
+            &tree.path().join("albums/tideline"),
+            &tree.path().join(named),
+        ) {
             return Ok(());
         }
     }
@@ -223,7 +226,7 @@ fn a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time() -> Resu
 #[test]
 fn a_link_to_a_folder_holding_the_root_is_not_walked_back_into_it() -> Result<()> {
     let tree = Tree::new();
-    let real = tree.wav("music/echoes.wav");
+    let real = tree.wav("music/lantern.wav");
 
     if !link_to_directory(tree.path(), &tree.path().join("music/everything")) {
         return Ok(());

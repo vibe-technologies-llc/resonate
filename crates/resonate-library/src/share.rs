@@ -360,14 +360,14 @@ mod tests {
     use super::*;
 
     const SPOTIFY: &str = "https://open.spotify.com/track/1a2b3c";
-    const WIKIPEDIA: &str = "https://en.wikipedia.org/wiki/Echoes";
+    const WIKIPEDIA: &str = "https://en.wikipedia.org/wiki/Lantern";
     const RECORDING: &str = "b1a9c0de-1111-4222-8333-444455556666";
 
-    fn echoes() -> Shared {
+    fn slow_water() -> Shared {
         Shared {
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
+            title: "Lantern".to_owned(),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Tideline".to_owned()),
             year: Some(1971),
             recording: None,
             isrc: None,
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn a_share_with_nothing_song_link_can_open_is_nothing() {
-        assert_eq!(echoes().written(), None);
+        assert_eq!(slow_water().written(), None);
     }
 
     #[test]
@@ -394,7 +394,7 @@ mod tests {
                 service: Service::Spotify,
                 url: SPOTIFY.to_owned(),
             }],
-            ..echoes()
+            ..slow_water()
         };
 
         assert_eq!(
@@ -439,7 +439,7 @@ mod tests {
                 "https://album.link/i/1559523357",
             ),
             (
-                "https://itunes.apple.com/gb/album/meddle/id1065975633",
+                "https://itunes.apple.com/gb/album/tideline/id1065975633",
                 "https://album.link/i/1065975633",
             ),
             (
@@ -471,7 +471,7 @@ mod tests {
     fn a_service_with_no_short_page_or_a_url_naming_no_id_is_handed_over_whole() {
         for url in [
             "https://music.amazon.com/albums/B00ZZZ?trackAsin=B01",
-            "https://pinkfloyd.bandcamp.com/track/echoes",
+            "https://exampleband.bandcamp.com/track/lantern",
             "https://open.spotify.com/artist/0k17h0D3J5VfsdmQ1iZtE9",
             "https://open.spotify.com/track/",
             "https://www.youtube.com/channel/UC1",
@@ -486,7 +486,7 @@ mod tests {
                 service: Service::Qobuz,
                 url: "https://open.qobuz.com/track/1?x=y".to_owned(),
             }],
-            ..echoes()
+            ..slow_water()
         };
 
         assert_eq!(
@@ -504,7 +504,7 @@ mod tests {
                 service: Service::Wikipedia,
                 url: WIKIPEDIA.to_owned(),
             }],
-            ..echoes()
+            ..slow_water()
         };
 
         assert_eq!(

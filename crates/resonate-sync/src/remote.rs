@@ -497,13 +497,13 @@ mod tests {
             first_row: 0,
             rows: vec![
                 RemoteRow {
-                    title: "Echoes".into(),
-                    artist: "Pink Floyd".into(),
+                    title: "Slow Water".into(),
+                    artist: "Example Band".into(),
                     length: Some(Duration::from_secs(1_403)),
                 },
                 RemoteRow {
-                    title: "One of These Days".into(),
-                    artist: "Pink Floyd".into(),
+                    title: "Small Hours".into(),
+                    artist: "Example Band".into(),
                     length: None,
                 },
                 RemoteRow::default(),
@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(held, Duration::from_secs(20));
         assert_eq!(
             playing.playing_row().map(|row| row.title.as_str()),
-            Some("One of These Days")
+            Some("Small Hours")
         );
     }
 

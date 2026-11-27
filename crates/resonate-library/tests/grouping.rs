@@ -604,7 +604,7 @@ fn a_compilation_whose_last_artist_arrives_later_is_gathered_by_the_scan_that_re
 
     let gathered = only_album(&library)?;
 
-    tree.write("elsewhere.wav", &Wav::new().text(ALBUM, "Animals").build());
+    tree.write("elsewhere.wav", &Wav::new().text(ALBUM, "Seasons").build());
 
     fs::write(&late, held).expect("the third track arrives");
     scan(&library, &options(&tree))?;
@@ -698,7 +698,7 @@ fn a_track_that_moves_between_the_folders_of_one_set_stays_under_the_album_it_wa
                 .text(TITLE, folder)
                 .text(ARTIST, owner)
                 .text(ALBUM_ARTIST, owner)
-                .text(ALBUM, "The Wall")
+                .text(ALBUM, "The Lighthouse")
                 .build(),
         );
     }
@@ -780,11 +780,11 @@ fn the_discs_of_a_set_in_folders_of_their_own_are_still_one_album() -> Result<()
 
     for (index, disc) in ["CD1", "Disc 2", "disk-03"].into_iter().enumerate() {
         tree.write(
-            &format!("The Wall/{disc}/{index}.wav"),
+            &format!("The Lighthouse/{disc}/{index}.wav"),
             &Wav::new()
                 .text(TITLE, &format!("track {index}"))
                 .text(ARTIST, "Ada")
-                .text(ALBUM, "The Wall")
+                .text(ALBUM, "The Lighthouse")
                 .build(),
         );
     }
@@ -809,11 +809,11 @@ fn the_discs_of_a_set_numbered_in_words_gather_the_way_numbered_ones_do() -> Res
         .enumerate()
     {
         tree.write(
-            &format!("The Wall/{disc}/{index}.wav"),
+            &format!("The Lighthouse/{disc}/{index}.wav"),
             &Wav::new()
                 .text(TITLE, &format!("track {index}"))
                 .text(ARTIST, "Ada")
-                .text(ALBUM, "The Wall")
+                .text(ALBUM, "The Lighthouse")
                 .build(),
         );
     }
@@ -858,7 +858,7 @@ fn a_folder_whose_name_merely_starts_like_a_disc_is_an_album_of_its_own() -> Res
 fn an_album_artist_still_gathers_discs_the_folders_keep_apart() -> Result<()> {
     let tree = Tree::new();
 
-    for (index, folder) in ["The Wall Part One", "The Wall Part Two"]
+    for (index, folder) in ["The Lighthouse Part One", "The Lighthouse Part Two"]
         .into_iter()
         .enumerate()
     {
@@ -868,7 +868,7 @@ fn an_album_artist_still_gathers_discs_the_folders_keep_apart() -> Result<()> {
                 .text(TITLE, &format!("track {index}"))
                 .text(ARTIST, &format!("guest {index}"))
                 .text(ALBUM_ARTIST, "Ada")
-                .text(ALBUM, "The Wall")
+                .text(ALBUM, "The Lighthouse")
                 .build(),
         );
     }

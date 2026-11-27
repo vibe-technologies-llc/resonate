@@ -831,25 +831,25 @@ mod tests {
     fn catalogued() -> Spellings {
         let mut spellings = Spellings::default();
 
-        spellings.taking(Column::Artist, "Pink Floyd");
+        spellings.taking(Column::Artist, "Pale Marsh");
         spellings.taking(Column::Artist, "Marcin Przybyłowicz");
-        spellings.taking(Column::Album, "The Dark Side of the Moon");
-        spellings.taking(Column::Title, "Echoes");
-        spellings.taking(Column::Title, "The Great Gig in the Sky");
+        spellings.taking(Column::Album, "The Far Side of the Lake");
+        spellings.taking(Column::Title, "Lantern");
+        spellings.taking(Column::Title, "The Long Walk in the Rain");
         spellings
     }
 
     #[test]
     fn the_last_word_typed_is_completed_with_a_whole_name_before_a_word_of_one() {
-        let offered = catalogued().completing("something like pi");
+        let offered = catalogued().completing("something like pa");
 
         assert_eq!(
             offered.first().map(String::as_str),
-            Some("something like Pink Floyd"),
+            Some("something like Pale Marsh"),
             "{offered:?}"
         );
         assert!(
-            offered.iter().any(|offer| offer == "something like Pink"),
+            offered.iter().any(|offer| offer == "something like Pale"),
             "{offered:?}"
         );
     }
@@ -866,25 +866,25 @@ mod tests {
 
     #[test]
     fn a_title_is_not_offered_and_nothing_is_offered_after_a_space() {
-        assert!(catalogued().completing("ech").is_empty());
-        assert!(catalogued().completing("pink ").is_empty());
+        assert!(catalogued().completing("lan").is_empty());
+        assert!(catalogued().completing("pale ").is_empty());
         assert!(catalogued().completing("").is_empty());
     }
 
     #[test]
     fn a_word_already_whole_is_not_offered_back() {
-        let offered = catalogued().completing("Floyd");
+        let offered = catalogued().completing("Marsh");
 
-        assert!(offered.iter().all(|offer| offer != "Floyd"), "{offered:?}");
+        assert!(offered.iter().all(|offer| offer != "Marsh"), "{offered:?}");
     }
 
     #[test]
     fn a_scoped_name_read_across_tokens_is_offered_as_a_phrase_the_scope_reaches() {
         let offered = catalogued()
-            .did_you_mean("artist:pnkk artist:floyd")
+            .did_you_mean("artist:pxlx artist:marsh")
             .expect("a name the catalog holds");
 
-        assert_eq!(offered, "artist:\"Pink Floyd\"");
+        assert_eq!(offered, "artist:\"Pale Marsh\"");
 
         let read = Search::read(&offered);
 
@@ -901,17 +901,20 @@ mod tests {
 
         spellings.taking(Column::Title, "Мор");
         spellings.taking(Column::Title, "東京");
-        spellings.taking(Column::Title, "Echoes");
+        spellings.taking(Column::Title, "Lantern");
 
         assert_eq!(spellings.did_you_mean("мир"), None);
         assert_eq!(spellings.did_you_mean("東北"), None);
-        assert_eq!(spellings.did_you_mean("ekhoes"), Some("Echoes".to_owned()));
+        assert_eq!(
+            spellings.did_you_mean("lontern"),
+            Some("Lantern".to_owned())
+        );
     }
 
     #[test]
     fn a_word_the_catalog_holds_is_left_alone() {
-        assert_eq!(catalogued().did_you_mean("floyd"), None);
-        assert_eq!(catalogued().did_you_mean("echoes"), None);
+        assert_eq!(catalogued().did_you_mean("marsh"), None);
+        assert_eq!(catalogued().did_you_mean("lantern"), None);
     }
 
     #[test]
@@ -923,13 +926,13 @@ mod tests {
     #[test]
     fn a_misspelt_word_is_answered_in_the_spelling_the_catalog_holds() {
         assert_eq!(
-            catalogued().did_you_mean("floid"),
-            Some("Floyd".to_owned()),
+            catalogued().did_you_mean("marih"),
+            Some("Marsh".to_owned()),
             "a letter wrong was not corrected"
         );
         assert_eq!(
-            catalogued().did_you_mean("flyod"),
-            Some("Floyd".to_owned()),
+            catalogued().did_you_mean("masrh"),
+            Some("Marsh".to_owned()),
             "two letters typed the wrong way round count as one mistake"
         );
         assert_eq!(
@@ -942,8 +945,8 @@ mod tests {
     #[test]
     fn only_the_word_that_is_wrong_is_corrected() {
         assert_eq!(
-            catalogued().did_you_mean("pink floid"),
-            Some("pink Floyd".to_owned())
+            catalogued().did_you_mean("pale marih"),
+            Some("pale Marsh".to_owned())
         );
     }
 
@@ -961,34 +964,34 @@ mod tests {
     #[test]
     fn a_scoped_word_is_weighed_against_that_column_alone() {
         assert_eq!(
-            catalogued().did_you_mean("artist:ekhoes"),
+            catalogued().did_you_mean("artist:lontern"),
             None,
             "a title was suggested for an artist"
         );
         assert_eq!(
-            catalogued().did_you_mean("title:ekhoes"),
-            Some("title:Echoes".to_owned())
+            catalogued().did_you_mean("title:lontern"),
+            Some("title:Lantern".to_owned())
         );
     }
 
     #[test]
     fn a_term_beside_a_word_is_carried_through_as_it_was_read() {
         assert_eq!(
-            catalogued().did_you_mean("floid year:1973"),
-            Some("Floyd year:1973".to_owned())
+            catalogued().did_you_mean("marih year:1973"),
+            Some("Marsh year:1973".to_owned())
         );
     }
 
     #[test]
     fn a_word_a_search_denies_is_not_corrected() {
-        assert_eq!(catalogued().did_you_mean("-floid"), None);
+        assert_eq!(catalogued().did_you_mean("-marih"), None);
     }
 
     #[test]
     fn a_phrase_is_corrected_a_word_at_a_time_and_kept_a_phrase() {
         assert_eq!(
-            catalogued().did_you_mean("\"dark syde\""),
-            Some("\"dark Side\"".to_owned())
+            catalogued().did_you_mean("\"far syde\""),
+            Some("\"far Side\"".to_owned())
         );
     }
 
@@ -997,8 +1000,8 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("\"the great gig in teh sky\""),
-            Some("\"The Great Gig in the Sky\"".to_owned()),
+            spellings.did_you_mean("\"the long walk in teh rain\""),
+            Some("\"The Long Walk in the Rain\"".to_owned()),
             "a word too short to correct on its own left the whole phrase unanswered"
         );
     }
@@ -1008,8 +1011,8 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("the great gig in teh sky"),
-            Some("The Great Gig in the Sky".to_owned()),
+            spellings.did_you_mean("the long walk in teh rain"),
+            Some("The Long Walk in the Rain".to_owned()),
             "a word too short to correct on its own left the run of tokens unanswered"
         );
     }
@@ -1019,12 +1022,12 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("pink floid"),
-            Some("pink Floyd".to_owned()),
+            spellings.did_you_mean("pale marih"),
+            Some("pale Marsh".to_owned()),
             "a word the catalog could spell on its own was taken into a whole name"
         );
         assert_eq!(
-            spellings.did_you_mean("the great gig in the sky"),
+            spellings.did_you_mean("the long walk in the rain"),
             None,
             "a name the catalog holds was answered with itself"
         );
@@ -1035,8 +1038,8 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("the great gig in teh sky metallica"),
-            Some("The Great Gig in the Sky metallica".to_owned()),
+            spellings.did_you_mean("the long walk in teh rain metallica"),
+            Some("The Long Walk in the Rain metallica".to_owned()),
             "a token beside the name was drawn into it or lost"
         );
     }
@@ -1046,7 +1049,7 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("the great gig added:7d in teh sky"),
+            spellings.did_you_mean("the long walk added:7d in teh rain"),
             None,
             "a run was read through a term that stands between its tokens"
         );
@@ -1067,9 +1070,12 @@ mod tests {
     fn a_phrase_the_catalog_holds_as_a_whole_name_is_left_alone() {
         let spellings = catalogued();
 
-        assert_eq!(spellings.did_you_mean("\"the great gig in the sky\""), None);
         assert_eq!(
-            spellings.did_you_mean("\"the great gig\""),
+            spellings.did_you_mean("\"the long walk in the rain\""),
+            None
+        );
+        assert_eq!(
+            spellings.did_you_mean("\"the long walk\""),
             None,
             "a phrase that begins a name the catalog holds was corrected"
         );
@@ -1080,8 +1086,8 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("thegreatgig"),
-            Some("the Great Gig".to_owned()),
+            spellings.did_you_mean("thelongwalk"),
+            Some("the Long Walk".to_owned()),
             "a run that cuts into three was left as it was"
         );
     }
@@ -1123,13 +1129,13 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("pinkfloyd"),
-            Some("Pink Floyd".to_owned()),
+            spellings.did_you_mean("palemarsh"),
+            Some("Pale Marsh".to_owned()),
             "a run-together was not split into the two words the catalog holds"
         );
         assert_eq!(
-            spellings.did_you_mean("darkside"),
-            Some("Dark Side".to_owned())
+            spellings.did_you_mean("farside"),
+            Some("Far Side".to_owned())
         );
     }
 
@@ -1138,11 +1144,14 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("pink floy d"),
-            Some("pink Floyd".to_owned()),
+            spellings.did_you_mean("pale mars h"),
+            Some("pale Marsh".to_owned()),
             "two halves of one word were not run together"
         );
-        assert_eq!(spellings.did_you_mean("ech oes"), Some("Echoes".to_owned()));
+        assert_eq!(
+            spellings.did_you_mean("lan tern"),
+            Some("Lantern".to_owned())
+        );
     }
 
     #[test]
@@ -1150,8 +1159,8 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("artist:pinkfloyd"),
-            Some("artist:\"Pink Floyd\"".to_owned()),
+            spellings.did_you_mean("artist:palemarsh"),
+            Some("artist:\"Pale Marsh\"".to_owned()),
             "the scope reached only the first word of the correction"
         );
     }
@@ -1160,8 +1169,8 @@ mod tests {
     fn two_words_the_catalog_holds_apart_are_not_run_together() {
         let spellings = catalogued();
 
-        assert_eq!(spellings.did_you_mean("pink floyd"), None);
-        assert_eq!(spellings.did_you_mean("dark side"), None);
+        assert_eq!(spellings.did_you_mean("pale marsh"), None);
+        assert_eq!(spellings.did_you_mean("far side"), None);
     }
 
     #[test]
@@ -1169,7 +1178,7 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("pinkfloid"),
+            spellings.did_you_mean("palemarih"),
             None,
             "a run-together was answered although the catalog holds no such second word"
         );
@@ -1197,9 +1206,9 @@ mod tests {
         assert!(!worth_asking(&Search::read("sky")));
         assert!(!worth_asking(&Search::read("year:1973")));
         assert!(!worth_asking(&Search::read("")));
-        assert!(!worth_asking(&Search::read("-floid")));
-        assert!(worth_asking(&Search::read("floid")));
-        assert!(worth_asking(&Search::read("sky floid")));
+        assert!(!worth_asking(&Search::read("-marih")));
+        assert!(worth_asking(&Search::read("marih")));
+        assert!(worth_asking(&Search::read("sky marih")));
         assert!(
             worth_asking(&Search::read("flo yd")),
             "two runs too short to mistype apart are long enough run together"
@@ -1208,12 +1217,12 @@ mod tests {
 
     #[test]
     fn a_distance_is_bounded_by_what_the_word_can_afford() {
-        assert_eq!(apart_by("floyd", "floyd", 1), Some(0));
-        assert_eq!(apart_by("floyd", "floid", 1), Some(1));
-        assert_eq!(apart_by("floyd", "flyod", 1), Some(1));
-        assert_eq!(apart_by("floyd", "flood", 1), Some(1));
-        assert_eq!(apart_by("floyd", "blues", 1), None);
-        assert_eq!(apart_by("floyd", "fl", 1), None);
+        assert_eq!(apart_by("marsh", "marsh", 1), Some(0));
+        assert_eq!(apart_by("marsh", "marih", 1), Some(1));
+        assert_eq!(apart_by("marsh", "masrh", 1), Some(1));
+        assert_eq!(apart_by("marsh", "maroh", 1), Some(1));
+        assert_eq!(apart_by("marsh", "blues", 1), None);
+        assert_eq!(apart_by("marsh", "ma", 1), None);
     }
 
     #[test]

@@ -487,9 +487,9 @@ mod tests {
             id: WantId::new(1).expect("an id"),
             release_track: ReleaseTrackId::new(1).expect("an id"),
             album: AlbumId::new(1).expect("an id"),
-            album_title: "Meddle".to_owned(),
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            album_title: "Tideline".to_owned(),
+            title: "Lantern".to_owned(),
+            artist: Some("Example Band".to_owned()),
             recording: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid")),
             track: None,
             release: None,
@@ -508,10 +508,10 @@ mod tests {
         }
     }
 
-    fn meddle() -> AlbumToFile {
+    fn low_tide() -> AlbumToFile {
         AlbumToFile {
-            title: "Meddle".to_owned(),
-            owner: Some("Pink Floyd".to_owned()),
+            title: "Tideline".to_owned(),
+            owner: Some("Example Band".to_owned()),
             year: Some(1971),
             discs: 1,
         }
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn a_filed_delivery_is_tagged_with_everything_the_want_and_its_album_say() {
-        let edits = edits(&want(), &meddle());
+        let edits = edits(&want(), &low_tide());
         let said = |field| {
             edits
                 .iter()
@@ -527,9 +527,9 @@ mod tests {
                 .map(|edit| edit.value.as_str())
         };
 
-        assert_eq!(said(TagField::Title), Some("Echoes"));
-        assert_eq!(said(TagField::AlbumArtist), Some("Pink Floyd"));
-        assert_eq!(said(TagField::Album), Some("Meddle"));
+        assert_eq!(said(TagField::Title), Some("Lantern"));
+        assert_eq!(said(TagField::AlbumArtist), Some("Example Band"));
+        assert_eq!(said(TagField::Album), Some("Tideline"));
         assert_eq!(said(TagField::TrackNumber), Some("6"));
         assert_eq!(said(TagField::Date), Some("1971"));
         assert_eq!(said(TagField::Isrc), Some("GBN9Y1100089"));
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn a_release_names_the_album_alone_and_otherwise_its_owner_and_folder_do() {
-        let path = Path::new("/music/Pink Floyd/Meddle/06 Echoes.flac");
+        let path = Path::new("/music/Example Band/Tideline/06 Lantern.flac");
         let root = Path::new("/music");
 
         let released = Want {
@@ -551,14 +551,14 @@ mod tests {
         };
 
         assert_eq!(
-            keys_for(path, root, &meddle(), &released),
+            keys_for(path, root, &low_tide(), &released),
             vec![store::release_key("b84ee12a-09ef-421b-82de-0441a926375b")]
         );
         assert_eq!(
-            keys_for(path, root, &meddle(), &want()),
+            keys_for(path, root, &low_tide(), &want()),
             vec![
-                store::album_key("Meddle", Some("Pink Floyd")),
-                store::sleeve_key("Meddle", Path::new("/music/Pink Floyd/Meddle")),
+                store::album_key("Tideline", Some("Example Band")),
+                store::sleeve_key("Tideline", Path::new("/music/Example Band/Tideline")),
             ]
         );
     }

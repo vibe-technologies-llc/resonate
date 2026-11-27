@@ -558,12 +558,12 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_location_is_read_up_to_its_query_or_fragment_whether_it_is_a_uri_or_relative() {
-        let echoes = vec![PathBuf::from("/music/Echoes.flac")];
+        let slow_water = vec![PathBuf::from("/music/Lantern.flac")];
 
-        assert_eq!(read_at("file:///music/Echoes.flac#t=10"), echoes);
-        assert_eq!(read_at("file:///music/Echoes.flac?at=10"), echoes);
-        assert_eq!(read_at("Echoes.flac#t=10"), echoes);
-        assert_eq!(read_at("Echoes.flac?at=10"), echoes);
+        assert_eq!(read_at("file:///music/Lantern.flac#t=10"), slow_water);
+        assert_eq!(read_at("file:///music/Lantern.flac?at=10"), slow_water);
+        assert_eq!(read_at("Lantern.flac#t=10"), slow_water);
+        assert_eq!(read_at("Lantern.flac?at=10"), slow_water);
         assert_eq!(
             read_at("Take%235.flac"),
             vec![PathBuf::from("/music/Take#5.flac")]

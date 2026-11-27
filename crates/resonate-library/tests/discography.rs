@@ -21,7 +21,7 @@ const SINGLE_PRESSING: &str = "6a7b8c9d-0e1f-4ab2-8cd3-5e6f7a8b9c0d";
 
 const ORBIT_THEME: &str = "7b8c9d0e-1f2a-4bc3-9de4-6f7a8b9c0d1e";
 
-const SAN_TROPEZ_SONG: &str = "8c9d0e1f-2a3b-4cd4-8ef5-7a8b9c0d1e2f";
+const HARBOUR_LIGHTS_SONG: &str = "8c9d0e1f-2a3b-4cd4-8ef5-7a8b9c0d1e2f";
 
 const NIGHTFALL_GROUP: &str = "6a7b8c9d-aebf-4ac1-8cd3-5e6f7a8b9cad";
 
@@ -66,7 +66,7 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
     let expected = vec![
         unheld(&artist, HOURS_GROUP, "Hours", "EP", Some("1996-05-06")),
         unheld(&artist, SCORE_GROUP, "The Orbit", "Album", Some("2003-11")),
-        unheld(&artist, SINGLE_GROUP, "San Tropez", "Single", None),
+        unheld(&artist, SINGLE_GROUP, "Harbour Lights", "Single", None),
     ];
 
     assert_eq!(library.unheld_releases(None, None)?, expected);
@@ -128,7 +128,7 @@ fn the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_ask
     );
     assert_eq!(by_release, daybreak);
     assert!(
-        library.songs_kept_for("fearless")?.is_empty(),
+        library.songs_kept_for("paper boats")?.is_empty(),
         "a song held by its title was offered"
     );
     assert_eq!(not_held, daybreak);
@@ -186,7 +186,7 @@ fn the_albums_of_a_library_artist_not_held_answer_a_search_without_asking() -> R
     assert_eq!(kept("orbiters hours")?.len(), 1);
     assert!(kept("orbits")?.is_empty(), "a held album was offered");
     assert!(
-        kept("tropez")?.is_empty(),
+        kept("lights")?.is_empty(),
         "a single was offered as an album"
     );
     assert!(kept("year:1996")?.is_empty(), "a term was read as a word");
@@ -286,8 +286,8 @@ fn score_and_single() -> Vec<Release> {
         pressed_for(
             SINGLE_GROUP,
             SINGLE_PRESSING,
-            "San Tropez",
-            ("San Tropez", SAN_TROPEZ_SONG),
+            "Harbour Lights",
+            ("Harbour Lights", HARBOUR_LIGHTS_SONG),
         ),
     ]
 }
@@ -322,7 +322,7 @@ fn an_artists_songs_are_read_off_one_browse_of_their_releases_rather_than_a_requ
     assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 0);
     assert_eq!(library.songs_kept_for("daybreak")?.len(), 1);
     assert_eq!(library.songs_kept_for("orbit theme")?.len(), 1);
-    assert_eq!(library.songs_kept_for("san tropez")?.len(), 1);
+    assert_eq!(library.songs_kept_for("harbour lights")?.len(), 1);
     Ok(())
 }
 
@@ -620,7 +620,7 @@ fn an_album_whose_songs_were_never_read_has_them_asked_for_when_it_is_wanted() -
 #[test]
 fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read()
 -> Result<()> {
-    const FEARLESS_SINGLE: &str = "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d";
+    const PAPER_BOATS_SINGLE: &str = "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d";
     const SATELLITE_SINGLE: &str = "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e";
 
     let (_tree, library) = scanned_orbits()?;
@@ -635,8 +635,8 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
     let mut groups = orbiters_groups();
 
     groups.push(artist_release(
-        FEARLESS_SINGLE,
-        "Fearless",
+        PAPER_BOATS_SINGLE,
+        "Paper Boats",
         Some("Single"),
         &[],
         Some("1998-01-01"),
@@ -679,7 +679,7 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
         "a single whose song is not held was not listed: {unheld:?}"
     );
     assert!(
-        !unheld.contains(&"Fearless".to_owned()),
+        !unheld.contains(&"Paper Boats".to_owned()),
         "a single whose song is held on the album was listed: {unheld:?}"
     );
 
@@ -771,7 +771,7 @@ fn what_the_catalog_is_short_of_is_narrowed_by_the_words_typed() -> Result<()> {
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
 
     assert_eq!(library.rematch(album.id)?, 3);
@@ -851,18 +851,18 @@ fn the_rows_an_album_is_short_of_are_listed_with_their_wants() -> Result<()> {
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
-    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
+    rows.push(release_row(5, "Marlow", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
 
     assert_eq!(library.rematch(album.id)?, 3);
 
-    let san_tropez = library
+    let harbour_lights = library
         .release_tracks(album.id)?
         .into_iter()
-        .find(|row| row.title == "San Tropez")
+        .find(|row| row.title == "Harbour Lights")
         .expect("the release holds the row");
-    let want = library.want(san_tropez.id)?;
+    let want = library.want(harbour_lights.id)?;
 
     let missing = library.missing_tracks(None, None)?;
 
@@ -873,17 +873,17 @@ fn the_rows_an_album_is_short_of_are_listed_with_their_wants() -> Result<()> {
             album: album.id,
             album_title: "Orbits".to_owned(),
             owner: Some("The Orbiters".to_owned()),
-            release_track: san_tropez.id,
+            release_track: harbour_lights.id,
             disc: 1,
             position: 4,
             number: Some("4".to_owned()),
-            title: "San Tropez".to_owned(),
+            title: "Harbour Lights".to_owned(),
             artist: None,
             length: Some(Duration::from_secs(4)),
             want: Some(want),
         }
     );
-    assert_eq!(missing[1].title, "Seamus");
+    assert_eq!(missing[1].title, "Marlow");
     assert_eq!(missing[1].position, 5);
     assert_eq!(missing[1].want, None);
     assert_eq!(library.missing_tracks(None, Some(1))?, missing[..1]);
@@ -905,8 +905,8 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
 
-    rows.push(release_row(4, "San Tropez", Vec::new()));
-    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(4, "Harbour Lights", Vec::new()));
+    rows.push(release_row(5, "Marlow", Vec::new()));
     library.land_release(album.id, &orbits(rows.clone(), Vec::new()))?;
     library.rematch(album.id)?;
 
@@ -926,11 +926,11 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
             .collect())
     };
 
-    library.want(row_titled("San Tropez")?)?;
+    library.want(row_titled("Harbour Lights")?)?;
 
-    assert!(library.dismiss_missing(row_titled("San Tropez")?)?);
-    assert!(!library.dismiss_missing(row_titled("San Tropez")?)?);
-    assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
+    assert!(library.dismiss_missing(row_titled("Harbour Lights")?)?);
+    assert!(!library.dismiss_missing(row_titled("Harbour Lights")?)?);
+    assert_eq!(titles(&library)?, vec!["Marlow".to_owned()]);
     assert!(library.wants()?.is_empty());
     assert_eq!(
         library.missing_counted(None)?,
@@ -946,20 +946,20 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
             releases: 0,
         }
     );
-    assert!(library.unheld_matching("tropez", None)?.is_empty());
+    assert!(library.unheld_matching("lights", None)?.is_empty());
 
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     library.rematch(album.id)?;
 
-    assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
+    assert_eq!(titles(&library)?, vec!["Marlow".to_owned()]);
 
-    library.dismiss_missing(row_titled("Seamus")?)?;
+    library.dismiss_missing(row_titled("Marlow")?)?;
 
     assert!(titles(&library)?.is_empty());
 
-    library.want(row_titled("Seamus")?)?;
+    library.want(row_titled("Marlow")?)?;
 
-    assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
+    assert_eq!(titles(&library)?, vec!["Marlow".to_owned()]);
 
     assert_eq!(
         library.bring_back_dismissed()?,
@@ -970,7 +970,7 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
     );
     assert_eq!(
         titles(&library)?,
-        vec!["San Tropez".to_owned(), "Seamus".to_owned()]
+        vec!["Harbour Lights".to_owned(), "Marlow".to_owned()]
     );
     assert_eq!(library.dismissed()?, Missing::default());
     assert!(matches!(
@@ -987,7 +987,7 @@ fn dismissing_one_of_two_missing_rows_of_a_title_leaves_the_other_listed() -> Re
     let mut rows = orbits_rows();
 
     rows.push(release_row(4, "Interlude", Vec::new()));
-    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(5, "Marlow", Vec::new()));
     rows.push(release_row(6, "Interlude", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     library.rematch(album.id)?;
@@ -1009,7 +1009,7 @@ fn dismissing_one_of_two_missing_rows_of_a_title_leaves_the_other_listed() -> Re
 
     assert_eq!(
         listed,
-        [(5, "Seamus".to_owned()), (6, "Interlude".to_owned())]
+        [(5, "Marlow".to_owned()), (6, "Interlude".to_owned())]
     );
     assert_eq!(library.dismissed()?.tracks, 1);
     Ok(())
@@ -1045,7 +1045,7 @@ fn a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count() -> Resu
         library.unheld_releases(None, None)?,
         vec![
             unheld(&artist, SCORE_GROUP, "The Orbit", "Album", Some("2003-11")),
-            unheld(&artist, SINGLE_GROUP, "San Tropez", "Single", None),
+            unheld(&artist, SINGLE_GROUP, "Harbour Lights", "Single", None),
         ]
     );
     assert_eq!(

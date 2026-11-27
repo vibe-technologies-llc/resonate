@@ -464,14 +464,17 @@ mod tests {
             (b"fmt ", vec![0; 16]),
             (
                 b"LIST",
-                info_list(&[(b"INAM", "Echoes"), (b"IART", "Pink Floyd")]),
+                info_list(&[(b"INAM", "Slow Water"), (b"IART", "Example Band")]),
             ),
             (b"data", vec![0; 8]),
         ]);
 
         let found = read(&mut Cursor::new(file)).info;
 
-        assert_eq!(named(&found), [("INAM", "Echoes"), ("IART", "Pink Floyd")]);
+        assert_eq!(
+            named(&found),
+            [("INAM", "Slow Water"), ("IART", "Example Band")]
+        );
     }
 
     #[test]
@@ -479,7 +482,7 @@ mod tests {
         let cyrillic = TextEncoding::Legacy(LegacyEncoding::WINDOWS_1251);
         let mut body = INFO.to_vec();
 
-        for (id, value) in [(b"INAM", "Группа крови"), (b"IART", "Кино")] {
+        for (id, value) in [(b"INAM", "Тихая вода"), (b"IART", "Пример")] {
             let mut terminated = encoded(value, cyrillic).expect("Cyrillic letters");
 
             terminated.push(0);
@@ -488,7 +491,7 @@ mod tests {
 
         let found = read(&mut Cursor::new(wave(&[(b"LIST", body)]))).info;
 
-        assert_eq!(named(&found), [("INAM", "Группа крови"), ("IART", "Кино")]);
+        assert_eq!(named(&found), [("INAM", "Тихая вода"), ("IART", "Пример")]);
     }
 
     #[test]
@@ -496,12 +499,12 @@ mod tests {
         let file = wave(&[
             (b"fmt ", vec![0; 16]),
             (b"data", vec![0; 64]),
-            (b"LIST", info_list(&[(b"IPRD", "Meddle")])),
+            (b"LIST", info_list(&[(b"IPRD", "Low Tide")])),
         ]);
 
         assert_eq!(
             named(&read(&mut Cursor::new(file)).info),
-            [("IPRD", "Meddle")]
+            [("IPRD", "Low Tide")]
         );
     }
 
@@ -551,7 +554,7 @@ mod tests {
 
     #[test]
     fn the_scan_leaves_the_stream_where_it_found_it() {
-        let file = wave(&[(b"LIST", info_list(&[(b"INAM", "Echoes")]))]);
+        let file = wave(&[(b"LIST", info_list(&[(b"INAM", "Slow Water")]))]);
         let mut source = Cursor::new(file);
 
         let _ = read(&mut source);
@@ -564,11 +567,11 @@ mod tests {
         let mut file = b"ID3\x04\x00\x00\x00\x00\x00\x0a".to_vec();
 
         file.extend_from_slice(&[0; 10]);
-        file.extend_from_slice(&wave(&[(b"LIST", info_list(&[(b"INAM", "Echoes")]))]));
+        file.extend_from_slice(&wave(&[(b"LIST", info_list(&[(b"INAM", "Slow Water")]))]));
 
         assert_eq!(
             named(&read(&mut Cursor::new(file)).info),
-            [("INAM", "Echoes")]
+            [("INAM", "Slow Water")]
         );
     }
 
@@ -627,7 +630,7 @@ mod tests {
 
         body.extend_from_slice(b"INAM");
         body.extend_from_slice(&(1_u32 << 30).to_le_bytes());
-        body.extend_from_slice(b"Echoes\0");
+        body.extend_from_slice(b"Slow Water\0");
 
         let mut file = RIFF.to_vec();
 
@@ -681,7 +684,7 @@ mod tests {
 
         body.extend_from_slice(b"INAM");
         body.extend_from_slice(&u32::MAX.to_le_bytes());
-        body.extend_from_slice(b"Echoes\0");
+        body.extend_from_slice(b"Slow Water\0");
 
         let file = wave(&[(b"LIST", body), (b"data", vec![0; 8])]);
 

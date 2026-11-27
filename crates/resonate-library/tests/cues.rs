@@ -11,8 +11,8 @@ use resonate_library::{
 };
 
 use crate::support::{
-    A_DAY, MEDDLE_SHEET, TWO_DISC_SHEET, Tree, Wav, ffmpeg, filed_under, options, previewed, scan,
-    scanned_sheet, scanned_two_discs, the_row_of,
+    A_DAY, LOW_TIDE_SHEET, TWO_DISC_SHEET, Tree, Wav, ffmpeg, filed_under, options, previewed,
+    scan, scanned_sheet, scanned_two_discs, the_row_of,
 };
 
 const REQUIRED_BY: &str = "RESONATE_LIBRARY_FFMPEG_TESTS";
@@ -27,14 +27,14 @@ fn a_file_a_cue_sheet_cuts_is_scanned_as_the_tracks_the_sheet_names() -> Result<
         rows.iter()
             .map(|row| row.title.as_str())
             .collect::<Vec<_>>(),
-        vec!["One of These Days", "A Pillow of Winds", "Echoes"]
+        vec!["Small Mercies", "A Quilt of Winds", "Lantern"]
     );
 
-    let held = MediaLocation::local(tree.path().join("Meddle.wav"));
+    let held = MediaLocation::local(tree.path().join("Tideline.wav"));
 
     for row in &rows {
         assert_eq!(row.location, held, "every row names the one file");
-        assert_eq!(row.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(row.artist.as_deref(), Some("Example Band"));
     }
 
     let spans: Vec<Option<Frames>> = rows
@@ -57,22 +57,22 @@ fn a_file_a_cue_sheet_cuts_is_scanned_as_the_tracks_the_sheet_names() -> Result<
 #[test]
 fn a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it() -> Result<()> {
     let (tree, library) = scanned_sheet();
-    let held = MediaLocation::local(tree.path().join("Meddle.wav"));
-    let echoes = library
+    let held = MediaLocation::local(tree.path().join("Tideline.wav"));
+    let slow_water = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the third cut");
 
-    library.track_played(&held, echoes.span, Duration::ZERO)?;
+    library.track_played(&held, slow_water.span, Duration::ZERO)?;
 
     let playlist = library.create_playlist("Side Two")?;
 
-    library.add_to_playlist(playlist, &[Cut::of(&echoes)])?;
+    library.add_to_playlist(playlist, &[Cut::of(&slow_water)])?;
 
     tree.write(
-        "Meddle.cue",
-        MEDDLE_SHEET
+        "Tideline.cue",
+        LOW_TIDE_SHEET
             .replace("INDEX 01 00:00:40", "INDEX 01 00:00:45")
             .as_bytes(),
     );
@@ -81,10 +81,10 @@ fn a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it() -> Res
     let moved = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the third cut, still there");
 
-    assert_eq!(moved.id, echoes.id, "the cut became a row of its own");
+    assert_eq!(moved.id, slow_water.id, "the cut became a row of its own");
     assert_eq!(moved.plays, 1);
     assert_eq!(
         moved.span.map(FrameSpan::start),
@@ -105,9 +105,9 @@ fn a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it() -> Res
     Ok(())
 }
 
-const MEDDLE_TWO_TRACK_SHEET: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle (the other sheet)"
-FILE "Meddle.wav" WAVE
+const LOW_TIDE_TWO_TRACK_SHEET: &str = r#"PERFORMER "Example Band"
+TITLE "Tideline (the other sheet)"
+FILE "Tideline.wav" WAVE
   TRACK 01 AUDIO
     TITLE "Side One"
     INDEX 01 00:00:00
@@ -120,9 +120,9 @@ FILE "Meddle.wav" WAVE
 fn two_sheets_in_one_folder_naming_one_file_cut_it_once_by_the_first_in_name_order() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
-    tree.write("A.cue", MEDDLE_SHEET.as_bytes());
-    tree.write("B.cue", MEDDLE_TWO_TRACK_SHEET.as_bytes());
+    tree.write("Tideline.wav", &Wav::new().frames(44_100).build());
+    tree.write("A.cue", LOW_TIDE_SHEET.as_bytes());
+    tree.write("B.cue", LOW_TIDE_TWO_TRACK_SHEET.as_bytes());
 
     let library = Library::open_in_memory()?;
 
@@ -137,7 +137,7 @@ fn two_sheets_in_one_folder_naming_one_file_cut_it_once_by_the_first_in_name_ord
 
         assert_eq!(
             titles,
-            ["One of These Days", "A Pillow of Winds", "Echoes"],
+            ["Small Mercies", "A Quilt of Winds", "Lantern"],
             "the file was cut by both sheets or by whichever the directory listed first"
         );
     }
@@ -216,19 +216,19 @@ fn a_sheet_naming_files_in_folders_below_it_cuts_them_there() -> Result<()> {
         held,
         vec![
             (
-                Some(tree.path().join("CD1/wall.wav")),
+                Some(tree.path().join("CD1/lighthouse.wav")),
                 Some(Frames::ZERO),
-                "In the Flesh?".to_owned()
+                "Open the Gate?".to_owned()
             ),
             (
-                Some(tree.path().join("CD1/wall.wav")),
+                Some(tree.path().join("CD1/lighthouse.wav")),
                 Some(Frames(44_100 / 75 * 40)),
-                "The Thin Ice".to_owned()
+                "The Narrow Bridge".to_owned()
             ),
             (
-                Some(tree.path().join("CD2/wall.wav")),
+                Some(tree.path().join("CD2/lighthouse.wav")),
                 Some(Frames::ZERO),
-                "Hey You".to_owned()
+                "Another Door".to_owned()
             ),
         ],
         "the files below the sheet were not cut as it says"
@@ -254,7 +254,7 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it() -> Result<(
         .map(|row| row.id)
         .collect();
 
-    tree.write("The Wall.cue", b"");
+    tree.write("The Lighthouse.cue", b"");
 
     let stats = scan(&library, &options(&tree))?;
     let during: Vec<_> = library
@@ -272,7 +272,7 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it() -> Result<(
         "a sheet read as empty cost the files below it their cuts"
     );
 
-    tree.write("The Wall.cue", TWO_DISC_SHEET.as_bytes());
+    tree.write("The Lighthouse.cue", TWO_DISC_SHEET.as_bytes());
     scan(&library, &options(&tree))?;
 
     let after: Vec<_> = library
@@ -300,12 +300,12 @@ fn a_file_a_sheet_above_it_cuts_is_left_where_it_stands() -> Result<()> {
 
     assert_eq!(
         refused,
-        ["CD1/wall.wav", "CD2/wall.wav"]
+        ["CD1/lighthouse.wav", "CD2/lighthouse.wav"]
             .iter()
             .map(|file| Refused {
                 from: root.join(file),
                 refusal: Refusal::NamedFromAbove {
-                    sheet: root.join("The Wall.cue"),
+                    sheet: root.join("The Lighthouse.cue"),
                 },
             })
             .collect::<Vec<_>>()
@@ -437,7 +437,7 @@ fn a_cue_rows_neighbours_are_told_apart_by_the_span_rather_than_the_path() -> Re
 fn taking_the_sheet_away_leaves_the_file_as_the_one_track_it_is() -> Result<()> {
     let (tree, library) = scanned_sheet();
 
-    fs::remove_file(tree.path().join("Meddle.cue")).expect("the sheet goes away");
+    fs::remove_file(tree.path().join("Tideline.cue")).expect("the sheet goes away");
 
     scan(&library, &options(&tree))?;
 
@@ -455,16 +455,16 @@ fn taking_the_sheet_away_leaves_the_file_as_the_one_track_it_is() -> Result<()> 
 #[test]
 fn a_sheet_read_as_empty_keeps_the_rows_it_cut_until_it_reads_again() -> Result<()> {
     let (tree, library) = scanned_sheet();
-    let held = MediaLocation::local(tree.path().join("Meddle.wav"));
-    let echoes = library
+    let held = MediaLocation::local(tree.path().join("Tideline.wav"));
+    let slow_water = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|row| row.title == "Echoes")
+        .find(|row| row.title == "Lantern")
         .expect("the third cut");
 
-    library.track_played(&held, echoes.span, Duration::ZERO)?;
+    library.track_played(&held, slow_water.span, Duration::ZERO)?;
 
-    tree.write("Meddle.cue", b"");
+    tree.write("Tideline.cue", b"");
 
     let stats = scan(&library, &options(&tree))?;
     let rows = library.tracks(&TrackQuery::default())?;
@@ -479,7 +479,7 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_until_it_reads_again() -> Result<
         "rows were pruned under a sheet that could not be read"
     );
 
-    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("Tideline.cue", LOW_TIDE_SHEET.as_bytes());
     scan(&library, &options(&tree))?;
 
     let again = library.tracks(&TrackQuery::default())?;
@@ -509,9 +509,9 @@ fn aged(path: &Path, by: Duration) {
 fn a_sheet_older_than_the_file_it_cut_is_still_missed_once_it_has_gone() -> Result<()> {
     let tree = Tree::new();
 
-    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("Tideline.wav", &Wav::new().frames(44_100).build());
 
-    let sheet = tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    let sheet = tree.write("Tideline.cue", LOW_TIDE_SHEET.as_bytes());
 
     aged(&sheet, A_DAY);
 
@@ -554,13 +554,13 @@ fn a_sheet_rewritten_under_a_file_that_has_not_moved_cuts_it_again() -> Result<(
     assert_eq!(titles(&library)?.len(), 3);
 
     tree.write(
-        "Meddle.cue",
-        MEDDLE_SHEET.replace("Echoes", "Seamus").as_bytes(),
+        "Tideline.cue",
+        LOW_TIDE_SHEET.replace("Lantern", "Marlow").as_bytes(),
     );
     scan(&library, &options(&tree))?;
 
     assert!(
-        titles(&library)?.contains(&"Seamus".to_owned()),
+        titles(&library)?.contains(&"Marlow".to_owned()),
         "a rewritten sheet did not cut the file again: {:?}",
         titles(&library)?
     );
@@ -597,11 +597,11 @@ fn a_cue_row_put_in_a_playlist_is_the_cut_it_was_rather_than_the_file_it_came_ou
     let cut = library
         .tracks(&TrackQuery::default())?
         .into_iter()
-        .find(|track| track.title == "Echoes")
+        .find(|track| track.title == "Lantern")
         .expect("the sheet's third track was scanned");
     let span = cut.span.expect("a cue row is a cut of its file");
 
-    let id = library.create_playlist("Meddle")?;
+    let id = library.create_playlist("Tideline")?;
 
     library.add_to_playlist(id, &[Cut::of(&cut)])?;
 
@@ -615,7 +615,7 @@ fn a_cue_row_put_in_a_playlist_is_the_cut_it_was_rather_than_the_file_it_came_ou
     );
     assert_eq!(
         entries[0].track.as_ref().map(|track| track.title.as_str()),
-        Some("Echoes"),
+        Some("Lantern"),
         "the row joined to whichever of the file's tracks starts first"
     );
     assert_eq!(library.playlist_cuts(id)?, vec![Cut::of(&cut)]);
@@ -628,7 +628,7 @@ fn the_rows_a_sheet_cut_are_a_playlist_of_their_own_lengths() -> Result<()> {
     let rows = library.tracks(&TrackQuery::default())?;
     let cuts: Vec<Cut> = rows.iter().map(Cut::of).collect();
 
-    let id = library.create_playlist("Meddle")?;
+    let id = library.create_playlist("Tideline")?;
 
     library.add_to_playlist(id, &cuts)?;
 
@@ -667,29 +667,29 @@ fn a_search_narrowing_a_playlist_of_one_files_cuts_matches_the_cut_it_names_alon
     let (_tree, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;
     let cuts: Vec<Cut> = rows.iter().map(Cut::of).collect();
-    let id = library.create_playlist("Meddle")?;
+    let id = library.create_playlist("Tideline")?;
 
     library.add_to_playlist(id, &cuts)?;
 
-    let echoes = rows
+    let slow_water = rows
         .iter()
-        .find(|track| track.title == "Echoes")
-        .expect("a row titled Echoes");
-    let shown = library.playlist_entries(id, Some("echoes"))?;
+        .find(|track| track.title == "Lantern")
+        .expect("a row titled Lantern");
+    let shown = library.playlist_entries(id, Some("lantern"))?;
 
     assert_eq!(
         shown.len(),
         1,
         "a search for one cut matched every cut of the file"
     );
-    assert_eq!(shown[0].cut, Cut::of(echoes));
+    assert_eq!(shown[0].cut, Cut::of(slow_water));
 
-    assert_eq!(library.remove_matching(id, "echoes")?, 1);
+    assert_eq!(library.remove_matching(id, "lantern")?, 1);
 
     let left = library.playlist_entries(id, None)?;
 
     assert_eq!(left.len(), 2);
-    assert!(left.iter().all(|entry| entry.cut != Cut::of(echoes)));
+    assert!(left.iter().all(|entry| entry.cut != Cut::of(slow_water)));
     Ok(())
 }
 
@@ -702,7 +702,7 @@ fn two_rows_one_sheet_cut_out_of_a_file_are_not_doubles_of_each_other() -> Resul
         .map(Cut::of)
         .collect();
 
-    let id = library.create_playlist("Meddle")?;
+    let id = library.create_playlist("Tideline")?;
 
     library.add_to_playlist(id, &cuts)?;
 
@@ -723,28 +723,28 @@ fn two_rows_one_sheet_cut_out_of_a_file_are_not_doubles_of_each_other() -> Resul
     Ok(())
 }
 
-const EMBEDDED_SHEET: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
-FILE "Meddle.flac" WAVE
+const EMBEDDED_SHEET: &str = r#"PERFORMER "Example Band"
+TITLE "Tideline"
+FILE "Tideline.flac" WAVE
   TRACK 01 AUDIO
-    TITLE "One of These Days"
+    TITLE "Small Mercies"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "A Pillow of Winds"
+    TITLE "A Quilt of Winds"
     INDEX 01 00:00:50
   TRACK 03 AUDIO
-    TITLE "Echoes"
+    TITLE "Lantern"
     INDEX 01 00:01:25
 "#;
 
-const SHEET_BESIDE_IT: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
-FILE "Meddle.flac" WAVE
+const SHEET_BESIDE_IT: &str = r#"PERFORMER "Example Band"
+TITLE "Tideline"
+FILE "Tideline.flac" WAVE
   TRACK 01 AUDIO
-    TITLE "Fearless"
+    TITLE "Paper Boats"
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "San Tropez"
+    TITLE "Harbour Lights"
     INDEX 01 00:01:00
 "#;
 
@@ -778,7 +778,7 @@ fn flac_embedding(tree: &Tree, name: &str, sheet: &str) -> Option<PathBuf> {
 #[test]
 fn a_file_carrying_its_own_cue_sheet_is_scanned_as_the_tracks_that_sheet_names() -> Result<()> {
     let tree = Tree::new();
-    let Some(path) = flac_embedding(&tree, "Meddle.flac", EMBEDDED_SHEET) else {
+    let Some(path) = flac_embedding(&tree, "Tideline.flac", EMBEDDED_SHEET) else {
         return Ok(());
     };
 
@@ -793,14 +793,14 @@ fn a_file_carrying_its_own_cue_sheet_is_scanned_as_the_tracks_that_sheet_names()
         rows.iter()
             .map(|row| row.title.as_str())
             .collect::<Vec<_>>(),
-        vec!["One of These Days", "A Pillow of Winds", "Echoes"]
+        vec!["Small Mercies", "A Quilt of Winds", "Lantern"]
     );
 
     let held = MediaLocation::local(&path);
 
     for row in &rows {
         assert_eq!(row.location, held, "every row names the one file");
-        assert_eq!(row.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(row.artist.as_deref(), Some("Example Band"));
     }
 
     assert_eq!(
@@ -891,10 +891,10 @@ fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
 fn a_sheet_beside_the_file_still_cuts_it_where_the_file_embeds_one_too() -> Result<()> {
     let tree = Tree::new();
 
-    if flac_embedding(&tree, "Meddle.flac", EMBEDDED_SHEET).is_none() {
+    if flac_embedding(&tree, "Tideline.flac", EMBEDDED_SHEET).is_none() {
         return Ok(());
     }
-    tree.write("Meddle.cue", SHEET_BESIDE_IT.as_bytes());
+    tree.write("Tideline.cue", SHEET_BESIDE_IT.as_bytes());
 
     let library = Library::open_in_memory()?;
 
@@ -906,7 +906,7 @@ fn a_sheet_beside_the_file_still_cuts_it_where_the_file_embeds_one_too() -> Resu
         rows.iter()
             .map(|row| row.title.as_str())
             .collect::<Vec<_>>(),
-        vec!["Fearless", "San Tropez"],
+        vec!["Paper Boats", "Harbour Lights"],
         "the sheet the file embeds outranked the one beside it"
     );
     Ok(())
@@ -916,7 +916,7 @@ fn a_sheet_beside_the_file_still_cuts_it_where_the_file_embeds_one_too() -> Resu
 fn a_rescan_of_a_file_that_embeds_its_own_sheet_changes_nothing() -> Result<()> {
     let tree = Tree::new();
 
-    if flac_embedding(&tree, "Meddle.flac", EMBEDDED_SHEET).is_none() {
+    if flac_embedding(&tree, "Tideline.flac", EMBEDDED_SHEET).is_none() {
         return Ok(());
     }
 

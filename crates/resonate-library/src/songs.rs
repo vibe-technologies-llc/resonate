@@ -245,13 +245,13 @@ mod tests {
     use super::*;
     use crate::{Medium, ReleaseTrack};
 
-    const PIPER: &str = "6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60";
+    const FERRYMAN: &str = "6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60";
 
     fn pressed(id: &str, date: Option<&str>, tracks: u32) -> Release {
         Release {
             id: Mbid::new(id).expect("a well-formed mbid"),
-            group: Some(Mbid::new(PIPER).expect("a well-formed mbid")),
-            title: "The Piper at the Gates of Dawn".to_owned(),
+            group: Some(Mbid::new(FERRYMAN).expect("a well-formed mbid")),
+            title: "The Ferryman at the Edge of Dusk".to_owned(),
             credit: Vec::new(),
             date: date.map(str::to_owned),
             country: None,
@@ -305,7 +305,7 @@ mod tests {
 
         assert_eq!(pressing.id.as_str(), "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
         assert!(pressing_of(Vec::new()).is_none());
-        assert!(pressing_of(vec![pressed(PIPER, Some("1967"), 0)]).is_none());
+        assert!(pressing_of(vec![pressed(FERRYMAN, Some("1967"), 0)]).is_none());
     }
 
     #[test]
@@ -334,20 +334,20 @@ mod tests {
     #[test]
     fn a_song_is_found_by_the_start_of_any_word_of_its_title_artist_or_release() {
         let held = haystack(&[
-            "Astronomy Domine",
-            "Pink Floyd",
-            "The Piper at the Gates of Dawn",
+            "Cartography Hymn",
+            "Example Band",
+            "The Ferryman at the Edge of Dusk",
         ]);
 
         assert_eq!(
             held,
-            " astronomy domine pink floyd the piper at the gates of dawn "
+            " cartography hymn example band the ferryman at the edge of dusk "
         );
 
-        for word in sought_words("ASTRO floy piper") {
+        for word in sought_words("CARTO ban ferryman") {
             assert!(held.contains(&word), "{word}");
         }
 
-        assert!(!held.contains(&sought_words("omine")[0]));
+        assert!(!held.contains(&sought_words("ymn")[0]));
     }
 }
