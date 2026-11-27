@@ -420,6 +420,8 @@
     <string name="features_recognition_none">Aucun enregistrement n’a pu être identifié à partir de ce son</string>
     <string name="features_enrichment_enriching">Enrichissement %1$d/%2$d: %3$s</string>
     <string name="features_enrichment_finished">Enrichissement terminé</string>
+    <string name="features_refreshing">Effacement des informations récupérées pour %1$s et nouvelle recherche</string>
+    <string name="features_refreshed">%1$s a été recherché à nouveau</string>
     <plurals name="features_enrichment_finished_failing">
         <item quantity="one">Enrichissement terminé; la recherche %1$d n’a pas pu être terminée</item>
         <item quantity="other">Enrichissement terminé; les recherches %1$d n’ont pas pu être terminées</item>
@@ -643,6 +645,7 @@
     <string name="details_title">Détails de la chanson</string>
     <string name="details_finding">Trouver...</string>
     <string name="details_find">Trouvez l’œuvre et les détails</string>
+    <string name="details_refresh">Effacer et rechercher à nouveau</string>
     <string name="details_look_up_artist">Regardez l’artiste</string>
     <string name="details_audio">Audio</string>
     <string name="details_unread_detail">Montrez ce que la bibliothèque en sait.</string>

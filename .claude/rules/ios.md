@@ -1891,8 +1891,10 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   details* group (shown while online) holds both toggles, "Look again for missing covers"
   (`ask_again_for_covers`, then a start), the line and Stop. Library tools' "Refresh artwork and
   details" confirms with the song count, stops any pass and starts one with `refresh`, and offers
-  Stop while it runs. The Inspector's button is the one-song `enrich_track`; no lookup posts a
-  banner per song.
+  Stop while it runs. The Inspector's button is the one-song `enrich_track`, and *Clear and fetch
+  again* beside it and in a song's context menu (`SongPages`, while online) is `refresh_track`
+  (`Features.refresh`, on `Work.aside`, sharing `enriching` with the lookup; `android.md`'s
+  *Online and downloads*); no lookup posts a banner per song.
 - **Pictures refresh by the changed-art revision**: every status poll, scan, landing and
   single-song lookup asks `art_changed_since` from the last revision (the first answer only sets
   the baseline, judged by whether a revision was held when the ask was made, so two overlapping

@@ -420,6 +420,8 @@
     <string name="features_recognition_none">No recording could be identified from this audio</string>
     <string name="features_enrichment_enriching">Enriching %1$d/%2$d: %3$s</string>
     <string name="features_enrichment_finished">Enrichment finished</string>
+    <string name="features_refreshing">Clearing what was fetched for %1$s and looking it up again</string>
+    <string name="features_refreshed">Looked up %1$s again</string>
     <plurals name="features_enrichment_finished_failing">
         <item quantity="one">Enrichment finished; %1$d lookup could not complete</item>
         <item quantity="other">Enrichment finished; %1$d lookups could not complete</item>
@@ -643,6 +645,7 @@
     <string name="details_title">Song details</string>
     <string name="details_finding">Finding…</string>
     <string name="details_find">Find artwork and details</string>
+    <string name="details_refresh">Clear and fetch again</string>
     <string name="details_look_up_artist">Look up artist</string>
     <string name="details_audio">Audio</string>
     <string name="details_unread_detail">Showing what the library knows of it.</string>

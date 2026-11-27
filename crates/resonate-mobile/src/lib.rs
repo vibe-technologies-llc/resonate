@@ -42,6 +42,7 @@ mod playlist_links;
 mod playlists;
 mod profile_links;
 mod queue_edit;
+mod refreshing;
 #[cfg(test)]
 mod relaunch_tests;
 mod rendering;

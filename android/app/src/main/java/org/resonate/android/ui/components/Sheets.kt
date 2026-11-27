@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.QueryStats
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
@@ -271,6 +272,8 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val words = words()
     val catalog by resonate.library.allTracks.collectAsState()
+    val online by resonate.features.online.collectAsState()
+    val enriching by resonate.features.enriching.collectAsState()
     val track =
         remember(catalog, request) {
             if (request.track.served) request.track
@@ -332,6 +335,11 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             add(SheetAction(Icons.Rounded.Info, words.string(R.string.details_title)) {
                 navigator.open(Screen.Details(track.id))
             })
+            if (online && !enriching) {
+                add(SheetAction(Icons.Rounded.Refresh, words.string(R.string.details_refresh)) {
+                    resonate.features.refresh(track)
+                })
+            }
             add(SheetAction(Icons.Rounded.Share, words.string(R.string.sheet_share_link)) {
                 resonate.shareLink(track, scope)
             })

@@ -136,6 +136,14 @@ impl Asking {
         self.held_back().is_none()
     }
 
+    pub(crate) fn may_be_asked(&self) -> Result<()> {
+        match self.held_back() {
+            None => Ok(()),
+            Some(Ended::Metered) => Err(Error::LookupsHeldByTheMeter),
+            Some(_) => Err(Error::OnlineOff),
+        }
+    }
+
     fn held_back(&self) -> Option<Ended> {
         if !self.client.is_reaching() {
             Some(Ended::Offline)
@@ -2673,17 +2681,17 @@ mod tests {
     use std::{env, sync::atomic::AtomicUsize, time::Instant};
 
     use crossbeam_channel::{Sender, bounded};
-    use resonate_codec::Sources;
-    use resonate_core::{Gate, Meter, Metering};
+    use resonate_codec::{FileTags, Sources, TagEdit, TagField, TagSink, Writing};
+    use resonate_core::{Gate, MediaLocation, Meter, Metering};
     use resonate_library::{
         AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,
-        Barcode, BarcodeMatch, Credit, Discography, GroupAsked, GroupMatch, LinkNames,
+        Barcode, BarcodeMatch, Credit, Discography, GroupAsked, GroupMatch, Issued, LinkNames,
         LinkedPlaylist, LinkedProfile, PlaylistLink, ProfileLink, RecordingAsked, RecordingMatch,
-        ReleaseAsked, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
+        RecordingRelease, ReleaseAsked, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
     };
 
     use super::*;
-    use crate::{PlaybackPreferences, features::Services};
+    use crate::{PlaybackPreferences, features::Services, harness::Harness};
 
     const RELEASE: &str = "f5093c06-23e3-404f-aeaa-40f72885ee3a";
 
@@ -2709,6 +2717,7 @@ mod tests {
         failing: Option<Failing>,
         asked: Mutex<Vec<String>>,
         lyrics_gate: Mutex<Option<(Sender<()>, crossbeam_channel::Receiver<()>)>>,
+        coded: Option<Recording>,
     }
 
     impl Fake {
@@ -2806,8 +2815,14 @@ mod tests {
             self.answered(None)
         }
 
-        fn recordings_of_isrc(&self, _isrc: &Isrc) -> resonate_library::Result<Vec<Recording>> {
-            self.answered(Vec::new())
+        fn recordings_of_isrc(&self, isrc: &Isrc) -> resonate_library::Result<Vec<Recording>> {
+            self.answered(
+                self.coded
+                    .iter()
+                    .filter(|recording| recording.isrcs.contains(isrc))
+                    .cloned()
+                    .collect(),
+            )
         }
 
         fn find_recording(
@@ -3042,6 +3057,147 @@ mod tests {
             .lock()
             .query_row("SELECT count(*) FROM enrichment", [], |row| row.get(0))
             .expect("the enrichment mark")
+    }
+
+    #[test]
+    fn a_song_looked_up_again_takes_the_new_answer_and_keeps_the_ids_its_file_carries() {
+        const ISRC: &str = "GBN9Y1100089";
+        const RIGHT: &str = "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d";
+        const WRONG: &str = "0b2e1a52-6f1d-4c33-9a5e-6a4b8f7d2e01";
+        const WRONG_RELEASE: &str = "7c0e3d1b-2a4f-4b8e-8d6c-1f2e3a4b5c6d";
+        const TAGGED_ARTIST: &str = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+
+        let harness = Harness::new();
+
+        let song = harness.song('a').clone();
+        let edits = [
+            (TagField::Title, "Song"),
+            (TagField::Artist, "Artist"),
+            (TagField::Album, "Album"),
+            (TagField::Isrc, ISRC),
+            (TagField::MusicBrainzArtistId, TAGGED_ARTIST),
+        ]
+        .map(|(field, value)| TagEdit {
+            field,
+            value: value.into(),
+        });
+
+        FileTags::default()
+            .write(
+                &MediaLocation::local(harness.folder.join("a.wav")),
+                Writing {
+                    edits: &edits,
+                    taken: &[],
+                    picture: None,
+                    unpictured: false,
+                    popularity: None,
+                },
+            )
+            .expect("the file's tags");
+
+        let indexed = harness
+            .player
+            .index_document(song.uri.clone(), song.name.clone())
+            .expect("indexed again");
+
+        assert_eq!(indexed.artist_mbid.as_deref(), Some(TAGGED_ARTIST));
+
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute_batch(&format!(
+                "UPDATE documents SET recording = '{WRONG}', release = '{WRONG_RELEASE}',
+                 asked = 1, answered = 1 WHERE id = {id};
+                 INSERT INTO album_art (album_key, release, asked, answered)
+                 SELECT album_key, '{WRONG_RELEASE}', 1, 1 FROM documents WHERE id = {id};",
+                id = song.id
+            ))
+            .expect("a wrong match");
+
+        let fake = Arc::new(Fake {
+            coded: Some(Recording {
+                id: Mbid::new(RIGHT).expect("an mbid"),
+                title: "Song".into(),
+                credit: Fake::credit(),
+                length: Some(Duration::from_secs(2)),
+                isrcs: vec![Isrc::new(ISRC).expect("a code")],
+                releases: vec![RecordingRelease {
+                    id: Mbid::new(RELEASE).expect("an mbid"),
+                    title: "Album".into(),
+                    date: None,
+                    disc: Some(1),
+                    position: Some(1),
+                    issued: Issued::default(),
+                }],
+            }),
+            ..Fake::default()
+        });
+
+        harness
+            .player
+            .refresh_one(&asking(&fake), song.id)
+            .expect("looked up again");
+
+        let refreshed = harness.player.catalog.track(song.id).expect("the song");
+        let answered: Option<i64> = harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT answered FROM documents WHERE id = ?1",
+                [song.id as i64],
+                |row| row.get(0),
+            )
+            .expect("the song's clocks");
+
+        assert_eq!(refreshed.recording.as_deref(), Some(RIGHT));
+        assert_eq!(refreshed.release.as_deref(), Some(RELEASE));
+        assert_eq!(refreshed.artist_mbid.as_deref(), Some(TAGGED_ARTIST));
+        assert!(answered.is_some_and(|answered| answered > 1));
+    }
+
+    #[test]
+    fn a_song_that_cannot_be_looked_up_again_keeps_what_was_fetched() {
+        const WRONG: &str = "0b2e1a52-6f1d-4c33-9a5e-6a4b8f7d2e01";
+
+        let harness = Harness::new();
+
+        let song = harness.song('a').clone();
+
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET recording = ?1 WHERE id = ?2",
+                rusqlite::params![WRONG, song.id as i64],
+            )
+            .expect("a match");
+
+        let fake = Arc::new(Fake::default());
+        let offline = asking(&fake);
+
+        offline.client.reach(false);
+
+        assert!(matches!(
+            harness.player.refresh_one(&offline, song.id),
+            Err(Error::OnlineOff)
+        ));
+        assert_eq!(
+            harness
+                .player
+                .catalog
+                .track(song.id)
+                .expect("the song")
+                .recording
+                .as_deref(),
+            Some(WRONG)
+        );
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]

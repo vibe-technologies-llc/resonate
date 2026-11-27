@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.PersonSearch
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -115,6 +116,8 @@ class DetailsViewModel(private val resonate: Resonate, private val id: ULong) : 
 
     fun enrich(track: Track) = features.enrich(listOf(track))
 
+    fun refresh(track: Track) = features.refresh(track)
+
     fun lookUpArtist() = features.loadArtist(id)
 
     fun open(link: String) = resonate.host.open(Uri.parse(link))
@@ -161,6 +164,16 @@ fun DetailsScreen(track: ULong) {
                                     else R.string.details_find
                                 )
                             )
+                        }
+                        OutlinedButton(
+                            onClick = { model.refresh(song) },
+                            enabled = online && !enriching,
+                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                            modifier = Modifier.testTag("details-refresh"),
+                        ) {
+                            Icon(Icons.Rounded.Refresh, null, Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text(stringResource(R.string.details_refresh))
                         }
                         if (online) {
                             OutlinedButton(

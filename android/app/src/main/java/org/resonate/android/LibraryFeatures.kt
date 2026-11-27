@@ -1956,6 +1956,28 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
+    fun refresh(track: Track) {
+        if (enriching.value) return
+        enriching.value = true
+        work { native ->
+            try {
+                library.notice(R.string.features_refreshing, track.title)
+                try {
+                    native.refreshTrack(track.id)
+                    library.refresh()
+                    refreshArtwork()
+                    library.notice(R.string.features_refreshed, track.title)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    library.report(failure)
+                }
+            } finally {
+                enriching.value = false
+            }
+        }
+    }
+
     fun searchCorrections(text: String) {
         val request = correctionRequest.incrementAndGet()
         correctionBusy.value = true

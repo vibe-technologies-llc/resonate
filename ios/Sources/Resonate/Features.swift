@@ -1875,6 +1875,19 @@ final class Features {
         })
     }
 
+    func refresh(_ track: Track) {
+        guard !enriching else { return }
+        enriching = true
+        let id = track.id
+        work({ [weak self] native in
+            _ = try await Work.aside { try native.refreshTrack(id: id) }
+            await self?.library.refresh()
+            await self?.refreshChangedArt(native)
+        }, finally: { [weak self] in
+            self?.enriching = false
+        })
+    }
+
     func searchCorrections(_ text: String) {
         correctionRequest += 1
         let request = correctionRequest

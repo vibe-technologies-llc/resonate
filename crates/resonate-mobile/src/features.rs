@@ -722,11 +722,7 @@ impl MobilePlayer {
 
     pub fn enrich_track(&self, id: u64) -> Result<Track> {
         self.require_online()?;
-        self.enrich_one(
-            &Asking::over(Arc::clone(self.services.online.client()))
-                .layered_by(self.syncing.layered_lookups()),
-            id,
-        )?;
+        self.enrich_one(&self.asking_for_one_song(), id)?;
         self.catalog.track(id)
     }
 
@@ -790,6 +786,11 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
+    pub(crate) fn asking_for_one_song(&self) -> Asking {
+        Asking::over(Arc::clone(self.services.online.client()))
+            .layered_by(self.syncing.layered_lookups())
+    }
+
     pub(crate) fn require_online(&self) -> Result<()> {
         if self.services.online.client().is_reaching() {
             Ok(())

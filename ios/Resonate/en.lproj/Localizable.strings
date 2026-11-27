@@ -400,6 +400,7 @@
 "inspector.encoder" = "Encoder";
 "inspector.enrich" = "Enrich metadata, artwork and lyrics";
 "inspector.enriching" = "Enriching…";
+"inspector.refresh" = "Clear and fetch again";
 "inspector.genre" = "Genre";
 "inspector.go-to-album" = "Go to album";
 "inspector.go-to-artist" = "Go to artist";
@@ -1440,6 +1441,7 @@
 "song.delete" = "Delete song";
 "song.delete-everywhere" = "Delete from every device";
 "song.details" = "Song details";
+"song.refresh" = "Clear and fetch again";
 "song.download" = "Download";
 "song.download.cancel" = "Cancel download";
 "song.download.hint" = "Downloads the song";

@@ -1350,7 +1350,28 @@ so an online result plays the local recording without depending on the search an
 its artist to the front where still due, and the song to the front of the lyric reader's list, and
 a lifted or downloaded ask fetches its cover or portrait on the pass's own thread rather than behind
 the pictures already waiting (`a_song_sought_has_its_album_and_words_asked_before_the_rest`). `enrich_track` is the same album, song and artist asks
-forced for one row over the listener's client; its lyric lookup failing fails nothing. `artwork`
+forced for one row over the listener's client; its lyric lookup failing fails nothing.
+**`refresh_track` clears a song's fetched details and asks them again** (*Clear and fetch again*,
+`refreshing.rs`), since `learned` fills only empty identities and so cannot correct a wrong match:
+refused offline or metered before anything is cleared (`Asking::may_be_asked`), it reads the
+document's own tags first (a song whose file will not open is refused and keeps its match), then
+`Catalog::forget_what_was_fetched` in one transaction sets the song's `recording`, `release` and
+`artist_mbid` to the MusicBrainz ids its file carries (`CarriedIds`, none where it carries none),
+empties its `release_group` and its clocks (`asked`, `answered`, `asks`, `refusals`), and forgets
+its album's match: the `album_art` row (release, group, clocks and the fetched cover, the picture
+dropped where nothing else shows it and the album's `art_revision` stepped), the album's
+`release_songs`, and on the album's other songs the `release` and `release_group` that match named,
+each of those songs left with no `indexed_by` and its file read again at once
+(`carried_ids_read_again`), so an id a file carries is never lost and one that cannot be read now is
+read by the next scan. Then `enrich_one` asks as `enrich_track` does. Fetched lyrics, the artist's
+profile and a song's own embedded or folder picture stay
+(`what_was_fetched_is_forgotten_and_only_the_ids_the_file_carries_stay`,
+`a_song_of_the_album_read_again_takes_back_the_ids_its_file_carries`,
+`a_song_looked_up_again_takes_the_new_answer_and_keeps_the_ids_its_file_carries`,
+`a_song_that_cannot_be_looked_up_again_keeps_what_was_fetched`). Android offers it as *Clear and
+fetch again* beside Details' *Find artwork and details* and in the song sheet while online
+(`LibraryFeatures.refresh` on the features' worker, sharing `enriching` with the lookup, so one runs
+at a time). `artwork`
 answers the song's own picture (embedded, folder, `set_artwork`) and falls back to its album key's
 cover, or takes that cover where it betters a thumbnail; no per-song archive copy is written.
 `art_changed_since(revision)` names the songs whose picture changed after a revision.

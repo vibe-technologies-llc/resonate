@@ -576,6 +576,10 @@ struct SongPages: View {
     @ViewBuilder
     private var pages: some View {
         Button("song.details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
+        if library.features.online {
+            Button("song.refresh", systemImage: "arrow.clockwise") { library.features.refresh(track) }
+                .disabled(library.features.enriching)
+        }
         ShareSongButton(track: track)
         Button("song.find-another-version", systemImage: "arrow.left.arrow.right") {
             navigation.findVersions(track)

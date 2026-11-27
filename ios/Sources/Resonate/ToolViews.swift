@@ -415,6 +415,10 @@ struct InspectorView: View {
                         features.enrich(shown)
                     }
                     .disabled(features.enriching)
+                    Button("inspector.refresh", systemImage: "arrow.clockwise") {
+                        features.refresh(shown)
+                    }
+                    .disabled(features.enriching)
                     Button("inspector.artist-details", systemImage: "music.mic") { features.loadArtist(shown.id) }
                 }
             }

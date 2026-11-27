@@ -400,6 +400,7 @@
 "inspector.encoder" = "Encodeur";
 "inspector.enrich" = "Enrichir les métadonnées, les œuvres et les paroles";
 "inspector.enriching" = "Enrichir...";
+"inspector.refresh" = "Effacer et rechercher à nouveau";
 "inspector.genre" = "Genre";
 "inspector.go-to-album" = "Aller à l’album";
 "inspector.go-to-artist" = "Aller à l’artiste";
@@ -1440,6 +1441,7 @@
 "song.delete" = "Supprimer la chanson";
 "song.delete-everywhere" = "Supprimer de chaque appareil";
 "song.details" = "Détails de la chanson";
+"song.refresh" = "Effacer et rechercher à nouveau";
 "song.download" = "Télécharger";
 "song.download.cancel" = "Annuler le téléchargement";
 "song.download.hint" = "Télécharger la chanson";
