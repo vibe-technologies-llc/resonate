@@ -9,6 +9,10 @@ use crate::{Error, Result, prose::Comment};
 
 const SWIFT_TOOLS_DIRECTIVE: &str = "// swift-tools-version:";
 const SHEBANG: &str = "#!";
+const PROPERTIES_MARKERS: [char; 2] = ['#', '!'];
+const INI_MARKERS: [char; 2] = ['#', ';'];
+const RUBY_BLOCK_OPEN: &str = "=begin";
+const RUBY_BLOCK_CLOSE: &str = "=end";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tongue {
@@ -20,6 +24,9 @@ pub enum Tongue {
     Yaml,
     Shell,
     Markup,
+    Properties,
+    Ini,
+    Ruby,
 }
 
 impl Tongue {
@@ -33,9 +40,12 @@ impl Tongue {
             "swift" => Some(Self::Swift),
             "py" => Some(Self::Python),
             "toml" => Some(Self::Toml),
-            "yml" | "yaml" => Some(Self::Yaml),
-            "sh" | "ps1" | "spec" => Some(Self::Shell),
+            "yml" | "yaml" | "pro" => Some(Self::Yaml),
+            "sh" | "ps1" | "spec" | "install" => Some(Self::Shell),
             "xml" | "plist" => Some(Self::Markup),
+            "properties" => Some(Self::Properties),
+            "service" | "hook" => Some(Self::Ini),
+            "rb" => Some(Self::Ruby),
             _ => None,
         }
     }
@@ -52,6 +62,9 @@ pub fn comments_of(source: &str, tongue: Tongue) -> Vec<Comment> {
         Tongue::Shell => hashed_by_line(&normal, true),
         Tongue::Yaml => hashed_by_line(&normal, false),
         Tongue::Markup => marked_up(&normal),
+        Tongue::Properties => led_by_markers(&normal, &PROPERTIES_MARKERS, true),
+        Tongue::Ini => led_by_markers(&normal, &INI_MARKERS, false),
+        Tongue::Ruby => rubied(&normal),
     }
 }
 
@@ -417,6 +430,131 @@ fn hashed_across_lines(source: &str, shebang_allowed: bool) -> Vec<Comment> {
     comments
 }
 
+fn led_by_markers(source: &str, markers: &[char], continuable: bool) -> Vec<Comment> {
+    let mut comments = Vec::new();
+    let mut continued = false;
+
+    for (line, text) in source.lines().enumerate() {
+        let trimmed = text.trim_start();
+        let led = !continued && trimmed.starts_with(markers);
+
+        if led {
+            let letters: Vec<char> = trimmed.chars().collect();
+
+            comments.push(Comment::at(line, &letters));
+        }
+        continued = continuable && !led && ends_in_odd_backslashes(text);
+    }
+    comments
+}
+
+fn ends_in_odd_backslashes(text: &str) -> bool {
+    text.chars()
+        .rev()
+        .take_while(|letter| *letter == '\\')
+        .count()
+        % 2
+        == 1
+}
+
+enum Within {
+    Code { depth: usize },
+    Quoted { quote: char },
+}
+
+fn rubied(source: &str) -> Vec<Comment> {
+    let letters: Vec<char> = source.chars().collect();
+    let mut comments = Vec::new();
+    let mut stack = vec![Within::Code { depth: 0 }];
+    let mut line = 0;
+    let mut at = 0;
+
+    while at < letters.len() {
+        let at_line_start = at == 0 || letters[at - 1] == '\n';
+        let nested = stack.len() > 1;
+
+        match stack.last_mut() {
+            Some(Within::Quoted { quote }) => {
+                let quote = *quote;
+                let letter = letters[at];
+
+                if letter == '\\' {
+                    if letters.get(at + 1) == Some(&'\n') {
+                        line += 1;
+                    }
+                    at += 2;
+                    continue;
+                }
+                if letter == quote {
+                    stack.pop();
+                } else if quote == '"' && letter == '#' && letters.get(at + 1) == Some(&'{') {
+                    stack.push(Within::Code { depth: 0 });
+                    at += 1;
+                } else if letter == '\n' {
+                    line += 1;
+                }
+                at += 1;
+            }
+            Some(Within::Code { depth }) => {
+                let letter = letters[at];
+
+                if at_line_start && letters[at..].starts_with(&chars_of(RUBY_BLOCK_OPEN)) {
+                    let end = ruby_block_end(&letters, at);
+
+                    comments.push(Comment::at(line, &letters[at..end]));
+                    line += letters[at..end].iter().filter(|c| **c == '\n').count();
+                    at = end;
+                    continue;
+                }
+                match letter {
+                    '\n' => line += 1,
+                    '#' => {
+                        let from = at;
+
+                        while at < letters.len() && letters[at] != '\n' {
+                            at += 1;
+                        }
+                        comments.push(Comment::at(line, &letters[from..at]));
+                        continue;
+                    }
+                    '"' | '\'' | '`' => stack.push(Within::Quoted { quote: letter }),
+                    '{' => *depth += 1,
+                    '}' if *depth == 0 && nested => {
+                        stack.pop();
+                    }
+                    '}' => *depth = depth.saturating_sub(1),
+                    _ => {}
+                }
+                at += 1;
+            }
+            None => break,
+        }
+    }
+    comments
+}
+
+fn chars_of(text: &str) -> Vec<char> {
+    text.chars().collect()
+}
+
+fn ruby_block_end(letters: &[char], from: usize) -> usize {
+    let close = chars_of(RUBY_BLOCK_CLOSE);
+    let mut at = from;
+
+    while at < letters.len() {
+        let line_start = at == from || letters[at - 1] == '\n';
+
+        if line_start && at > from && letters[at..].starts_with(&close) {
+            while at < letters.len() && letters[at] != '\n' {
+                at += 1;
+            }
+            return at;
+        }
+        at += 1;
+    }
+    letters.len()
+}
+
 fn hashed_by_line(source: &str, shebang_allowed: bool) -> Vec<Comment> {
     let mut comments = Vec::new();
 
@@ -543,6 +681,74 @@ let after = 1 // two
             "<?xml version=\"1.0\"?>\n<a>\n<!-- one\n two -->\n<b/>\n<!-- three -->\n</a>\n";
 
         assert_eq!(lines(source, Tongue::Markup), [3, 6]);
+    }
+
+    #[test]
+    fn properties_comments_lead_a_line_and_a_hash_in_a_value_is_data() {
+        let source =
+            "# one\n  ! two\nkey=a # b\nurl=https\\://x/#frag\nlong=a\\\n# data\nafter=1\n#three\n";
+
+        assert_eq!(lines(source, Tongue::Properties), [1, 2, 8]);
+    }
+
+    #[test]
+    fn an_even_run_of_backslashes_does_not_continue_a_properties_line() {
+        assert_eq!(lines("a=b\\\\\n# one\n", Tongue::Properties), [2]);
+    }
+
+    #[test]
+    fn ini_comments_lead_a_line_and_a_hash_or_semicolon_in_a_value_is_data() {
+        let source = "[Unit]\nDescription=a # b\n# one\n; two\nExec=x ; y\n   # three\n";
+
+        assert_eq!(lines(source, Tongue::Ini), [3, 4, 6]);
+    }
+
+    #[test]
+    fn proguard_and_pacman_install_files_read_as_the_tongues_they_are_written_in() {
+        assert_eq!(
+            Tongue::of(Path::new("a/proguard-rules.pro")),
+            Some(Tongue::Yaml)
+        );
+        assert_eq!(
+            Tongue::of(Path::new("a/resonate.install")),
+            Some(Tongue::Shell)
+        );
+        assert_eq!(Tongue::of(Path::new("a/b.service")), Some(Tongue::Ini));
+        assert_eq!(Tongue::of(Path::new("a/b.hook")), Some(Tongue::Ini));
+        assert_eq!(
+            Tongue::of(Path::new("a/b.properties")),
+            Some(Tongue::Properties)
+        );
+        assert_eq!(Tongue::of(Path::new("a/b.rb")), Some(Tongue::Ruby));
+
+        assert_eq!(
+            lines(
+                "-keep class a.** { *; }\n# one\n-dontwarn b # two\n",
+                Tongue::Yaml
+            ),
+            [2, 3]
+        );
+        assert_eq!(
+            lines(
+                "post_install() {\n  echo \"${#a}\" # one\n}\n# two\n",
+                Tongue::Shell
+            ),
+            [2, 4]
+        );
+    }
+
+    #[test]
+    fn ruby_comments_are_found_outside_strings_and_interpolations_alone() {
+        let source = "cask \"a\" do\n  url \"x/#{version}/#frag\"\n  name 'a # b'\n  desc \"a #{b(\"# not\")} c\"\n  # one\n  app \"A\" # two\nend\n";
+
+        assert_eq!(lines(source, Tongue::Ruby), [5, 6]);
+    }
+
+    #[test]
+    fn a_ruby_block_comment_runs_from_begin_to_end_at_a_line_start() {
+        let source = "a = 1\n=begin\nnot code\n=end\nb = \"=begin\"\n  =begin\n";
+
+        assert_eq!(lines(source, Tongue::Ruby), [2]);
     }
 
     #[test]

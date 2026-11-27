@@ -19,12 +19,15 @@ Strict: a violation is a defect.
 
 **A test refuses a comment anywhere in the tree**: `no_source_in_the_workspace_carries_a_comment`
 (`crates/resonate-words-build/tests/comments.rs`, so `cargo nextest run -p resonate-words-build` and CI's
-workspace test run it) walks `crates`, `fuzz`, `dsp-lab`, `android`, `ios`, `packaging`,
-`.github`, `.claude` and the root manifests through `resonate_words_build::comments_in`, which
+workspace test run it) walks `crates`, `fuzz`, `dsp-lab`, `android`, `ios`, `packaging` (but for the folders makepkg
+fills: `src`, `pkg`, `resonate` and its package files),
+`.github`, `.claude`, `.cargo`, `.config` and the root manifests through `resonate_words_build::comments_in`, which
 tells a comment from a string, a raw string, a character, a lifetime and a template or
 interpolation: `//`, `///`, `//!` and nested `/* */` in `.rs`, `.kt`, `.kts` and `.swift`; `#` in
-`.py`, `.toml`, `.yml`, `.yaml`, `.sh`, `.ps1`, `.spec` and `PKGBUILD`; `<!-- -->` in `.xml` and
-`.plist`. Allowed: a shebang on the first line of `.py` and `.sh`, and `// swift-tools-version:` on
+`.py`, `.toml`, `.yml`, `.yaml`, `.pro`, `.sh`, `.ps1`, `.spec`, `.install` and `PKGBUILD`, and in `.rb`
+outside a string or an interpolation (with `=begin` to `=end` at a line start); `#` or `!` leading a line
+of a `.properties` file, and `#` or `;` leading a line of a `.service` or `.hook` file, a mark
+inside a value being data; `<!-- -->` in `.xml` and `.plist`. Allowed: a shebang on the first line of `.py` and `.sh`, and `// swift-tools-version:` on
 the first line of a `.swift` file (SwiftPM reads it). Generated and fetched folders (`target`, `.cargo-target`,
 `Generated`, `build`, `.build`, `.gradle`, `xtool`, `corpus`, `seeds`, `fixtures`) are skipped. Not walked:
 `.js`, `.iss` and `.desktop` files, and Markdown.
