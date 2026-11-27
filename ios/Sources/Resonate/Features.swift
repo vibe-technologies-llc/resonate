@@ -1083,6 +1083,7 @@ final class Features {
         landingBackoff.keeping(only: still)
         let due = landable(waiting)
         var landed = 0
+        var arrived: [String] = []
         syncLanding = due.count
         defer { syncLanding = 0 }
         for received in due {
@@ -1118,6 +1119,7 @@ final class Features {
                 landingJournal.finish()
                 landed += 1
                 landingBackoff.landed(received.id)
+                arrived.append(uri)
             } catch {
                 if let created {
                     _ = try? await Work.aside { folders.delete(created) }
@@ -1136,6 +1138,10 @@ final class Features {
             await refreshWanted(native)
             await refreshChangedArt(native)
             enrichment.begin()
+        }
+        if !arrived.isEmpty {
+            let landedHere = arrived
+            fileWhatArrived(in: folder.id) { _ in landedHere }
         }
         return landed
     }
@@ -1767,7 +1773,37 @@ final class Features {
     func organisePlan(_ folder: MusicFolder, layout: String) async throws -> OrganisePlan {
         let native = try await library.player()
         let prefix = library.folders.prefix(of: folder.id)
-        return try await Work.aside { try native.planOrganise(folder: prefix, layout: layout) }
+        return try await Work.aside { try native.planOrganise(folder: prefix, layout: layout, only: []) }
+    }
+
+    func fileWhatArrived(in folder: String, _ arrived: @escaping @Sendable (MobilePlayer) throws -> [String]) {
+        guard OrganiseLayout.newSongs, library.folderList.contains(where: { $0.id == folder && $0.writable }) else { return }
+        let folders = library.folders
+        library.afterScans { [weak self] in
+            guard let self else { return }
+            do {
+                let native = try await library.player()
+                let prefix = folders.prefix(of: folder)
+                let layout = OrganiseLayout.kept
+                let plan = try await Work.aside { () -> OrganisePlan? in
+                    let only = try arrived(native)
+                    return only.isEmpty ? nil : try native.planOrganise(folder: prefix, layout: layout, only: only)
+                }
+                guard let plan, !plan.moves.isEmpty else { return }
+                let filed = try await Work.aside { try folders.file(folder, plan.moves) }
+                try await Work.inLibrary { try native.documentsMoved(moved: filed.moved) }
+                await library.refresh()
+                let moved = said("organise.filed", filed.moved.count)
+                if filed.failed > 0 {
+                    library.notice(said("organise.unmoved", moved, filed.failed))
+                } else {
+                    library.noticeUnasked(moved)
+                }
+            } catch is CancellationError {
+            } catch {
+                library.report(error)
+            }
+        }
     }
 
     func organise(_ folder: MusicFolder, _ moves: [FiledSong]) {

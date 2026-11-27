@@ -1793,6 +1793,8 @@
     <string name="organise_title">Organise %1$s</string>
     <string name="organise_action">Organise</string>
     <string name="organise_layout">Layout</string>
+    <string name="organise_new_songs">Organise new songs as they arrive</string>
+    <string name="organise_new_songs_explained">Songs a download, another device or a scan brings into a folder you can write to are filed by this layout once they land. A folder\'s first scan files nothing.</string>
     <string name="organise_usual_layout">Use the usual layout</string>
     <string name="organise_preview">Preview</string>
     <string name="organise_to_move">To move</string>

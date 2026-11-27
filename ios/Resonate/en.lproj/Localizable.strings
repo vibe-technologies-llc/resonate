@@ -738,6 +738,8 @@
 "organise.layout" = "Layout";
 "organise.layout.fields" = "Fields: {albumartist} {artist} {album} {title} {year} {disc} {track} {ext}. Slashes make folders; {disc} is written only for albums of more than one disc.";
 "organise.layout.usual" = "Use the usual layout";
+"organise.new-songs" = "Organise new songs as they arrive";
+"organise.new-songs.footer" = "Songs a download, another device or a scan brings into a folder you can write to are filed by the layout once they land. A folder's first scan files nothing.";
 "organise.move.from" = "from %@";
 "organise.moves" = "Moves";
 "organise.planning" = "Planning";

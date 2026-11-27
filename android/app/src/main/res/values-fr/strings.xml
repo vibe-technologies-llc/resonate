@@ -1793,6 +1793,8 @@
     <string name="organise_title">Organiser %1$s</string>
     <string name="organise_action">Organiser</string>
     <string name="organise_layout">Mise en page</string>
+    <string name="organise_new_songs">Ranger les nouvelles chansons à leur arrivée</string>
+    <string name="organise_new_songs_explained">Les chansons qu’un téléchargement, un autre appareil ou une analyse apporte dans un dossier où vous pouvez écrire sont rangées selon cette mise en page dès leur arrivée. La première analyse d’un dossier ne range rien.</string>
     <string name="organise_usual_layout">Utiliser la disposition habituelle</string>
     <string name="organise_preview">Aperçu</string>
     <string name="organise_to_move">Pour bouger</string>

@@ -324,6 +324,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             head_yaw: config.head_yaw(),
             music_folder: config.music_folder.clone(),
             file_dropped: config.is_on(Switch::FileDropped),
+            organise_new_songs: config.is_on(Switch::OrganiseNewSongs),
             window_buttons: config.window_buttons(),
             scroll_volume: config.is_on(Switch::ScrollVolume),
             mouse_navigation: config.is_on(Switch::MouseNavigation),

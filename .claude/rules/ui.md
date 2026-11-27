@@ -2707,7 +2707,11 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   `music-folder` also opens Settings on Library). Ready: `take_in` into `ResonateApp::music_folder`;
   `copying_pill` draws progress and *Stop*; `told_of` toasts; where anything was copied the root is
   scanned via `add_roots`, with `file-dropped` on the landed songs first handed to `file_once_scanned`
-  (`library.md`'s *Taking files in*). The handle lives in `ResonateApp::copying`; at event-loop end
+  (`library.md`'s *Taking files in*); with `organise-new-songs` on, every scan's
+  `ScanSummary::arrived` is handed to `file_once_scanned` the same way as the scan ends
+  (`organise_what_arrived`, the switch `ResonateApp::organise_new_songs` under *Organising*,
+  `a_song_a_scan_finds_new_is_filed_by_the_layout_once_idle_while_organising_new_songs`,
+  `a_song_a_scan_finds_new_stays_where_it_arrived_while_organising_new_songs_is_off`). The handle lives in `ResonateApp::copying`; at event-loop end
   `run` winds it down (`wound_down`: cancel, wait up to `WIND_DOWN_WITHIN` 10 s) before the library's
   own pass. A file being copied is `.<name>.<pid>.resonate-part` until renamed into place whole.
 - **Sync is a category of its own** (`Category::Sync`, `Icon::Sync`; `views/settings/sync.rs`,

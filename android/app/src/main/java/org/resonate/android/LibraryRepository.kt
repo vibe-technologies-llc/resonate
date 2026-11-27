@@ -659,6 +659,7 @@ class LibraryRepository(private val context: Context) {
     private suspend fun scanFolder(tree: Uri) {
         mutableScanning.value = true
         mutableStatus.value = words.string(R.string.scan_reading)
+        val began = System.currentTimeMillis() / 1000
         var indexed = 0
         var failed = 0
         try {
@@ -785,6 +786,9 @@ class LibraryRepository(private val context: Context) {
             features.refreshFolders()
             features.enrichment.begin()
             mutableStatus.value = scanSummary(indexed, failed)
+            features.organising.fileWhatArrivedNow(tree) { native ->
+                native.songsArrivedUnder(MusicDocuments.rootDocument(tree), began)
+            }
             if (failed == 0) features.forgetMissing(afterScan = true)
         } catch (cancelled: CancellationException) {
             throw cancelled

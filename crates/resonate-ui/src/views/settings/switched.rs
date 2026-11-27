@@ -51,6 +51,7 @@ impl RootView {
             Switch::ScrollVolume => app.scroll_volume,
             Switch::MouseNavigation => app.mouse_navigation,
             Switch::FileDropped => app.file_dropped,
+            Switch::OrganiseNewSongs => app.organise_new_songs,
             Switch::RememberTab => app.remember_tab,
             Switch::RememberWindowSize => app.remember_window_size,
             Switch::RememberSettingsCategory => app.remember_settings_category,
@@ -87,6 +88,7 @@ impl RootView {
             Switch::ScrollVolume => self.wheel_the_volume(on, cx),
             Switch::MouseNavigation => self.navigate_with_mouse_buttons(on, cx),
             Switch::FileDropped => self.file_what_is_dropped(on, cx),
+            Switch::OrganiseNewSongs => self.organise_what_arrives(on, cx),
             Switch::RememberTab => {
                 self.remembered.tab = on;
                 cx.update_global::<ResonateApp, _>(|global, _| global.remember_tab = on);

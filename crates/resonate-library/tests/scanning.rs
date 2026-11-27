@@ -309,6 +309,37 @@ fn a_second_scan_of_an_untouched_tree_changes_nothing() -> Result<()> {
 }
 
 #[test]
+fn a_scan_names_the_songs_that_arrived_and_not_a_folders_first_reading_or_a_move() -> Result<()> {
+    let tree = Tree::new();
+    let first = tree.write("held/first.wav", &Wav::new().text(TITLE, "first").build());
+
+    let library = Library::open_in_memory()?;
+    let read_first = library.scan(options(&tree))?.join()?;
+
+    assert_eq!(read_first.stats.added, 1);
+    assert!(read_first.arrived.is_empty());
+
+    let arriving = tree.write(
+        "downloads/arriving.wav",
+        &Wav::new().frames(8_820).text(TITLE, "arriving").build(),
+    );
+    let followed = tree.path().join("elsewhere/first.wav");
+
+    moved(&first, &followed);
+
+    let read_again = library.scan(options(&tree))?.join()?;
+
+    assert_eq!(read_again.stats.added, 1);
+    assert_eq!(read_again.stats.moved, 1);
+    assert_eq!(read_again.arrived, [arriving]);
+
+    let read_once_more = library.scan(options(&tree))?.join()?;
+
+    assert!(read_once_more.arrived.is_empty());
+    Ok(())
+}
+
+#[test]
 fn hidden_trash_and_system_folders_and_dot_files_are_passed_over() -> Result<()> {
     let tree = Tree::new();
 

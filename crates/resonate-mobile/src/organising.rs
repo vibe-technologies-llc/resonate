@@ -57,7 +57,12 @@ pub fn organise_layout_problem(layout: String) -> Option<String> {
 
 #[uniffi::export]
 impl MobilePlayer {
-    pub fn plan_organise(&self, folder: String, layout: String) -> Result<OrganisePlan> {
+    pub fn plan_organise(
+        &self,
+        folder: String,
+        layout: String,
+        only: Vec<String>,
+    ) -> Result<OrganisePlan> {
         self.syncing.files_by(&layout);
 
         let layout = Layout::read(&layout).map_err(|source| Error::LayoutUnreadable {
@@ -65,7 +70,13 @@ impl MobilePlayer {
         })?;
         let within = within_of(&folder);
         let held = self.songs_within(&within)?;
-        Ok(planned(&layout, &within, &held))
+        let only: BTreeSet<String> = only.into_iter().collect();
+        Ok(planned(&layout, &within, &held, &only))
+    }
+
+    pub fn songs_arrived_under(&self, folder: String, since_seconds: i64) -> Result<Vec<String>> {
+        self.catalog
+            .songs_arrived_within(&within_of(&folder), since_seconds)
     }
 
     pub fn documents_moved(&self, moved: Vec<MovedDocument>) -> Result<()> {
@@ -122,6 +133,34 @@ impl MobilePlayer {
             .query_map([within], read)
             .map_err(|source| Error::store(StoreOp::Read, source))?
             .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+}
+
+impl crate::catalog::Catalog {
+    fn songs_arrived_within(&self, within: &str, since: i64) -> Result<Vec<String>> {
+        let connection = self.0.lock();
+        let read_before: bool = connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM documents WHERE missing = 0 AND added < ?2 AND substr(uri, 1, length(?1)) = ?1)",
+                params![within, since],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+
+        if !read_before {
+            return Ok(Vec::new());
+        }
+
+        let mut query = connection
+            .prepare(
+                "SELECT uri FROM documents WHERE missing = 0 AND added >= ?2 AND substr(uri, 1, length(?1)) = ?1 ORDER BY id",
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        query
+            .query_map(params![within, since], |row| row.get(0))
+            .map_err(|source| Error::store(StoreOp::Read, source))?
+            .collect::<rusqlite::Result<Vec<String>>>()
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 }
@@ -194,7 +233,7 @@ fn within_of(folder: &str) -> String {
     }
 }
 
-fn planned(layout: &Layout, within: &str, held: &[Track]) -> OrganisePlan {
+fn planned(layout: &Layout, within: &str, held: &[Track], only: &BTreeSet<String>) -> OrganisePlan {
     let mut discs: BTreeMap<String, u32> = BTreeMap::new();
 
     for track in held {
@@ -209,8 +248,11 @@ fn planned(layout: &Layout, within: &str, held: &[Track]) -> OrganisePlan {
         .filter_map(|track| relative(&track.uri, within))
         .collect();
     let mut claimed: BTreeSet<String> = BTreeSet::new();
+    let chosen = held
+        .iter()
+        .filter(|track| only.is_empty() || only.contains(&track.uri));
 
-    for track in held {
+    for track in chosen {
         let Some(now) = relative(&track.uri, within) else {
             plan.unplaced += 1;
             continue;
@@ -366,7 +408,7 @@ mod tests {
             ),
         ];
 
-        let plan = planned(&layout, WITHIN, &held);
+        let plan = planned(&layout, WITHIN, &held, &BTreeSet::new());
 
         assert_eq!(plan.unchanged, 1);
         assert_eq!(
@@ -399,12 +441,47 @@ mod tests {
             song(4, "c.flac", "Goodbye", 6, None),
         ];
 
-        let plan = planned(&layout, WITHIN, &held);
+        let plan = planned(&layout, WITHIN, &held, &BTreeSet::new());
 
         assert_eq!(plan.moves.len(), 1);
         assert_eq!(plan.moves[0].id, 1);
         assert_eq!(plan.taken, 2);
         assert_eq!(plan.unchanged, 1);
+    }
+
+    #[test]
+    fn a_plan_asked_for_only_some_songs_files_just_those_and_still_keeps_the_others_places() {
+        let layout = Layout::default();
+        let held = [
+            song(1, "a.flac", "Mother", 5, None),
+            song(2, "b.flac", "Goodbye", 6, None),
+            song(
+                3,
+                "Example%20Band/The%20Pier/07%20Lanterns.flac",
+                "Lanterns",
+                7,
+                None,
+            ),
+            song(4, "c.flac", "Lanterns", 7, None),
+        ];
+        let only = BTreeSet::from([held[1].uri.clone(), held[3].uri.clone()]);
+
+        let plan = planned(&layout, WITHIN, &held, &only);
+
+        assert_eq!(
+            plan.moves,
+            vec![FiledSong {
+                id: 2,
+                from: held[1].uri.clone(),
+                to: vec![
+                    "Example Band".into(),
+                    "The Pier".into(),
+                    "06 Goodbye.flac".into()
+                ],
+            }]
+        );
+        assert_eq!(plan.taken, 1);
+        assert_eq!(plan.unchanged, 0);
     }
 
     #[test]
@@ -424,7 +501,7 @@ mod tests {
             },
         ];
 
-        let plan = planned(&layout, &within, &held);
+        let plan = planned(&layout, &within, &held, &BTreeSet::new());
 
         assert_eq!(within, format!("{TREE}%2F"));
         assert_eq!(plan.unchanged, 1);
@@ -475,6 +552,68 @@ mod tests {
                 ..Track::default()
             })
             .expect("upserted")
+    }
+
+    fn dated(catalog: &crate::catalog::Catalog, song: &Track, added: i64) {
+        catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET added = ?2 WHERE id = ?1",
+                params![song.id as i64, added],
+            )
+            .expect("dated");
+    }
+
+    #[test]
+    fn the_songs_a_scan_brought_are_named_and_a_folders_first_reading_names_none() {
+        const SINCE: i64 = 1_800_000_000;
+
+        let (folder, catalog) = catalogued("arrived");
+        let first = filed(&catalog, "first.flac", "First");
+        let second = filed(&catalog, "second.flac", "Second");
+
+        dated(&catalog, &first, SINCE);
+        dated(&catalog, &second, SINCE + 3);
+
+        assert!(
+            catalog
+                .songs_arrived_within(WITHIN, SINCE)
+                .expect("read")
+                .is_empty()
+        );
+
+        let arrived = filed(&catalog, "downloaded/new.flac", "New");
+        let elsewhere = catalog
+            .upsert(Track {
+                uri: "resonate-folder://other/new.flac".into(),
+                name: "new.flac".into(),
+                title: "Elsewhere".into(),
+                ..Track::default()
+            })
+            .expect("another folder's song");
+
+        dated(&catalog, &first, SINCE - 60);
+        dated(&catalog, &arrived, SINCE + 5);
+        dated(&catalog, &elsewhere, SINCE + 5);
+
+        assert_eq!(
+            catalog.songs_arrived_within(WITHIN, SINCE).expect("read"),
+            [second.uri.clone(), arrived.uri.clone()]
+        );
+
+        catalog
+            .mark_missing(&[arrived.id as i64], &[])
+            .expect("hidden");
+
+        assert!(
+            !catalog
+                .songs_arrived_within(WITHIN, SINCE)
+                .expect("read")
+                .contains(&arrived.uri)
+        );
+
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

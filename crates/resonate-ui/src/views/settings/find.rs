@@ -774,7 +774,7 @@ impl Group {
                 title: words::settings_find::organising(),
                 hint: words::settings_find::organising_hint(),
                 also_called: words::settings_find::tidy_rename_move_layout_template_pattern(),
-                keys: &[ConfigKey::OrganiseAs],
+                keys: &[ConfigKey::OrganiseAs, ConfigKey::OrganiseNewSongs],
             },
             Self::Vault => Described {
                 category: Category::Library,

@@ -194,6 +194,11 @@ Path. The one ordinary folder new songs are copied into. Default: none.
 .B file-dropped
 Boolean. File a song dropped on the window into the music folder by organise-as. Default: true.
 .TP
+.B organise-new-songs
+Boolean. File every song a scan finds new under a library folder by organise-as once the scan
+ends, in the window and after resonate scan. A folder's first scan files nothing, since what it
+held was there before. Default: false.
+.TP
 .B organise-as
 String. The layout that files a song, from the fields {albumartist}, {artist}, {album}, {title},
 {year}, {disc}, {track} and {ext}, separated by /.

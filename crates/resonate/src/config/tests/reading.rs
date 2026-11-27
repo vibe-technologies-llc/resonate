@@ -403,6 +403,15 @@ fn what_is_dropped_is_filed_unless_the_file_says_not() {
 }
 
 #[test]
+fn new_songs_are_organised_as_they_arrive_only_where_the_file_says_so() {
+    let kept = read("organise-new-songs = true").expect("a well formed document");
+
+    assert!(!Config::default().is_on(Switch::OrganiseNewSongs));
+    assert!(kept.is_on(Switch::OrganiseNewSongs));
+    assert!(read("organise-new-songs = \"yes\"").is_err());
+}
+
+#[test]
 fn where_and_how_long_to_listen_are_read() {
     let config =
         read("listen-from = \"microphone\"\nlisten-for = 20").expect("a well formed document");

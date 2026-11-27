@@ -73,6 +73,7 @@ class OrganiseViewModel(private val resonate: Resonate, private val folder: Uri)
     val failedFor: StateFlow<String?> = mutableFailedFor.asStateFlow()
     val planning: StateFlow<Boolean> = mutablePlanning.asStateFlow()
     val busy = organising.busy
+    val newSongs = organising.newSongs
 
     init {
         viewModelScope.launch { snapshotFlow { layout }.collectLatest { preview(it) } }
@@ -80,6 +81,11 @@ class OrganiseViewModel(private val resonate: Resonate, private val folder: Uri)
 
     fun type(text: String) {
         layout = text
+    }
+
+    fun organiseNewSongs(on: Boolean) {
+        val kept = layout.takeIf { organiseLayoutProblem(it) == null } ?: organising.layout()
+        organising.organiseNewSongs(on, kept)
     }
 
     fun organise(moves: List<FiledSong>) {
@@ -122,6 +128,7 @@ fun OrganiseScreen(folder: String) {
     val failedFor by model.failedFor.collectAsStateWithLifecycle()
     val planning by model.planning.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
+    val newSongs by model.newSongs.collectAsStateWithLifecycle()
     var confirming by rememberSaveable { mutableStateOf(false) }
     val problem = remember(layout) { organiseLayoutProblem(layout) }
     val usual = remember { defaultOrganiseLayout() }
@@ -161,6 +168,15 @@ fun OrganiseScreen(folder: String) {
                         }
                     }
                 }
+            }
+            item(key = "new-songs") {
+                SwitchRow(
+                    stringResource(R.string.organise_new_songs),
+                    checked = newSongs,
+                    onCheckedChange = model::organiseNewSongs,
+                    supporting = stringResource(R.string.organise_new_songs_explained),
+                    modifier = Modifier.testTag("organise-new-songs"),
+                )
             }
             if (planning || waiting) {
                 item(key = "planning") { ListLoading() }

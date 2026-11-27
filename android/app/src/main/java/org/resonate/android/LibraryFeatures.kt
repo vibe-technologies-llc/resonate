@@ -243,7 +243,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
             changeAccounts { it.deviceMinted(minted) }
         }
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
-    val organising = FolderOrganising(context, library, settings, scope, ::rereadSongs)
+    val organising =
+        FolderOrganising(
+            context,
+            library,
+            settings,
+            scope,
+            ::rereadSongs,
+            { uri -> folders.value.any { it.uri == uri && it.readable && it.writable } },
+            ::tellFinding,
+        )
     val statistics = MutableStateFlow<LibraryStatistics?>(null)
     val lyrics = MutableStateFlow<LyricSheet?>(null)
     val lyricFrame = MutableStateFlow<LyricFrame?>(null)
@@ -1236,6 +1245,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         folder: MusicFolder,
     ): Int {
         var landed = 0
+        val arrived = ArrayList<String>()
         for ((place, received) in due.withIndex()) {
             currentCoroutineContext().ensureActive()
             if (landing.unpublishedCount > 0) break
@@ -1270,6 +1280,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 created = null
                 landing.landed(received.id)
                 landed++
+                arrived += uri.toString()
                 publishLanded(uri)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -1287,6 +1298,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 }
             }
         }
+        organising.fileWhatArrived(folder.uri, arrived)
         return landed
     }
 
@@ -1434,7 +1446,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun forgetMissing(afterScan: Boolean) {
         val now = SystemClock.elapsedRealtime()
         if (!afterScan && now - missingChecked < MISSING_CHECKED_EVERY_MS) return
-        if (!afterScan && (library.scanning.value || organising.busy.value)) return
+        if (
+            !afterScan &&
+                (library.scanning.value || organising.busy.value || organising.arriving.value)
+        )
+            return
         missingChecked = now
         scope.launch {
             try {

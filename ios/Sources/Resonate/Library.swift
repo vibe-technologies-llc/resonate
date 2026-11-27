@@ -1944,6 +1944,7 @@ final class Library {
         let folders = folders
         let tally = Tally()
         let shown = asked ? nil : allTracks
+        let began = Int64(Date().timeIntervalSince1970)
 
         scanning = true
         scanTold = asked
@@ -1986,6 +1987,10 @@ final class Library {
             }
         } catch {
             failure = error
+        }
+        if failure == nil, !scanStopped {
+            let prefix = folders.prefix(of: id)
+            features.fileWhatArrived(in: id) { try $0.songsArrivedUnder(folder: prefix, sinceSeconds: began) }
         }
         guard asked else {
             await settleUnasked(tally, failure: failure)

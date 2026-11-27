@@ -252,6 +252,7 @@ pub struct ScanSummary {
     pub stats: ScanStats,
     pub cancelled: bool,
     pub replaced: Replaced,
+    pub arrived: Vec<PathBuf>,
 }
 
 fn replaced_after(mut summary: ScanSummary, after: impl FnOnce() -> Replaced) -> ScanSummary {
@@ -408,6 +409,7 @@ pub(crate) fn read_the_landed(
         },
         &mut Cache::default(),
         &mut batch,
+        &mut Vec::new(),
         &mut Vec::new(),
     )?;
 
@@ -615,6 +617,12 @@ impl Known {
         })?;
 
         Ok(known)
+    }
+
+    fn holds_any_under(&self, root: &Path) -> bool {
+        let (from, past) = walked_from(&store::path_text(root));
+
+        self.rows.range(from..past).next().is_some()
     }
 
     fn at(inner: &Inner, paths: &[PathBuf]) -> Result<Self> {
@@ -842,6 +850,11 @@ fn run(
         .map(|root| root.path)
         .collect();
     let known = Known::under(inner, &roots)?;
+    let first_read: AHashSet<i64> = roots
+        .iter()
+        .filter(|root| !known.holds_any_under(&root.path))
+        .map(|root| root.id)
+        .collect();
 
     let (work_tx, work_rx) = bounded::<Job>(QUEUE);
     let (done_tx, done_rx) = bounded::<Outcome>(QUEUE);
@@ -916,7 +929,7 @@ fn run(
     let walked = walker.join().unwrap_or(Err(Error::Stopped {
         pass: PassKind::Scan,
     }));
-    let reached = written?;
+    let Written { reached, arrived } = written?;
 
     walked?;
 
@@ -929,6 +942,7 @@ fn run(
     }
 
     let cancelled = progress.is_cancelled();
+    let mut followed_onto = AHashSet::new();
     let mut changed =
         progress.added.load(Ordering::Relaxed) + progress.updated.load(Ordering::Relaxed);
 
@@ -966,6 +980,7 @@ fn run(
         })?;
 
         undo::followed(inner, &moved.moves);
+        followed_onto.extend(moved.moves.iter().map(|each| each.to.clone()));
 
         progress.moved.store(moved.rows, Ordering::Relaxed);
         progress
@@ -1003,11 +1018,34 @@ fn run(
         inner.restate_the_statistics();
     }
 
+    let arrived = if cancelled {
+        Vec::new()
+    } else {
+        new_songs_among(arrived, &first_read, &followed_onto)
+    };
+
     Ok(ScanSummary {
         stats: progress.snapshot(),
         cancelled,
         replaced: Replaced::default(),
+        arrived,
     })
+}
+
+fn new_songs_among(
+    arrived: Vec<Arrival>,
+    first_read: &AHashSet<i64>,
+    followed_onto: &AHashSet<PathBuf>,
+) -> Vec<PathBuf> {
+    let mut named = AHashSet::new();
+
+    arrived
+        .into_iter()
+        .filter(|arrival| !first_read.contains(&arrival.root_id))
+        .map(|arrival| arrival.path)
+        .filter(|path| !followed_onto.contains(path))
+        .filter(|path| named.insert(path.clone()))
+        .collect()
 }
 
 fn heard_as(path: &Path) -> Option<String> {
@@ -2330,23 +2368,47 @@ struct Writing<'a> {
     mounting: &'a volumes::Mounting,
 }
 
-fn write_all(
-    inner: &Inner,
-    writing: &Writing<'_>,
-    done: &Receiver<Outcome>,
-) -> Result<store::Reached> {
+struct Written {
+    reached: store::Reached,
+    arrived: Vec<Arrival>,
+}
+
+struct Arrival {
+    root_id: i64,
+    path: PathBuf,
+}
+
+fn write_all(inner: &Inner, writing: &Writing<'_>, done: &Receiver<Outcome>) -> Result<Written> {
     let mut cache = Cache::default();
     let mut batch = Vec::with_capacity(BATCH);
     let mut reached = Vec::new();
+    let mut arrived = Vec::new();
 
     for outcome in done {
         batch.push(outcome);
         if batch.len() >= BATCH {
-            commit(inner, writing, &mut cache, &mut batch, &mut reached)?;
+            commit(
+                inner,
+                writing,
+                &mut cache,
+                &mut batch,
+                &mut reached,
+                &mut arrived,
+            )?;
         }
     }
-    commit(inner, writing, &mut cache, &mut batch, &mut reached)?;
-    Ok(store::Reached::of(reached))
+    commit(
+        inner,
+        writing,
+        &mut cache,
+        &mut batch,
+        &mut reached,
+        &mut arrived,
+    )?;
+    Ok(Written {
+        reached: store::Reached::of(reached),
+        arrived,
+    })
 }
 
 fn commit(
@@ -2355,6 +2417,7 @@ fn commit(
     cache: &mut Cache,
     batch: &mut Vec<Outcome>,
     reached: &mut Vec<i64>,
+    arrived: &mut Vec<Arrival>,
 ) -> Result<()> {
     let Writing {
         extract_cover_art,
@@ -2413,6 +2476,10 @@ fn commit(
                                 span_start,
                                 generation,
                             )?;
+                            arrived.push(Arrival {
+                                root_id: record.root_id,
+                                path: record.path.clone(),
+                            });
                             added += 1;
                         }
                     }

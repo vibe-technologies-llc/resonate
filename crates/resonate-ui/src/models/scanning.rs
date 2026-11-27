@@ -7,7 +7,7 @@ use super::{
     Change, Edited, LibraryModel, POLLS_PER_RELOAD, Pass, Prompted, Reading, RootWaiting,
     SCAN_POLL, ToFile, Wanted, Work, told::scanned, watched::walk,
 };
-use crate::{toast, words};
+use crate::{ResonateApp, toast, words};
 
 impl LibraryModel {
     pub fn rescan(&mut self, cx: &mut Context<Self>) {
@@ -107,6 +107,18 @@ impl LibraryModel {
             None => self.delivered.to_file = Some(ToFile { layout, files }),
         }
         cx.notify();
+    }
+
+    fn organise_what_arrived(&mut self, arrived: &[PathBuf], cx: &mut Context<Self>) {
+        let Some(layout) = cx
+            .try_global::<ResonateApp>()
+            .filter(|global| global.organise_new_songs)
+            .map(|global| Layout::read(&global.organise_as).unwrap_or_default())
+        else {
+            return;
+        };
+
+        self.file_once_scanned(layout, arrived.to_vec(), cx);
     }
 
     pub(super) fn take_up_what_waited(&mut self, cx: &mut Context<Self>) {
@@ -218,8 +230,14 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.running.work = Work::Nothing;
+
+                let joined = handle.join();
+
+                if let Ok(summary) = &joined {
+                    this.organise_what_arrived(&summary.arrived, cx);
+                }
                 this.take_up_what_waited(cx);
-                match handle.join() {
+                match joined {
                     Ok(summary) => {
                         if let Some(notice) = scanned(&summary, prompted) {
                             toast::tell(notice, cx);

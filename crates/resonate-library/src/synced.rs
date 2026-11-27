@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom},
-    num::NonZeroUsize,
+    num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
     thread,
     time::{Duration, SystemTime},
@@ -1670,15 +1670,27 @@ pub(crate) fn file_song(
     let root = library
         .root_reaching(&folder)?
         .unwrap_or_else(|| folder.clone());
+    let disc = tags.disc_number.and_then(NonZeroU32::new);
+
     let named = Named {
-        album_artist: None,
+        album_artist: tags
+            .album_artist
+            .as_deref()
+            .filter(|owner| !owner.trim().is_empty()),
         artist: Some(&recording.artist),
         album: (!recording.album.trim().is_empty()).then_some(recording.album.as_str()),
         title: &recording.title,
-        year: None,
-        disc: None,
-        discs: 1,
-        track: None,
+        year: tags
+            .date
+            .as_deref()
+            .and_then(store::year)
+            .and_then(|year| i32::try_from(year).ok()),
+        disc,
+        discs: tags
+            .disc_total
+            .unwrap_or(1)
+            .max(disc.map_or(1, NonZeroU32::get)),
+        track: tags.track_number,
         extension: Some(extension.as_str()),
     };
 

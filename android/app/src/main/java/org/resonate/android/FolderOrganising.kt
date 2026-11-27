@@ -3,6 +3,7 @@ package org.resonate.android
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,9 +43,13 @@ class FolderOrganising(
     private val settings: SharedPreferences,
     private val scope: CoroutineScope,
     private val reread: suspend (MobilePlayer) -> Unit,
+    private val filable: (Uri) -> Boolean,
+    private val tellFinding: (String) -> Unit,
 ) {
     val busy = MutableStateFlow(false)
     val undo = MutableStateFlow<OrganiseUndo?>(null)
+    val newSongs = MutableStateFlow(settings.getBoolean(NEW_SONGS_KEY, false))
+    val arriving = MutableStateFlow(false)
 
     fun layout(): String = settings.getString(LAYOUT_KEY, null) ?: defaultOrganiseLayout()
 
@@ -52,10 +57,52 @@ class FolderOrganising(
         settings.edit().putString(LAYOUT_KEY, layout).apply()
     }
 
+    fun organiseNewSongs(on: Boolean, layout: String) {
+        settings.edit().putBoolean(NEW_SONGS_KEY, on).putString(LAYOUT_KEY, layout).apply()
+        newSongs.value = on
+    }
+
     suspend fun plan(folder: Uri, layout: String): OrganisePlan =
         withContext(Dispatchers.IO) {
-            library.holding { it.planOrganise(MusicDocuments.rootDocument(folder), layout) }
+            library.holding {
+                it.planOrganise(MusicDocuments.rootDocument(folder), layout, emptyList())
+            }
         }
+
+    fun fileWhatArrived(folder: Uri, arrived: List<String>) {
+        if (!filesWhatArrivesIn(folder) || arrived.isEmpty()) return
+        scope.launch { library.afterScans { fileWhatArrivedNow(folder) { arrived } } }
+    }
+
+    fun filesWhatArrivesIn(folder: Uri): Boolean =
+        newSongs.value && folder != MusicDocuments.downloads && filable(folder)
+
+    suspend fun fileWhatArrivedNow(folder: Uri, arrived: suspend (MobilePlayer) -> List<String>) {
+        if (!filesWhatArrivesIn(folder)) return
+        arriving.value = true
+        try {
+            val plan =
+                withContext(Dispatchers.IO) {
+                    library.holding { native ->
+                        val only = arrived(native)
+                        if (only.isEmpty()) null
+                        else native.planOrganise(MusicDocuments.rootDocument(folder), layout(), only)
+                    }
+                }
+            if (plan == null || plan.moves.isEmpty()) return
+            val result = withContext(Dispatchers.IO) { FolderFiling(SafTree(context, folder)).file(plan.moves) }
+            library.inOrder { native -> native.documentsMoved(result.moved) }
+            library.holding { reread(it) }
+            val said = OrganiseSentences.told(library.words, result.moved.size, result.failed, false)
+            if (result.failed > 0) library.notice(said) else tellFinding(said)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            library.report(failure)
+        } finally {
+            arriving.value = false
+        }
+    }
 
     fun organise(folder: Uri, songs: List<FiledSong>) = file(folder, songs, undoing = false)
 
@@ -92,5 +139,6 @@ class FolderOrganising(
 
     companion object {
         const val LAYOUT_KEY = "organise-layout"
+        const val NEW_SONGS_KEY = "organise-new-songs"
     }
 }

@@ -12,6 +12,7 @@ use crate::{
     error::{Error, Result},
     online,
     online::Asking,
+    organising::organise_what_arrived,
     passes::{finished, none_failed, until_told},
     sinks::broken_down,
     words,
@@ -47,6 +48,7 @@ pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Res
         said!("{}", words::main::cancelled());
     }
     finished(PassKind::Scan, summary.cancelled)?;
+    organise_what_arrived(library, config, summary.arrived)?;
 
     let scanned = none_failed(PassKind::Scan, stats.failed.total());
 

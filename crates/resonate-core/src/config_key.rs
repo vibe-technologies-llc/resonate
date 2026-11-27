@@ -178,6 +178,7 @@ keys! {
     MusicExtensions = "music-extensions";
     MinimumLength = "minimum-length-s";
     FileDropped = "file-dropped", on;
+    OrganiseNewSongs = "organise-new-songs", off;
     Subsonic = "subsonic";
     SubsonicUser = "subsonic-user";
     SubsonicPassword = "subsonic-password";

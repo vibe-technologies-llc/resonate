@@ -375,6 +375,7 @@ final class DownloadQueue {
 
             update(id) { $0.state = .done(track) }
             landed(track)
+            library.features.fileWhatArrived(in: folder) { _ in [uri] }
         } catch {
             await discard(id, folders)
             let cancelled = (error as? ResonateNative.Error)?.isCancelledDownload == true || error is CancellationError

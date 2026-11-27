@@ -1372,7 +1372,14 @@ every route change (a pair of headphones at the same rate included), not from th
   empty (a `.DS_Store` aside) are removed up to the root. The new URIs are `uri(root:relative:)`'s,
   the scan's own spelling, so a rescan finds the same rows; `documents_moved` runs on `Work.inOrder`.
   The moves back are kept for the session: Library tools' *Put files back* files them again the
-  other way.
+  other way. **New songs are organised as they arrive where the listener says so** (*Organise new
+  songs as they arrive*, `organise-new-songs` in `library-features`, off by default,
+  `OrganiseLayout.newSongs`): `Features.fileWhatArrived` chains on `Library.afterScans` and files,
+  by the layout kept, what lands in a writable folder: a scan's songs (the walk asks
+  `songs_arrived_under` from the moment it began, so a folder's first scan files nothing), a
+  download (`DownloadQueue`) and the songs a sync landing made, through `plan_organise` with `only`,
+  `Folders.file` and `documents_moved`, its notice an unasked one (`noticeUnasked`) unless a move
+  failed (`android.md`'s *A folder is organised*).
 
 ## Appearance
 

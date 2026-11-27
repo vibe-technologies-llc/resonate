@@ -2466,6 +2466,20 @@ guard and re-keys a sleeve-keyed album after moves land.
   every source standing where the move lands; `walked` is an iterative depth-first topological
   order; meeting a cycle or a doomed move dooms every move on the walk (`Collided`); a unit whose
   member lands where another member stands waits on itself and is doomed.
+- **New songs are organised as they arrive where `organise-new-songs` says so** (off by default):
+  organise runs once when asked, so songs arriving later stayed where they landed. A scan names what
+  it brought in `ScanSummary::arrived`: the paths its `commit` inserted as new rows, less three kinds
+  (`new_songs_among`): a root's first reading (`Known::holds_any_under` says the catalog held
+  nothing under it before the walk, so a folder just added keeps the collection it already had), a
+  path a move was followed onto (the listener filed it there by hand, and organising it would fight
+  them) and every arrival of a cancelled scan (the move pairing never ran). The window and `resonate
+  scan` hand that list to `Library::organise` as `OrganiseOptions::only` with `apply` on
+  (`a_scan_names_the_songs_that_arrived_and_not_a_folders_first_reading_or_a_move`). A keep's or
+  poll's delivery is already filed in the music folder by `filed::filed_for` and a vault's is
+  rootless, so neither needs the pass. **A song from another device lands under the whole layout**:
+  `synced::file_song` fills `Named` from the sender's `HeldTags` (album artist, the date's year,
+  disc, disc count and track), not the title, artist and album alone
+  (`a_song_from_another_device_is_filed_by_the_whole_layout_its_sender_declares`).
 
 ## Taking files in
 

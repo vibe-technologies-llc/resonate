@@ -60,7 +60,10 @@ paths:
   `RetagOptions::lyrics`, `library.md`), its plan printed as the rest of `tag` prints one with a
   lyric field shown as its count of lines (`shown`), and `--undo` puts it back like any run; it
   conflicts with `--replace`.
-- **`scan` is incremental and off links unless told** (`--full`, `--follow-links`).
+- **`scan` is incremental and off links unless told** (`--full`, `--follow-links`). With
+  `organise-new-songs` on it then organises the songs it brought (`organise_what_arrived`, over
+  `ScanSummary::arrived`, `library.md`'s *Organising*), printing the moves as `organise --apply`
+  does; `poll` needs nothing, its deliveries being filed by `organise-as` already.
 - **`forget` reads each argument as the first of three**: a root (`Library::remove_root`); a
   path/URI `wants` lists a delivery under (`forget_delivered`, want due again); a folder, whose rows
   with a gone file `Library::retire` drops even on an unmounted drive (the one place a scan keeps
@@ -485,7 +488,7 @@ subject.
 
 **Keys whose rule is not obvious**
 
-- **Live keys ride `Stored` onto a `ResonateApp` field** (`music_folder`, `file_dropped`,
+- **Live keys ride `Stored` onto a `ResonateApp` field** (`music_folder`, `file_dropped`, `organise_new_songs`,
   `scroll_volume`, `mouse_navigation`, `reduced_motion`, `scrollbars`, `tabs`, `WindowButtons`), written by the
   Appearance and Library panes, live at once. `Config::window_buttons`/`Config::tabs` fold their
   switches; close is never a window button; an off tab leaves the sidebar and pane keys,

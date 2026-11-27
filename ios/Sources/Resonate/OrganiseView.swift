@@ -4,6 +4,7 @@ import SwiftUI
 
 enum OrganiseLayout {
     private static let key = "organise-layout"
+    private static let newSongsKey = "organise-new-songs"
 
     private static var settings: UserDefaults {
         UserDefaults(suiteName: "library-features") ?? .standard
@@ -15,6 +16,11 @@ enum OrganiseLayout {
 
     static func keep(_ layout: String) {
         settings.set(layout, forKey: key)
+    }
+
+    static var newSongs: Bool {
+        get { settings.bool(forKey: newSongsKey) }
+        set { settings.set(newValue, forKey: newSongsKey) }
     }
 }
 
@@ -30,6 +36,7 @@ struct OrganiseSheet: View {
     @State private var failedFor: String?
     @State private var planning = false
     @State private var confirming = false
+    @State private var newSongs = OrganiseLayout.newSongs
 
     var body: some View {
         let problem = organiseLayoutProblem(layout: layout)
@@ -53,6 +60,11 @@ struct OrganiseSheet: View {
                     } else {
                         Text("organise.layout.fields")
                     }
+                }
+                Section {
+                    Toggle("organise.new-songs", isOn: $newSongs)
+                } footer: {
+                    Text("organise.new-songs.footer")
                 }
                 if planning || waiting {
                     Section { ProgressView().accessibilityLabel("organise.planning").frame(maxWidth: .infinity) }
@@ -116,6 +128,10 @@ struct OrganiseSheet: View {
             }
         }
         .task(id: layout) { await preview(problem == nil) }
+        .onChange(of: newSongs) { _, on in
+            if on, organiseLayoutProblem(layout: layout) == nil { OrganiseLayout.keep(layout) }
+            OrganiseLayout.newSongs = on
+        }
     }
 
     private func preview(_ readable: Bool) async {

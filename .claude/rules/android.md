@@ -1200,14 +1200,20 @@ are off), and one notice counts what was chosen, is downloading and was passed o
 reads the list again after each keep.
 
 **A folder is organised by the desktop's layout, its files moved by the front end** (`organising.rs`).
-`plan_organise(folder, layout)` reads the layout through `resonate_library::Layout` (refused as
+`plan_organise(folder, layout, only)` reads the layout through `resonate_library::Layout` (refused as
 `LayoutUnreadable`; `organise_layout_problem` says why before asking, `default_organise_layout` is
 `DEFAULT_LAYOUT`) and renders every unhidden document whose URI lies under the folder's prefix
 through `Layout::render` with `Named` filled from its row (album artist, artist and album where
 given, title, the year off the date's first four digits, disc, the album's disc count, track,
 the file name's extension) under `Naming::Anything`. A song rendering nothing is `unplaced`, one
 already at its place `unchanged`, one whose place another song stands at or claimed first `taken`;
-the rest are `FiledSong`s (id, URI, the path's components). The front end moves each file and
+the rest are `FiledSong`s (id, URI, the path's components). A non-empty `only` (document URIs)
+plans those songs alone while every other song still holds its place, so a song arriving is never
+filed onto one standing (`a_plan_asked_for_only_some_songs_files_just_those_and_still_keeps_the_others_places`).
+`songs_arrived_under(folder, since_seconds)` names the visible documents under the folder whose row
+was made (`documents.added`) at or after the moment, and none where nothing under it was held
+before then, so a folder's first scan files nothing
+(`the_songs_a_scan_brought_are_named_and_a_folders_first_reading_names_none`). The front end moves each file and
 reports the new URIs in one `documents_moved`: it rewrites every moved row's URI in one
 transaction (ids, and with them favourites, plays, playlists and lyrics, stay; `Rekeyed` answers
 each old and new location), then sends `Command::Relocate` with those pairs to every zone and waits
@@ -1255,6 +1261,19 @@ catalog, playlists and queue are read again and a notice counts what was *Filed*
 moved. A provider without `moveDocument` fails every move. The moves back are kept for the session
 (`FolderOrganising.undo`): Library tools' *Put files back* files them the other way through the same
 code, with the old places as the destinations.
+
+**New songs are organised as they arrive where the listener says so**, as the desktop's
+`organise-new-songs` does: *Organise new songs as they arrive* on the Organise page
+(`organise-new-songs` in `library-features`, off by default, `FolderOrganising.newSongs`; turning it
+on keeps the layout typed) files, by the layout kept, what lands in a writable tree
+(`FolderOrganising.filesWhatArrivesIn`, never Downloads): a scan's songs (`scanFolder` asks
+`songs_arrived_under` from the moment it began and calls `fileWhatArrivedNow` inside its own hold of
+`afterScans`, before the missing-song pass), a download (`DownloadQueue`, its document's URI) and the
+songs a sync landing made (`landEach`, not a copy found already standing), the last two through
+`fileWhatArrived`, which waits on `afterScans`. Each is `plan_organise` with `only`, `FolderFiling`
+and one `documents_moved`; `FolderOrganising.arriving` holds the missing-song pass back meanwhile,
+the moves are not kept for *Put files back*, and the notice is a finding (`tellFinding`) unless a
+move failed.
 
 ## Searching the documents
 

@@ -554,6 +554,7 @@ impl Driven {
                 head_yaw: HeadYaw::AHEAD,
                 music_folder: None,
                 file_dropped: true,
+                organise_new_songs: false,
                 window_buttons: WindowButtons::SHOWN,
                 scroll_volume: true,
                 mouse_navigation: true,
@@ -3284,6 +3285,69 @@ mod tests {
             fs::read(filed.join("cover.jpg")).expect("the cover followed its song"),
             b"picture"
         );
+    }
+
+    fn rescanned_with_a_song_arriving(cx: &mut TestAppContext, filed: bool) -> (Folder, PathBuf) {
+        let folder = Folder::new();
+
+        folder.tagged("First.wav", 1, &[(b"INAM", "First"), (b"IART", "Singer")]);
+
+        let library = catalog();
+
+        Driven::scanned(&library, &folder);
+
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|global, _| {
+                global.organise_as = "{artist}/{title}".to_owned();
+                global.organise_new_songs = filed;
+            });
+        });
+
+        let arriving = folder.tagged(
+            "Downloaded.wav",
+            1,
+            &[(b"INAM", "Second"), (b"IART", "Singer")],
+        );
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library.update(cx, |model, cx| model.rescan(cx));
+        });
+        driven.until(|_, _| {
+            library
+                .tracks_counted(&resonate_library::TrackQuery::default())
+                .is_ok_and(|counted| counted == 2)
+        });
+        driven.until(|root, cx| !root.library.read(cx).is_busy());
+        if filed {
+            driven.until(|_, _| folder.path().join("Singer/Second.wav").is_file());
+            driven.until(|root, cx| !root.library.read(cx).is_busy());
+        }
+        (folder, arriving)
+    }
+
+    #[gpui::test]
+    fn a_song_a_scan_finds_new_is_filed_by_the_layout_once_idle_while_organising_new_songs(
+        cx: &mut TestAppContext,
+    ) {
+        let (folder, arriving) = rescanned_with_a_song_arriving(cx, true);
+
+        assert!(!arriving.exists(), "the new song stayed where it arrived");
+        assert!(
+            folder.path().join("First.wav").is_file(),
+            "the song the folder held before was moved"
+        );
+    }
+
+    #[gpui::test]
+    fn a_song_a_scan_finds_new_stays_where_it_arrived_while_organising_new_songs_is_off(
+        cx: &mut TestAppContext,
+    ) {
+        let (folder, arriving) = rescanned_with_a_song_arriving(cx, false);
+
+        assert!(arriving.is_file(), "the new song was moved");
+        assert!(!folder.path().join("Singer").exists());
     }
 
     #[gpui::test]

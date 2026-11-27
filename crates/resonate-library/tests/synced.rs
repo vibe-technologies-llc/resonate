@@ -765,6 +765,46 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
     Ok(())
 }
 
+#[test]
+fn a_song_from_another_device_is_filed_by_the_whole_layout_its_sender_declares() -> Result<()> {
+    let tree = Tree::new();
+
+    tree.song("held/lantern.wav", "Lantern", "Example Band", "Tideline");
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &tree.root)?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+
+    let arriving = song("Harbour Lights", "Example Band", "Tideline");
+    let declared = HeldTags {
+        album_artist: Some("Example Band".to_owned()),
+        date: Some("2019-04-12".to_owned()),
+        track_number: Some(3),
+        track_total: Some(9),
+        disc_number: Some(2),
+        disc_total: Some(2),
+        compilation: false,
+    };
+    let bytes = tagged_wav_opening_on("Harbour Lights", "Example Band", "Tideline", 1);
+
+    let SongFiled::Filed(filed) =
+        library.file_song_from_elsewhere(&arriving, &declared, "wav", &mut Cursor::new(bytes))?
+    else {
+        panic!("filed");
+    };
+
+    assert!(
+        filed.ends_with("Example Band/Tideline/2-03 Harbour Lights.wav"),
+        "{}",
+        filed.display()
+    );
+    Ok(())
+}
+
 fn filed_from_elsewhere(library: &Library, arriving: &[Recording]) -> Result<Vec<PathBuf>> {
     let mut filed = Vec::new();
 

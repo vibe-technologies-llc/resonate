@@ -906,6 +906,7 @@ pub struct Stored {
     pub head_yaw: HeadYaw,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
+    pub organise_new_songs: bool,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub mouse_navigation: bool,

@@ -34,6 +34,7 @@ use crate::{
 const FOLDER_GROUP: &str = "folder";
 
 const FILE_DROPPED_ID: &str = "file-dropped";
+const ORGANISE_NEW_SONGS_ID: &str = "organise-new-songs";
 
 impl Choice for HistoryKept {
     const ALL: &'static [Self] = &Self::OFFERED;
@@ -1002,6 +1003,7 @@ impl RootView {
             .organised()
             .filter(|(pass, _)| !pass.applies())
             .map(|(_, summary)| filed(summary));
+        let arriving = cx.global::<ResonateApp>().organise_new_songs;
 
         kit::rows()
             .child(
@@ -1048,6 +1050,20 @@ impl RootView {
                 body.child(note(going(stats.unwrap_or_default(), moving)))
             })
             .when_some(told, |body, told| body.child(note(told)))
+            .child(self.in_the_ring(
+                ORGANISE_NEW_SONGS_ID,
+                switch_row(
+                    words::settings_library::organise_new_songs_as_they_arrive(),
+                    words::settings_library::each_song_a_scan_finds_new(),
+                    arriving,
+                    ORGANISE_NEW_SONGS_ID,
+                ),
+                move |this, _, cx| {
+                    this.organise_what_arrives(!arriving, cx);
+                    this.store(&Setting::Switched(Switch::OrganiseNewSongs, !arriving), cx);
+                },
+                cx,
+            ))
             .note(words::settings_library::organising_note())
     }
 
@@ -1818,6 +1834,11 @@ fn vaulted(summary: &ImportSummary) -> String {
 impl RootView {
     pub(crate) fn file_what_is_dropped(&self, filed: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.file_dropped = filed);
+        cx.notify();
+    }
+
+    pub(crate) fn organise_what_arrives(&self, filed: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.organise_new_songs = filed);
         cx.notify();
     }
 

@@ -200,6 +200,7 @@ class DownloadQueue(
                 forgetJournal(uri)
                 change(key) { it.copy(state = DownloadState.DONE, received = count) }
                 seams.landed()
+                library.features.organising.fileWhatArrived(folder, listOf(uri.toString()))
             }
         } catch (cancelled: CancellationException) {
             throw cancelled

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use resonate_core::MediaLocation;
+use resonate_core::{MediaLocation, Switch};
 use resonate_library::{
     Layout, Library, Move, OrganiseOptions, OrganiseSummary, PassKind, Refusal, Refused,
 };
@@ -50,6 +50,29 @@ pub(crate) fn organise(
     }
     finished(PassKind::Organise, summary.cancelled)?;
     none_failed(PassKind::Organise, failed_to_apply(&summary, how))
+}
+
+pub(crate) fn organise_what_arrived(
+    library: &Library,
+    config: &Config,
+    arrived: Vec<PathBuf>,
+) -> Result<()> {
+    if arrived.is_empty() || !config.is_on(Switch::OrganiseNewSongs) {
+        return Ok(());
+    }
+
+    let summary = until_told(library.organise(OrganiseOptions {
+        layout: config.organise_as(),
+        roots: Vec::new(),
+        only: arrived,
+        apply: true,
+        walk_back: false,
+    })?)?;
+
+    said_on!("{}", organised(&summary, &library.roots()?, true));
+    tell_the_players_where_files_went(&summary);
+    finished(PassKind::Organise, summary.cancelled)?;
+    none_failed(PassKind::Organise, summary.stats.failed)
 }
 
 fn nothing_was_kept_to_put_back(summary: &OrganiseSummary) -> bool {
