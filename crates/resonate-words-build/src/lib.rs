@@ -13,7 +13,9 @@ use fluent_syntax::{
     ast::{Entry, Expression, InlineExpression, Pattern, PatternElement},
     parser::{self, ParserError},
 };
-pub use prose::{Comment, Prose, prose_in, prose_of, reads_as_prose};
+pub use prose::{
+    Comment, Prose, prose_in, prose_in_drawn, prose_of, prose_of_drawn, reads_as_prose,
+};
 
 const WORDS: &str = "words";
 const ENGLISH: &str = "en";

@@ -1364,7 +1364,7 @@ impl RootView {
                 cx.notify();
             }))
             .child(field.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+            .child(kit::figure(words::keys::enter()).text_color(rgb(theme::faint())))
     }
 
     pub(super) fn let_go_of_the_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {

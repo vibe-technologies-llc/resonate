@@ -637,7 +637,7 @@ impl RootView {
                 cx.notify();
             }))
             .child(self.typed.name.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+            .child(kit::figure(words::keys::enter()).text_color(rgb(theme::faint())))
     }
 
     fn one_playlist(&mut self, opened: PlaylistId, cx: &mut Context<Self>) -> AnyElement {

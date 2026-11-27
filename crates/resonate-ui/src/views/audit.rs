@@ -261,11 +261,35 @@ mod words {
 
     const STILL_TO_MOVE: &[&str] = &[];
 
+    const DRAWN_TO_A_LISTENER: &[&str] = &[
+        ".child(",
+        ".children(",
+        "kit::figure(",
+        "kit::code(",
+        "kit::eyebrow(",
+        "kit::title(",
+        "kit::subtitle(",
+        "kit::stepper_reading(",
+        "kit::tag(",
+        "kit::badge(",
+        "kit::section_name(",
+        "kit::row_name(",
+        "kit::row_under(",
+        "kit::note(",
+        "kit::group_title(",
+        "kit::choice_name(",
+        "kit::detail(",
+        "kit::card_title(",
+        "kit::hero_title(",
+        "kit::empty(",
+        "kit::trouble(",
+    ];
+
     #[test]
     fn every_word_the_window_shows_is_said_through_its_catalog() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let found =
-            resonate_words_build::prose_in(&root, PROPER).expect("the window's sources read");
+        let found = resonate_words_build::prose_in_drawn(&root, PROPER, DRAWN_TO_A_LISTENER)
+            .expect("the window's sources read");
 
         let unmoved: Vec<String> = found
             .iter()
@@ -295,5 +319,24 @@ mod words {
             moved.is_empty(),
             "files whose words are all moved: {moved:?}"
         );
+    }
+
+    #[test]
+    fn a_lone_lowercase_word_drawn_in_the_window_is_refused() {
+        let source = r##"
+fn drawn() -> Div {
+    div()
+        .child("none")
+        .child(kit::figure("enter"))
+        .id("none")
+        .key_context("none")
+}
+"##;
+        let found: Vec<String> = resonate_words_build::prose_of_drawn(source, DRAWN_TO_A_LISTENER)
+            .into_iter()
+            .map(|said| said.text)
+            .collect();
+
+        assert_eq!(found, ["none", "enter"]);
     }
 }

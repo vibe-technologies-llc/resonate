@@ -73,6 +73,14 @@ pub struct Prose {
 }
 
 pub fn prose_in(root: &Path, proper: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Prose>>> {
+    prose_in_drawn(root, proper, &[])
+}
+
+pub fn prose_in_drawn(
+    root: &Path,
+    proper: &[&str],
+    drawn: &[&str],
+) -> Result<BTreeMap<PathBuf, Vec<Prose>>> {
     let mut found = BTreeMap::new();
     let mut waiting = vec![root.to_owned()];
 
@@ -90,7 +98,7 @@ pub fn prose_in(root: &Path, proper: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Pr
                 path: path.clone(),
                 source,
             })?;
-            let prose: Vec<Prose> = prose_of(&source)
+            let prose: Vec<Prose> = prose_of_drawn(&source, drawn)
                 .into_iter()
                 .filter(|said| !proper.contains(&said.text.as_str()))
                 .collect();
@@ -105,9 +113,16 @@ pub fn prose_in(root: &Path, proper: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Pr
 }
 
 pub fn prose_of(source: &str) -> Vec<Prose> {
+    prose_of_drawn(source, &[])
+}
+
+pub fn prose_of_drawn(source: &str, drawn: &[&str]) -> Vec<Prose> {
     let lexed = lexed(source);
     let unread = lines_unread(&lexed.code);
-    let spoken = spans_said_to_a_listener(&lexed.code.join("\n"));
+    let code = lexed.code.join("\n");
+    let mut spoken = spans_said_to_a_listener(&code);
+
+    spoken.extend(spans_drawn_to_a_listener(&code, drawn));
 
     lexed
         .literals
@@ -163,37 +178,76 @@ fn spans_said_to_a_listener(code: &str) -> Vec<Range<usize>> {
     let mut spans = Vec::new();
 
     for marker in SAID_TO_A_LISTENER {
-        for (opened, _) in code.match_indices(marker) {
-            let named_apart = code[..opened]
-                .chars()
-                .next_back()
-                .is_none_or(|before| !before.is_alphanumeric() && before != '_');
-
-            if !named_apart {
-                continue;
-            }
-
+        for opened in openings_of(code, marker) {
             let from = opened + marker.len();
-            let mut depth = 1usize;
-            let mut end = code.len();
+            let (end, _) = argument_end(code, from);
 
-            for (at, letter) in code[from..].char_indices() {
-                match letter {
-                    '(' | '[' => depth += 1,
-                    ')' | ']' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            end = from + at;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
             spans.push(from..end);
         }
     }
     spans
+}
+
+fn spans_drawn_to_a_listener(code: &str, drawn: &[&str]) -> Vec<Range<usize>> {
+    let mut spans = Vec::new();
+
+    for marker in drawn {
+        for opened in openings_of(code, marker) {
+            let from = opened + marker.len();
+            let (_, direct) = argument_end(code, from);
+
+            spans.extend(direct);
+        }
+    }
+    spans
+}
+
+fn openings_of<'a>(code: &'a str, marker: &'a str) -> impl Iterator<Item = usize> + 'a {
+    let names_a_method = marker.starts_with('.');
+
+    code.match_indices(marker)
+        .map(|(opened, _)| opened)
+        .filter(move |opened| {
+            names_a_method
+                || code[..*opened]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|before| !before.is_alphanumeric() && before != '_')
+        })
+}
+
+fn argument_end(code: &str, from: usize) -> (usize, Vec<Range<usize>>) {
+    let mut depth = 1usize;
+    let mut end = code.len();
+    let mut direct = Vec::new();
+    let mut stretch = from;
+
+    for (at, letter) in code[from..].char_indices() {
+        match letter {
+            '(' | '[' => {
+                if depth == 1 {
+                    direct.push(stretch..from + at);
+                }
+                depth += 1;
+            }
+            ')' | ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = from + at;
+                    direct.push(stretch..end);
+                    break;
+                }
+                if depth == 1 {
+                    stretch = from + at;
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth > 0 {
+        direct.push(stretch..end);
+    }
+    (end, direct)
 }
 
 fn without_placeholders(text: &str) -> String {
@@ -656,6 +710,47 @@ fn shown(table: &mut Table, ready: bool) {
             texts(source),
             ["ready", "none", "faststart", "lossless", "none"]
         );
+    }
+
+    #[test]
+    fn a_lone_lowercase_word_is_prose_where_the_caller_names_a_drawing_position() {
+        let source = r##"
+fn drawn(row: Div, ready: bool) -> Div {
+    row.child("none")
+        .child(if ready { "ready" } else { "faststart" })
+        .child(SharedString::from("lossless"))
+        .child(div().id("row-id").child(kit::figure("12")))
+        .child(kit::button("previous", icon))
+        .id("keyed")
+        .key_context("player")
+}
+"##;
+        let drawn = [".child(", "SharedString::from("];
+
+        let found: Vec<String> = prose_of_drawn(source, &drawn)
+            .into_iter()
+            .map(|said| said.text)
+            .collect();
+
+        assert_eq!(found, ["none", "ready", "faststart", "lossless"]);
+        assert!(texts(source).is_empty());
+    }
+
+    #[test]
+    fn a_drawing_position_weighs_only_the_arguments_it_holds_directly() {
+        let source = r##"
+fn drawn(row: Div) -> Div {
+    row.child(div().id("inner").child("nested"))
+        .child(kit::figure("12").id("other"))
+        .child(format!("{}", "shown"))
+}
+"##;
+        let found: Vec<String> = prose_of_drawn(source, &[".child("])
+            .into_iter()
+            .map(|said| said.text)
+            .collect();
+
+        assert_eq!(found, ["nested"]);
     }
 
     #[test]

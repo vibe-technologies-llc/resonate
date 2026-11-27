@@ -209,8 +209,14 @@ words.
   placeholder, no space) is prose only inside the arguments of `said!`, `said_on!`, `told!`, the
   `print` and `write` macros or a `table.push(` (`SAID_TO_A_LISTENER`), where it reaches a listener
   whole; a key, a match arm or a protocol string elsewhere stays code
-  (`a_lone_lowercase_word_is_prose_only_where_it_reaches_a_listener`). `resonate-ui`'s is `every_word_the_window_shows_is_said_through_its_catalog`
-  (`views/audit.rs`): `PROPER` names the literals that are names, `NOT_WORDS` the files that hold
+  (`a_lone_lowercase_word_is_prose_only_where_it_reaches_a_listener`). A caller may name more
+  positions to `prose_in_drawn`/`prose_of_drawn`, weighed only on the arguments a position holds
+  directly, never inside a call nested in it, so `.child(div().id("none"))` stays an id
+  (`a_lone_lowercase_word_is_prose_where_the_caller_names_a_drawing_position`,
+  `a_drawing_position_weighs_only_the_arguments_it_holds_directly`). `resonate-ui`'s is `every_word_the_window_shows_is_said_through_its_catalog`
+  (`views/audit.rs`): `DRAWN_TO_A_LISTENER` names the gpui positions a word is drawn from
+  (`.child(`, `.children(` and the `kit::` text helpers; `SharedString::from(` is left out since it
+  also makes element ids; `a_lone_lowercase_word_drawn_in_the_window_is_refused`), `PROPER` names the literals that are names, `NOT_WORDS` the files that hold
   none (markup, font families; a file mixing markup and words keeps its markup in a module of its
   own, as `wrapped_card/markup.rs`), `ONLY_UNDER_TEST` the test modules kept in files of their own (`driven.rs`, `models/tests.rs`, `views/browser/tests.rs` and the files under `views/browser/tests/`, `views/root/tests.rs`), and `STILL_TO_MOVE` the files not yet moved, which must shrink
   to nothing; a file it names that holds no prose fails the test too. A string that is a code

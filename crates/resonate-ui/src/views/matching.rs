@@ -271,7 +271,7 @@ impl RootView {
             .flex_1()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(field.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+            .child(kit::figure(words::keys::enter()).text_color(rgb(theme::faint())))
     }
 
     pub(crate) fn matching_sheet(&self, cx: &mut Context<Self>) -> Div {
