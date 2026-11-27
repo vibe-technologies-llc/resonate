@@ -153,17 +153,17 @@ mod tests {
     #[test]
     fn a_reading_is_borne_out_only_by_an_answer_crediting_the_artist_and_naming_the_title() {
         let stand = ByArtist::read("stand by me").expect("a reading");
-        let stela = ByArtist::read("you fo by stella cole").expect("a reading");
+        let mira = ByArtist::read("hey ab by mirra vale").expect("a reading");
 
         assert!(!stand.answered_by(&credited("Stand Up, Sit Down", &["Akili and Me"])));
         assert!(!stand.answered_by(&credited("チョコレート", &["≠ME"])));
         assert!(stand.credits(&credited("チョコレート", &["≠ME"])));
-        assert!(stela.answered_by(&credited("You F.O.", &["Stela Cole"])));
-        assert!(!stela.answered_by(&credited("Candyland", &["Stela Cole"])));
+        assert!(mira.answered_by(&credited("Hey A.B.", &["Mira Vale"])));
+        assert!(!mira.answered_by(&credited("Moonyard", &["Mira Vale"])));
         assert!(
-            ByArtist::read("creep by the radiohead")
+            ByArtist::read("lantern by the tideline")
                 .expect("a reading")
-                .answered_by(&credited("Creep", &["Radiohead"]))
+                .answered_by(&credited("Lantern", &["Tideline"]))
         );
     }
 
@@ -177,8 +177,8 @@ mod tests {
     #[test]
     fn a_title_by_an_artist_is_read_as_the_two() {
         assert_eq!(
-            ByArtist::read("You F O by stela cole"),
-            by("You F O", "stela cole")
+            ByArtist::read("Hey A B by mira vale"),
+            by("Hey A B", "mira vale")
         );
         assert_eq!(
             ByArtist::read("stand by me BY Ben E King"),
@@ -186,10 +186,10 @@ mod tests {
             "the last by is the one naming the artist"
         );
         assert_eq!(
-            ByArtist::read("Stela Cole - You F.O."),
-            by("You F.O.", "Stela Cole")
+            ByArtist::read("Mira Vale - Hey A.B."),
+            by("Hey A.B.", "Mira Vale")
         );
-        assert_eq!(ByArtist::read("Stela Cole – You"), by("You", "Stela Cole"));
+        assert_eq!(ByArtist::read("Mira Vale – You"), by("You", "Mira Vale"));
     }
 
     #[test]
@@ -210,13 +210,13 @@ mod tests {
 
     #[test]
     fn a_title_by_an_artist_is_searched_as_its_words_and_the_artist_whole() {
-        let read = ByArtist::read("you f.o by stela cole").expect("a reading");
+        let read = ByArtist::read("hey a.b by mira vale").expect("a reading");
 
         assert_eq!(
-            read.searched_as("Stela Cole").as_deref(),
-            Some(r#"title:you title:f.o artist:="Stela Cole""#)
+            read.searched_as("Mira Vale").as_deref(),
+            Some(r#"title:hey title:a.b artist:="Mira Vale""#)
         );
         assert_eq!(read.searched_as("A \"Quoted\" Name"), None);
-        assert_eq!(read.words(), "you f.o stela cole");
+        assert_eq!(read.words(), "hey a.b mira vale");
     }
 }

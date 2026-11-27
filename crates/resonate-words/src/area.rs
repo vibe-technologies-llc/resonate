@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn words_are_put_in_as_they_are_with_no_isolating_marks() {
-        let name = String::from("Echoes");
+        let name = String::from("Slow Water");
 
         assert_eq!(
             QUEUE.formatted(
@@ -224,7 +224,7 @@ mod tests {
                     ("place", Arg::from("the queue"))
                 ]
             ),
-            "Echoes from the queue"
+            "Slow Water from the queue"
         );
     }
 
@@ -238,13 +238,13 @@ mod tests {
         let pattern = bundle.get_message("song").unwrap().value().unwrap();
         let mut args = FluentArgs::new();
 
-        args.set("title", "Echoes (Live)");
+        args.set("title", "Slow Water (Live)");
 
         let mut errors = Vec::new();
 
         assert_eq!(
             bundle.format_pattern(pattern, Some(&args), &mut errors),
-            "تشغيل \u{2068}Echoes (Live)\u{2069} الآن"
+            "تشغيل \u{2068}Slow Water (Live)\u{2069} الآن"
         );
         assert!(errors.is_empty());
     }

@@ -536,8 +536,8 @@ mod tests {
     fn a_scrobble_stamped_past_what_the_clock_holds_is_passed_over_and_the_rest_are_read() {
         let answer: RecentAnswer = serde_json::from_str(
             r##"{"recenttracks":{"track":[
-                {"name":"Time","artist":{"#text":"Pink Floyd"},"date":{"uts":"18446744073709551615"}},
-                {"name":"Money","artist":{"#text":"Pink Floyd"},"date":{"uts":"1699999000"}}
+                {"name":"Time","artist":{"#text":"Example Band"},"date":{"uts":"18446744073709551615"}},
+                {"name":"Money","artist":{"#text":"Example Band"},"date":{"uts":"1699999000"}}
             ],"@attr":{"totalPages":"1"}}}"##,
         )
         .expect("the scrobbles read");

@@ -2282,7 +2282,7 @@ mod tests {
     #[tokio::test]
     async fn a_device_too_old_to_date_its_answers_is_consulted_as_it_always_was() {
         let a_plain_consult = ToPeer::Consult {
-            asked: b"who sang creep".to_vec(),
+            asked: b"who sang lantern".to_vec(),
             dates: Dates::Unsaid,
         }
         .encoded();
@@ -2290,7 +2290,7 @@ mod tests {
             (asked == a_plain_consult).then(|| {
                 framed(
                     &FromPeer::Consulted {
-                        answer: b"radiohead".to_vec(),
+                        answer: b"tideline".to_vec(),
                         at: None,
                     }
                     .encoded(),
@@ -2299,12 +2299,12 @@ mod tests {
         })
         .await;
 
-        let consulted = consult(&connection, b"who sang creep".to_vec()).await;
+        let consulted = consult(&connection, b"who sang lantern".to_vec()).await;
 
         assert_eq!(
             consulted,
             Consulting::Answered {
-                answer: b"radiohead".to_vec(),
+                answer: b"tideline".to_vec(),
                 at: None,
             }
         );

@@ -127,33 +127,35 @@ mod tests {
 
     #[test]
     fn a_commons_file_page_becomes_a_scaled_file_path() {
-        let scaled = "https://commons.wikimedia.org/wiki/Special:FilePath/PinkFloyd1973_retouched.jpg?width=600";
+        let scaled = "https://commons.wikimedia.org/wiki/Special:FilePath/ExampleBand1973_retouched.jpg?width=600";
 
         assert_eq!(
-            file_path("https://commons.wikimedia.org/wiki/File:PinkFloyd1973_retouched.jpg")
+            file_path("https://commons.wikimedia.org/wiki/File:ExampleBand1973_retouched.jpg")
                 .as_deref(),
             Some(scaled)
         );
         assert_eq!(
             file_path(
-                "https://commons.wikimedia.org/w/index.php?title=File:PinkFloyd1973_retouched.jpg&oldid=1"
+                "https://commons.wikimedia.org/w/index.php?title=File:ExampleBand1973_retouched.jpg&oldid=1"
             )
             .as_deref(),
             Some(scaled)
         );
         assert_eq!(
-            file_path("http://commons.wikimedia.org/wiki/File:PinkFloyd1973_retouched.jpg#top")
+            file_path("http://commons.wikimedia.org/wiki/File:ExampleBand1973_retouched.jpg#top")
                 .as_deref(),
             Some(scaled)
         );
         assert_eq!(
-            file_path("https://commons.wikimedia.org/wiki/File:Pink%20Floyd.jpg").as_deref(),
-            Some("https://commons.wikimedia.org/wiki/Special:FilePath/Pink%20Floyd.jpg?width=600")
+            file_path("https://commons.wikimedia.org/wiki/File:Example%20Band.jpg").as_deref(),
+            Some(
+                "https://commons.wikimedia.org/wiki/Special:FilePath/Example%20Band.jpg?width=600"
+            )
         );
 
         assert_eq!(
             file_path(
-                "https://commons.wikimedia.org/wiki/Special:FilePath/PinkFloyd1973_retouched.jpg"
+                "https://commons.wikimedia.org/wiki/Special:FilePath/ExampleBand1973_retouched.jpg"
             )
             .as_deref(),
             Some(scaled),
@@ -161,7 +163,7 @@ mod tests {
         );
         assert_eq!(
             file_path(
-                "https://upload.wikimedia.org/wikipedia/commons/a/ab/PinkFloyd1973_retouched.jpg"
+                "https://upload.wikimedia.org/wikipedia/commons/a/ab/ExampleBand1973_retouched.jpg"
             )
             .as_deref(),
             Some(scaled),
@@ -170,7 +172,7 @@ mod tests {
         assert_eq!(
             file_path(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/\
-                 PinkFloyd1973_retouched.jpg/640px-PinkFloyd1973_retouched.jpg"
+                 ExampleBand1973_retouched.jpg/640px-ExampleBand1973_retouched.jpg"
             )
             .as_deref(),
             Some(scaled),
@@ -179,11 +181,11 @@ mod tests {
 
         assert_eq!(file_path("https://commons.wikimedia.org/wiki/File:"), None);
         assert_eq!(
-            file_path("https://commons.wikimedia.org/wiki/Category:Pink_Floyd"),
+            file_path("https://commons.wikimedia.org/wiki/Category:Example_Band"),
             None
         );
         assert_eq!(
-            file_path("https://en.wikipedia.org/wiki/File:PinkFloyd1973_retouched.jpg"),
+            file_path("https://en.wikipedia.org/wiki/File:ExampleBand1973_retouched.jpg"),
             None
         );
         assert_eq!(file_path("https://example.invalid/pink.jpg"), None);

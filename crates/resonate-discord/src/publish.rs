@@ -541,7 +541,7 @@ mod tests {
         let finds = Arc::new(AtomicUsize::new(0));
 
         let mut showing = Showing::finding_with(found_at(FakeDiscord::socket_in(&folder), &finds));
-        let wanted = || Some(activity("Echoes", 0));
+        let wanted = || Some(activity("Slow Water", 0));
         let started = Instant::now();
 
         showing.show(app(FIRST_APP), wanted(), started);
@@ -581,13 +581,13 @@ mod tests {
         let mut showing = Showing::finding_with(found_at(FakeDiscord::socket_in(&folder), &finds));
         let started = Instant::now();
 
-        showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+        showing.show(app(FIRST_APP), Some(activity("Slow Water", 0)), started);
 
         let discord = FakeDiscord::listening_in(folder);
 
         showing.show(
             app(FIRST_APP),
-            Some(activity("Echoes", 0)),
+            Some(activity("Slow Water", 0)),
             started + RETRY_AFTER_AT_FIRST,
         );
 
@@ -604,7 +604,7 @@ mod tests {
             discord.hear(),
             Said::Activity {
                 connection: 0,
-                details: Some("Echoes".to_owned())
+                details: Some("Slow Water".to_owned())
             }
         );
     }
@@ -618,7 +618,7 @@ mod tests {
             Showing::finding_with(found_at(FakeDiscord::socket_in(&discord.folder), &finds));
         let started = Instant::now();
 
-        showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+        showing.show(app(FIRST_APP), Some(activity("Slow Water", 0)), started);
         showing.show(
             app(SECOND_APP),
             Some(activity("Time", 0)),
@@ -646,7 +646,7 @@ mod tests {
                 },
                 Said::Activity {
                     connection: 0,
-                    details: Some("Echoes".to_owned())
+                    details: Some("Slow Water".to_owned())
                 },
                 Said::Activity {
                     connection: 0,
@@ -681,13 +681,13 @@ mod tests {
         let mut showing = Showing::finding_with(find);
         let started = Instant::now();
 
-        showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+        showing.show(app(FIRST_APP), Some(activity("Slow Water", 0)), started);
 
         assert!(matches!(showing.link, Link::Unknown { .. }));
 
         showing.show(
             app(FIRST_APP),
-            Some(activity("Echoes", 0)),
+            Some(activity("Slow Water", 0)),
             started + RETRY_AFTER_AT_MOST * 5,
         );
 
@@ -696,7 +696,7 @@ mod tests {
 
         showing.show(
             app(SECOND_APP),
-            Some(activity("Echoes", 0)),
+            Some(activity("Slow Water", 0)),
             started + RETRY_AFTER_AT_MOST * 6,
         );
 
@@ -718,7 +718,7 @@ mod tests {
         let mut showing =
             Showing::finding_with(found_at(FakeDiscord::socket_in(&discord.folder), &finds));
         let started = Instant::now();
-        let wanted = || Some(activity("Echoes", 0));
+        let wanted = || Some(activity("Slow Water", 0));
 
         showing.show(app(FIRST_APP), wanted(), started);
         discord.hear();
@@ -751,7 +751,7 @@ mod tests {
             discord.hear(),
             Said::Activity {
                 connection: 1,
-                details: Some("Echoes".to_owned())
+                details: Some("Slow Water".to_owned())
             }
         );
     }
@@ -877,7 +877,7 @@ mod tests {
     fn a_fresh_session_shows_whatever_is_wanted_at_once() {
         let now = Instant::now();
 
-        assert!(due(None, Some(&activity("Echoes", 0)), now));
+        assert!(due(None, Some(&activity("Slow Water", 0)), now));
         assert!(!due(None, None, now));
     }
 
@@ -885,14 +885,14 @@ mod tests {
     fn nothing_is_sent_again_while_it_says_the_same() {
         let now = Instant::now();
         let sent = Sent {
-            activity: Some(activity("Echoes", 0)),
+            activity: Some(activity("Slow Water", 0)),
             at: now,
             refusals: 0,
         };
 
         assert!(!due(
             Some(&sent),
-            Some(&activity("Echoes", 1)),
+            Some(&activity("Slow Water", 1)),
             now + SENDS_APART * 3
         ));
     }
@@ -901,7 +901,7 @@ mod tests {
     fn a_change_waits_out_the_spacing_discord_asks_for() {
         let now = Instant::now();
         let sent = Sent {
-            activity: Some(activity("Echoes", 0)),
+            activity: Some(activity("Slow Water", 0)),
             at: now,
             refusals: 0,
         };
@@ -916,11 +916,11 @@ mod tests {
     fn a_refused_activity_is_offered_again_on_the_same_session_after_a_wait() {
         let now = Instant::now();
         let sent = Sent {
-            activity: Some(activity("Echoes", 0)),
+            activity: Some(activity("Slow Water", 0)),
             at: now,
             refusals: 1,
         };
-        let same = activity("Echoes", 1);
+        let same = activity("Slow Water", 1);
 
         assert!(!due(Some(&sent), Some(&same), now + SENDS_APART));
         assert!(due(
@@ -938,9 +938,9 @@ mod tests {
     #[test]
     fn a_refusal_that_never_clears_is_offered_again_ever_less_often_up_to_a_ceiling() {
         let now = Instant::now();
-        let same = activity("Echoes", 1);
+        let same = activity("Slow Water", 1);
         let sent = |refusals| Sent {
-            activity: Some(activity("Echoes", 0)),
+            activity: Some(activity("Slow Water", 0)),
             at: now,
             refusals,
         };
@@ -972,32 +972,32 @@ mod tests {
     #[test]
     fn refusals_are_carried_to_the_same_activity_and_to_nothing_else() {
         let was = Sent {
-            activity: Some(activity("Echoes", 0)),
+            activity: Some(activity("Slow Water", 0)),
             at: Instant::now(),
             refusals: 3,
         };
 
         assert_eq!(
-            refusals_carried(Some(&was), Some(&activity("Echoes", 1))),
+            refusals_carried(Some(&was), Some(&activity("Slow Water", 1))),
             3
         );
         assert_eq!(refusals_carried(Some(&was), Some(&activity("Time", 0))), 0);
         assert_eq!(refusals_carried(Some(&was), None), 0);
-        assert_eq!(refusals_carried(None, Some(&activity("Echoes", 0))), 0);
+        assert_eq!(refusals_carried(None, Some(&activity("Slow Water", 0))), 0);
     }
 
     #[test]
     fn a_seek_is_sent_as_a_change() {
         let now = Instant::now();
         let sent = Sent {
-            activity: Some(activity("Echoes", 0)),
+            activity: Some(activity("Slow Water", 0)),
             at: now,
             refusals: 0,
         };
 
         assert!(due(
             Some(&sent),
-            Some(&activity("Echoes", 300)),
+            Some(&activity("Slow Water", 300)),
             now + SENDS_APART
         ));
     }
@@ -1032,7 +1032,7 @@ mod tests {
     #[test]
     fn a_blank_tag_names_nothing() {
         assert_eq!(named(Some("  ")), None);
-        assert_eq!(named(Some(" Meddle ")), Some("Meddle".to_owned()));
+        assert_eq!(named(Some(" Low Tide ")), Some("Low Tide".to_owned()));
         assert_eq!(named(None), None);
     }
 }

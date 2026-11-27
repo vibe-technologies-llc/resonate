@@ -767,8 +767,8 @@ pub(super) mod tests {
             queue_length: 9,
             first_row: 2,
             rows: vec![RemoteRow {
-                title: "Echoes".into(),
-                artist: "Pink Floyd".into(),
+                title: "Slow Water".into(),
+                artist: "Example Band".into(),
                 length: None,
             }],
             queue_revision: Some(4),
@@ -786,7 +786,7 @@ pub(super) mod tests {
         assert_eq!(shown.zones[0].playing_row, Some(3));
         assert_eq!(shown.zones[0].first_row, 2);
         assert_eq!(shown.zones[0].queue_revision, Some(4));
-        assert_eq!(shown.zones[0].rows[0].title, "Echoes");
+        assert_eq!(shown.zones[0].rows[0].title, "Slow Water");
         assert_eq!(
             command_of(RemoteControl::Move { from: 4, to: 1 }),
             RemoteCommand::Move { from: 4, to: 1 }

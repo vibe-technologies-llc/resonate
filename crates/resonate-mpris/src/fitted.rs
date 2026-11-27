@@ -36,8 +36,11 @@ mod tests {
     fn a_nul_and_the_other_controls_xml_refuses_are_left_out_and_the_rest_kept() {
         assert_eq!(fitted("a\0b", FIELD_BYTES_AT_MOST), "ab");
         assert_eq!(
-            fitted("Pink\u{1}Floyd\u{1F}\u{FFFE}\u{FFFF}", FIELD_BYTES_AT_MOST),
-            "PinkFloyd"
+            fitted(
+                "Example\u{1}Band\u{1F}\u{FFFE}\u{FFFF}",
+                FIELD_BYTES_AT_MOST
+            ),
+            "ExampleBand"
         );
         assert_eq!(
             fitted("one\ttwo\r\nthree \u{7F}\u{85}", FIELD_BYTES_AT_MOST),
@@ -48,8 +51,8 @@ mod tests {
     #[test]
     fn text_already_fit_for_the_bus_is_lent_rather_than_copied() {
         assert!(matches!(
-            fitted("Echoes", FIELD_BYTES_AT_MOST),
-            Cow::Borrowed("Echoes")
+            fitted("Slow Water", FIELD_BYTES_AT_MOST),
+            Cow::Borrowed("Slow Water")
         ));
     }
 

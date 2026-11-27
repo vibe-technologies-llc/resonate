@@ -1188,11 +1188,11 @@ mod tests {
         );
     }
 
-    struct HearsEchoes {
+    struct HearsSlowWater {
         source: SourceId,
     }
 
-    impl Fingerprints for HearsEchoes {
+    impl Fingerprints for HearsSlowWater {
         fn source(&self) -> &SourceId {
             &self.source
         }
@@ -1201,9 +1201,9 @@ mod tests {
             Ok(Printed::Recognised(vec![RecordingMatch {
                 recording: Mbid::new(HEARD_AS).expect("a recording id"),
                 score: 100,
-                title: "Echoes".to_owned(),
+                title: "Slow Water".to_owned(),
                 credit: vec![Credit {
-                    name: "Pink Floyd".to_owned(),
+                    name: "Example Band".to_owned(),
                     joined_by: String::new(),
                     mbid: None,
                 }],
@@ -1228,8 +1228,8 @@ mod tests {
 
         Driven::scanned(&library, &folder);
 
-        let printers = Fingerprinters::none().and(Arc::new(HearsEchoes {
-            source: SourceId::new("hears-echoes").expect("a source name"),
+        let printers = Fingerprinters::none().and(Arc::new(HearsSlowWater {
+            source: SourceId::new("hears-slow-water").expect("a source name"),
         }));
         let mut driven = Driven::recognising(cx, Arc::clone(&library), &folder, printers);
 
@@ -1242,7 +1242,7 @@ mod tests {
         driven.until(|_, _| {
             library
                 .tracks(&TrackQuery::default())
-                .is_ok_and(|tracks| tracks.iter().any(|track| track.title == "Echoes"))
+                .is_ok_and(|tracks| tracks.iter().any(|track| track.title == "Slow Water"))
         });
 
         let track = library
@@ -1250,7 +1250,7 @@ mod tests {
             .expect("the catalog reads")
             .remove(0);
 
-        assert_eq!(track.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(track.artist.as_deref(), Some("Example Band"));
     }
 
     fn studying_what_plays(cx: &mut TestAppContext, folder: &Folder) -> Driven {

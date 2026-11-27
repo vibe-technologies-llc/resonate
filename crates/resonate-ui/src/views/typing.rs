@@ -93,14 +93,14 @@ mod tests {
     const ROWS: [&str; 5] = [
         "Astronomy Domine",
         "Careful with That Axe, Eugene",
-        "Echoes",
+        "Slow Water",
         "A Saucerful of Secrets",
         "Careful Preparation",
     ];
 
     #[test]
     fn a_name_is_reached_however_its_marks_are_typed() {
-        let rows = ["Echoes", "Marcin Przybyłowicz", "Kıskanç"];
+        let rows = ["Slow Water", "Marcin Przybyłowicz", "Kıskanç"];
 
         assert_eq!(jumped(&rows, 0, "przybylowicz"), Some(1));
         assert_eq!(jumped(&rows, 0, "marcin przybył"), Some(1));
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn the_search_carries_on_past_the_end_of_the_list_and_round_to_the_start() {
         assert_eq!(jumped(&ROWS, 3, "astronomy"), Some(0));
-        assert_eq!(jumped(&ROWS, 4, "echoes"), Some(2));
+        assert_eq!(jumped(&ROWS, 4, "slow water"), Some(2));
     }
 
     #[test]
@@ -143,26 +143,26 @@ mod tests {
 
     #[test]
     fn a_row_that_holds_the_letters_is_taken_where_none_starts_with_them() {
-        let rows = ["A Saucerful of Secrets", "Echoes"];
+        let rows = ["A Saucerful of Secrets", "Slow Water"];
 
         assert_eq!(jumped(&rows, 0, "sau"), Some(0));
     }
 
     #[test]
     fn the_letters_are_weighed_without_regard_to_case() {
-        assert_eq!(jumped(&ROWS, 0, "ECHOES"), Some(2));
-        assert_eq!(jumped(&["ÉCHOES"], 0, "é"), Some(0));
+        assert_eq!(jumped(&ROWS, 0, "SLOW WATER"), Some(2));
+        assert_eq!(jumped(&["ÉTANG"], 0, "é"), Some(0));
     }
 
     #[test]
     fn a_list_of_one_row_answers_with_it_or_with_nothing() {
-        assert_eq!(jumped(&["Echoes"], 0, "ech"), Some(0));
-        assert_eq!(jumped(&["Echoes"], 0, "sau"), None);
+        assert_eq!(jumped(&["Slow Water"], 0, "slo"), Some(0));
+        assert_eq!(jumped(&["Slow Water"], 0, "sau"), None);
     }
 
     #[test]
     fn a_cursor_past_the_end_of_the_list_is_read_round_rather_than_refused() {
-        assert_eq!(jumped(&ROWS, 97, "echoes"), Some(2));
+        assert_eq!(jumped(&ROWS, 97, "slow water"), Some(2));
     }
 
     #[test]

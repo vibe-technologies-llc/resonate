@@ -381,7 +381,7 @@ mod tests {
         let told = |why| {
             let stopped = KeepStopped {
                 why,
-                song: "Creep".to_owned(),
+                song: "Lantern".to_owned(),
             };
             stopped_for(provider.clone(), stopped, 3).to_string()
         };
@@ -395,7 +395,7 @@ mod tests {
             let said = told(why);
 
             assert!(said.contains(words), "{said}");
-            assert!(said.contains("Creep"), "{said}");
+            assert!(said.contains("Lantern"), "{said}");
             assert!(said.contains('3'), "{said}");
         }
     }
@@ -850,7 +850,7 @@ mod tests {
         #[test]
         fn a_song_link_is_named_by_the_tool_queued_and_asked_for_by_the_pass() {
             let folder = Folder::holding_a_tool(
-                r#"echo '{"track":"Creep","artist":"Radiohead","duration":238,"formats":[]}'"#,
+                r#"echo '{"track":"Lantern","artist":"Tideline","duration":238,"formats":[]}'"#,
             );
             let library = Library::open_in_memory().expect("a catalog");
 
@@ -890,7 +890,8 @@ mod tests {
 
         #[test]
         fn a_keep_with_no_music_folder_is_refused_as_the_library_says() {
-            let folder = Folder::holding_a_tool(r#"echo '{"track":"Creep","artist":"Radiohead"}'"#);
+            let folder =
+                Folder::holding_a_tool(r#"echo '{"track":"Lantern","artist":"Tideline"}'"#);
             let library = Library::open_in_memory().expect("a catalog");
             let asked = asked_of(A_SONG).expect("a song");
 
@@ -930,7 +931,7 @@ mod tests {
                 .keep_song(SongToKeep {
                     source: SourceId::new("ytmusic").expect("a source"),
                     video: "abc123".to_owned(),
-                    title: "Creep".to_owned(),
+                    title: "Lantern".to_owned(),
                     artist: None,
                     album: None,
                     length: None,

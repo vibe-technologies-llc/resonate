@@ -90,7 +90,7 @@ mod tests {
             ["dont", "stop", "me", "now"]
         );
         assert_eq!(words_of_a_name("Can't"), ["cant"]);
-        assert_eq!(words_of_a_name("You F.O."), ["you", "f", "o"]);
+        assert_eq!(words_of_a_name("Hey A.B."), ["hey", "a", "b"]);
         assert_eq!(words_of_a_name("AC/DC"), ["ac", "dc"]);
         assert_eq!(words_of_a_name("Björk — Jóga"), ["bjork", "joga"]);
         assert!(words_of_a_name("!!!").is_empty());

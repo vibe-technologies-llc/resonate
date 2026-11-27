@@ -386,8 +386,8 @@ fn a_playlist_that_gives_no_title_is_named_by_its_id() {
 #[test]
 fn a_song_is_named_from_one_listing_by_its_track_artist_and_album() {
     let fake = answering(&json!({
-        "track": "Creep", "title": "Creep (Official)", "artist": "Radiohead",
-        "channel": "Radiohead - Topic", "album": "Pablo Honey", "duration": 238.6,
+        "track": "Lantern", "title": "Lantern (Official)", "artist": "Tideline",
+        "channel": "Tideline - Topic", "album": "Harbour Lights", "duration": 238.6,
     }));
 
     let song = music(&fake, cookies())
@@ -396,9 +396,9 @@ fn a_song_is_named_from_one_listing_by_its_track_artist_and_album() {
         .expect("a song");
 
     assert_eq!(song.id.as_str(), "9RfVp-GhKfs");
-    assert_eq!(song.title, "Creep");
-    assert_eq!(song.artist.as_deref(), Some("Radiohead"));
-    assert_eq!(song.album.as_deref(), Some("Pablo Honey"));
+    assert_eq!(song.title, "Lantern");
+    assert_eq!(song.artist.as_deref(), Some("Tideline"));
+    assert_eq!(song.album.as_deref(), Some("Harbour Lights"));
     assert_eq!(song.length, Some(Duration::from_millis(238_600)));
 
     let calls = fake.calls();
@@ -418,7 +418,7 @@ fn a_song_is_named_from_one_listing_by_its_track_artist_and_album() {
 #[test]
 fn a_songs_picture_is_named_by_its_widest_thumbnail_that_is_not_webp() {
     let fake = answering(&json!({
-        "track": "Creep", "artist": "Radiohead",
+        "track": "Lantern", "artist": "Tideline",
         "thumbnails": [
             { "url": "https://i.ytimg.com/vi/9RfVp-GhKfs/default.jpg", "width": 120 },
             { "url": "https://i.ytimg.com/vi/9RfVp-GhKfs/hqdefault.jpg?sqp=a", "width": 480 },
@@ -549,7 +549,7 @@ fn no_artist_or_album_is_browsed() {
 fn a_cover_is_the_rows_own_thumbnail_and_comes_only_from_youtubes_image_hosts() {
     let music = searching(SONGS.to_owned());
 
-    let found = music.search("creep").expect("an answer");
+    let found = music.search("lantern").expect("an answer");
 
     let cover = found.songs[0].cover.as_ref().expect("the row's thumbnail");
 

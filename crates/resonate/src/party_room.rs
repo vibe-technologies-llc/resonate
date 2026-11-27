@@ -549,8 +549,8 @@ mod tests {
 
     #[test]
     fn a_request_pressed_is_the_one_drawn_whatever_has_come_and_gone_before_it_is_settled() {
-        let first = asked_by(1, "Echoes");
-        let second = asked_by(2, "Meddle");
+        let first = asked_by(1, "Slow Water");
+        let second = asked_by(2, "Low Tide");
         let third = asked_by(3, "Time");
         let pressed = drawn(&second);
         let gone = drawn(&first);
@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     fn a_request_named_by_bytes_that_name_no_request_settles_nothing() {
-        let shown = vec![asked_by(1, "Echoes")];
+        let shown = vec![asked_by(1, "Slow Water")];
 
         assert_eq!(request_named(&shown, PartyRequestId([0; 32])), None);
     }

@@ -145,10 +145,10 @@ mod tests {
 
     #[test]
     fn a_plain_name_is_its_own_bytes() {
-        let name = OsStr::new("Échoes/01.flac");
+        let name = OsStr::new("Slów Water/01.flac");
 
-        assert_eq!(bytes_of(name).as_ref(), "Échoes/01.flac".as_bytes());
-        assert_eq!(os_string_from("Échoes/01.flac".into()), name);
+        assert_eq!(bytes_of(name).as_ref(), "Slów Water/01.flac".as_bytes());
+        assert_eq!(os_string_from("Slów Water/01.flac".into()), name);
     }
 
     #[test]

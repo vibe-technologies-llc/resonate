@@ -132,12 +132,12 @@ mod tests {
     #[test]
     fn a_drive_path_is_a_rooted_uri_with_the_colon_kept() {
         assert_eq!(
-            uri_rest_of(br"C:\Music\Meddle #1.flac"),
-            "/C:/Music/Meddle%20%231.flac"
+            uri_rest_of(br"C:\Music\Low Tide #1.flac"),
+            "/C:/Music/Low%20Tide%20%231.flac"
         );
         assert_eq!(
-            path_of_uri_rest(b"/C:/Music/Meddle #1.flac", &ShareHosts::anyone()),
-            Some(br"C:\Music\Meddle #1.flac".to_vec())
+            path_of_uri_rest(b"/C:/Music/Low Tide #1.flac", &ShareHosts::anyone()),
+            Some(br"C:\Music\Low Tide #1.flac".to_vec())
         );
     }
 
@@ -218,41 +218,44 @@ mod tests {
 
     #[test]
     fn a_file_beneath_a_folder_is_named_from_it_whichever_prefix_either_carries() {
-        let echoes = Some(br"Pink Floyd\Echoes.flac".to_vec());
+        let slow_water = Some(br"Example Band\Slow Water.flac".to_vec());
 
         assert_eq!(
-            beneath(br"\\?\C:\Music\Pink Floyd\Echoes.flac", br"C:\Music"),
-            echoes
+            beneath(br"\\?\C:\Music\Example Band\Slow Water.flac", br"C:\Music"),
+            slow_water
         );
         assert_eq!(
-            beneath(br"C:\Music\Pink Floyd\Echoes.flac", br"\\?\C:\Music"),
-            echoes
-        );
-        assert_eq!(
-            beneath(br"\\?\C:\Music\Pink Floyd\Echoes.flac", br"\\?\C:\Music\"),
-            echoes
-        );
-        assert_eq!(
-            beneath(br"C:\Music\Pink Floyd\Echoes.flac", br"c:/Music"),
-            echoes
+            beneath(br"C:\Music\Example Band\Slow Water.flac", br"\\?\C:\Music"),
+            slow_water
         );
         assert_eq!(
             beneath(
-                br"\\?\UNC\nas\music\Pink Floyd\Echoes.flac",
+                br"\\?\C:\Music\Example Band\Slow Water.flac",
+                br"\\?\C:\Music\"
+            ),
+            slow_water
+        );
+        assert_eq!(
+            beneath(br"C:\Music\Example Band\Slow Water.flac", br"c:/Music"),
+            slow_water
+        );
+        assert_eq!(
+            beneath(
+                br"\\?\UNC\nas\music\Example Band\Slow Water.flac",
                 br"\\nas\music"
             ),
-            echoes
+            slow_water
         );
         assert_eq!(
             beneath(
-                br"\\nas\music\Pink Floyd\Echoes.flac",
+                br"\\nas\music\Example Band\Slow Water.flac",
                 br"\\?\UNC\nas\music"
             ),
-            echoes
+            slow_water
         );
         assert_eq!(
-            beneath(br"\\?\C:\Echoes.flac", br"C:\"),
-            Some(b"Echoes.flac".to_vec())
+            beneath(br"\\?\C:\Slow Water.flac", br"C:\"),
+            Some(b"Slow Water.flac".to_vec())
         );
     }
 

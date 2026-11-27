@@ -1,6 +1,6 @@
 {
   "data": {
-    "id": "Echoes Pink Floyd",
+    "id": "Slow Water Example Band",
     "type": "searchResults",
     "attributes": {
       "trackingId": "5896a4d2-d1b7-4b4a-9d5b-0f1a3a2c9e11"
@@ -14,12 +14,12 @@
           { "id": "1000004", "type": "tracks" }
         ],
         "links": {
-          "self": "/searchResults/Echoes%20Pink%20Floyd/relationships/tracks?countryCode=GB&include=tracks%2Ctracks.artists"
+          "self": "/searchResults/Slow%20Water%20Example%20Band/relationships/tracks?countryCode=GB&include=tracks%2Ctracks.artists"
         }
       }
     },
     "links": {
-      "self": "/searchResults/Echoes%20Pink%20Floyd?countryCode=GB&include=tracks%2Ctracks.artists"
+      "self": "/searchResults/Slow%20Water%20Example%20Band?countryCode=GB&include=tracks%2Ctracks.artists"
     }
   },
   "included": [
@@ -27,7 +27,7 @@
       "id": "1000001",
       "type": "tracks",
       "attributes": {
-        "title": "Echoes",
+        "title": "Slow Water",
         "version": "Live",
         "isrc": "GBN9Y1100099",
         "duration": "PT25M2S",
@@ -42,7 +42,7 @@
       "id": "1000002",
       "type": "tracks",
       "attributes": {
-        "title": "Echoes",
+        "title": "Slow Water",
         "isrc": "USXYZ1700001",
         "duration": "PT23M16S",
         "explicit": false,
@@ -56,7 +56,7 @@
       "id": "55391743",
       "type": "tracks",
       "attributes": {
-        "title": "Echoes",
+        "title": "Slow Water",
         "isrc": "GBN9Y1100089",
         "duration": "PT23M17S",
         "explicit": false,
@@ -70,7 +70,7 @@
       "id": "1000004",
       "type": "tracks",
       "attributes": {
-        "title": "Echoes",
+        "title": "Slow Water",
         "version": "Remastered",
         "isrc": "GBN9Y1100089",
         "duration": "PT23M45S",
@@ -84,15 +84,15 @@
     {
       "id": "3921",
       "type": "artists",
-      "attributes": { "name": "Pink Floyd", "popularity": 0.92 }
+      "attributes": { "name": "Example Band", "popularity": 0.92 }
     },
     {
       "id": "7777",
       "type": "artists",
-      "attributes": { "name": "Echoes Tribute Band", "popularity": 0.01 }
+      "attributes": { "name": "Slow Water Tribute Band", "popularity": 0.01 }
     }
   ],
   "links": {
-    "self": "/searchResults/Echoes%20Pink%20Floyd?countryCode=GB&include=tracks%2Ctracks.artists"
+    "self": "/searchResults/Slow%20Water%20Example%20Band?countryCode=GB&include=tracks%2Ctracks.artists"
   }
 }

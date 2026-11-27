@@ -951,8 +951,8 @@ mod tests {
             rating: resonate_core::titles::Rating::Unmarked,
             location: at(&format!("track/{id}")),
             title: title.to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Low Tide".to_owned()),
             track: Some(track),
             length: Some(Duration::from_secs(357)),
             format: Some("flac".to_owned()),
@@ -980,7 +980,7 @@ mod tests {
         fn artists(&self) -> Result<Vec<ServedArtist>> {
             Ok(vec![ServedArtist {
                 location: at("artist/ar-1"),
-                name: "Pink Floyd".to_owned(),
+                name: "Example Band".to_owned(),
                 albums: Some(1),
                 cover: None,
             }])
@@ -989,8 +989,8 @@ mod tests {
         fn albums_of(&self, _: &MediaLocation) -> Result<Vec<ServedAlbum>> {
             Ok(vec![ServedAlbum {
                 location: at("album/al-1"),
-                name: "Meddle".to_owned(),
-                artist: Some("Pink Floyd".to_owned()),
+                name: "Low Tide".to_owned(),
+                artist: Some("Example Band".to_owned()),
                 year: Some(1971),
                 songs: Some(2),
                 cover: Some(ServedCover("al-1".to_owned())),
@@ -999,14 +999,14 @@ mod tests {
 
         fn songs_of(&self, _: &MediaLocation) -> Result<Vec<ServedSong>> {
             Ok(vec![
-                song("so-1", "One of These Days", 1),
-                song("so-2", "A Pillow of Winds", 2),
+                song("so-1", "Paper Boats", 1),
+                song("so-2", "Small Mercies", 2),
             ])
         }
 
         fn search(&self, _: &str) -> Result<ServedFound> {
             Ok(ServedFound {
-                songs: vec![song("so-2", "A Pillow of Winds", 2)],
+                songs: vec![song("so-2", "Small Mercies", 2)],
                 ..ServedFound::default()
             })
         }
@@ -1060,7 +1060,7 @@ mod tests {
             Ok(ServedFound {
                 songs: vec![ServedSong {
                     location: MediaLocation::from_uri("tidal:track/11").expect("a location"),
-                    ..song("so-1", "One of These Days", 1)
+                    ..song("so-1", "Paper Boats", 1)
                 }],
                 ..ServedFound::default()
             })
@@ -1105,15 +1105,15 @@ mod tests {
             Ok(ServedFound {
                 albums: vec![ServedAlbum {
                     location: MediaLocation::from_uri("tidal:album/7").expect("a location"),
-                    name: "Meddle".to_owned(),
-                    artist: Some("Pink Floyd".to_owned()),
+                    name: "Low Tide".to_owned(),
+                    artist: Some("Example Band".to_owned()),
                     year: None,
                     songs: None,
                     cover: None,
                 }],
                 songs: vec![ServedSong {
                     location: MediaLocation::from_uri("tidal:track/12").expect("a location"),
-                    ..song("so-2", "Echoes", 6)
+                    ..song("so-2", "Slow Water", 6)
                 }],
                 ..ServedFound::default()
             })
@@ -1170,7 +1170,7 @@ mod tests {
                 mixes: vec![ServedAlbum {
                     location: MediaLocation::from_uri("tidal:mix/0a1b").expect("a location"),
                     name: "My Mix 1".to_owned(),
-                    artist: Some("Pink Floyd and more".to_owned()),
+                    artist: Some("Example Band and more".to_owned()),
                     year: None,
                     songs: None,
                     cover: None,
@@ -1179,11 +1179,11 @@ mod tests {
                     ServedSong {
                         location: MediaLocation::from_uri("tidal:track/11").expect("a location"),
                         favourite: Some(true),
-                        ..song("so-1", "One of These Days", 1)
+                        ..song("so-1", "Paper Boats", 1)
                     },
                     ServedSong {
                         location: MediaLocation::from_uri("tidal:track/12").expect("a location"),
-                        ..song("so-2", "Echoes", 6)
+                        ..song("so-2", "Slow Water", 6)
                     },
                 ],
                 ..ServedFound::default()
@@ -1574,17 +1574,17 @@ mod tests {
 
         fn albums_within(&self, album: &MediaLocation) -> Result<Vec<ServedAlbum>> {
             Ok(if *album == a_folder("1", "Music").location {
-                vec![a_folder("1$2", "Meddle")]
+                vec![a_folder("1$2", "Low Tide")]
             } else {
                 Vec::new()
             })
         }
 
         fn songs_of(&self, album: &MediaLocation) -> Result<Vec<ServedSong>> {
-            if *album != a_folder("1$2", "Meddle").location {
+            if *album != a_folder("1$2", "Low Tide").location {
                 return Ok(Vec::new());
             }
-            Ok(["One of These Days", "A Pillow of Winds"]
+            Ok(["Paper Boats", "Small Mercies"]
                 .into_iter()
                 .zip(1..)
                 .map(|(title, track)| ServedSong {
@@ -1669,7 +1669,7 @@ mod tests {
         assert_eq!(
             counted_on_the_network(
                 &[
-                    Row::Album(a_folder("1$2", "Meddle")),
+                    Row::Album(a_folder("1$2", "Low Tide")),
                     Row::Song(song("so-1", "One", 1))
                 ],
                 &Place::Album {

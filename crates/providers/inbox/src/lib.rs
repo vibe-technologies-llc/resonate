@@ -280,9 +280,9 @@ mod tests {
 
     const A_TICK_OF_THE_FILE_CLOCK: Duration = Duration::from_millis(20);
 
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
-    const ECHOES_TRACK: &str = "0a0bb0f4-3e3d-4e71-9b0a-6c3b1b1c7a11";
-    const ECHOES_ISRC: &str = "GBN9Y1100089";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const SLOW_WATER_TRACK: &str = "0a0bb0f4-3e3d-4e71-9b0a-6c3b1b1c7a11";
+    const SLOW_WATER_ISRC: &str = "GBN9Y1100089";
     const WANTS_IN_A_POLL: u64 = 500;
     const AN_HOUR: Duration = Duration::from_secs(3600);
     const A_MOMENT: Duration = Duration::from_millis(60);
@@ -336,12 +336,12 @@ mod tests {
         }
     }
 
-    fn echoes() -> Identity {
+    fn slow_water() -> Identity {
         Identity {
-            recording: Some(Mbid::new(ECHOES).expect("an mbid")),
-            track: Some(Mbid::new(ECHOES_TRACK).expect("an mbid")),
-            isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
-            ..Identity::named("Echoes")
+            recording: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
+            track: Some(Mbid::new(SLOW_WATER_TRACK).expect("an mbid")),
+            isrcs: vec![Isrc::new(SLOW_WATER_ISRC).expect("an isrc")],
+            ..Identity::named("Slow Water")
         }
     }
 
@@ -368,35 +368,38 @@ mod tests {
     #[test]
     fn the_recording_is_the_most_exact_name_and_the_isrc_the_least() {
         let folder = Folder::new().holding(&[
-            &format!("{}.mp3", ECHOES_ISRC.to_ascii_lowercase()),
-            &format!("{ECHOES_TRACK}.flac"),
-            &format!("{}.wav", ECHOES.to_ascii_uppercase()),
+            &format!("{}.mp3", SLOW_WATER_ISRC.to_ascii_lowercase()),
+            &format!("{SLOW_WATER_TRACK}.flac"),
+            &format!("{}.wav", SLOW_WATER.to_ascii_uppercase()),
         ]);
         let inbox = settled_at(&folder);
 
-        let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        let found = delivered(inbox.find(&slow_water()).expect("a readable inbox"));
 
         assert_eq!(
             found,
             Some(
                 folder
                     .0
-                    .join(format!("{}.wav", ECHOES.to_ascii_uppercase()))
+                    .join(format!("{}.wav", SLOW_WATER.to_ascii_uppercase()))
             )
         );
 
         let without_recording = Identity {
             recording: None,
-            ..echoes()
+            ..slow_water()
         };
         let found = delivered(inbox.find(&without_recording).expect("a readable inbox"));
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES_TRACK}.flac"))));
+        assert_eq!(
+            found,
+            Some(folder.0.join(format!("{SLOW_WATER_TRACK}.flac")))
+        );
 
         let isrc_alone = Identity {
             recording: None,
             track: None,
-            ..echoes()
+            ..slow_water()
         };
         let found = delivered(inbox.find(&isrc_alone).expect("a readable inbox"));
 
@@ -405,7 +408,7 @@ mod tests {
             Some(
                 folder
                     .0
-                    .join(format!("{}.mp3", ECHOES_ISRC.to_ascii_lowercase()))
+                    .join(format!("{}.mp3", SLOW_WATER_ISRC.to_ascii_lowercase()))
             )
         );
     }
@@ -414,51 +417,53 @@ mod tests {
     fn the_lossless_file_one_name_matches_is_delivered_over_a_lossy_one_whatever_their_names_sort_as()
      {
         let folder = Folder::new().holding(&[
-            &format!("{ECHOES}.aac"),
-            &format!("{ECHOES}.m4a"),
-            &format!("{ECHOES}.mp3"),
-            &format!("{ECHOES}.WAV"),
+            &format!("{SLOW_WATER}.aac"),
+            &format!("{SLOW_WATER}.m4a"),
+            &format!("{SLOW_WATER}.mp3"),
+            &format!("{SLOW_WATER}.WAV"),
         ]);
 
         let found = delivered(
             settled_at(&folder)
-                .find(&echoes())
+                .find(&slow_water())
                 .expect("a readable inbox"),
         );
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.WAV"))));
+        assert_eq!(found, Some(folder.0.join(format!("{SLOW_WATER}.WAV"))));
 
-        fs::remove_file(folder.0.join(format!("{ECHOES}.WAV"))).expect("a scratch file");
+        fs::remove_file(folder.0.join(format!("{SLOW_WATER}.WAV"))).expect("a scratch file");
 
         let found = delivered(
             settled_at(&folder)
-                .find(&echoes())
+                .find(&slow_water())
                 .expect("a readable inbox"),
         );
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.m4a"))));
+        assert_eq!(found, Some(folder.0.join(format!("{SLOW_WATER}.m4a"))));
     }
 
     #[test]
     fn a_more_exact_name_is_delivered_before_a_lossless_file_a_looser_one_matches() {
-        let folder =
-            Folder::new().holding(&[&format!("{ECHOES}.mp3"), &format!("{ECHOES_ISRC}.flac")]);
+        let folder = Folder::new().holding(&[
+            &format!("{SLOW_WATER}.mp3"),
+            &format!("{SLOW_WATER_ISRC}.flac"),
+        ]);
 
         let found = delivered(
             settled_at(&folder)
-                .find(&echoes())
+                .find(&slow_water())
                 .expect("a readable inbox"),
         );
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.mp3"))));
+        assert_eq!(found, Some(folder.0.join(format!("{SLOW_WATER}.mp3"))));
     }
 
     #[test]
     fn a_poll_over_many_wants_reads_the_inbox_once() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac"), "unrelated.flac"]);
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac"), "unrelated.flac"]);
         let inbox = settled_at(&folder);
 
-        let first = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        let first = delivered(inbox.find(&slow_water()).expect("a readable inbox"));
         let read_at = listed_at(&inbox);
 
         for nth in 0..WANTS_IN_A_POLL {
@@ -469,7 +474,7 @@ mod tests {
             assert!(delivered(answered).is_none());
         }
 
-        let last = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        let last = delivered(inbox.find(&slow_water()).expect("a readable inbox"));
 
         assert!(first.is_some());
         assert_eq!(first, last);
@@ -482,42 +487,42 @@ mod tests {
         let folder = Folder::new().holding(&["unrelated.flac"]);
         let inbox = settled_at(&folder);
 
-        let before = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        let before = delivered(inbox.find(&slow_water()).expect("a readable inbox"));
 
         a_tick_of_the_file_clock_after_the_folder_was_written(&folder.0);
-        fs::write(folder.0.join(format!("{ECHOES}.flac")), b"audio").expect("a scratch file");
+        fs::write(folder.0.join(format!("{SLOW_WATER}.flac")), b"audio").expect("a scratch file");
 
-        let after = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        let after = delivered(inbox.find(&slow_water()).expect("a readable inbox"));
 
         assert!(before.is_none());
-        assert_eq!(after, Some(folder.0.join(format!("{ECHOES}.flac"))));
+        assert_eq!(after, Some(folder.0.join(format!("{SLOW_WATER}.flac"))));
     }
 
     #[test]
     fn a_listing_older_than_it_is_trusted_for_is_read_again() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
         let inbox = Inbox {
             listing_trusted_for: Duration::ZERO,
             ..settled_at(&folder)
         };
 
-        let _ = inbox.find(&echoes()).expect("a readable inbox");
+        let _ = inbox.find(&slow_water()).expect("a readable inbox");
         let first = listed_at(&inbox);
-        let _ = inbox.find(&echoes()).expect("a readable inbox");
+        let _ = inbox.find(&slow_water()).expect("a readable inbox");
 
         assert_ne!(listed_at(&inbox), first);
     }
 
     #[test]
     fn a_file_still_being_copied_in_is_not_delivered_and_the_inbox_is_not_away() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
-        let arriving = folder.0.join(format!("{ECHOES}.flac"));
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
+        let arriving = folder.0.join(format!("{SLOW_WATER}.flac"));
         let inbox = Inbox {
             settles_for: AN_HOUR,
             ..Inbox::at(&folder.0)
         };
 
-        let Err(error) = inbox.find(&echoes()) else {
+        let Err(error) = inbox.find(&slow_water()) else {
             panic!("a file still arriving was delivered");
         };
 
@@ -529,7 +534,7 @@ mod tests {
         assert_eq!(
             delivered(
                 settled_at(&folder)
-                    .find(&echoes())
+                    .find(&slow_water())
                     .expect("a readable inbox")
             ),
             Some(arriving)
@@ -539,11 +544,11 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_copy_that_kept_its_old_modification_time_is_still_arriving_by_its_change_time() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
 
         fs::File::options()
             .write(true)
-            .open(folder.0.join(format!("{ECHOES}.flac")))
+            .open(folder.0.join(format!("{SLOW_WATER}.flac")))
             .and_then(|file| file.set_modified(SystemTime::now() - AN_HOUR * 24))
             .expect("an old modification time");
 
@@ -553,14 +558,14 @@ mod tests {
         };
 
         assert!(matches!(
-            inbox.find(&echoes()),
+            inbox.find(&slow_water()),
             Err(Error::StillArriving { .. })
         ));
     }
 
     #[test]
     fn a_file_quiet_when_first_seen_is_delivered_only_once_it_stays_unchanged() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
         let inbox = Inbox {
             settles_for: A_MOMENT,
             settled_alone_after: AN_HOUR,
@@ -570,21 +575,21 @@ mod tests {
         thread::sleep(A_MOMENT * 3);
 
         assert!(matches!(
-            inbox.find(&echoes()),
+            inbox.find(&slow_water()),
             Err(Error::StillArriving { .. })
         ));
 
         thread::sleep(A_MOMENT * 2);
 
-        let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        let found = delivered(inbox.find(&slow_water()).expect("a readable inbox"));
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.flac"))));
+        assert_eq!(found, Some(folder.0.join(format!("{SLOW_WATER}.flac"))));
     }
 
     #[test]
     fn a_file_that_grew_between_two_looks_is_seen_afresh() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
-        let path = folder.0.join(format!("{ECHOES}.flac"));
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
+        let path = folder.0.join(format!("{SLOW_WATER}.flac"));
         let first = fs::metadata(&path).expect("the file");
         let stamp = Stamp::of(&first);
 
@@ -607,7 +612,7 @@ mod tests {
 
     #[test]
     fn a_file_quiet_for_long_is_delivered_at_first_sight() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
         let inbox = Inbox {
             settles_for: A_MOMENT,
             settled_alone_after: A_MOMENT,
@@ -616,9 +621,9 @@ mod tests {
 
         thread::sleep(A_MOMENT * 3);
 
-        let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        let found = delivered(inbox.find(&slow_water()).expect("a readable inbox"));
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.flac"))));
+        assert_eq!(found, Some(folder.0.join(format!("{SLOW_WATER}.flac"))));
     }
 
     #[test]
@@ -648,39 +653,40 @@ mod tests {
 
     #[test]
     fn a_title_is_never_matched_and_nothing_named_is_nothing_delivered() {
-        let folder = Folder::new().holding(&["Echoes.flac", "unrelated.flac"]);
+        let folder = Folder::new().holding(&["Slow Water.flac", "unrelated.flac"]);
         let inbox = settled_at(&folder);
 
-        assert!(delivered(inbox.find(&Identity::named("Echoes")).expect("no read")).is_none());
-        assert!(delivered(inbox.find(&echoes()).expect("a readable inbox")).is_none());
+        assert!(delivered(inbox.find(&Identity::named("Slow Water")).expect("no read")).is_none());
+        assert!(delivered(inbox.find(&slow_water()).expect("a readable inbox")).is_none());
     }
 
     #[test]
     fn only_audio_is_delivered_whatever_else_shares_its_name() {
         let folder = Folder::new().holding(&[
-            &format!("{ECHOES}.cue"),
-            &format!("{ECHOES}.jpg"),
-            &format!("{ECHOES}.LOG"),
-            &format!("{ECHOES}.FLAC"),
+            &format!("{SLOW_WATER}.cue"),
+            &format!("{SLOW_WATER}.jpg"),
+            &format!("{SLOW_WATER}.LOG"),
+            &format!("{SLOW_WATER}.FLAC"),
         ]);
 
         let found = delivered(
             settled_at(&folder)
-                .find(&echoes())
+                .find(&slow_water())
                 .expect("a readable inbox"),
         );
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.FLAC"))));
+        assert_eq!(found, Some(folder.0.join(format!("{SLOW_WATER}.FLAC"))));
     }
 
     #[test]
     fn a_name_matched_by_no_audio_file_delivers_nothing() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.cue"), &format!("{ECHOES}.jpg")]);
+        let folder =
+            Folder::new().holding(&[&format!("{SLOW_WATER}.cue"), &format!("{SLOW_WATER}.jpg")]);
 
         assert!(
             delivered(
                 settled_at(&folder)
-                    .find(&echoes())
+                    .find(&slow_water())
                     .expect("a readable inbox")
             )
             .is_none()
@@ -692,22 +698,22 @@ mod tests {
     fn a_link_named_for_a_recording_is_never_delivered_whatever_it_points_at() {
         use std::os::unix::fs::symlink;
 
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.mp3")]);
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.mp3")]);
         let elsewhere = Folder::new().holding(&["secret.flac"]);
 
         symlink(
             elsewhere.0.join("secret.flac"),
-            folder.0.join(format!("{ECHOES}.flac")),
+            folder.0.join(format!("{SLOW_WATER}.flac")),
         )
         .expect("a link");
 
         let found = delivered(
             settled_at(&folder)
-                .find(&echoes())
+                .find(&slow_water())
                 .expect("a readable inbox"),
         );
 
-        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.mp3"))));
+        assert_eq!(found, Some(folder.0.join(format!("{SLOW_WATER}.mp3"))));
     }
 
     #[cfg(unix)]
@@ -715,21 +721,21 @@ mod tests {
     fn a_file_swapped_for_a_link_after_the_listing_was_read_is_not_delivered() {
         use std::os::unix::fs::symlink;
 
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
         let elsewhere = Folder::new().holding(&["secret.flac"]);
         let inbox = Inbox {
             listing_trusted_for: AN_HOUR,
             ..settled_at(&folder)
         };
 
-        assert!(delivered(inbox.find(&echoes()).expect("a readable inbox")).is_some());
+        assert!(delivered(inbox.find(&slow_water()).expect("a readable inbox")).is_some());
 
-        let named = folder.0.join(format!("{ECHOES}.flac"));
+        let named = folder.0.join(format!("{SLOW_WATER}.flac"));
 
         fs::remove_file(&named).expect("the file gone");
         symlink(elsewhere.0.join("secret.flac"), &named).expect("a link");
 
-        assert!(delivered(inbox.find(&echoes()).expect("a readable inbox")).is_none());
+        assert!(delivered(inbox.find(&slow_water()).expect("a readable inbox")).is_none());
     }
 
     #[test]
@@ -737,9 +743,9 @@ mod tests {
         let folder = Folder::new();
 
         fs::create_dir_all(folder.0.join("deeper")).expect("a nested folder");
-        fs::create_dir_all(folder.0.join(format!("{ECHOES}.flac"))).expect("a folder named so");
+        fs::create_dir_all(folder.0.join(format!("{SLOW_WATER}.flac"))).expect("a folder named so");
         fs::write(
-            folder.0.join("deeper").join(format!("{ECHOES}.flac")),
+            folder.0.join("deeper").join(format!("{SLOW_WATER}.flac")),
             b"audio",
         )
         .expect("a nested file");
@@ -747,7 +753,7 @@ mod tests {
         assert!(
             delivered(
                 settled_at(&folder)
-                    .find(&echoes())
+                    .find(&slow_water())
                     .expect("a readable inbox")
             )
             .is_none()
@@ -760,7 +766,7 @@ mod tests {
         let missing = folder.0.join("not-there");
 
         assert!(matches!(
-            Inbox::at(&missing).find(&echoes()),
+            Inbox::at(&missing).find(&slow_water()),
             Err(Error::Io {
                 op: ProviderOp::ReadFolder,
                 ..
@@ -770,14 +776,14 @@ mod tests {
 
     #[test]
     fn the_inbox_is_left_exactly_as_it_was() {
-        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
-        let before = fs::read(folder.0.join(format!("{ECHOES}.flac"))).expect("the file");
+        let folder = Folder::new().holding(&[&format!("{SLOW_WATER}.flac")]);
+        let before = fs::read(folder.0.join(format!("{SLOW_WATER}.flac"))).expect("the file");
 
         let _ = settled_at(&folder)
-            .find(&echoes())
+            .find(&slow_water())
             .expect("a readable inbox");
 
-        let after = fs::read(folder.0.join(format!("{ECHOES}.flac"))).expect("the file");
+        let after = fs::read(folder.0.join(format!("{SLOW_WATER}.flac"))).expect("the file");
 
         assert_eq!(before, after);
         assert_eq!(fs::read_dir(&folder.0).expect("the inbox").count(), 1);

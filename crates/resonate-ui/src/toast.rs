@@ -684,11 +684,11 @@ mod tests {
     #[test]
     fn a_track_that_will_not_play_is_named_and_the_reason_is_said_plainly() {
         assert_eq!(
-            would_not_play(Cause::Unreadable, "Echoes"),
-            "Couldn't find “Echoes” — it may have been moved or deleted"
+            would_not_play(Cause::Unreadable, "Slow Water"),
+            "Couldn't find “Slow Water” — it may have been moved or deleted"
         );
         assert_eq!(
-            would_not_play(Cause::NoDevice, "Echoes"),
+            would_not_play(Cause::NoDevice, "Slow Water"),
             "No speakers or headphones to play through"
         );
     }

@@ -558,7 +558,7 @@ mod tests {
         let serial = 0xd32b_d337;
         let first = bytes_of(OPUS_FIRST_PAGE);
         let tags = opus_tags(&[
-            "TITLE=Echoes",
+            "TITLE=Slow Water",
             &format!("METADATA_BLOCK_PICTURE={}", "x".repeat(70_000)),
         ]);
         let (early, late) = tags.split_at(255 * 255);
@@ -616,7 +616,7 @@ mod tests {
         comment.extend_from_slice(b"Xiph");
         comment.extend_from_slice(&1_u32.to_le_bytes());
         comment.extend_from_slice(&13_u32.to_le_bytes());
-        comment.extend_from_slice(b"ARTIST=Floyd!");
+        comment.extend_from_slice(b"ARTIST=Band!");
         comment.push(VORBIS_FRAMED);
 
         let untagged = Codec::Vorbis
@@ -648,7 +648,7 @@ mod tests {
     fn a_header_page_that_carries_audio_as_well_is_left_as_it_stands() {
         let serial = 0xd32b_d337;
         let first = bytes_of(OPUS_FIRST_PAGE);
-        let tags = opus_tags(&["TITLE=Echoes"]);
+        let tags = opus_tags(&["TITLE=Slow Water"]);
         let mut lacing = laced(tags.len());
 
         lacing.push(3);
@@ -712,7 +712,11 @@ mod tests {
         let whole = ogg_flac(
             3,
             &[
-                flac_block(FLAC_VORBIS_COMMENT, false, &flac_comment(&["TITLE=Echoes"])),
+                flac_block(
+                    FLAC_VORBIS_COMMENT,
+                    false,
+                    &flac_comment(&["TITLE=Slow Water"]),
+                ),
                 flac_block(1, false, &[0; 512]),
                 flac_block(6, true, &picture),
             ],
@@ -753,7 +757,11 @@ mod tests {
         let whole = ogg_flac(
             0,
             &[
-                flac_block(FLAC_VORBIS_COMMENT, false, &flac_comment(&["TITLE=Echoes"])),
+                flac_block(
+                    FLAC_VORBIS_COMMENT,
+                    false,
+                    &flac_comment(&["TITLE=Slow Water"]),
+                ),
                 flac_block(6, true, &[1; 300]),
             ],
         );
@@ -782,7 +790,11 @@ mod tests {
             2,
             &[
                 flac_block(1, false, &[0; 64]),
-                flac_block(FLAC_VORBIS_COMMENT, true, &flac_comment(&["TITLE=Echoes"])),
+                flac_block(
+                    FLAC_VORBIS_COMMENT,
+                    true,
+                    &flac_comment(&["TITLE=Slow Water"]),
+                ),
             ],
         );
 

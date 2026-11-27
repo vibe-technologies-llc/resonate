@@ -333,7 +333,7 @@ mod tests {
     fn billed(title: &str) -> Billed {
         Billed {
             title: title.to_owned(),
-            artist: "Pink Floyd".to_owned(),
+            artist: "Example Band".to_owned(),
             album: None,
             recording: None,
             release: None,
@@ -348,13 +348,13 @@ mod tests {
     #[test]
     fn what_is_playing_now_is_told_with_no_moment_and_as_one_listen() {
         assert_eq!(
-            now_playing(&billed("Echoes")),
+            now_playing(&billed("Slow Water")),
             json!({
                 "listen_type": "playing_now",
                 "payload": [{
                     "track_metadata": {
-                        "artist_name": "Pink Floyd",
-                        "track_name": "Echoes",
+                        "artist_name": "Example Band",
+                        "track_name": "Slow Water",
                         "additional_info": {
                             "media_player": "resonate",
                             "submission_client": "resonate",
@@ -404,26 +404,26 @@ mod tests {
     #[test]
     fn one_listen_is_submitted_as_a_single_and_several_as_an_import() {
         assert_eq!(
-            submission(&[told("Echoes")])["listen_type"],
+            submission(&[told("Slow Water")])["listen_type"],
             Value::from("single")
         );
         assert_eq!(
-            submission(&[told("Echoes"), told("Time")])["listen_type"],
+            submission(&[told("Slow Water"), told("Time")])["listen_type"],
             Value::from("import")
         );
     }
 
     #[test]
     fn a_listen_says_what_was_heard_when_and_nothing_the_catalog_does_not_hold() {
-        let bare = listen(&told("Echoes"));
+        let bare = listen(&told("Slow Water"));
 
         assert_eq!(
             bare,
             json!({
                 "listened_at": 1_700_000_000,
                 "track_metadata": {
-                    "artist_name": "Pink Floyd",
-                    "track_name": "Echoes",
+                    "artist_name": "Example Band",
+                    "track_name": "Slow Water",
                     "additional_info": {
                         "media_player": "resonate",
                         "submission_client": "resonate",
@@ -435,7 +435,7 @@ mod tests {
 
         let whole = listen(&Scrobble {
             billed: Billed {
-                album: Some("Meddle".to_owned()),
+                album: Some("Low Tide".to_owned()),
                 recording: Some(
                     Mbid::new("b1a9c0de-1111-4222-8333-444455556666").expect("a well-formed mbid"),
                 ),
@@ -451,13 +451,13 @@ mod tests {
                 isrc: Some(Isrc::new("GBN9Y1100065").expect("a well-formed isrc")),
                 number: Some(6),
                 length: Some(Duration::from_millis(1_412_500)),
-                ..billed("Echoes")
+                ..billed("Slow Water")
             },
-            ..told("Echoes")
+            ..told("Slow Water")
         });
         let metadata = &whole["track_metadata"];
 
-        assert_eq!(metadata["release_name"], "Meddle");
+        assert_eq!(metadata["release_name"], "Low Tide");
 
         let additional = &metadata["additional_info"];
 
@@ -486,7 +486,7 @@ mod tests {
     fn a_listen_before_the_epoch_is_written_as_the_epoch_rather_than_refused() {
         let early = listen(&Scrobble {
             at: UNIX_EPOCH - Duration::from_secs(5),
-            ..told("Echoes")
+            ..told("Slow Water")
         });
 
         assert_eq!(early["listened_at"], 0);

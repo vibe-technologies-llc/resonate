@@ -508,7 +508,7 @@ mod tests {
     fn a_stalled_lastfm_leaves_listenbrainz_told_what_was_heard() {
         let root = scratch("submitting-lanes");
 
-        for (title, artist) in [("Words", "Low"), ("Echoes", "Pink Floyd")] {
+        for (title, artist) in [("Words", "Low"), ("Slow Water", "Example Band")] {
             fs::write(
                 root.join(format!("{title}.wav")),
                 tagged_wave(&[(TITLE, title), (ARTIST, artist)]),
@@ -523,7 +523,7 @@ mod tests {
         for heard in [&listenbrainz, &lastfm] {
             assert!(library.submit_listens(&**heard).expect("marked").started);
         }
-        for title in ["Words", "Echoes"] {
+        for title in ["Words", "Slow Water"] {
             library
                 .track_played(
                     &MediaLocation::local(root.join(format!("{title}.wav"))),
@@ -568,9 +568,9 @@ mod tests {
         stalled.join().expect("the Last.fm lane");
         telling.join().expect("the ListenBrainz lane");
 
-        assert_eq!(told_while_lastfm_stalled, ["Words", "Echoes"]);
+        assert_eq!(told_while_lastfm_stalled, ["Words", "Slow Water"]);
         assert_eq!(lastfm_told_while_stalled, 0);
-        assert_eq!(*lastfm.told.lock(), ["Words", "Echoes"]);
+        assert_eq!(*lastfm.told.lock(), ["Words", "Slow Water"]);
 
         fs::remove_dir_all(root).expect("cleaned");
     }

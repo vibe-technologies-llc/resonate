@@ -2633,7 +2633,7 @@ FILE "Low Tide.wav" WAVE
     fn the_info_ids_that_credit_a_recording_reach_the_tag_set_the_same_way() {
         let wav = Wav::pcm(16)
             .with_info(b"INAM", "Near and Far")
-            .with_info(b"IMUS", "Richard Wright")
+            .with_info(b"IMUS", "Sam Keeper")
             .with_info(b"IWRI", "Another Band")
             .with_info(b"IENG", "Alan Parsons")
             .with_info(b"IPRO", "Example Band")
@@ -2646,7 +2646,7 @@ FILE "Low Tide.wav" WAVE
         let tags = &info.tags;
 
         assert_eq!(tags.title.as_deref(), Some("Near and Far"));
-        assert_eq!(tags.credits.composer.as_deref(), Some("Richard Wright"));
+        assert_eq!(tags.credits.composer.as_deref(), Some("Sam Keeper"));
         assert_eq!(tags.credits.lyricist.as_deref(), Some("Another Band"));
         assert_eq!(tags.credits.engineer.as_deref(), Some("Alan Parsons"));
         assert_eq!(tags.credits.producer.as_deref(), Some("Example Band"));

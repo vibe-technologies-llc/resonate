@@ -633,11 +633,19 @@ mod tests {
         let root = fixtures::scratch("window-versions-chosen")
             .canonicalize()
             .expect("the scratch folder as the scan stores it");
-        let song = root.join("echoes.wav");
+        let song = root.join("slow water.wav");
         let copy = root.join("elsewhere.wav");
 
-        fs::write(&song, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a song");
-        fs::write(&copy, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a copy");
+        fs::write(
+            &song,
+            tagged_wave(&[(TITLE, "Slow Water"), (ARTIST, "Ada")]),
+        )
+        .expect("a song");
+        fs::write(
+            &copy,
+            tagged_wave(&[(TITLE, "Slow Water"), (ARTIST, "Ada")]),
+        )
+        .expect("a copy");
 
         let library = fixtures::scanned(&root);
         let held = |path| {

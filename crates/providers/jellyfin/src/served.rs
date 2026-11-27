@@ -299,9 +299,9 @@ mod tests {
     #[test]
     fn a_numeric_id_a_number_spelt_as_text_and_an_odd_listing_are_read_and_passed_over() {
         let items: ItemsDoc = serde_json::from_str(
-            r#"{"Items":[{"Id":3,"Name":"Pink Floyd","AlbumCount":"2","ImageTags":{"Primary":"x"}},
+            r#"{"Items":[{"Id":3,"Name":"Example Band","AlbumCount":"2","ImageTags":{"Primary":"x"}},
                          {"Id":null},
-                         {"Id":"a1","Name":"Meddle","ProductionYear":1971,"ChildCount":6}],
+                         {"Id":"a1","Name":"Low Tide","ProductionYear":1971,"ChildCount":6}],
                 "TotalRecordCount":3}"#,
         )
         .expect("an items answer");
@@ -317,7 +317,7 @@ mod tests {
         assert_eq!(artist.id.as_str(), "3");
         assert_eq!(artist.albums, Some(2));
         assert_eq!(artist.cover.as_ref().map(Id::as_str), Some("3"));
-        assert_eq!(album.name, "Meddle");
+        assert_eq!(album.name, "Low Tide");
         assert_eq!(album.year, Some(1971));
         assert_eq!(album.songs, Some(6));
         assert_eq!(album.cover, None);
@@ -326,8 +326,8 @@ mod tests {
     #[test]
     fn a_song_is_read_with_its_ticks_container_artists_cover_and_favourite_mark() {
         let song: ItemDoc = serde_json::from_str(
-            r#"{"Id":"s1","Name":"Echoes","Artists":["Pink Floyd","Guest"],"AlbumArtist":"Pink Floyd",
-                "Album":"Meddle","AlbumId":"al1","AlbumPrimaryImageTag":"t","IndexNumber":6,
+            r#"{"Id":"s1","Name":"Slow Water","Artists":["Example Band","Guest"],"AlbumArtist":"Example Band",
+                "Album":"Low Tide","AlbumId":"al1","AlbumPrimaryImageTag":"t","IndexNumber":6,
                 "ParentIndexNumber":1,"RunTimeTicks":14120000000,
                 "Container":"mov,mp4,m4a,3gp,3g2,mj2","UserData":{"IsFavorite":true}}"#,
         )
@@ -336,7 +336,7 @@ mod tests {
 
         assert_eq!(song.length, Some(Duration::from_secs(1412)));
         assert_eq!(song.suffix.as_deref(), Some("m4a"));
-        assert_eq!(song.artist.as_deref(), Some("Pink Floyd, Guest"));
+        assert_eq!(song.artist.as_deref(), Some("Example Band, Guest"));
         assert_eq!(song.cover.as_ref().map(Id::as_str), Some("al1"));
         assert_eq!((song.disc, song.track), (Some(1), Some(6)));
         assert_eq!(song.favourite, Some(true));
@@ -344,7 +344,8 @@ mod tests {
 
     #[test]
     fn a_song_with_no_user_data_has_no_known_favourite_mark() {
-        let song: ItemDoc = serde_json::from_str(r#"{"Id":"s1","Name":"Echoes"}"#).expect("a song");
+        let song: ItemDoc =
+            serde_json::from_str(r#"{"Id":"s1","Name":"Slow Water"}"#).expect("a song");
 
         assert_eq!(song.song().and_then(|song| song.favourite), None);
     }

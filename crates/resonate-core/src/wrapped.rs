@@ -1003,7 +1003,7 @@ mod tests {
             songs: 12,
             artists: 3,
             albums: 2,
-            top_songs: vec![a_song("Echoes", "Pink Floyd", AN_HOUR)],
+            top_songs: vec![a_song("Slow Water", "Example Band", AN_HOUR)],
             ..YearReview::default()
         };
 
@@ -1069,7 +1069,7 @@ mod tests {
             songs: 411,
             artists: 90,
             albums: 120,
-            top_songs: vec![a_song("Echoes", "Pink Floyd", AN_HOUR)],
+            top_songs: vec![a_song("Slow Water", "Example Band", AN_HOUR)],
             formats: Some(FormatShares {
                 lossless_permille: 874,
                 high_resolution_permille: 120,
@@ -1080,7 +1080,7 @@ mod tests {
         assert_eq!(
             review.summary(),
             "My 2026 on Resonate\n312 hours of music\n411 songs · 90 artists · 120 albums\nTop \
-             song: Echoes by Pink Floyd\n87% lossless"
+             song: Slow Water by Example Band\n87% lossless"
         );
     }
 }

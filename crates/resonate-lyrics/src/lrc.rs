@@ -1234,12 +1234,12 @@ mod tests {
 
     #[test]
     fn a_sheet_naming_another_singer_of_the_same_song_is_not_about_this_track() {
-        let sheet = sheet("[ti:Hallelujah]\n[ar:Leonard Cohen]\n[00:01.00]it goes like this");
+        let sheet = sheet("[ti:Small Mercies]\n[ar:Another Band]\n[00:01.00]it goes like this");
 
         assert!(
             sheet
                 .declared
-                .names_another_track(&about(Some("Hallelujah"), Some("Jeff Buckley")))
+                .names_another_track(&about(Some("Small Mercies"), Some("Third Band")))
         );
     }
 

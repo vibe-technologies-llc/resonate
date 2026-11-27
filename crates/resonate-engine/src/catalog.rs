@@ -898,9 +898,9 @@ mod tests {
             fs::write(
                 self.path.with_extension(SHEET_EXTENSION),
                 format!(
-                    "TITLE \"Meddle\"\nFILE \"{named}\" WAVE\n  TRACK 01 AUDIO\n    TITLE \
-                     \"One of These Days\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    \
-                     TITLE \"Echoes\"\n    INDEX 01 00:00:30\n"
+                    "TITLE \"Low Tide\"\nFILE \"{named}\" WAVE\n  TRACK 01 AUDIO\n    TITLE \
+                     \"Paper Boats\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    \
+                     TITLE \"Slow Water\"\n    INDEX 01 00:00:30\n"
                 ),
             )
             .expect("a writable temporary file");
@@ -1095,7 +1095,7 @@ mod tests {
 
     #[test]
     fn a_row_nothing_has_read_answers_with_its_tags_once_the_read_lands() {
-        let file = Fixture::holding(&wav("Echoes", "Pink Floyd"));
+        let file = Fixture::holding(&wav("Slow Water", "Example Band"));
         let catalog = catalog();
 
         assert!(
@@ -1107,8 +1107,8 @@ mod tests {
             .media_within(&file.location(), None, PATIENCE)
             .expect("a well-formed wav is read");
 
-        assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
-        assert_eq!(info.tags.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(info.tags.title.as_deref(), Some("Slow Water"));
+        assert_eq!(info.tags.artist.as_deref(), Some("Example Band"));
         assert_eq!(info.duration, Some(resonate_core::Frames(u64::from(RATE))));
 
         let landed = catalog.revision();
@@ -1120,24 +1120,24 @@ mod tests {
 
     #[test]
     fn each_row_a_sheet_cuts_out_of_one_file_is_read_as_the_track_it_names() {
-        let file = Fixture::holding(&wav("Meddle", "Pink Floyd"));
+        let file = Fixture::holding(&wav("Low Tide", "Example Band"));
         let cut = file.cut_in_two();
         let catalog = catalog();
 
-        let echoes = FrameSpan::between(SECOND_ROW, Frames(u64::from(RATE)));
+        let slow_water = FrameSpan::between(SECOND_ROW, Frames(u64::from(RATE)));
         let row = catalog
-            .media_within(&cut.location(), Some(echoes), PATIENCE)
+            .media_within(&cut.location(), Some(slow_water), PATIENCE)
             .expect("the row the sheet names");
 
-        assert_eq!(row.tags.title.as_deref(), Some("Echoes"));
-        assert_eq!(row.tags.album.as_deref(), Some("Meddle"));
-        assert_eq!(row.duration, echoes.frames());
+        assert_eq!(row.tags.title.as_deref(), Some("Slow Water"));
+        assert_eq!(row.tags.album.as_deref(), Some("Low Tide"));
+        assert_eq!(row.duration, slow_water.frames());
 
         let whole = catalog
             .media_within(&cut.location(), None, PATIENCE)
             .expect("the file the rows are cut from");
 
-        assert_eq!(whole.tags.title.as_deref(), Some("Meddle"));
+        assert_eq!(whole.tags.title.as_deref(), Some("Low Tide"));
         assert_eq!(whole.duration, Some(Frames(u64::from(RATE))));
 
         assert_eq!(
@@ -1156,7 +1156,10 @@ mod tests {
 
     #[test]
     fn a_read_that_failed_is_asked_for_again_once_a_while_has_passed() {
-        let row = Row::new(&MediaLocation::local("/music/unmounted/echoes.flac"), None);
+        let row = Row::new(
+            &MediaLocation::local("/music/unmounted/slow water.flac"),
+            None,
+        );
         let mut held = Held::default();
 
         held.keep_tags(&row, Look::Failed(Instant::now()));
@@ -1181,15 +1184,18 @@ mod tests {
 
     #[test]
     fn a_row_whose_file_changed_on_disc_is_read_again() {
-        let file = Fixture::holding(&wav("Echoes", "Pink Floyd"));
+        let file = Fixture::holding(&wav("Slow Water", "Example Band"));
         let catalog = catalog();
 
         let first = catalog
             .media_within(&file.location(), None, PATIENCE)
             .expect("a well-formed wav is read");
 
-        fs::write(&file.path, wav("Echoes (Live at Pompeii)", "Pink Floyd"))
-            .expect("a rewritable file");
+        fs::write(
+            &file.path,
+            wav("Slow Water (Live at Harbour)", "Example Band"),
+        )
+        .expect("a rewritable file");
         if let Some(entry) = catalog.shelf.held.lock().entries.get_mut(&file.location()) {
             entry.stamped_at = a_while_ago(LOOKED_AT_THE_FILE_EVERY * 2);
         }
@@ -1199,7 +1205,7 @@ mod tests {
             let asked = catalog.media_within(&file.location(), None, PATIENCE);
             let retagged = asked
                 .as_ref()
-                .is_some_and(|info| info.tags.title.as_deref() != Some("Echoes"));
+                .is_some_and(|info| info.tags.title.as_deref() != Some("Slow Water"));
 
             if retagged || Instant::now() >= deadline {
                 break asked;
@@ -1207,10 +1213,10 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         };
 
-        assert_eq!(first.tags.title.as_deref(), Some("Echoes"));
+        assert_eq!(first.tags.title.as_deref(), Some("Slow Water"));
         assert_eq!(
             again.and_then(|info| info.tags.title.clone()).as_deref(),
-            Some("Echoes (Live at Pompeii)"),
+            Some("Slow Water (Live at Harbour)"),
             "a retagged file answered with what it said before"
         );
     }
@@ -1240,7 +1246,7 @@ mod tests {
     #[test]
     fn a_row_nothing_has_read_answers_with_the_cover_the_file_carries() {
         let picture = png(512);
-        let file = Fixture::holding(&wav_with_a_cover("Echoes", "Pink Floyd", &picture));
+        let file = Fixture::holding(&wav_with_a_cover("Slow Water", "Example Band", &picture));
         let catalog = catalog();
 
         assert!(
@@ -1256,8 +1262,8 @@ mod tests {
 
     #[test]
     fn a_cover_still_being_read_is_told_apart_from_a_file_that_carries_none() {
-        let pictured = Fixture::holding(&wav_with_a_cover("Echoes", "Pink Floyd", &png(512)));
-        let bare = Fixture::holding(&wav("Echoes", "Pink Floyd"));
+        let pictured = Fixture::holding(&wav_with_a_cover("Slow Water", "Example Band", &png(512)));
+        let bare = Fixture::holding(&wav("Slow Water", "Example Band"));
         let catalog = catalog();
 
         assert!(matches!(
@@ -1279,7 +1285,7 @@ mod tests {
 
     #[test]
     fn a_file_carrying_no_cover_is_answered_for_without_being_opened_again() {
-        let file = Fixture::holding(&wav("Echoes", "Pink Floyd"));
+        let file = Fixture::holding(&wav("Slow Water", "Example Band"));
         let catalog = catalog();
 
         assert!(art_within(&catalog, &file.location()).is_none());
@@ -1293,7 +1299,7 @@ mod tests {
     #[test]
     fn the_tags_of_a_row_survive_the_cover_it_was_asked_for() {
         let picture = png(512);
-        let file = Fixture::holding(&wav_with_a_cover("Echoes", "Pink Floyd", &picture));
+        let file = Fixture::holding(&wav_with_a_cover("Slow Water", "Example Band", &picture));
         let catalog = catalog();
 
         let info = catalog
@@ -1324,7 +1330,7 @@ mod tests {
 
     #[test]
     fn a_row_whose_tags_found_no_picture_is_never_opened_for_one() {
-        let (catalog, row, opens) = counted(wav("Echoes", "Pink Floyd"));
+        let (catalog, row, opens) = counted(wav("Slow Water", "Example Band"));
 
         assert!(catalog.media_within(&row, None, PATIENCE).is_some());
         assert!(catalog.art(&row).is_none());
@@ -1339,7 +1345,8 @@ mod tests {
     #[test]
     fn a_row_whose_picture_is_waited_on_is_read_for_both_in_one_open() {
         let picture = png(512);
-        let (catalog, row, opens) = counted(wav_with_a_cover("Echoes", "Pink Floyd", &picture));
+        let (catalog, row, opens) =
+            counted(wav_with_a_cover("Slow Water", "Example Band", &picture));
 
         assert!(matches!(catalog.shelf.claim_art(&row), Claim::Ours));
 
@@ -1347,7 +1354,7 @@ mod tests {
             .media_within(&row, None, PATIENCE)
             .expect("a well-formed wav is read");
 
-        assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
+        assert_eq!(info.tags.title.as_deref(), Some("Slow Water"));
 
         let art = catalog.art(&row).expect("the picture landed with the tags");
 
@@ -1362,7 +1369,8 @@ mod tests {
     #[test]
     fn a_picture_asked_for_after_the_tags_landed_comes_off_the_open_they_came_from() {
         let picture = png(512);
-        let (catalog, row, opens) = counted(wav_with_a_cover("Echoes", "Pink Floyd", &picture));
+        let (catalog, row, opens) =
+            counted(wav_with_a_cover("Slow Water", "Example Band", &picture));
 
         assert!(catalog.media_within(&row, None, PATIENCE).is_some());
         assert_eq!(
@@ -1437,7 +1445,7 @@ mod tests {
 
         let sources = Sources::local().and(Arc::new(Counted {
             source: named.clone(),
-            bytes: wav("Echoes", "Pink Floyd"),
+            bytes: wav("Slow Water", "Example Band"),
             opens: Arc::clone(&opens),
         }));
         let catalog = Catalog::new(Arc::new(sources));
@@ -1496,7 +1504,7 @@ mod tests {
 
         let sources = Sources::local().and(Arc::new(StallsOneRow {
             source: named.clone(),
-            bytes: wav("Echoes", "Pink Floyd"),
+            bytes: wav("Slow Water", "Example Band"),
             gate: Arc::clone(&gate),
         }));
         let catalog = Catalog::new(Arc::new(sources));

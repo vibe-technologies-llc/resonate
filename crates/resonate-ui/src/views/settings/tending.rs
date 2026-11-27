@@ -621,7 +621,7 @@ mod tests {
         let music = Folder::new();
         let held = Folder::new();
 
-        music.tone("Echoes.wav", 1);
+        music.tone("Slow Water.wav", 1);
         music.tone("Time.wav", 2);
 
         let vault = Arc::new(Vault::make(held.path()).expect("a vault"));
@@ -717,7 +717,7 @@ mod tests {
         driven.settle();
 
         assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Check), cx)));
-        assert!(stands_in(&library, "Echoes") && stands_in(&library, "Time"));
+        assert!(stands_in(&library, "Slow Water") && stands_in(&library, "Time"));
     }
 
     fn a_vault_holding_two_long_songs(
@@ -726,7 +726,7 @@ mod tests {
         let music = Folder::new();
         let held = Folder::new();
 
-        music.tone("Echoes.wav", LONG_ENOUGH_TO_STOP_IN_SECONDS);
+        music.tone("Slow Water.wav", LONG_ENOUGH_TO_STOP_IN_SECONDS);
         music.tone("Time.wav", LONG_ENOUGH_TO_STOP_IN_SECONDS + 1);
 
         let vault = Arc::new(Vault::make(held.path()).expect("a vault"));
@@ -890,7 +890,7 @@ mod tests {
                 .is_none()
         }));
 
-        let standing = ["Echoes", "Time"].map(|title| stands_in(&library, title));
+        let standing = ["Slow Water", "Time"].map(|title| stands_in(&library, title));
 
         assert_eq!(standing, [true, true]);
 
@@ -911,7 +911,7 @@ mod tests {
                     .is_none()
         });
 
-        let standing = ["Echoes", "Time"].map(|title| stands_in(&library, title));
+        let standing = ["Slow Water", "Time"].map(|title| stands_in(&library, title));
 
         assert_eq!(standing.iter().filter(|stands| **stands).count(), 1);
         assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Check), cx)));
@@ -933,12 +933,12 @@ mod tests {
 
         assert!(told.acts);
         assert!(told.text.starts_with("would release 2"));
-        assert!(stands_in(&library, "Echoes"));
+        assert!(stands_in(&library, "Slow Water"));
 
         pressed(&mut driven, "release-from-the-vault");
 
         assert!(driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Release), cx)));
-        assert!(stands_in(&library, "Echoes"));
+        assert!(stands_in(&library, "Slow Water"));
 
         pressed(&mut driven, "release-from-the-vault");
         driven.until(|root, cx| {
@@ -957,7 +957,7 @@ mod tests {
                     .is_none()
         });
 
-        assert!(!stands_in(&library, "Echoes") && !stands_in(&library, "Time"));
+        assert!(!stands_in(&library, "Slow Water") && !stands_in(&library, "Time"));
     }
 
     #[gpui::test]

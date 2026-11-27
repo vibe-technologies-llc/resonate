@@ -104,9 +104,9 @@ impl Folder {
             .args(["-metadata", &format!("title={title}")])
             .args([
                 "-metadata",
-                "artist=Pink Floyd",
+                "artist=Example Band",
                 "-metadata",
-                "album=Meddle",
+                "album=Low Tide",
             ])
             .arg(&target)
             .stdout(std::process::Stdio::null())
@@ -1320,7 +1320,7 @@ mod tests {
         use crate::views::sorting::Ordered;
 
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
         let ordering = |driven: &mut Driven| driven.read(|root, cx| root.orders(cx).ordering);
@@ -1376,7 +1376,7 @@ mod tests {
         use resonate_library::{Direction, SortOrder};
 
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
         let order = |driven: &mut Driven| driven.read(|root, cx| root.library.read(cx).sorting());
@@ -1454,7 +1454,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -1523,7 +1523,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -1998,7 +1998,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
         let first = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
@@ -2091,7 +2091,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
         let tracks = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks");
@@ -2124,7 +2124,7 @@ mod tests {
     #[gpui::test]
     fn the_play_in_a_tracks_menu_plays_the_listing_from_it_as_enter_does(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
         let first = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
@@ -2146,8 +2146,8 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
-        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let library = scanned_catalog(&folder, &["Slow Water"]);
+        let playlist = library.create_playlist("Low Tide").expect("a playlist");
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -2227,7 +2227,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = catalog();
-        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let playlist = library.create_playlist("Low Tide").expect("a playlist");
 
         let mut driven = Driven::opened_in(cx, library, &folder);
         let ledger = Arc::new(Ledger::default());
@@ -2273,7 +2273,7 @@ mod tests {
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")
             .remove(0);
-        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let playlist = library.create_playlist("Low Tide").expect("a playlist");
 
         library
             .add_to_playlist(playlist, &[resonate_library::Cut::of(&track)])
@@ -2284,7 +2284,7 @@ mod tests {
     #[gpui::test]
     fn the_play_in_a_playlists_menu_queues_what_the_playlist_holds(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
         let playlist = playlist_holding_the_first_song(&library);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
@@ -2310,7 +2310,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
         let playlist = playlist_holding_the_first_song(&library);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
@@ -2354,8 +2354,12 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
-        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "slow water.wav",
+            1,
+            &[(b"INAM", "Slow Water"), (b"IPRD", "Low Tide")],
+        );
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Low Tide")]);
 
         let library = catalog();
 
@@ -2370,7 +2374,7 @@ mod tests {
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
         driven.focus(|root| &root.typed.search);
-        driven.cx.simulate_input("echoes");
+        driven.cx.simulate_input("slow water");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
         let root = driven.root.clone();
@@ -2393,7 +2397,7 @@ mod tests {
     #[gpui::test]
     fn showing_another_playlist_forgets_the_order_kept_for_the_one_before(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
         let kept = library.create_playlist("Kept").expect("a playlist");
         let other = library.create_playlist("Other").expect("a playlist");
 
@@ -2420,7 +2424,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -2494,7 +2498,7 @@ mod tests {
     #[gpui::test]
     fn tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
         let track = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
@@ -2531,8 +2535,8 @@ mod tests {
     #[gpui::test]
     fn a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
-        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let library = scanned_catalog(&folder, &["Slow Water"]);
+        let playlist = library.create_playlist("Low Tide").expect("a playlist");
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -2625,7 +2629,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -2851,7 +2855,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -2941,7 +2945,7 @@ mod tests {
     #[gpui::test]
     fn playing_a_track_row_takes_a_playlists_mark_off_the_queue(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Time"]);
         let playlist = library.create_playlist("Mix").expect("a playlist is made");
 
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
@@ -2977,7 +2981,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time"]);
         let mut every: Vec<TrackId> = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")
@@ -3016,12 +3020,12 @@ mod tests {
     #[gpui::test]
     fn the_playlist_picker_puts_a_track_into_the_playlist_pressed(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
         let track = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
             .id;
-        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let playlist = library.create_playlist("Low Tide").expect("a playlist");
 
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
 
@@ -3059,11 +3063,15 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "slow water.wav",
+            1,
+            &[(b"INAM", "Slow Water"), (b"IPRD", "Low Tide")],
+        );
         folder.tagged(
             "one.wav",
             1,
-            &[(b"INAM", "One of These Days"), (b"IPRD", "Meddle")],
+            &[(b"INAM", "Paper Boats"), (b"IPRD", "Low Tide")],
         );
 
         let library = catalog();
@@ -3125,7 +3133,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -3244,9 +3252,9 @@ mod tests {
             "dropped.wav",
             1,
             &[
-                (b"INAM", "Echoes"),
-                (b"IART", "Pink Floyd"),
-                (b"IPRD", "Meddle"),
+                (b"INAM", "Slow Water"),
+                (b"IART", "Example Band"),
+                (b"IPRD", "Low Tide"),
             ],
         );
         let cover = from.path().join("cover.jpg");
@@ -3266,9 +3274,9 @@ mod tests {
             root.dropped(vec![song, cover], cx);
         });
 
-        let filed = music.join("Pink Floyd/Meddle");
+        let filed = music.join("Example Band/Low Tide");
 
-        driven.until(|_, _| filed.join("Echoes.wav").is_file());
+        driven.until(|_, _| filed.join("Slow Water.wav").is_file());
         driven.until(|root, cx| !root.library.read(cx).is_busy());
 
         assert!(!music.join("dropped.wav").exists());
@@ -3386,7 +3394,11 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "slow water.wav",
+            1,
+            &[(b"INAM", "Slow Water"), (b"IPRD", "Low Tide")],
+        );
 
         let library = catalog();
 
@@ -3440,7 +3452,11 @@ mod tests {
     fn a_queued_row_is_read_again_once_the_catalog_changes_under_it(cx: &mut TestAppContext) {
         let folder = Folder::new();
 
-        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "slow water.wav",
+            1,
+            &[(b"INAM", "Slow Watr"), (b"IPRD", "Low Tide")],
+        );
 
         let library = catalog();
 
@@ -3464,7 +3480,7 @@ mod tests {
             })
         };
 
-        assert_eq!(titled(&mut driven).as_deref(), Some("Echos"));
+        assert_eq!(titled(&mut driven).as_deref(), Some("Slow Watr"));
 
         library
             .land_recording(
@@ -3472,7 +3488,7 @@ mod tests {
                 &resonate_library::Recording {
                     id: resonate_library::Mbid::new("b1a9c0de-1111-4222-8333-444455556666")
                         .expect("an id"),
-                    title: "Echoes".to_owned(),
+                    title: "Slow Water".to_owned(),
                     credit: Vec::new(),
                     length: None,
                     isrcs: Vec::new(),
@@ -3491,7 +3507,7 @@ mod tests {
         assert_eq!(held, 1, "a reload emptied the names the queue draws from");
 
         let began = Instant::now();
-        while titled(&mut driven).as_deref() != Some("Echoes") {
+        while titled(&mut driven).as_deref() != Some("Slow Water") {
             assert!(
                 began.elapsed() < Duration::from_secs(10),
                 "the queue kept the row as it was first read"
@@ -3508,7 +3524,11 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "slow water.wav",
+            1,
+            &[(b"INAM", "Slow Watr"), (b"IPRD", "Low Tide")],
+        );
 
         let library = catalog();
 
@@ -3533,8 +3553,8 @@ mod tests {
             let scanned = scanned.expect("the scanned track is read");
 
             assert_eq!(scanned.id, track.id);
-            assert_eq!(scanned.title, "Echos");
-            assert_eq!(scanned.album.as_deref(), Some("Meddle"));
+            assert_eq!(scanned.title, "Slow Watr");
+            assert_eq!(scanned.album.as_deref(), Some("Low Tide"));
         }
     }
 
@@ -3544,7 +3564,11 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "slow water.wav",
+            1,
+            &[(b"INAM", "Slow Watr"), (b"IPRD", "Low Tide")],
+        );
 
         let library = catalog();
 
@@ -3596,7 +3620,7 @@ mod tests {
     #[gpui::test]
     fn what_was_heard_most_is_read_back_in_the_order_it_is_listed(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time"]);
         let ids: Vec<_> = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")
@@ -4098,7 +4122,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4128,7 +4152,7 @@ mod tests {
     #[gpui::test]
     fn a_shift_click_chooses_every_track_between_and_plays_nothing(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4158,7 +4182,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4194,7 +4218,7 @@ mod tests {
     #[gpui::test]
     fn dragging_a_row_chosen_apart_carries_every_chosen_row_to_the_queue(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4218,7 +4242,7 @@ mod tests {
     #[gpui::test]
     fn dragging_a_row_that_is_not_chosen_carries_that_row_alone(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4242,7 +4266,7 @@ mod tests {
     #[gpui::test]
     fn an_arrow_gives_up_the_rows_chosen_apart(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4259,7 +4283,7 @@ mod tests {
     #[gpui::test]
     fn the_menu_of_rows_chosen_apart_queues_every_one_of_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4286,7 +4310,7 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Low Tide")]);
         folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Animals")]);
         folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Wish")]);
 
@@ -4378,7 +4402,7 @@ mod tests {
         cx: &mut TestAppContext,
         folder: &Folder,
     ) -> (Driven, Arc<Library>, Vec<TrackId>) {
-        let library = scanned_catalog(folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(folder, &["Slow Water", "Money", "Time", "Us"]);
 
         favourite_everything(&library);
 
@@ -4424,7 +4448,7 @@ mod tests {
         use crate::views::sorting::Ordered;
 
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Harbour Lights", "Money", "Time", "Us"]);
 
         favourite_everything(&library);
 
@@ -4467,7 +4491,7 @@ mod tests {
                 .favourite_tracks()
                 .iter()
                 .map(|track| track.title.as_str())
-                .eq(["Us", "Time", "Money", "Echoes"])
+                .eq(["Us", "Time", "Money", "Harbour Lights"])
         });
 
         let shown = favourites_listed(&mut driven);
@@ -4502,7 +4526,7 @@ mod tests {
     #[gpui::test]
     fn an_empty_favourites_offers_no_track_actions(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes"]);
+        let library = scanned_catalog(&folder, &["Slow Water"]);
 
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
 
@@ -4517,7 +4541,7 @@ mod tests {
     #[gpui::test]
     fn the_keys_hop_over_favourites_and_choose_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time"]);
 
         favourite_everything(&library);
 
@@ -4597,7 +4621,7 @@ mod tests {
     #[gpui::test]
     fn the_menu_of_tracks_chosen_apart_offers_to_hide_and_delete_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time", "Us"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -4789,7 +4813,7 @@ mod tests {
 
     fn three_records_all_favourite(folder: &Folder) -> Arc<Library> {
         for (file, title, artist, album) in [
-            ("one.wav", "One", "Air", "Meddle"),
+            ("one.wav", "One", "Air", "Low Tide"),
             ("two.wav", "Two", "Beck", "Animals"),
             ("three.wav", "Three", "Cake", "Wish"),
         ] {
@@ -5221,7 +5245,7 @@ mod tests {
     fn three_playlists_of_a_song_each(
         folder: &Folder,
     ) -> (Arc<Library>, Vec<(resonate_core::PlaylistId, TrackId)>) {
-        let library = scanned_catalog(folder, &["Echoes", "Money", "Time"]);
+        let library = scanned_catalog(folder, &["Slow Water", "Money", "Time"]);
         let tracks = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks");
@@ -5699,13 +5723,15 @@ mod tests {
         assert_eq!(chosen_rows(&mut driven), [2, 3]);
     }
 
-    fn searched_for_echoes(driven: &mut Driven) {
+    fn searched_for_slow_water(driven: &mut Driven) {
         driven.click("tab-tracks");
 
         let model = driven.read(|root, _| root.library.clone());
 
         driven.cx.update(|_, cx| {
-            model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
+            model.update(cx, |library, cx| {
+                library.set_query("slow water".to_owned(), cx)
+            });
         });
     }
 
@@ -5715,7 +5741,7 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        for title in ["Echoes One", "Echoes Two", "Echoes Three"] {
+        for title in ["Slow Water One", "Slow Water Two", "Slow Water Three"] {
             folder.tagged(&format!("{title}.wav"), 1, &[(b"INAM", title)]);
         }
 
@@ -5725,7 +5751,7 @@ mod tests {
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
-        searched_for_echoes(&mut driven);
+        searched_for_slow_water(&mut driven);
         driven.until(|root, cx| root.library.read(cx).listing().len() == 3);
 
         let ids = listed_ids(&mut driven);
@@ -5749,11 +5775,15 @@ mod tests {
     fn the_keys_choose_top_results_songs_and_never_an_artist_or_an_album(cx: &mut TestAppContext) {
         let folder = Folder::new();
 
-        for title in ["Echoes One", "Echoes Two"] {
+        for title in ["Slow Water One", "Slow Water Two"] {
             folder.tagged(
                 &format!("{title}.wav"),
                 1,
-                &[(b"INAM", title), (b"IART", "Echoes"), (b"IPRD", "Echoes")],
+                &[
+                    (b"INAM", title),
+                    (b"IART", "Slow Water"),
+                    (b"IPRD", "Slow Water"),
+                ],
             );
         }
 
@@ -5763,7 +5793,7 @@ mod tests {
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
-        searched_for_echoes(&mut driven);
+        searched_for_slow_water(&mut driven);
         driven.until(|root, cx| {
             let library = root.library.read(cx);
             library.listing().len() == 2
@@ -5829,8 +5859,8 @@ mod tests {
     fn opening_an_album_lets_go_of_the_row_reached_in_the_listing_before(cx: &mut TestAppContext) {
         let folder = Folder::new();
 
-        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
-        folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Meddle")]);
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Low Tide")]);
+        folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Low Tide")]);
         folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Other")]);
 
         let library = catalog();
@@ -5867,7 +5897,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let library = scanned_catalog(&folder, &["Slow Water", "Money", "Time"]);
 
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -5965,7 +5995,11 @@ mod tests {
     fn the_way_back_and_forward_crosses_from_one_category_to_another(cx: &mut TestAppContext) {
         let folder = Folder::new();
 
-        folder.tagged("01.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+        folder.tagged(
+            "01.wav",
+            1,
+            &[(b"INAM", "Slow Water"), (b"IPRD", "Low Tide")],
+        );
 
         let library = catalog();
 
@@ -6016,9 +6050,9 @@ mod tests {
             "01.wav",
             1,
             &[
-                (b"INAM", "Echoes"),
-                (b"IPRD", "Meddle"),
-                (b"IART", "Pink Floyd"),
+                (b"INAM", "Slow Water"),
+                (b"IPRD", "Low Tide"),
+                (b"IART", "Example Band"),
             ],
         );
 
@@ -6131,7 +6165,7 @@ mod tests {
             folder.tagged(
                 &format!("{nth:02}.wav"),
                 1,
-                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
+                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Low Tide")],
             );
         }
 
@@ -6209,7 +6243,7 @@ mod tests {
             folder.tagged(
                 &format!("{nth:02}.wav"),
                 1,
-                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
+                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Low Tide")],
             );
         }
 
@@ -6281,7 +6315,7 @@ mod tests {
         use resonate_library::RowOrder;
 
         let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let library = scanned_catalog(&folder, &["Harbour Lights", "Money", "Time"]);
         let cuts: Vec<_> = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")
@@ -6331,7 +6365,7 @@ mod tests {
             opened_rows_order(&mut driven),
             (RowOrder::Title, Direction::Descending, true)
         );
-        assert_eq!(titles(&mut driven), ["Time", "Money", "Echoes"]);
+        assert_eq!(titles(&mut driven), ["Time", "Money", "Harbour Lights"]);
 
         driven.click("tab-albums");
         driven.click("tab-playlists");
@@ -6340,7 +6374,7 @@ mod tests {
             opened_rows_order(&mut driven),
             (RowOrder::Title, Direction::Descending, true)
         );
-        assert_eq!(titles(&mut driven), ["Time", "Money", "Echoes"]);
+        assert_eq!(titles(&mut driven), ["Time", "Money", "Harbour Lights"]);
 
         show(&mut driven, other);
 
@@ -6355,7 +6389,7 @@ mod tests {
             opened_rows_order(&mut driven),
             (RowOrder::Title, Direction::Descending, true)
         );
-        assert_eq!(titles(&mut driven), ["Time", "Money", "Echoes"]);
+        assert_eq!(titles(&mut driven), ["Time", "Money", "Harbour Lights"]);
     }
 
     #[gpui::test]
@@ -6364,11 +6398,11 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        for title in ["Echoes", "Money", "Time"] {
+        for title in ["Slow Water", "Money", "Time"] {
             folder.tagged(
                 &format!("{title}.wav"),
                 1,
-                &[(b"INAM", title), (b"IPRD", "Meddle")],
+                &[(b"INAM", title), (b"IPRD", "Low Tide")],
             );
         }
 
@@ -6422,7 +6456,7 @@ mod tests {
             folder.tagged(
                 &format!("{nth:02}.wav"),
                 1,
-                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
+                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Low Tide")],
             );
         }
 
@@ -6477,7 +6511,7 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Low Tide")]);
 
         let library = catalog();
 
@@ -6807,12 +6841,12 @@ mod tests {
         let folder = Folder::new();
 
         folder.tagged(
-            "echoes.wav",
+            "slow water.wav",
             1,
             &[
-                (b"INAM", "Echoes"),
-                (b"IART", "Pink Floyd"),
-                (b"IPRD", "Meddle"),
+                (b"INAM", "Slow Water"),
+                (b"IART", "Example Band"),
+                (b"IPRD", "Low Tide"),
             ],
         );
 
@@ -6835,19 +6869,19 @@ mod tests {
 
         driven.click("tab-tracks");
 
-        search(&mut driven, "floid");
+        search(&mut driven, "bund");
         driven.until(|root, cx| instead_of(root, cx).is_some());
 
-        assert_eq!(spelled_instead(&mut driven), Some("Floyd".to_owned()));
+        assert_eq!(spelled_instead(&mut driven), Some("Band".to_owned()));
 
         driven.until_drawn("search-instead");
 
         driven.click("tab-statistics");
         driven.settle();
 
-        assert_eq!(spelled_instead(&mut driven), Some("Floyd".to_owned()));
+        assert_eq!(spelled_instead(&mut driven), Some("Band".to_owned()));
 
-        search(&mut driven, "floyd");
+        search(&mut driven, "band");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
         assert_eq!(spelled_instead(&mut driven), None);
@@ -6860,12 +6894,12 @@ mod tests {
         let folder = Folder::new();
 
         folder.tagged(
-            "echoes.wav",
+            "slow water.wav",
             1,
             &[
-                (b"INAM", "Echoes"),
-                (b"IART", "Pink Floyd"),
-                (b"IPRD", "Meddle"),
+                (b"INAM", "Slow Water"),
+                (b"IART", "Example Band"),
+                (b"IPRD", "Low Tide"),
             ],
         );
 

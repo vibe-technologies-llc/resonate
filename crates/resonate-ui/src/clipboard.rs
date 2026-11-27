@@ -320,7 +320,7 @@ mod tests {
 
         cx.update(|cx| {
             copy_through(
-                "Echoes".to_owned(),
+                "Slow Water".to_owned(),
                 move |text, _: &Claim, _: Told| {
                     let _ = released.recv();
                     let _ = heard.send(text);
@@ -331,7 +331,7 @@ mod tests {
 
         let _ = release.send(());
 
-        assert_eq!(hearing.recv().as_deref(), Ok(&b"Echoes"[..]));
+        assert_eq!(hearing.recv().as_deref(), Ok(&b"Slow Water"[..]));
     }
 
     #[gpui::test]
@@ -378,7 +378,7 @@ mod tests {
         cx.write_to_clipboard(ClipboardItem::new_string("Money".to_owned()));
         cx.update(|cx| {
             copy_through(
-                "Us and Them".to_owned(),
+                "Slow Light".to_owned(),
                 move |_, claim: &Claim, told: Told| {
                     let taken = claim.for_the_compositor();
                     let _ = told.send(taken);
@@ -405,7 +405,7 @@ mod tests {
 
         cx.update(|cx| {
             copy_through(
-                "Brain Damage".to_owned(),
+                "Another Light".to_owned(),
                 move |_, _: &Claim, told: Told| {
                     let _ = told.send(false);
                     let _ = answered.send(());
@@ -418,7 +418,7 @@ mod tests {
 
         cx.run_until_parked();
 
-        assert_eq!(held(cx).as_deref(), Some("Brain Damage"));
+        assert_eq!(held(cx).as_deref(), Some("Another Light"));
     }
 
     #[gpui::test]

@@ -905,12 +905,12 @@ mod tests {
     #[test]
     fn a_request_names_neither_the_token_nor_the_password_in_its_address() {
         let session = session("http://music.local:8096");
-        let url = session.url("/Items", &[("SearchTerm", "Echoes & more")]);
+        let url = session.url("/Items", &[("SearchTerm", "Slow Water & more")]);
         let bare = session.url("/Items", &[]);
 
         assert_eq!(
             url,
-            "http://music.local:8096/Items?SearchTerm=Echoes%20%26%20more"
+            "http://music.local:8096/Items?SearchTerm=Slow%20Water%20%26%20more"
         );
         assert_eq!(bare, "http://music.local:8096/Items");
         assert!(!url.contains("tok") && !url.contains("sesame"));

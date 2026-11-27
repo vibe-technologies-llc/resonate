@@ -297,7 +297,7 @@ mod tests {
     ) {
         let folder = Folder::new();
 
-        for title in ["Echoes", "Time", "Money"] {
+        for title in ["Slow Water", "Time", "Money"] {
             folder.tone(&format!("{title}.wav"), 1);
         }
 

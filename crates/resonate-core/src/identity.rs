@@ -97,16 +97,17 @@ impl fmt::Display for Isrc {
 mod tests {
     use super::*;
 
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 
     #[test]
     fn an_mbid_is_the_dashed_uuid_text_and_reads_back_lowercased() {
-        let lowered = Mbid::new(ECHOES).expect("a well-formed mbid");
+        let lowered = Mbid::new(SLOW_WATER).expect("a well-formed mbid");
 
-        assert_eq!(lowered.as_str(), ECHOES);
-        assert_eq!(lowered.to_string(), ECHOES);
+        assert_eq!(lowered.as_str(), SLOW_WATER);
+        assert_eq!(lowered.to_string(), SLOW_WATER);
 
-        let shouted = Mbid::new(&ECHOES.to_ascii_uppercase()).expect("case is not part of an mbid");
+        let shouted =
+            Mbid::new(&SLOW_WATER.to_ascii_uppercase()).expect("case is not part of an mbid");
 
         assert_eq!(shouted, lowered);
     }

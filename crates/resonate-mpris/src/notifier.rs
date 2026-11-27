@@ -220,7 +220,7 @@ mod tests {
             escaped("Simon & Garfunkel <live>"),
             "Simon &amp; Garfunkel &lt;live&gt;"
         );
-        assert_eq!(escaped("Pink Floyd"), "Pink Floyd");
+        assert_eq!(escaped("Example Band"), "Example Band");
     }
 
     #[test]

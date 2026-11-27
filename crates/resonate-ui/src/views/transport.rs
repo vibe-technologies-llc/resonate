@@ -1958,11 +1958,11 @@ mod tests {
     #[test]
     fn the_window_is_titled_by_what_plays_and_by_the_app_where_nothing_does() {
         assert_eq!(
-            titled_by("Echoes", "Pink Floyd"),
-            "Echoes — Pink Floyd · Resonate"
+            titled_by("Slow Water", "Example Band"),
+            "Slow Water — Example Band · Resonate"
         );
-        assert_eq!(titled_by("Echoes", " "), "Echoes · Resonate");
-        assert_eq!(titled_by("", "Pink Floyd"), "Resonate");
+        assert_eq!(titled_by("Slow Water", " "), "Slow Water · Resonate");
+        assert_eq!(titled_by("", "Example Band"), "Resonate");
     }
 
     #[test]

@@ -674,7 +674,7 @@ mod tests {
                 listened: Duration::from_secs(3_600),
                 plays: 2,
                 top_songs: vec![Ranked {
-                    name: "Echoes".to_owned(),
+                    name: "Slow Water".to_owned(),
                     by: None,
                     plays: 2,
                     listened: Duration::from_secs(3_600),

@@ -79,16 +79,16 @@ mod tests {
 
     #[test]
     fn a_lucene_term_is_quoted_and_a_query_value_is_percent_escaped() {
-        assert_eq!(lucene_quoted("Meddle"), "\"Meddle\"");
+        assert_eq!(lucene_quoted("Low Tide"), "\"Low Tide\"");
         assert_eq!(
             lucene_quoted("Say \"hi\" \\ wave"),
             "\"Say \\\"hi\\\" \\\\ wave\""
         );
 
-        assert_eq!(escape_query("Pink Floyd"), "Pink%20Floyd");
+        assert_eq!(escape_query("Example Band"), "Example%20Band");
         assert_eq!(
-            escape_query("release:\"Meddle\" AND tracks:6"),
-            "release%3A%22Meddle%22%20AND%20tracks%3A6"
+            escape_query("release:\"Low Tide\" AND tracks:6"),
+            "release%3A%22Low%20Tide%22%20AND%20tracks%3A6"
         );
         assert_eq!(escape_query("a-b.c_d~e"), "a-b.c_d~e");
         assert_eq!(escape_query("Ø/&+"), "%C3%98%2F%26%2B");
@@ -97,12 +97,12 @@ mod tests {
     #[test]
     fn params_are_joined_with_an_ampersand_and_an_absent_one_is_left_out() {
         let query = Params::new()
-            .with("track_name", "Echoes")
+            .with("track_name", "Slow Water")
             .maybe("album_name", None)
-            .maybe("artist_name", Some("Pink Floyd"))
+            .maybe("artist_name", Some("Example Band"))
             .finish();
 
-        assert_eq!(query, "?track_name=Echoes&artist_name=Pink%20Floyd");
+        assert_eq!(query, "?track_name=Slow%20Water&artist_name=Example%20Band");
         assert_eq!(Params::new().finish(), "");
     }
 }

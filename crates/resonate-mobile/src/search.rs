@@ -2540,23 +2540,23 @@ mod tests {
         for tagged in [
             Tagged {
                 title: "Time",
-                artist: "Pink Floyd",
-                album: "The Dark Side of the Moon",
+                artist: "Example Band",
+                album: "The Slow Tide of the Moon",
                 genre: "Progressive Rock",
                 date: "1973-03-01",
                 ..UNTAGGED
             },
             Tagged {
                 title: "Money",
-                artist: "Pink Floyd",
-                album: "The Dark Side of the Moon",
+                artist: "Example Band",
+                album: "The Slow Tide of the Moon",
                 genre: "Progressive Rock",
                 date: "1973",
                 ..UNTAGGED
             },
             Tagged {
-                title: "Comfortably Numb (Live)",
-                artist: "Pink Floyd",
+                title: "Tidal Marks (Live)",
+                artist: "Example Band",
                 album: "Pulse",
                 genre: "Progressive Rock",
                 date: "1995",
@@ -2604,7 +2604,7 @@ mod tests {
             },
             Tagged {
                 title: "Paranoid Android",
-                artist: "Radiohead",
+                artist: "Tideline",
                 album: "OK Computer",
                 genre: "Rock",
                 date: "1997",
@@ -2626,12 +2626,12 @@ mod tests {
     fn words_hold_in_any_order_and_the_whole_name_ranks_first() {
         let catalog = library();
 
-        let found = searched(&catalog, "floyd pink");
+        let found = searched(&catalog, "band example");
 
         assert_eq!(found.track_count, 3);
         assert_eq!(
             found.artists.first().map(|artist| artist.name.as_str()),
-            Some("Pink Floyd")
+            Some("Example Band")
         );
         assert!(found.reads.is_empty());
     }
@@ -2660,8 +2660,8 @@ mod tests {
 
         let jazz = searched(&catalog, "genre:jazz");
         let seventies = searched(&catalog, "year:1970-1979");
-        let studio = searched(&catalog, "floyd -live");
-        let either = searched(&catalog, "artist:air or artist:radiohead");
+        let studio = searched(&catalog, "band -live");
+        let either = searched(&catalog, "artist:air or artist:tideline");
 
         assert_eq!(titles(&jazz.tracks), vec!["So What"]);
         assert_eq!(jazz.reads, vec!["genre:jazz"]);
@@ -2822,17 +2822,17 @@ mod tests {
     fn a_prefix_is_completed_and_a_typo_corrected_from_the_catalog() {
         let catalog = library();
 
-        let completing = searched(&catalog, "radioh");
-        let mistyped = searched(&catalog, "radiohaed");
+        let completing = searched(&catalog, "tideli");
+        let mistyped = searched(&catalog, "tidelnie");
 
         assert!(
             completing
                 .completions
                 .iter()
-                .any(|offer| offer == "Radiohead")
+                .any(|offer| offer == "Tideline")
         );
         assert_eq!(mistyped.track_count, 0);
-        assert_eq!(mistyped.did_you_mean.as_deref(), Some("Radiohead"));
+        assert_eq!(mistyped.did_you_mean.as_deref(), Some("Tideline"));
     }
 
     #[test]
@@ -3002,13 +3002,13 @@ mod tests {
             Tagged {
                 title: "Hidden",
                 album: "The Wall",
-                artist: "Pink Floyd",
+                artist: "Example Band",
                 ..UNTAGGED
             },
             Tagged {
                 title: "Hey You",
                 album: "The Wall",
-                artist: "Pink Floyd",
+                artist: "Example Band",
                 disc: Some(2),
                 number: Some(1),
                 ..UNTAGGED
@@ -3016,7 +3016,7 @@ mod tests {
             Tagged {
                 title: "Mother",
                 album: "the wall",
-                artist: "Pink Floyd",
+                artist: "Example Band",
                 disc: Some(1),
                 number: Some(5),
                 ..UNTAGGED
@@ -3024,8 +3024,8 @@ mod tests {
             Tagged {
                 title: "In the Flesh?",
                 album: "THE WALL",
-                artist: "Roger Waters",
-                album_artist: "Pink Floyd",
+                artist: "Third Band",
+                album_artist: "Example Band",
                 disc: Some(1),
                 number: Some(1),
                 date: "1979",
@@ -3033,7 +3033,7 @@ mod tests {
             },
             Tagged {
                 title: "Loose",
-                artist: "Pink Floyd",
+                artist: "Example Band",
                 ..UNTAGGED
             },
         ] {
@@ -3047,8 +3047,8 @@ mod tests {
         let tracks = searching
             .album_tracks(&catalog, &wall.key)
             .expect("the album's tracks");
-        let floyd = searching
-            .artist_tracks(&catalog, "PINK FLOYD")
+        let band = searching
+            .artist_tracks(&catalog, "EXAMPLE BAND")
             .expect("the artist's tracks");
         let artists = searching
             .artists(&catalog, CollectionOrder::Alphabetical)
@@ -3061,13 +3061,13 @@ mod tests {
             titles(&tracks),
             vec!["In the Flesh?", "Mother", "Hey You", "Hidden"]
         );
-        assert_eq!(floyd.len(), 5);
+        assert_eq!(band.len(), 5);
         assert_eq!(
             artists
                 .iter()
                 .map(|artist| (artist.name.as_str(), artist.songs, artist.albums))
                 .collect::<Vec<_>>(),
-            vec![("Pink Floyd", 5, 1), ("Roger Waters", 1, 1)]
+            vec![("Example Band", 5, 1), ("Third Band", 1, 1)]
         );
     }
 
@@ -3310,20 +3310,20 @@ mod tests {
             .remove(0);
 
         let before = searching
-            .search(&catalog, "lyrics:\"grab that cash\"", 10)
+            .search(&catalog, "lyrics:\"carry the light\"", 10)
             .expect("a lyric search");
 
         catalog
             .keep_lyrics(
                 money.id,
-                Some("[00:01.00]Money, get away\n[00:05.00]<00:05.00>Grab that cash"),
+                Some("[00:01.00]Slow water, hold on\n[00:05.00]<00:05.00>Carry the light"),
                 None,
                 "embedded",
             )
             .expect("kept lyrics");
 
         let after = searching
-            .search(&catalog, "lyrics:\"grab that cash\"", 10)
+            .search(&catalog, "lyrics:\"carry the light\"", 10)
             .expect("a lyric search");
         let stamp = searching
             .search(&catalog, "lyrics:00", 10)
@@ -3339,21 +3339,21 @@ mod tests {
         let catalog = library();
         let searching = Searching::default();
 
-        let before = searching.search(&catalog, "karma", 10).expect("a search");
+        let before = searching.search(&catalog, "paper", 10).expect("a search");
 
         song(
             &catalog,
             Tagged {
-                title: "Karma Police",
-                artist: "Radiohead",
+                title: "Paper Boats",
+                artist: "Tideline",
                 ..UNTAGGED
             },
         );
 
-        let after = searching.search(&catalog, "karma", 10).expect("a search");
+        let after = searching.search(&catalog, "paper", 10).expect("a search");
 
         assert_eq!(before.track_count, 0);
-        assert_eq!(titles(&after.tracks), vec!["Karma Police"]);
+        assert_eq!(titles(&after.tracks), vec!["Paper Boats"]);
     }
 
     #[test]
@@ -3436,8 +3436,8 @@ mod tests {
         ] {
             for descending in [true, false] {
                 let filter = TrackFilter {
-                    text: "FLOYD PINK".into(),
-                    album: "the dark side of the moon".into(),
+                    text: "BAND EXAMPLE".into(),
+                    album: "the slow tide of the moon".into(),
                     order,
                     descending,
                     ..TrackFilter::default()

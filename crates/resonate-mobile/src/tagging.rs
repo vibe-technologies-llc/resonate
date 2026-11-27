@@ -670,8 +670,8 @@ mod tests {
             path: path.to_string_lossy().into_owned(),
         };
         let change = SongTags {
-            title: Some("Echoes".into()),
-            artist: Some(" Pink Floyd ".into()),
+            title: Some("Slow Water".into()),
+            artist: Some(" Example Band ".into()),
             track_number: Some("07".into()),
             ..SongTags::default()
         };
@@ -685,8 +685,8 @@ mod tests {
             .expect("the same edit");
 
         assert_eq!(written.written, 1);
-        assert_eq!(retagged.title, "Echoes");
-        assert_eq!(retagged.artist, "Pink Floyd");
+        assert_eq!(retagged.title, "Slow Water");
+        assert_eq!(retagged.artist, "Example Band");
         assert_eq!(retagged.track_number, Some(7));
         assert_eq!(again.unchanged, 1);
         assert_eq!(player.tags_to_undo(), vec![URI.to_owned()]);
@@ -708,9 +708,9 @@ mod tests {
             .catalog
             .upsert(Track {
                 uri: URI.into(),
-                name: "Pink Floyd - Echoes.wav".into(),
-                title: "Echoes".into(),
-                artist: "Pink Floyd".into(),
+                name: "Example Band - Slow Water.wav".into(),
+                title: "Slow Water".into(),
+                artist: "Example Band".into(),
                 duration_ms: 100,
                 rate: 44_100,
                 codec: "PCM".into(),
@@ -726,7 +726,7 @@ mod tests {
             .edit_tags(
                 vec![song],
                 SongTags {
-                    album: Some("Meddle".into()),
+                    album: Some("Low Tide".into()),
                     ..SongTags::default()
                 },
             )
@@ -734,9 +734,9 @@ mod tests {
         let retagged = player.catalog.track(track.id).expect("the song");
 
         assert_eq!(written.written, 1);
-        assert_eq!(retagged.title, "Echoes");
-        assert_eq!(retagged.artist, "Pink Floyd");
-        assert_eq!(retagged.album, "Meddle");
+        assert_eq!(retagged.title, "Slow Water");
+        assert_eq!(retagged.artist, "Example Band");
+        assert_eq!(retagged.album, "Low Tide");
     }
 
     #[test]
@@ -749,7 +749,7 @@ mod tests {
             path: path.to_string_lossy().into_owned(),
         };
         let change = SongTags {
-            title: Some("Echoes".into()),
+            title: Some("Slow Water".into()),
             ..SongTags::default()
         };
 
@@ -947,8 +947,8 @@ mod tests {
 
         fn change() -> SongTags {
             SongTags {
-                title: Some("Echoes".into()),
-                artist: Some("Pink Floyd".into()),
+                title: Some("Slow Water".into()),
+                artist: Some("Example Band".into()),
                 ..SongTags::default()
             }
         }
@@ -1004,10 +1004,10 @@ mod tests {
             .expect("the same edit");
 
         assert_eq!(written.written, 1);
-        assert_eq!(edited.tags().title.as_deref(), Some("Echoes"));
-        assert_eq!(edited.tags().artist.as_deref(), Some("Pink Floyd"));
-        assert_eq!(retagged.title, "Echoes");
-        assert_eq!(retagged.artist, "Pink Floyd");
+        assert_eq!(edited.tags().title.as_deref(), Some("Slow Water"));
+        assert_eq!(edited.tags().artist.as_deref(), Some("Example Band"));
+        assert_eq!(retagged.title, "Slow Water");
+        assert_eq!(retagged.artist, "Example Band");
         assert_eq!(again.unchanged, 1);
         assert_eq!(edited.directory.asked.load(Ordering::Relaxed), 1);
         assert_eq!(edited.staged(), Vec::<PathBuf>::new());
@@ -1146,8 +1146,8 @@ mod tests {
 
         assert_eq!(failed.failed, 1);
         assert_eq!(written.written, 1);
-        assert_eq!(edited.tags().title.as_deref(), Some("Echoes"));
-        assert_eq!(edited.title(), "Echoes");
+        assert_eq!(edited.tags().title.as_deref(), Some("Slow Water"));
+        assert_eq!(edited.title(), "Slow Water");
         assert_eq!(edited.staged(), Vec::<PathBuf>::new());
     }
 
@@ -1245,7 +1245,7 @@ mod tests {
         let written = relaunched.edit();
 
         assert_eq!(written.written, 1);
-        assert_eq!(relaunched.tags().title.as_deref(), Some("Echoes"));
+        assert_eq!(relaunched.tags().title.as_deref(), Some("Slow Water"));
     }
 
     #[test]

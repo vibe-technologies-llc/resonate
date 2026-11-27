@@ -358,7 +358,7 @@ mod tests {
                 bytes.extend_from_slice(&sample.to_le_bytes());
             }
 
-            let path = self.0.join("Echoes.wav");
+            let path = self.0.join("Slow Water.wav");
 
             fs::write(&path, bytes).expect("a wave");
             path
@@ -374,7 +374,7 @@ mod tests {
         }
 
         fn sheet(&self) -> Option<String> {
-            fs::read_to_string(self.0.join("Echoes.lrc")).ok()
+            fs::read_to_string(self.0.join("Slow Water.lrc")).ok()
         }
     }
 
@@ -503,8 +503,8 @@ mod tests {
                 .catalog
                 .upsert(Track {
                     uri: folder.uri_of(&song),
-                    name: "Echoes.wav".into(),
-                    title: "Echoes".into(),
+                    name: "Slow Water.wav".into(),
+                    title: "Slow Water".into(),
                     duration_ms: 100,
                     rate: 44_100,
                     codec: "PCM".into(),
@@ -617,7 +617,7 @@ mod tests {
         assert_eq!(read_back(&written), read_back(SYNCED));
         assert_eq!(again, LyricsSaved::AlreadySaid);
 
-        fs::write(saving.folder.0.join("Echoes.lrc"), THEIRS).expect("a sheet of their own");
+        fs::write(saving.folder.0.join("Slow Water.lrc"), THEIRS).expect("a sheet of their own");
 
         let stands = saving
             .player
@@ -645,9 +645,9 @@ mod tests {
         assert_eq!(saved, LyricsSaved::Written);
         assert_eq!(saving.folder.sheet().as_deref(), Some(SYNCED));
         assert_eq!(again, LyricsSaved::AlreadySaid);
-        assert_eq!(*tree.made.lock(), vec!["Echoes.lrc".to_owned()]);
+        assert_eq!(*tree.made.lock(), vec!["Slow Water.lrc".to_owned()]);
 
-        fs::write(saving.folder.0.join("Echoes.lrc"), THEIRS).expect("a sheet of their own");
+        fs::write(saving.folder.0.join("Slow Water.lrc"), THEIRS).expect("a sheet of their own");
 
         let stands = saving
             .player
@@ -672,8 +672,11 @@ mod tests {
 
         saving.tree(true);
         fs::create_dir_all(saving.folder.0.join("Lyrics")).expect("a lyrics folder");
-        fs::write(saving.folder.0.join("Lyrics").join("echoes.LRC"), THEIRS)
-            .expect("a sheet of their own");
+        fs::write(
+            saving.folder.0.join("Lyrics").join("slow water.LRC"),
+            THEIRS,
+        )
+        .expect("a sheet of their own");
 
         let stands = saving
             .player
@@ -684,7 +687,7 @@ mod tests {
         assert_eq!(saving.folder.sheet(), None);
 
         fs::write(
-            saving.folder.0.join("Echoes.lyricsfile.yaml"),
+            saving.folder.0.join("Slow Water.lyricsfile.yaml"),
             "lines: []\n",
         )
         .expect("a richer sheet");

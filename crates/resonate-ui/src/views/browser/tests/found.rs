@@ -308,15 +308,11 @@ fn a_found_song_pressed_on_one_zone_plays_there_though_another_is_shown_when_it_
 fn a_title_by_an_artist_is_searched_as_that_title_by_that_artist(cx: &mut TestAppContext) {
     let folder = Folder::new();
 
-    folder.tagged(
-        "1.wav",
-        1,
-        &[(b"IART", "Stela Cole"), (b"INAM", "You F.O.")],
-    );
+    folder.tagged("1.wav", 1, &[(b"IART", "Mira Vale"), (b"INAM", "Hey A.B.")]);
     folder.tagged(
         "2.wav",
         1,
-        &[(b"IART", "Somebody Else"), (b"INAM", "You F.O.")],
+        &[(b"IART", "Somebody Else"), (b"INAM", "Hey A.B.")],
     );
 
     let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
@@ -333,7 +329,7 @@ fn a_title_by_an_artist_is_searched_as_that_title_by_that_artist(cx: &mut TestAp
 
     driven.cx.update(|_, cx| {
         search.update(cx, |search, cx| {
-            search.set_text("You F O by stela cole".to_owned(), cx);
+            search.set_text("Hey A B by mira vale".to_owned(), cx);
         });
     });
     driven.until(|root, cx| root.library.read(cx).meant().is_some());
@@ -349,7 +345,7 @@ fn a_title_by_an_artist_is_searched_as_that_title_by_that_artist(cx: &mut TestAp
         })
     };
 
-    assert_eq!(artists(&mut driven), ["Stela Cole"]);
+    assert_eq!(artists(&mut driven), ["Mira Vale"]);
 
     driven.click("search-as-typed");
     driven.until(|root, cx| root.library.read(cx).meant().is_none());

@@ -292,6 +292,6 @@ mod tests {
         }
 
         assert_eq!(TrackId::linked("https://tidal.com/album/55391740"), None);
-        assert_eq!(TrackId::linked("https://tidal.com/track/echoes"), None);
+        assert_eq!(TrackId::linked("https://tidal.com/track/slow-water"), None);
     }
 }

@@ -78,7 +78,7 @@ fn songs_found_for_fewer_words_stay_listed_while_more_are_asked_for(cx: &mut Tes
         (library.found().len(), library.is_asking_elsewhere())
     });
 
-    typed(&mut driven, "radiohead");
+    typed(&mut driven, "tideline");
 
     let unrelated = driven.read(|root, cx| root.library.read(cx).found().len());
 
@@ -230,12 +230,12 @@ fn the_artists_songs_and_albums_on_the_top_results_are_one_run_the_keys_walk_and
     let folder = Folder::new();
 
     folder.tagged(
-        "echoes.wav",
+        "slow water.wav",
         1,
         &[
-            (b"INAM", "Echoes"),
-            (b"IART", "Echoes"),
-            (b"IPRD", "Echoes"),
+            (b"INAM", "Slow Water"),
+            (b"IART", "Slow Water"),
+            (b"IPRD", "Slow Water"),
         ],
     );
 
@@ -250,7 +250,9 @@ fn the_artists_songs_and_albums_on_the_top_results_are_one_run_the_keys_walk_and
     let model = driven.read(|root, _| root.library.clone());
 
     driven.cx.update(|_, cx| {
-        model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
+        model.update(cx, |library, cx| {
+            library.set_query("slow water".to_owned(), cx)
+        });
     });
     driven.until(|_, cx| {
         let library = model.read(cx);
@@ -299,12 +301,12 @@ fn enter_straight_after_the_last_letter_reaches_the_results_typed_not_the_ones_b
     folder.tagged(
         "alpha.wav",
         1,
-        &[(b"INAM", "Alpha"), (b"IART", "Pink Floyd")],
+        &[(b"INAM", "Alpha"), (b"IART", "Example Band")],
     );
     folder.tagged(
         "zebra.wav",
         1,
-        &[(b"INAM", "Zebra"), (b"IART", "Pink Floyd")],
+        &[(b"INAM", "Zebra"), (b"IART", "Example Band")],
     );
 
     let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));

@@ -2245,8 +2245,11 @@ mod tests {
 
         let eyebrow = node_of(&eyebrow("Search")).expect("an eyebrow is a node");
         let title = node_of(&title(SharedString::new_static("Albums"))).expect("a title is a node");
-        let hero = node_of(&hero_title(SharedString::new_static("Echoes"), px(300.0)))
-            .expect("a hero title is a node");
+        let hero = node_of(&hero_title(
+            SharedString::new_static("Slow Water"),
+            px(300.0),
+        ))
+        .expect("a hero title is a node");
         let section = node_of(&section_name("Output")).expect("a section name is a node");
         let card = node_of(&card_title("Signal")).expect("a card title is a node");
         let empty = node_of(&nothing_here(
@@ -2262,7 +2265,7 @@ mod tests {
         assert_eq!(title.level(), Some(1));
         assert_eq!(title.label(), Some("Albums"));
         assert_eq!(hero.role(), Role::Heading);
-        assert_eq!(hero.label(), Some("Echoes"));
+        assert_eq!(hero.label(), Some("Slow Water"));
         assert_eq!(section.role(), Role::Heading);
         assert_eq!(section.level(), Some(2));
         assert_eq!(card.level(), Some(3));
@@ -2344,12 +2347,12 @@ mod tests {
         spoken::listened_to(true);
 
         let cut = Cut::of(
-            SharedString::new_static("Echoes (2011 Remaster)"),
-            SharedString::new_static("Echoes…"),
+            SharedString::new_static("Slow Water (2011 Remaster)"),
+            SharedString::new_static("Slow Water…"),
         );
         let uncut = Cut::of(
-            SharedString::new_static("Meddle"),
-            SharedString::new_static("Meddle"),
+            SharedString::new_static("Low Tide"),
+            SharedString::new_static("Low Tide"),
         );
 
         let link = node_of(&div().id("playing-title").linked_as(&cut, "Open this album"))
@@ -2361,10 +2364,10 @@ mod tests {
         )
         .expect("a heard link is a node");
 
-        assert_eq!(cut.clone().into_element(), "Echoes…");
+        assert_eq!(cut.clone().into_element(), "Slow Water…");
         assert_eq!(link.role(), Role::Link);
-        assert_eq!(link.label(), Some("Echoes (2011 Remaster)"));
-        assert_eq!(whole.label(), Some("Meddle"));
+        assert_eq!(link.label(), Some("Slow Water (2011 Remaster)"));
+        assert_eq!(whole.label(), Some("Low Tide"));
     }
 
     #[test]

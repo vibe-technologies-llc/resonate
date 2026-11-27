@@ -1377,7 +1377,7 @@ mod tests {
             explicit: None,
             id: TrackId::new(id).expect("a valid id"),
             location: MediaLocation::local(path),
-            title: "Echoes".to_owned(),
+            title: "Slow Water".to_owned(),
             artist: None,
             artist_id: None,
             album_id: None,
@@ -1568,13 +1568,13 @@ mod tests {
     fn a_copy_of_a_kind_nothing_else_shares_is_named_by_its_kind_alone() {
         let own = copy(
             1,
-            "/music/hires/06 Echoes.flac",
+            "/music/hires/06 Slow Water.flac",
             Codec::Flac,
             SampleFormat::S24,
         );
         let other = copy(
             2,
-            "/music/cd/06 Echoes.flac",
+            "/music/cd/06 Slow Water.flac",
             Codec::Flac,
             SampleFormat::S16,
         );
@@ -1586,19 +1586,42 @@ mod tests {
 
     #[test]
     fn copies_of_one_kind_are_told_apart_by_where_they_are() {
-        let own = copy(1, "/music/a/06 Echoes.flac", Codec::Flac, SampleFormat::S16);
-        let twin = copy(2, "/music/b/06 Echoes.flac", Codec::Flac, SampleFormat::S16);
-        let lossy = copy(3, "/music/c/06 Echoes.mp3", Codec::Mp3, SampleFormat::F32);
-        let lossy_again = copy(4, "/music/d/06 Echoes.mp3", Codec::Mp3, SampleFormat::F32);
+        let own = copy(
+            1,
+            "/music/a/06 Slow Water.flac",
+            Codec::Flac,
+            SampleFormat::S16,
+        );
+        let twin = copy(
+            2,
+            "/music/b/06 Slow Water.flac",
+            Codec::Flac,
+            SampleFormat::S16,
+        );
+        let lossy = copy(
+            3,
+            "/music/c/06 Slow Water.mp3",
+            Codec::Mp3,
+            SampleFormat::F32,
+        );
+        let lossy_again = copy(
+            4,
+            "/music/d/06 Slow Water.mp3",
+            Codec::Mp3,
+            SampleFormat::F32,
+        );
 
         let labels = copy_labels(&own, &[twin.clone(), lossy.clone(), lossy_again.clone()]);
 
         assert_eq!(
             labels,
             vec![
-                format!("Play the {} copy in b/06 Echoes.flac", kind_of(&twin)),
-                format!("Play the {} copy in c/06 Echoes.mp3", kind_of(&lossy)),
-                format!("Play the {} copy in d/06 Echoes.mp3", kind_of(&lossy_again)),
+                format!("Play the {} copy in b/06 Slow Water.flac", kind_of(&twin)),
+                format!("Play the {} copy in c/06 Slow Water.mp3", kind_of(&lossy)),
+                format!(
+                    "Play the {} copy in d/06 Slow Water.mp3",
+                    kind_of(&lossy_again)
+                ),
             ]
         );
     }

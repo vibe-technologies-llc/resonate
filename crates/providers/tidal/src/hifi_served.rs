@@ -335,10 +335,10 @@ mod tests {
     #[test]
     fn an_album_the_server_answers_is_read_from_its_entries_and_its_own_name() {
         let answered: Value = serde_json::from_str(
-            r#"{"version":"2.2","data":{"id":7,"title":"Meddle","cover":"aa-bb","releaseDate":"1971-10-30",
-                "items":[{"item":{"id":11,"title":"One of These Days","trackNumber":1,"duration":357},"type":"track"},
+            r#"{"version":"2.2","data":{"id":7,"title":"Low Tide","cover":"aa-bb","releaseDate":"1971-10-30",
+                "items":[{"item":{"id":11,"title":"Paper Boats","trackNumber":1,"duration":357},"type":"track"},
                          {"item":null,"type":"video"},
-                         {"item":{"id":12,"title":"A Pillow of Winds","trackNumber":2},"type":"track"}]}}"#,
+                         {"item":{"id":12,"title":"Small Mercies","trackNumber":2},"type":"track"}]}}"#,
         )
         .expect("an album");
         let data = answered.get("data");

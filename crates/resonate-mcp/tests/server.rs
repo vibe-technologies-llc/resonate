@@ -1130,7 +1130,7 @@ fn a_transport_tool_with_no_player_fails_as_a_tool_and_the_catalog_still_answers
 #[test]
 fn what_is_playing_is_read_off_the_player() {
     let (players, _) = Fake::with(Standing {
-        rows: vec![row(9, "Echoes"), row(8, "Time")],
+        rows: vec![row(9, "Slow Water"), row(8, "Time")],
         playing: Some(1),
         status: Some(PlaybackStatus::Playing),
         ..Standing::default()
@@ -1304,7 +1304,7 @@ fn hostile_title_text_in_the_catalog_is_listed_searched_and_embedded_as_valid_js
 #[test]
 fn a_queue_id_is_written_as_text_so_no_client_rounds_it() {
     let (players, standing) = Fake::with(Standing {
-        rows: vec![row(u64::MAX, "Echoes"), row(u64::MAX - 1, "Time")],
+        rows: vec![row(u64::MAX, "Slow Water"), row(u64::MAX - 1, "Time")],
         playing: Some(0),
         ..Standing::default()
     });
@@ -1610,7 +1610,7 @@ fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
 #[test]
 fn a_transport_gesture_answers_with_what_the_player_reads_back_once_it_has_landed() {
     let (players, _) = Fake::with(Standing {
-        rows: vec![row(9, "Echoes"), row(8, "Time"), row(7, "Money")],
+        rows: vec![row(9, "Slow Water"), row(8, "Time"), row(7, "Money")],
         playing: Some(0),
         ..Standing::default()
     });
@@ -1622,7 +1622,7 @@ fn a_transport_gesture_answers_with_what_the_player_reads_back_once_it_has_lande
     let played = called(&server, "control_playback", json!({ "action": "play" }));
 
     assert_eq!(played["status"], "Playing");
-    assert_eq!(played["track"]["title"], "Echoes");
+    assert_eq!(played["track"]["title"], "Slow Water");
 
     let skipped = called(&server, "control_playback", json!({ "action": "next" }));
 
@@ -2843,7 +2843,7 @@ fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
 #[test]
 fn a_resource_reads_what_the_tool_of_the_same_reading_answers() {
     let (players, _) = Fake::with(Standing {
-        rows: vec![row(9, "Echoes"), row(8, "Time")],
+        rows: vec![row(9, "Slow Water"), row(8, "Time")],
         playing: Some(0),
         status: Some(PlaybackStatus::Paused),
         ..Standing::default()
@@ -3008,7 +3008,7 @@ fn a_prompt_embeds_the_reading_its_resource_answers() {
         .expect("a playlist to be made");
 
     let (players, _) = Fake::with(Standing {
-        rows: vec![row(9, "Echoes")],
+        rows: vec![row(9, "Slow Water")],
         playing: Some(0),
         status: Some(PlaybackStatus::Playing),
         ..Standing::default()
@@ -3070,7 +3070,7 @@ fn a_prompt_embeds_the_reading_its_resource_answers() {
     assert!(
         embedded["text"]
             .as_str()
-            .is_some_and(|text| text.contains("Echoes")),
+            .is_some_and(|text| text.contains("Slow Water")),
         "{embedded}"
     );
 }
@@ -3462,7 +3462,7 @@ fn a_queue_that_fails_partway_says_how_many_rows_landed() {
     tree.wav("c.wav", "Signal Lost", "Hours", "3");
 
     let (players, _) = Fake::with(Standing {
-        rows: vec![row(9, "Echoes")],
+        rows: vec![row(9, "Slow Water")],
         queueing_fails_after: Some(2),
         ..Standing::default()
     });
@@ -4370,7 +4370,7 @@ fn study() -> Standing {
 fn every_zone_is_listed_with_its_device_and_what_it_plays_and_a_tool_reaches_one_by_number_or_name()
 {
     let (players, living) = Fake::with(Standing {
-        rows: vec![row(1, "Echoes")],
+        rows: vec![row(1, "Slow Water")],
         playing: Some(0),
         status: Some(PlaybackStatus::Playing),
         device: Some("Speakers".to_owned()),
@@ -4397,7 +4397,7 @@ fn every_zone_is_listed_with_its_device_and_what_it_plays_and_a_tool_reaches_one
     assert_eq!(listed["zones"][0]["player"], PLAYER);
     assert_eq!(listed["zones"][0]["device"], "Speakers");
     assert_eq!(listed["zones"][0]["status"], "Playing");
-    assert_eq!(listed["zones"][0]["track"]["title"], "Echoes");
+    assert_eq!(listed["zones"][0]["track"]["title"], "Slow Water");
     assert_eq!(listed["zones"][0]["rows"], 1);
     assert_eq!(listed["zones"][1]["zone"], 2);
     assert_eq!(listed["zones"][1]["name"], "Study");
@@ -4437,7 +4437,7 @@ fn every_zone_is_listed_with_its_device_and_what_it_plays_and_a_tool_reaches_one
 #[test]
 fn playback_moves_from_one_zone_onto_another_and_never_onto_itself() {
     let (players, living) = Fake::with(Standing {
-        rows: vec![row(1, "Echoes")],
+        rows: vec![row(1, "Slow Water")],
         playing: Some(0),
         status: Some(PlaybackStatus::Playing),
         ..Standing::default()
@@ -4464,7 +4464,7 @@ fn playback_moves_from_one_zone_onto_another_and_never_onto_itself() {
         living.borrow().calls,
         [Call::HandOver(ZoneId::new(2).expect("a second zone"))]
     );
-    assert_eq!(landed["track"]["title"], "Echoes");
+    assert_eq!(landed["track"]["title"], "Slow Water");
     assert_eq!(second.borrow().status, Some(PlaybackStatus::Playing));
     assert!(
         onto_itself.contains("zone 2 is the zone playback would move from"),

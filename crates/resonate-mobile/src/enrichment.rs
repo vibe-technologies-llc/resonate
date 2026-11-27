@@ -3102,7 +3102,7 @@ mod tests {
                 tracks: vec![resonate_library::ReleaseTrack {
                     position: 1,
                     number: "1".into(),
-                    title: "Echoes".into(),
+                    title: "Slow Water".into(),
                     artist: None,
                     recording: None,
                     track: None,
@@ -3120,7 +3120,7 @@ mod tests {
         let songs = catalog.album_songs_not_held("the album").expect("the rows");
 
         assert_eq!(songs.len(), 1);
-        assert_eq!(songs[0].title, "Echoes");
+        assert_eq!(songs[0].title, "Slow Water");
         assert_eq!(songs[0].release, RELEASE);
         assert_eq!(songs[0].release_group, GROUP);
     }
@@ -3714,7 +3714,7 @@ mod tests {
                     score: 100,
                     title: self.heard.to_owned(),
                     credit: vec![Credit {
-                        name: "Pink Floyd".to_owned(),
+                        name: "Example Band".to_owned(),
                         joined_by: String::new(),
                         mbid: None,
                     }],
@@ -3770,8 +3770,8 @@ mod tests {
                 fs::write(harness.folder.join(format!("{name}.wav")), tones()).expect("a song");
             }
             for (name, title, artist) in [
-                ('a', "Time", "Pink Floyd"),
-                ('b', "Money", "Pink Floyd"),
+                ('a', "Time", "Example Band"),
+                ('b', "Money", "Example Band"),
                 ('c', "Time", "Air"),
                 ('d', "d.wav", ""),
             ] {
@@ -4446,7 +4446,7 @@ mod tests {
                 .0
                 .lock()
                 .execute(
-                    "UPDATE documents SET title = 'Time', artist = 'Pink Floyd' WHERE id = ?1",
+                    "UPDATE documents SET title = 'Time', artist = 'Example Band' WHERE id = ?1",
                     [landed as i64],
                 )
                 .expect("a named song");

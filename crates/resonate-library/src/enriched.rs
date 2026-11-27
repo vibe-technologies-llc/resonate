@@ -2928,7 +2928,7 @@ mod tests {
     fn a_title_is_folded_to_its_letters_and_digits_lowercased() {
         assert_eq!(folded_title("Paper Boats!"), "paperboats");
         assert_eq!(folded_title("Lantern (Live) — Pt. 2"), "lanternlivept2");
-        assert_eq!(folded_title("ÉCHOES"), "échoes");
+        assert_eq!(folded_title("SLÓW WATER"), "slówwater");
         assert_eq!(folded_title("   "), "");
     }
 

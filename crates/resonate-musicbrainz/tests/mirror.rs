@@ -18,17 +18,17 @@ use resonate_musicbrainz::{
     replicated, settled,
 };
 
-const RADIOHEAD: &str = "a74b1b7f-71a5-4011-9441-d0b5e4122711";
+const TIDELINE: &str = "a74b1b7f-71a5-4011-9441-d0b5e4122711";
 const THOM: &str = "8ed2e0b3-aa4c-4e13-bec3-dc7393421532";
-const CREEP: &str = "6bde2be9-9a01-4b23-9a34-3a4ec2d2c6a0";
+const LANTERN: &str = "6bde2be9-9a01-4b23-9a34-3a4ec2d2c6a0";
 const ACOUSTIC: &str = "0a1ac1a2-6b8f-4e2a-9bc6-1f1c6f9d0001";
 const HEARING: &str = "0a1ac1a2-6b8f-4e2a-9bc6-1f1c6f9d0002";
-const PABLO: &str = "dd8f0c31-0cd6-3a6c-8e42-4ac1c69d5f84";
-const PABLO_GROUP: &str = "dd8f0c31-0cd6-3a6c-8e42-4ac1c69d5f85";
+const HARBOUR: &str = "dd8f0c31-0cd6-3a6c-8e42-4ac1c69d5f84";
+const HARBOUR_GROUP: &str = "dd8f0c31-0cd6-3a6c-8e42-4ac1c69d5f85";
 const TRACK_ONE: &str = "1d1e1f10-0000-4000-8000-000000000001";
 const TRACK_TWO: &str = "1d1e1f10-0000-4000-8000-000000000002";
-const CREEP_CODE: &str = "GBAYE9200070";
-const PABLO_BARCODE: &str = "724382775324";
+const LANTERN_CODE: &str = "GBAYE9200070";
+const HARBOUR_BARCODE: &str = "724382775324";
 const PROLIFIC: &str = "3e3e3e3e-0000-4000-8000-000000000001";
 const ARTIST_PRESSINGS_PAGE: usize = 100;
 const PROLIFIC_GROUPS: usize = 3;
@@ -200,9 +200,9 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
                     19,
                     &[
                         (0, "1"),
-                        (1, RADIOHEAD),
-                        (2, "Radiohead"),
-                        (3, "Radiohead"),
+                        (1, TIDELINE),
+                        (2, "Tideline"),
+                        (3, "Tideline"),
                         (4, "1985"),
                         (10, "2"),
                         (11, "10"),
@@ -242,10 +242,7 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
         (
             "artist_credit_name",
             vec![
-                line(
-                    5,
-                    &[(0, "1"), (1, "0"), (2, "1"), (3, "Radiohead"), (4, "")],
-                ),
+                line(5, &[(0, "1"), (1, "0"), (2, "1"), (3, "Tideline"), (4, "")]),
                 line(
                     5,
                     &[(0, "2"), (1, "0"), (2, "2"), (3, "Thom Yorke"), (4, "")],
@@ -256,7 +253,7 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
         ("artist_type", vec![line(6, &[(0, "2"), (1, "Group")])]),
         ("gender", vec![line(6, &[(0, "1"), (1, "Male")])]),
         ("iso_3166_1", vec![line(2, &[(0, "10"), (1, "GB")])]),
-        ("isrc", vec![line(5, &[(1, "1"), (2, CREEP_CODE)])]),
+        ("isrc", vec![line(5, &[(1, "1"), (2, LANTERN_CODE)])]),
         (
             "l_artist_url",
             vec![line(9, &[(1, "1"), (2, "1"), (3, "1")])],
@@ -280,14 +277,20 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
             vec![
                 line(
                     9,
-                    &[(0, "1"), (1, CREEP), (2, "Creep"), (3, "1"), (4, "238000")],
+                    &[
+                        (0, "1"),
+                        (1, LANTERN),
+                        (2, "Lantern"),
+                        (3, "1"),
+                        (4, "238000"),
+                    ],
                 ),
                 line(
                     9,
                     &[
                         (0, "2"),
                         (1, ACOUSTIC),
-                        (2, "Creep (Acoustic)"),
+                        (2, "Lantern (Acoustic)"),
                         (3, "1"),
                         (4, "260000"),
                     ],
@@ -311,12 +314,12 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
                     14,
                     &[
                         (0, "1"),
-                        (1, PABLO),
-                        (2, "Pablo Honey"),
+                        (1, HARBOUR),
+                        (2, "Harbour Lights"),
                         (3, "1"),
                         (4, "1"),
                         (5, "1"),
-                        (9, PABLO_BARCODE),
+                        (9, HARBOUR_BARCODE),
                         (10, ""),
                     ],
                 )],
@@ -338,8 +341,8 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
                     8,
                     &[
                         (0, "1"),
-                        (1, PABLO_GROUP),
-                        (2, "Pablo Honey"),
+                        (1, HARBOUR_GROUP),
+                        (2, "Harbour Lights"),
                         (3, "1"),
                         (4, "1"),
                         (5, ""),
@@ -379,7 +382,7 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
                         (3, "1"),
                         (4, "1"),
                         (5, "1"),
-                        (6, "Creep"),
+                        (6, "Lantern"),
                         (7, "1"),
                         (8, "238000"),
                     ],
@@ -393,7 +396,7 @@ fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>
                         (3, "1"),
                         (4, "2"),
                         (5, "2"),
-                        (6, "Creep (Acoustic)"),
+                        (6, "Lantern (Acoustic)"),
                         (7, "1"),
                         (8, "260000"),
                     ],
@@ -567,12 +570,12 @@ fn a_recording_numbered_far_past_the_rest_is_built_from_the_ids_held() {
         .expect("a read")
         .expect("the recording");
     let near = mirror
-        .recording(&mbid(CREEP))
+        .recording(&mbid(LANTERN))
         .expect("a read")
         .expect("the recording");
 
     assert_eq!(far.title, "Far Away");
-    assert_eq!(near.title, "Creep");
+    assert_eq!(near.title, "Lantern");
 }
 
 const RECORDINGS_OVER_CHUNKS: usize = 2 * 2048 + 5;
@@ -775,7 +778,7 @@ fn standing(scratch: &Scratch) -> Standing {
     let artists = mirror.find_artist("radio head").expect("a search");
     let folder = scratch.0.join("musicbrainz");
 
-    assert_eq!(artists[0].mbid, mbid(RADIOHEAD));
+    assert_eq!(artists[0].mbid, mbid(TIDELINE));
 
     drop(mirror);
 
@@ -947,40 +950,40 @@ fn a_mirror_built_from_the_dump_answers_every_lookup_by_id() {
     let mirror = built(&scratch);
 
     let release = mirror
-        .release(&mbid(PABLO))
+        .release(&mbid(HARBOUR))
         .expect("a read")
         .expect("the release");
     let recording = mirror
-        .recording(&mbid(CREEP))
+        .recording(&mbid(LANTERN))
         .expect("a read")
         .expect("the recording");
     let group = mirror
-        .release_group(&mbid(PABLO_GROUP))
+        .release_group(&mbid(HARBOUR_GROUP))
         .expect("a read")
         .expect("the group");
     let artist = mirror
-        .artist(&mbid(RADIOHEAD))
+        .artist(&mbid(TIDELINE))
         .expect("a read")
         .expect("the artist");
 
     assert_eq!(mirror.made().dump, "20261104-002222");
-    assert_eq!(release.title, "Pablo Honey");
-    assert_eq!(release.credit[0].mbid, Some(mbid(RADIOHEAD)));
+    assert_eq!(release.title, "Harbour Lights");
+    assert_eq!(release.credit[0].mbid, Some(mbid(TIDELINE)));
     assert_eq!(release.date.as_deref(), Some("1993-02-22"));
     assert_eq!(release.country.as_deref(), Some("GB"));
     assert_eq!(release.label.as_deref(), Some("Parlophone"));
     assert_eq!(release.catalog_number.as_deref(), Some("CDPCSD 129"));
-    assert_eq!(release.barcode.as_deref(), Some(PABLO_BARCODE));
+    assert_eq!(release.barcode.as_deref(), Some(HARBOUR_BARCODE));
     assert_eq!(release.kind.as_deref(), Some("Album"));
-    assert_eq!(release.group, Some(mbid(PABLO_GROUP)));
+    assert_eq!(release.group, Some(mbid(HARBOUR_GROUP)));
     assert!(release.has_front_cover);
     assert_eq!(release.media[0].format.as_deref(), Some("CD"));
     assert_eq!(release.track_count(), 2);
-    assert_eq!(release.media[0].tracks[0].recording, Some(mbid(CREEP)));
+    assert_eq!(release.media[0].tracks[0].recording, Some(mbid(LANTERN)));
     assert_eq!(release.media[0].tracks[0].track, Some(mbid(TRACK_ONE)));
     assert_eq!(
         release.media[0].tracks[0].isrcs,
-        vec![CREEP_CODE.to_owned()]
+        vec![LANTERN_CODE.to_owned()]
     );
     assert_eq!(
         release.media[0].tracks[1].length,
@@ -988,13 +991,13 @@ fn a_mirror_built_from_the_dump_answers_every_lookup_by_id() {
     );
     assert_eq!(release.media[0].tracks[0].artist, None);
 
-    assert_eq!(recording.title, "Creep");
+    assert_eq!(recording.title, "Lantern");
     assert_eq!(recording.length, Some(Duration::from_secs(238)));
     assert_eq!(
         recording.isrcs,
-        vec![Isrc::new(CREEP_CODE).expect("a code")]
+        vec![Isrc::new(LANTERN_CODE).expect("a code")]
     );
-    assert_eq!(recording.releases[0].id, mbid(PABLO));
+    assert_eq!(recording.releases[0].id, mbid(HARBOUR));
     assert_eq!(recording.releases[0].disc, Some(1));
     assert_eq!(recording.releases[0].position, Some(1));
     assert_eq!(recording.releases[0].issued.kind.as_deref(), Some("Album"));
@@ -1022,28 +1025,28 @@ fn a_mirror_answers_codes_barcodes_and_what_an_artist_and_a_group_hold() {
     let mirror = built(&scratch);
 
     let coded = mirror
-        .recordings_of_isrc(&Isrc::new(CREEP_CODE).expect("a code"))
+        .recordings_of_isrc(&Isrc::new(LANTERN_CODE).expect("a code"))
         .expect("a read");
     let barcoded = mirror
-        .releases_by_barcode(&Barcode::new(PABLO_BARCODE).expect("a barcode"))
+        .releases_by_barcode(&Barcode::new(HARBOUR_BARCODE).expect("a barcode"))
         .expect("a read");
     let discography = mirror
-        .release_groups_of(&mbid(RADIOHEAD), 0)
+        .release_groups_of(&mbid(TIDELINE), 0)
         .expect("a read");
     let pressings = mirror
-        .releases_of_group(&mbid(PABLO_GROUP))
+        .releases_of_group(&mbid(HARBOUR_GROUP))
         .expect("a read");
     let pressed = mirror
-        .releases_of_artist(&mbid(RADIOHEAD), 0)
+        .releases_of_artist(&mbid(TIDELINE), 0)
         .expect("a read");
     let none = mirror.release_groups_of(&mbid(THOM), 0).expect("a read");
 
     assert_eq!(coded.len(), 1);
-    assert_eq!(coded[0].id, mbid(CREEP));
+    assert_eq!(coded[0].id, mbid(LANTERN));
     assert_eq!(barcoded.len(), 1);
-    assert_eq!(barcoded[0].release, mbid(PABLO));
+    assert_eq!(barcoded[0].release, mbid(HARBOUR));
     assert_eq!(discography.releases.len(), 1);
-    assert_eq!(discography.releases[0].mbid, mbid(PABLO_GROUP));
+    assert_eq!(discography.releases[0].mbid, mbid(HARBOUR_GROUP));
     assert_eq!(discography.unread, 0);
     assert_eq!(discography.read_to, 1);
     assert_eq!(pressings.len(), 1);
@@ -1071,7 +1074,9 @@ fn an_artists_pressings_are_paged_the_same_whether_or_not_its_list_was_already_r
     let past = mirror
         .releases_of_artist(&artist, u32::MAX)
         .expect("a read");
-    let stranger = mirror.releases_of_artist(&mbid(CREEP), 0).expect("a read");
+    let stranger = mirror
+        .releases_of_artist(&mbid(LANTERN), 0)
+        .expect("a read");
 
     let ids = |page: &ArtistPressings| -> Vec<Mbid> {
         page.pressings
@@ -1107,8 +1112,8 @@ fn a_local_search_scores_whole_agreement_and_nothing_less_at_a_hundred() {
 
     let exact = mirror
         .find_recording(&RecordingAsked {
-            title: "Creep".to_owned(),
-            artist: Some("Radiohead".to_owned()),
+            title: "Lantern".to_owned(),
+            artist: Some("Tideline".to_owned()),
             artist_mbid: None,
             release: None,
             length: Some(Duration::from_secs(238)),
@@ -1117,7 +1122,7 @@ fn a_local_search_scores_whole_agreement_and_nothing_less_at_a_hundred() {
         .expect("a search");
     let other_credit = mirror
         .find_recording(&RecordingAsked {
-            title: "Creep".to_owned(),
+            title: "Lantern".to_owned(),
             artist: Some("Thom Yorke".to_owned()),
             artist_mbid: None,
             release: None,
@@ -1127,27 +1132,27 @@ fn a_local_search_scores_whole_agreement_and_nothing_less_at_a_hundred() {
         .expect("a search");
     let releases = mirror
         .find_release(&ReleaseAsked {
-            title: "pablo honey".to_owned(),
-            artist: Some("Radiohead".to_owned()),
+            title: "harbour lights".to_owned(),
+            artist: Some("Tideline".to_owned()),
             artist_mbid: None,
-            barcode: Some(PABLO_BARCODE.to_owned()),
+            barcode: Some(HARBOUR_BARCODE.to_owned()),
             catalog_number: None,
             wording: Wording::Phrase,
         })
         .expect("a search");
     let groups = mirror
         .find_release_group(&GroupAsked {
-            title: "Pablo Honey".to_owned(),
+            title: "Harbour Lights".to_owned(),
             artist: None,
-            artist_mbid: Some(mbid(RADIOHEAD)),
+            artist_mbid: Some(mbid(TIDELINE)),
             year: Some(1993),
             wording: Wording::Words,
         })
         .expect("a search");
     let another_year = mirror
         .find_release_group(&GroupAsked {
-            title: "Pablo Honey".to_owned(),
-            artist: Some("Radiohead".to_owned()),
+            title: "Harbour Lights".to_owned(),
+            artist: Some("Tideline".to_owned()),
             artist_mbid: None,
             year: Some(1990),
             wording: Wording::Phrase,
@@ -1156,27 +1161,27 @@ fn a_local_search_scores_whole_agreement_and_nothing_less_at_a_hundred() {
     let artists = mirror.find_artist("radio head").expect("a search");
     let songs = mirror
         .find_songs(&SongsAsked {
-            words: "creep radiohead".to_owned(),
-            typed: "creep radiohead".to_owned(),
+            words: "lantern tideline".to_owned(),
+            typed: "lantern tideline".to_owned(),
             by: None,
         })
         .expect("a search");
-    let albums = mirror.find_albums("pablo honey").expect("a search");
+    let albums = mirror.find_albums("harbour lights").expect("a search");
 
     assert_eq!(exact.len(), 1);
-    assert_eq!(exact[0].recording, mbid(CREEP));
+    assert_eq!(exact[0].recording, mbid(LANTERN));
     assert_eq!(exact[0].score, 100);
     assert!(other_credit.iter().all(|found| found.score < 95));
-    assert_eq!(releases[0].release, mbid(PABLO));
+    assert_eq!(releases[0].release, mbid(HARBOUR));
     assert_eq!(releases[0].score, 100);
     assert_eq!(releases[0].track_count, Some(2));
-    assert_eq!(groups[0].group, mbid(PABLO_GROUP));
+    assert_eq!(groups[0].group, mbid(HARBOUR_GROUP));
     assert_eq!(groups[0].score, 100);
     assert!(another_year.is_empty());
-    assert_eq!(artists[0].mbid, mbid(RADIOHEAD));
+    assert_eq!(artists[0].mbid, mbid(TIDELINE));
     assert_eq!(artists[0].score, 100);
-    assert_eq!(songs[0].recording, mbid(CREEP));
-    assert_eq!(albums[0].group, mbid(PABLO_GROUP));
+    assert_eq!(songs[0].recording, mbid(LANTERN));
+    assert_eq!(albums[0].group, mbid(HARBOUR_GROUP));
 }
 
 const CROWDED_BY: usize = 110;
@@ -1306,7 +1311,7 @@ fn a_common_word_is_narrowed_to_the_names_alike_once_bare_before_every_row_holdi
     assert_eq!(wider[0].score, 100);
 }
 
-const OFTEN_PRESSED_CREEP: &str = "7f3e3e3e-0000-4000-8000-000000000001";
+const OFTEN_PRESSED_LANTERN: &str = "7f3e3e3e-0000-4000-8000-000000000001";
 const OFTEN_CREDITED_THOM: &str = "8f3e3e3e-0000-4000-8000-000000000001";
 const LONE_PROLIFIC_GROUP: &str = "9f3e3e3e-0000-4000-8000-000000000001";
 const LONE_PROLIFIC_PRESSING: &str = "af3e3e3e-0000-4000-8000-000000000001";
@@ -1324,7 +1329,7 @@ fn alike_but_heavier_later() -> Vec<(&'static str, Vec<String>)> {
                 (3, medium),
                 (4, "1"),
                 (5, "1"),
-                (6, "Creep"),
+                (6, "Lantern"),
                 (7, "1"),
                 (8, "238000"),
             ],
@@ -1370,8 +1375,8 @@ fn alike_but_heavier_later() -> Vec<(&'static str, Vec<String>)> {
                 9,
                 &[
                     (0, "4"),
-                    (1, OFTEN_PRESSED_CREEP),
-                    (2, "Creep"),
+                    (1, OFTEN_PRESSED_LANTERN),
+                    (2, "Lantern"),
                     (3, "1"),
                     (4, "238000"),
                 ],
@@ -1426,8 +1431,8 @@ fn of_names_alike_the_one_pressed_or_credited_most_comes_first_though_numbered_l
 
     let recordings = mirror
         .find_recording(&RecordingAsked {
-            title: "Creep".to_owned(),
-            artist: Some("Radiohead".to_owned()),
+            title: "Lantern".to_owned(),
+            artist: Some("Tideline".to_owned()),
             artist_mbid: None,
             release: None,
             length: Some(Duration::from_secs(238)),
@@ -1460,7 +1465,7 @@ fn of_names_alike_the_one_pressed_or_credited_most_comes_first_though_numbered_l
             .iter()
             .map(|found| (found.recording.clone(), found.score))
             .collect::<Vec<_>>(),
-        [(mbid(OFTEN_PRESSED_CREEP), 100), (mbid(CREEP), 100)]
+        [(mbid(OFTEN_PRESSED_LANTERN), 100), (mbid(LANTERN), 100)]
     );
     assert_eq!(
         artists
@@ -1500,11 +1505,11 @@ fn a_layered_reference_keeps_what_the_mirror_answered_and_serves_it_without_the_
     let layered = Layered::new()
         .keeping(Some(Arc::clone(&kept)))
         .mirrored(Some(Arc::clone(&mirrored)));
-    let first = layered.answered(&Asked::Recording(mbid(CREEP)));
+    let first = layered.answered(&Asked::Recording(mbid(LANTERN)));
 
     mirrored.hold(None);
 
-    let again = layered.answered(&Asked::Recording(mbid(CREEP)));
+    let again = layered.answered(&Asked::Recording(mbid(LANTERN)));
     let unknown = layered
         .release(&mbid(HEARING))
         .expect("a miss is no failure");
@@ -1531,7 +1536,7 @@ fn a_device_holding_a_mirror_answers_what_another_asks_and_a_device_without_answ
     let kept = Arc::new(Kept::in_memory().expect("a kept store"));
     let keeping = Consultation::new(None, Some(Arc::clone(&kept)));
 
-    let asked = Asked::Release(mbid(PABLO));
+    let asked = Asked::Release(mbid(HARBOUR));
     let answered = serving
         .consulted(&asked.encoded())
         .map(|told| Answer::decoded(&told.answer).expect("an answer"));
@@ -1544,7 +1549,9 @@ fn a_device_holding_a_mirror_answers_what_another_asks_and_a_device_without_answ
         .consulted(&asked.encoded())
         .map(|told| Answer::decoded(&told.answer).expect("an answer"));
 
-    assert!(matches!(&answered, Some(Answer::Release(Some(release))) if release.id == mbid(PABLO)));
+    assert!(
+        matches!(&answered, Some(Answer::Release(Some(release))) if release.id == mbid(HARBOUR))
+    );
     assert_eq!(before, None);
     assert_eq!(after, answered);
     assert_eq!(serving.consulted(b"\x01\xff"), None);
@@ -1614,11 +1621,11 @@ fn first_changes() -> Vec<String> {
             1,
             "recording",
             7,
-            Some(&recording_json(1, CREEP, "Creep", 238_000)),
+            Some(&recording_json(1, LANTERN, "Lantern", 238_000)),
             Some(&recording_json(
                 1,
-                CREEP,
-                "Creep (Remastered 2009)",
+                LANTERN,
+                "Lantern (Remastered 2009)",
                 238_000,
             )),
         ),
@@ -1716,7 +1723,7 @@ fn a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_
     let amended = Mirror::open(mirror.path()).expect("the mirror opens again");
 
     let renamed = amended
-        .recording(&mbid(CREEP))
+        .recording(&mbid(LANTERN))
         .expect("a read")
         .expect("the recording");
     let added = amended
@@ -1725,27 +1732,27 @@ fn a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_
         .expect("the new recording");
     let gone = amended.recording(&mbid(HEARING)).expect("a read");
     let release = amended
-        .release(&mbid(PABLO))
+        .release(&mbid(HARBOUR))
         .expect("a read")
         .expect("the release");
     let group = amended
-        .release_group(&mbid(PABLO_GROUP))
+        .release_group(&mbid(HARBOUR_GROUP))
         .expect("a read")
         .expect("the group");
     let artist = amended
-        .artist(&mbid(RADIOHEAD))
+        .artist(&mbid(TIDELINE))
         .expect("a read")
         .expect("the artist");
     let coded = amended
         .recordings_of_isrc(&Isrc::new(REMASTERED_CODE).expect("a code"))
         .expect("a read");
     let barcoded = amended
-        .releases_by_barcode(&Barcode::new(PABLO_BARCODE).expect("a barcode"))
+        .releases_by_barcode(&Barcode::new(HARBOUR_BARCODE).expect("a barcode"))
         .expect("a read");
     let found = amended
         .find_recording(&RecordingAsked {
-            title: "Creep (Remastered 2009)".to_owned(),
-            artist: Some("Radiohead".to_owned()),
+            title: "Lantern (Remastered 2009)".to_owned(),
+            artist: Some("Tideline".to_owned()),
             artist_mbid: None,
             release: None,
             length: None,
@@ -1754,8 +1761,8 @@ fn a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_
         .expect("a search");
     let old_title = amended
         .find_recording(&RecordingAsked {
-            title: "Creep".to_owned(),
-            artist: Some("Radiohead".to_owned()),
+            title: "Lantern".to_owned(),
+            artist: Some("Tideline".to_owned()),
             artist_mbid: None,
             release: None,
             length: None,
@@ -1774,10 +1781,10 @@ fn a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_
         amended.amended_to().map(|to| to.sequence),
         Some(DUMPED_AT_SEQUENCE + 1)
     );
-    assert_eq!(renamed.title, "Creep (Remastered 2009)");
+    assert_eq!(renamed.title, "Lantern (Remastered 2009)");
     assert_eq!(renamed.releases[0].date.as_deref(), Some("1993-04-20"));
     assert_eq!(added.title, "Stop Whispering");
-    assert_eq!(added.releases[0].id, mbid(PABLO));
+    assert_eq!(added.releases[0].id, mbid(HARBOUR));
     assert_eq!(added.releases[0].position, Some(3));
     assert_eq!(gone, None);
     assert_eq!(release.track_count(), 3);
@@ -1789,16 +1796,16 @@ fn a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_
     assert_eq!(coded.len(), 1);
     assert_eq!(coded[0].id, mbid(REMASTERED));
     assert_eq!(barcoded.len(), 1);
-    assert_eq!(found[0].recording, mbid(CREEP));
+    assert_eq!(found[0].recording, mbid(LANTERN));
     assert_eq!(found[0].score, 100);
     assert_eq!(
         old_title
             .iter()
-            .filter(|found| found.recording == mbid(CREEP))
+            .filter(|found| found.recording == mbid(LANTERN))
             .count(),
         1
     );
-    assert_eq!(untouched.title, "Creep (Acoustic)");
+    assert_eq!(untouched.title, "Lantern (Acoustic)");
 }
 
 #[test]
@@ -1837,10 +1844,10 @@ fn a_packet_of_another_schema_stops_replication_where_it_stood_and_a_new_build_l
     assert_eq!(rebuilt.amended_to(), None);
     assert_eq!(
         rebuilt
-            .recording(&mbid(CREEP))
+            .recording(&mbid(LANTERN))
             .expect("a read")
             .map(|recording| recording.title),
-        Some("Creep".to_owned())
+        Some("Lantern".to_owned())
     );
 }
 
@@ -1935,7 +1942,7 @@ fn a_copy_and_its_amendments_offered_by_one_device_land_whole_on_another() {
 
     let landed = Mirror::open(&mirror_in(&phone)).expect("the copy opens on the phone");
     let renamed = landed
-        .recording(&mbid(CREEP))
+        .recording(&mbid(LANTERN))
         .expect("a read")
         .expect("the recording");
     let snapshots = fs::read_dir(&folder)
@@ -1947,7 +1954,7 @@ fn a_copy_and_its_amendments_offered_by_one_device_land_whole_on_another() {
     assert_eq!(landed.made().dump, dump);
     assert_eq!(sequence, DUMPED_AT_SEQUENCE + 1);
     assert_eq!(landed.amended_to().map(|to| to.sequence), Some(sequence));
-    assert_eq!(renamed.title, "Creep (Remastered 2009)");
+    assert_eq!(renamed.title, "Lantern (Remastered 2009)");
     assert_eq!(snapshots, 0);
 }
 

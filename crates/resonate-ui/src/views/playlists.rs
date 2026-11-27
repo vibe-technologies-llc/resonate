@@ -2619,7 +2619,7 @@ mod tests {
         PlaylistEntry {
             position,
             cut: Cut {
-                location: MediaLocation::local(Path::new("/music/Meddle.flac")),
+                location: MediaLocation::local(Path::new("/music/Low Tide.flac")),
                 span,
             },
             track: None,

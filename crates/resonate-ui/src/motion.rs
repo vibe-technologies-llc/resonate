@@ -380,8 +380,8 @@ mod tests {
         let start = Instant::now();
         let mut handover = Handover::default();
 
-        handover.show("echoes", 1, start);
-        handover.show("echoes", 2, start + Duration::from_millis(40));
+        handover.show("slow water", 1, start);
+        handover.show("slow water", 2, start + Duration::from_millis(40));
 
         assert!(handover.leaving().is_none());
         assert_eq!(handover.serial(), 0);
@@ -392,13 +392,13 @@ mod tests {
         let start = Instant::now();
         let mut handover = Handover::default();
 
-        handover.show("echoes", "echoes", start);
+        handover.show("slow water", "slow water", start);
         handover.show("time", "time", start);
 
         let leaving = handover.leaving().map(|leaving| leaving.what);
         let serial = handover.serial();
 
-        assert_eq!(leaving, Some("echoes"));
+        assert_eq!(leaving, Some("slow water"));
         assert_eq!(serial, 1);
 
         handover.show("time", "time", start + HANDS_OVER);
@@ -412,16 +412,16 @@ mod tests {
         let start = Instant::now();
         let mut handover = Handover::default();
 
-        handover.show("echoes", "echoes", start);
+        handover.show("slow water", "slow water", start);
         handover.show("time", "time", start);
-        handover.show("echoes", "echoes", start + HANDS_OVER / 3);
+        handover.show("slow water", "slow water", start + HANDS_OVER / 3);
 
         let leaving = handover.leaving().map(|leaving| leaving.what);
 
         assert_eq!(leaving, Some("time"));
         assert_eq!(handover.serial(), 2);
 
-        handover.show("echoes", "echoes", start + HANDS_OVER);
+        handover.show("slow water", "slow water", start + HANDS_OVER);
 
         assert!(handover.leaving().is_some());
     }

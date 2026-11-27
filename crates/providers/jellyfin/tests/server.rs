@@ -417,43 +417,42 @@ fn library(asked: &Asked, _: usize) -> Canned {
     }
     match (asked.method.as_str(), asked.path.as_str()) {
         ("GET", "/Artists/AlbumArtists") => items(
-            r#"{"Id":"ar-1","Name":"Pink Floyd","Type":"MusicArtist","AlbumCount":2,"ImageTags":{"Primary":"x"}}"#,
+            r#"{"Id":"ar-1","Name":"Example Band","Type":"MusicArtist","AlbumCount":2,"ImageTags":{"Primary":"x"}}"#,
             1,
         ),
         ("GET", "/Artists") => items(
-            r#"{"Id":"ar-1","Name":"Pink Floyd","Type":"MusicArtist"}"#,
+            r#"{"Id":"ar-1","Name":"Example Band","Type":"MusicArtist"}"#,
             1,
         ),
         ("GET", path) if path == format!("{user}/ar-1") => Canned::json(
-            r#"{"Id":"ar-1","Name":"Pink Floyd","Type":"MusicArtist","AlbumCount":2,"ImageTags":{"Primary":"x"}}"#,
+            r#"{"Id":"ar-1","Name":"Example Band","Type":"MusicArtist","AlbumCount":2,"ImageTags":{"Primary":"x"}}"#,
         ),
         ("GET", path) if path == format!("{user}/al-1") => Canned::json(
-            r#"{"Id":"al-1","Name":"Meddle","Type":"MusicAlbum","AlbumArtist":"Pink Floyd","ProductionYear":1971,"ChildCount":2,"ImageTags":{"Primary":"y"}}"#,
+            r#"{"Id":"al-1","Name":"Low Tide","Type":"MusicAlbum","AlbumArtist":"Example Band","ProductionYear":1971,"ChildCount":2,"ImageTags":{"Primary":"y"}}"#,
         ),
         ("GET", path) if path == format!("{user}/so-1") => Canned::json(
-            r#"{"Id":"so-1","Name":"One of These Days","Type":"Audio","Artists":["Pink Floyd"],"Album":"Meddle","AlbumId":"al-1","AlbumPrimaryImageTag":"t","IndexNumber":1,"ParentIndexNumber":1,"RunTimeTicks":2860000000,"Container":"flac","UserData":{"IsFavorite":true}}"#,
+            r#"{"Id":"so-1","Name":"Paper Boats","Type":"Audio","Artists":["Example Band"],"Album":"Low Tide","AlbumId":"al-1","AlbumPrimaryImageTag":"t","IndexNumber":1,"ParentIndexNumber":1,"RunTimeTicks":2860000000,"Container":"flac","UserData":{"IsFavorite":true}}"#,
         ),
         ("GET", path) if path == format!("{user}/so-9") => Canned::status(404),
         ("GET", path) if path == user => match asked.parameter("IncludeItemTypes") {
             Some("MusicAlbum") if asked.parameter("ArtistIds") == Some("ar-1") => items(
-                r#"{"Id":"al-1","Name":"Meddle","Type":"MusicAlbum","AlbumArtist":"Pink Floyd","ProductionYear":1971,"ChildCount":2},
+                r#"{"Id":"al-1","Name":"Low Tide","Type":"MusicAlbum","AlbumArtist":"Example Band","ProductionYear":1971,"ChildCount":2},
                    {"Id":"al-2","Name":"Obscured by Clouds","Type":"MusicAlbum","ProductionYear":1972}"#,
                 2,
             ),
-            Some("MusicAlbum") => items(r#"{"Id":"al-1","Name":"Meddle","Type":"MusicAlbum"}"#, 1),
+            Some("MusicAlbum") => {
+                items(r#"{"Id":"al-1","Name":"Low Tide","Type":"MusicAlbum"}"#, 1)
+            }
             Some("Audio") if asked.parameter("ParentId") == Some("al-1") => items(
-                r#"{"Id":"so-1","Name":"One of These Days","Type":"Audio","IndexNumber":1,"Container":"flac"},
-                   {"Id":"so-2","Name":"A Pillow of Winds","Type":"Audio","IndexNumber":2,"Container":"mp3"}"#,
+                r#"{"Id":"so-1","Name":"Paper Boats","Type":"Audio","IndexNumber":1,"Container":"flac"},
+                   {"Id":"so-2","Name":"Small Mercies","Type":"Audio","IndexNumber":2,"Container":"mp3"}"#,
                 2,
             ),
             Some("Audio") if asked.parameter("ParentId") == Some("al-2") => items(
                 r#"{"Id":"so-3","Name":"Wot's... Uh the Deal","Type":"Audio","IndexNumber":1}"#,
                 1,
             ),
-            Some("Audio") => items(
-                r#"{"Id":"so-2","Name":"A Pillow of Winds","Type":"Audio"}"#,
-                1,
-            ),
+            Some("Audio") => items(r#"{"Id":"so-2","Name":"Small Mercies","Type":"Audio"}"#, 1),
             _ => Canned::status(400),
         },
         ("GET", path) if path == format!("{user}/al-2") => {
@@ -526,20 +525,20 @@ fn a_servers_artists_albums_and_songs_are_browsed_by_their_ids() {
     let song = jellyfin.song(&id("so-1")).expect("a song");
 
     assert_eq!(artists.len(), 1);
-    assert_eq!(artists[0].name, "Pink Floyd");
+    assert_eq!(artists[0].name, "Example Band");
     assert_eq!(artists[0].albums, Some(2));
     assert_eq!(artists[0].cover, Some(id("ar-1")));
-    assert_eq!(discography.artist.name, "Pink Floyd");
+    assert_eq!(discography.artist.name, "Example Band");
     assert_eq!(
         discography
             .albums
             .iter()
             .map(|album| (album.name.as_str(), album.year))
             .collect::<Vec<_>>(),
-        [("Meddle", Some(1971)), ("Obscured by Clouds", Some(1972))]
+        [("Low Tide", Some(1971)), ("Obscured by Clouds", Some(1972))]
     );
-    assert_eq!(album.album.name, "Meddle");
-    assert_eq!(album.album.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(album.album.name, "Low Tide");
+    assert_eq!(album.album.artist.as_deref(), Some("Example Band"));
     assert_eq!(album.album.cover, Some(id("al-1")));
     assert_eq!(
         album
@@ -548,8 +547,8 @@ fn a_servers_artists_albums_and_songs_are_browsed_by_their_ids() {
             .map(|song| (song.title.as_str(), song.track, song.suffix.as_deref()))
             .collect::<Vec<_>>(),
         [
-            ("One of These Days", Some(1), Some("flac")),
-            ("A Pillow of Winds", Some(2), Some("mp3"))
+            ("Paper Boats", Some(1), Some("flac")),
+            ("Small Mercies", Some(2), Some("mp3"))
         ]
     );
     assert_eq!(song.length, Some(Duration::from_secs(286)));
@@ -584,16 +583,16 @@ fn a_page_of_artists_is_followed_by_the_next_until_the_total_is_read() {
 fn a_search_asks_for_artists_albums_and_songs_by_the_words() {
     let fake = Fake::serving(library);
 
-    let found = fake.jellyfin().search("pillow of winds").expect("a search");
+    let found = fake.jellyfin().search("small mercies").expect("a search");
 
     assert_eq!(found.artists.len(), 1);
     assert_eq!(found.albums.len(), 1);
-    assert_eq!(found.songs[0].title, "A Pillow of Winds");
+    assert_eq!(found.songs[0].title, "Small Mercies");
     assert!(
         fake.heard()
             .iter()
             .filter(|asked| asked.method == "GET")
-            .all(|asked| asked.parameter("SearchTerm") == Some("pillow of winds"))
+            .all(|asked| asked.parameter("SearchTerm") == Some("small mercies"))
     );
 }
 
@@ -1011,7 +1010,7 @@ fn the_token_is_in_a_query_only_where_a_stream_is_reopened_by_its_address() {
 
     jellyfin.artists().expect("the artists");
     jellyfin.album(&id("al-1")).expect("an album");
-    jellyfin.search("meddle").expect("a search");
+    jellyfin.search("low tide").expect("a search");
     jellyfin.cover(&id("al-1"), 300).expect("a cover");
     jellyfin.favour(&id("so-1"), true).expect("a favourite");
     jellyfin.favour(&id("so-1"), false).expect("a favourite");
@@ -1643,10 +1642,10 @@ fn a_vast_library(asked: &Asked, _: usize) -> Canned {
             items(&entries("MusicArtist"), CLAIMED_TOTAL)
         }
         ("GET", path) if path == format!("{user}/ar-1") => {
-            Canned::json(r#"{"Id":"ar-1","Name":"Pink Floyd","Type":"MusicArtist"}"#)
+            Canned::json(r#"{"Id":"ar-1","Name":"Example Band","Type":"MusicArtist"}"#)
         }
         ("GET", path) if path == format!("{user}/al-1") => {
-            Canned::json(r#"{"Id":"al-1","Name":"Meddle","Type":"MusicAlbum"}"#)
+            Canned::json(r#"{"Id":"al-1","Name":"Low Tide","Type":"MusicAlbum"}"#)
         }
         ("GET", path) if path == user => match asked.parameter("IncludeItemTypes") {
             Some("MusicAlbum") => items(&entries("MusicAlbum"), CLAIMED_TOTAL),
@@ -1716,7 +1715,7 @@ fn an_album_claiming_endless_songs_is_asked_for_the_most_songs_in_one_request() 
 fn a_search_over_a_vast_library_asks_for_the_most_of_each_kind_and_gets_no_more() {
     let fake = Fake::serving(a_vast_library);
 
-    let found = fake.jellyfin().search("echoes").expect("a search");
+    let found = fake.jellyfin().search("slow water").expect("a search");
     let limits: Vec<_> = fake
         .heard()
         .iter()

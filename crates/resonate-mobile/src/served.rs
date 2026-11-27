@@ -801,19 +801,19 @@ mod tests {
         harness::{Harness, LOOKED_AGAIN_AFTER, RATE, silence},
     };
 
-    const ARTISTS: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"index":[{"name":"P","artist":[{"id":"ar-1","name":"Pink Floyd","albumCount":1,"coverArt":"ar-1"}]}]}}}"#;
-    const ARTIST: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","artist":{"id":"ar-1","name":"Pink Floyd","album":[{"id":"al-1","name":"Meddle","artist":"Pink Floyd","year":1971,"songCount":2,"coverArt":"al-1"}]}}}"#;
-    const ALBUM: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","album":{"id":"al-1","name":"Meddle","artist":"Pink Floyd","song":[{"id":"so-1","title":"One of These Days","artist":"Pink Floyd","album":"Meddle","track":1,"duration":2,"suffix":"wav","coverArt":"mf-1"},{"id":"so-2","title":"A Pillow of Winds","artist":"Pink Floyd","album":"Meddle","track":2,"duration":2,"suffix":"wav"}]}}}"#;
-    const SEARCH: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{"song":[{"id":"so-2","title":"A Pillow of Winds"}]}}}"#;
-    const MONOCHROME_SEARCH: &str = r#"{"tracks":[{"trackId":77,"title":"Echoes","artistNames":["Pink Floyd"],"duration":2000,"playable":true},{"trackId":78,"title":"Unplayable","playable":false}]}"#;
+    const ARTISTS: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"index":[{"name":"P","artist":[{"id":"ar-1","name":"Example Band","albumCount":1,"coverArt":"ar-1"}]}]}}}"#;
+    const ARTIST: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","artist":{"id":"ar-1","name":"Example Band","album":[{"id":"al-1","name":"Low Tide","artist":"Example Band","year":1971,"songCount":2,"coverArt":"al-1"}]}}}"#;
+    const ALBUM: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","album":{"id":"al-1","name":"Low Tide","artist":"Example Band","song":[{"id":"so-1","title":"Paper Boats","artist":"Example Band","album":"Low Tide","track":1,"duration":2,"suffix":"wav","coverArt":"mf-1"},{"id":"so-2","title":"Small Mercies","artist":"Example Band","album":"Low Tide","track":2,"duration":2,"suffix":"wav"}]}}}"#;
+    const SEARCH: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{"song":[{"id":"so-2","title":"Small Mercies"}]}}}"#;
+    const MONOCHROME_SEARCH: &str = r#"{"tracks":[{"trackId":77,"title":"Slow Water","artistNames":["Example Band"],"duration":2000,"playable":true},{"trackId":78,"title":"Unplayable","playable":false}]}"#;
     const PICTURE: &[u8] = b"\xFF\xD8 a picture";
     const JELLYFIN_SIGNED_IN: &str = r#"{"AccessToken":"t-1","User":{"Id":"u-1"},"ServerId":"s"}"#;
     const JELLYFIN_ARTISTS: &str =
-        r#"{"Items":[{"Id":"jar-1","Name":"Pink Floyd","AlbumCount":1}],"TotalRecordCount":1}"#;
-    const JELLYFIN_ARTIST: &str = r#"{"Id":"jar-1","Name":"Pink Floyd","Type":"MusicArtist"}"#;
-    const JELLYFIN_ALBUMS: &str = r#"{"Items":[{"Id":"jal-1","Name":"Meddle","AlbumArtist":"Pink Floyd","ProductionYear":1971}],"TotalRecordCount":1}"#;
-    const JELLYFIN_ALBUM: &str = r#"{"Id":"jal-1","Name":"Meddle","AlbumArtist":"Pink Floyd"}"#;
-    const JELLYFIN_SONGS: &str = r#"{"Items":[{"Id":"jso-1","Name":"One of These Days","Artists":["Pink Floyd"],"Album":"Meddle","IndexNumber":1,"RunTimeTicks":20000000,"Container":"wav"}],"TotalRecordCount":1}"#;
+        r#"{"Items":[{"Id":"jar-1","Name":"Example Band","AlbumCount":1}],"TotalRecordCount":1}"#;
+    const JELLYFIN_ARTIST: &str = r#"{"Id":"jar-1","Name":"Example Band","Type":"MusicArtist"}"#;
+    const JELLYFIN_ALBUMS: &str = r#"{"Items":[{"Id":"jal-1","Name":"Low Tide","AlbumArtist":"Example Band","ProductionYear":1971}],"TotalRecordCount":1}"#;
+    const JELLYFIN_ALBUM: &str = r#"{"Id":"jal-1","Name":"Low Tide","AlbumArtist":"Example Band"}"#;
+    const JELLYFIN_SONGS: &str = r#"{"Items":[{"Id":"jso-1","Name":"Paper Boats","Artists":["Example Band"],"Album":"Low Tide","IndexNumber":1,"RunTimeTicks":20000000,"Container":"wav"}],"TotalRecordCount":1}"#;
 
     const STARRED: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#;
 
@@ -974,7 +974,7 @@ mod tests {
 
         let mut local = harness.songs[0].clone();
 
-        local.artist = "Pink Floyd".to_owned();
+        local.artist = "Example Band".to_owned();
         local.title = "A Local Song".to_owned();
         harness.player.catalog.upsert(local).expect("a seed");
 
@@ -989,7 +989,7 @@ mod tests {
 
         let offer = &feed.songs[0];
 
-        assert_eq!(offer.song.title, "One of These Days");
+        assert_eq!(offer.song.title, "Paper Boats");
         assert_eq!(offer.song.uri, "jellyfin:track/jso-1");
         assert!(!asked.lock().iter().any(|path| path.contains("/stream")));
 
@@ -1033,7 +1033,7 @@ mod tests {
             .index_download(job, "content://test/explore.wav".to_owned(), download.name)
             .expect("the song is indexed");
 
-        assert_eq!(track.title, "One of These Days");
+        assert_eq!(track.title, "Paper Boats");
 
         let requests = asked.lock();
         let streamed: Vec<_> = requests[before_download..]
@@ -1122,7 +1122,7 @@ mod tests {
             ["subsonic:track/so-1", "subsonic:track/so-2"]
         );
         assert_eq!(songs[0].duration_ms, Some(2000));
-        assert_eq!(found.songs[0].title, "A Pillow of Winds");
+        assert_eq!(found.songs[0].title, "Small Mercies");
         assert_eq!(picture, PICTURE);
         assert_eq!(expanded.len(), 2);
     }
@@ -1277,7 +1277,7 @@ mod tests {
             .expect("a first page");
         let found = harness
             .player
-            .served_search("monochrome".to_owned(), "echoes".to_owned())
+            .served_search("monochrome".to_owned(), "slow water".to_owned())
             .expect("a search");
 
         harness
@@ -1319,8 +1319,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["monochrome:track/77"]
         );
-        assert_eq!(queue[0].title, "Echoes");
-        assert_eq!(queue[0].artist, "Pink Floyd");
+        assert_eq!(queue[0].title, "Slow Water");
+        assert_eq!(queue[0].artist, "Example Band");
         assert_eq!(info.spec.rate.hz(), RATE);
         assert!(matches!(refused, Err(Error::InvalidUri)));
     }
@@ -1426,7 +1426,7 @@ mod tests {
                 .iter()
                 .map(|track| track.title.as_str())
                 .collect::<Vec<_>>(),
-            ["One of These Days", "a", "A Pillow of Winds", "b"]
+            ["Paper Boats", "a", "Small Mercies", "b"]
         );
         assert_eq!(rows.len(), 4);
         assert!(rows.iter().all(Option::is_some));
@@ -1476,15 +1476,15 @@ mod tests {
                 .map(|track| track.title.as_str())
                 .collect::<Vec<_>>(),
             [
-                "One of These Days",
-                "One of These Days",
-                "A Pillow of Winds",
+                "Paper Boats",
+                "Paper Boats",
+                "Small Mercies",
                 "a",
-                "A Pillow of Winds"
+                "Small Mercies"
             ]
         );
         assert!(queue.iter().all(|track| track.queue_id.is_some()));
-        assert_eq!(queue[0].artist, "Pink Floyd");
+        assert_eq!(queue[0].artist, "Example Band");
         assert_eq!(queue[0].duration_ms, 2000);
         assert_eq!(info.spec.rate.hz(), RATE);
 
@@ -1550,7 +1550,7 @@ mod tests {
         assert_eq!(row, 0);
         assert!(matches!(
             &kept[0],
-            KeptRow::Served(KeptServed { song, .. }) if song.title == "One of These Days"
+            KeptRow::Served(KeptServed { song, .. }) if song.title == "Paper Boats"
         ));
         assert!(matches!(kept[1], KeptRow::Document(_)));
         assert_eq!(
@@ -1559,12 +1559,12 @@ mod tests {
                 .map(|track| (track.title.as_str(), track.uri.as_str()))
                 .collect::<Vec<_>>(),
             [
-                ("One of These Days", "subsonic:track/so-1"),
+                ("Paper Boats", "subsonic:track/so-1"),
                 ("a", queue[1].uri.as_str()),
-                ("A Pillow of Winds", "subsonic:track/so-2"),
+                ("Small Mercies", "subsonic:track/so-2"),
             ]
         );
-        assert_eq!(queue[0].artist, "Pink Floyd");
+        assert_eq!(queue[0].artist, "Example Band");
     }
 
     #[test]
@@ -1763,7 +1763,7 @@ mod tests {
             .expect("the songs");
         let unstarring = harness
             .player
-            .served_search("monochrome".to_owned(), "echoes".to_owned())
+            .served_search("monochrome".to_owned(), "slow water".to_owned())
             .expect("a search")
             .songs;
 
@@ -1912,7 +1912,7 @@ mod tests {
                     subtitle: None,
                 },
                 songs: vec![Song {
-                    title: "Echoes".to_owned(),
+                    title: "Slow Water".to_owned(),
                     ..Song::only(Id::new("12").expect("an id"))
                 }],
             })
@@ -1956,7 +1956,7 @@ mod tests {
             mixes: vec![Mix {
                 id: Id::new("0a1b").expect("an id"),
                 name: "My Mix 1".to_owned(),
-                subtitle: Some("Pink Floyd and more".to_owned()),
+                subtitle: Some("Example Band and more".to_owned()),
             }],
             ..Found::default()
         };
@@ -1969,10 +1969,10 @@ mod tests {
         assert_eq!(shown.albums[0].name, "My Mix 1");
         assert_eq!(
             shown.albums[0].artist.as_deref(),
-            Some("Pink Floyd and more")
+            Some("Example Band and more")
         );
         assert!(matches!(named, Named::Mix(_)));
-        assert_eq!(songs[0].title, "Echoes");
+        assert_eq!(songs[0].title, "Slow Water");
     }
 
     #[test]
@@ -1985,7 +1985,7 @@ mod tests {
 
         let mut local = harness.songs[0].clone();
 
-        local.artist = "Pink Floyd".to_owned();
+        local.artist = "Example Band".to_owned();
         local.title = "A Local Song".to_owned();
         local.genre = "Progressive Rock".to_owned();
         harness
@@ -2019,7 +2019,7 @@ mod tests {
             .explore_download_for(offer.song.uri.clone())
             .expect("the download offer is remembered for queue and now playing");
 
-        assert_eq!(remembered.song.title, "One of These Days");
+        assert_eq!(remembered.song.title, "Paper Boats");
         assert_eq!(
             remembered.download.served.as_deref(),
             Some("jellyfin:track/jso-1")

@@ -127,9 +127,13 @@ mod tests {
 
     #[test]
     fn a_name_cannot_steer_the_terminal_it_is_printed_on() {
-        let printed = plain("Echoes\x1b]0;owned\x07 by Pink\u{202e}Floyd\r\nnext\tcolumn\u{9b}");
+        let printed =
+            plain("Slow Water\x1b]0;owned\x07 by Example\u{202e}Band\r\nnext\tcolumn\u{9b}");
 
-        assert_eq!(printed, "Echoes ]0;owned  by Pink Floyd \nnext\tcolumn ");
+        assert_eq!(
+            printed,
+            "Slow Water ]0;owned  by Example Band \nnext\tcolumn "
+        );
     }
 
     #[test]

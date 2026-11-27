@@ -2379,7 +2379,7 @@ fn a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample() {
     file[BYTES_A_SECOND_AT].copy_from_slice(&(HIGH_RATE * u32::from(CHANNELS) * 2).to_le_bytes());
 
     let bare = file.clone();
-    let info = b"INFOINAM\x07\0\0\0Echoes\0";
+    let info = b"INFOINAM\x07\0\0\0Slow Water\0";
 
     file.extend_from_slice(b"LIST");
     file.extend_from_slice(&(info.len() as u32).to_le_bytes());
@@ -2497,9 +2497,9 @@ fn a_kept_mp3_sheds_its_tags_and_keeps_every_frame_it_decodes_to() {
         .args(["-c:a", "libmp3lame", "-b:a", "128k", "-write_id3v1", "1"])
         .args([
             "-metadata",
-            "title=Echoes",
+            "title=Slow Water",
             "-metadata",
-            "artist=Pink Floyd",
+            "artist=Example Band",
         ])
         .arg(&path)
         .status();
@@ -2552,9 +2552,9 @@ fn a_tagged_ogg(tree: &Tree, codec: &str, named: &str) -> Option<PathBuf> {
         .args(["-c:a", codec, "-b:a", "96k"])
         .args([
             "-metadata",
-            "title=Echoes",
+            "title=Slow Water",
             "-metadata",
-            "artist=Pink Floyd",
+            "artist=Example Band",
         ])
         .args(["-metadata", &told])
         .arg(&path)
@@ -2632,7 +2632,7 @@ fn sheds_its_comments_and_decodes_alike(codec: &str, named: &str) {
         before.len()
     );
     assert!(
-        !object.windows(6).any(|window| window == b"Echoes"),
+        !object.windows(6).any(|window| window == b"Slow Water"),
         "a comment was kept"
     );
     assert!(ogg_sequences_and_checksums_hold(&object));
@@ -2668,9 +2668,9 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
         .args(["-ac", "2", "-c:a", codec, "-b:a", "96k"])
         .args([
             "-metadata",
-            "title=Echoes",
+            "title=Slow Water",
             "-metadata",
-            "artist=Pink Floyd",
+            "artist=Example Band",
             "-metadata:s:a:0",
             "title=Narration",
             "-metadata",
@@ -2694,7 +2694,7 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
     assert_eq!(held.form, Form::Kept);
     assert!(object.len() <= before.len());
     assert!(
-        !object.windows(6).any(|window| window == b"Echoes"),
+        !object.windows(6).any(|window| window == b"Slow Water"),
         "a tag was kept"
     );
     assert!(
@@ -2741,7 +2741,7 @@ fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
         .arg("anoisesrc=amplitude=0.0002:sample_rate=192000:duration=1:seed=7")
         .args(["-filter_complex", "amix=inputs=2:normalize=0"])
         .args(["-ac", "2", "-c:a", "flac", "-sample_fmt", "s32"])
-        .args(["-metadata", "title=Echoes", "-metadata", &told])
+        .args(["-metadata", "title=Slow Water", "-metadata", &told])
         .arg(&path)
         .status();
 
@@ -2765,7 +2765,7 @@ fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
         before.len()
     );
     assert!(
-        !object.windows(6).any(|window| window == b"Echoes"),
+        !object.windows(6).any(|window| window == b"Slow Water"),
         "a comment was kept"
     );
     assert!(ogg_sequences_and_checksums_hold(&object));

@@ -764,8 +764,8 @@ mod tests {
 
     const SEARCHED: &str = include_str!("../tests/fixtures/search3.json");
     const TURNED_AWAY: &str = include_str!("../tests/fixtures/wrong_password.json");
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
-    const ECHOES_ISRC: &str = "GBN9Y1100089";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const SLOW_WATER_ISRC: &str = "GBN9Y1100089";
 
     fn subsonic() -> Subsonic {
         Subsonic::at(Server {
@@ -785,11 +785,11 @@ mod tests {
 
     #[test]
     fn a_request_names_the_build_and_carries_a_token_rather_than_the_password() {
-        let url = subsonic().url("search3", &[("query", "Echoes & more")]);
+        let url = subsonic().url("search3", &[("query", "Slow Water & more")]);
 
         assert!(url.starts_with("http://music.local:4533/rest/search3?u=listener&t="));
         assert!(url.contains("&c=resonate&f=json"));
-        assert!(url.ends_with("&query=Echoes%20%26%20more"));
+        assert!(url.ends_with("&query=Slow%20Water%20%26%20more"));
         assert!(!url.contains("sesame"));
     }
 
@@ -856,8 +856,8 @@ mod tests {
         };
 
         let by_recording = Identity {
-            recording: Some(Mbid::new(ECHOES).expect("an mbid")),
-            ..Identity::named("Echoes")
+            recording: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
+            ..Identity::named("Slow Water")
         };
 
         assert_eq!(id(&by_recording).as_deref(), Some("song-2"));
@@ -865,21 +865,21 @@ mod tests {
         let by_isrc = Identity {
             isrcs: vec![
                 resonate_core::Isrc::new("GBN9Y1100000").expect("an isrc"),
-                resonate_core::Isrc::new(ECHOES_ISRC).expect("an isrc"),
+                resonate_core::Isrc::new(SLOW_WATER_ISRC).expect("an isrc"),
             ],
-            ..Identity::named("Echoes")
+            ..Identity::named("Slow Water")
         };
 
         assert_eq!(id(&by_isrc).as_deref(), Some("song-3"));
 
         let named = Identity {
-            artist: Some("Pink Floyd".to_owned()),
+            artist: Some("Example Band".to_owned()),
             length: Some(Duration::from_secs(1412)),
-            ..Identity::named("Echoes")
+            ..Identity::named("Slow Water")
         };
 
         assert_eq!(id(&named).as_deref(), Some("song-2"));
-        assert_eq!(id(&Identity::named("Echoes")), None);
+        assert_eq!(id(&Identity::named("Slow Water")), None);
     }
 
     #[test]
@@ -893,7 +893,7 @@ mod tests {
     #[test]
     fn a_want_with_no_identifier_and_nothing_to_name_it_by_is_not_searched_for() {
         assert!(matches!(
-            subsonic().find(&Identity::named("Echoes")),
+            subsonic().find(&Identity::named("Slow Water")),
             Ok(Obtained::Nothing)
         ));
     }

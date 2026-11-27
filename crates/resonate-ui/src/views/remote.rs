@@ -591,7 +591,7 @@ pub(crate) mod tests {
             RemoteZoneShown {
                 zone: 7,
                 name: "Headphones".to_owned(),
-                song: Some("Echoes — Pink Floyd".to_owned()),
+                song: Some("Slow Water — Example Band".to_owned()),
                 playing: Some(501),
                 first_row: 500,
                 length: Some(Duration::from_secs(1)),
@@ -601,8 +601,8 @@ pub(crate) mod tests {
                         ..RemoteRowShown::default()
                     },
                     RemoteRowShown {
-                        title: "Echoes".to_owned(),
-                        artist: "Pink Floyd".to_owned(),
+                        title: "Slow Water".to_owned(),
+                        artist: "Example Band".to_owned(),
                         ..RemoteRowShown::default()
                     },
                 ],
@@ -788,8 +788,8 @@ pub(crate) mod tests {
     fn a_remote_song_reads_the_playing_row_relative_to_the_mirrored_window() {
         let song = song();
 
-        assert_eq!(song.recording.title, "Echoes");
-        assert_eq!(song.recording.artist, "Pink Floyd");
+        assert_eq!(song.recording.title, "Slow Water");
+        assert_eq!(song.recording.artist, "Example Band");
 
         let mut outside = song.zone.clone();
 
@@ -797,7 +797,7 @@ pub(crate) mod tests {
 
         let outside = RemoteSong::new(song.device.clone(), outside).expect("a billed song");
 
-        assert_eq!(outside.recording.title, "Echoes — Pink Floyd");
+        assert_eq!(outside.recording.title, "Slow Water — Example Band");
         assert!(outside.recording.artist.is_empty());
 
         let mut idle = song.zone;
@@ -813,12 +813,12 @@ pub(crate) mod tests {
         let folder = Folder::new();
 
         folder.tagged(
-            "echoes.wav",
+            "slow water.wav",
             1,
             &[
-                (b"INAM", "Echoes"),
-                (b"IART", "Pink Floyd"),
-                (b"IPRD", "Meddle"),
+                (b"INAM", "Slow Water"),
+                (b"IART", "Example Band"),
+                (b"IPRD", "Low Tide"),
             ],
         );
         Driven::scanned(&library, &folder);
@@ -827,7 +827,7 @@ pub(crate) mod tests {
 
         held.read_album(&library).expect("the matched album");
 
-        assert_eq!(held.album.as_deref(), Some("Meddle"));
+        assert_eq!(held.album.as_deref(), Some("Low Tide"));
         assert!(held.track.is_some());
 
         let mut unheld = song();

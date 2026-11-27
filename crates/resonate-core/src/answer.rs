@@ -453,7 +453,7 @@ mod tests {
         Answer::Release(Box::new(SharedRelease {
             id: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("an mbid"),
             group: None,
-            title: "Meddle".into(),
+            title: "Low Tide".into(),
             credit: Vec::new(),
             date: None,
             country: None,
@@ -480,10 +480,10 @@ mod tests {
             .collect();
         let coded = SharedTrack {
             isrcs: vec!["GBN9Y1100001".into(); CODES_SHARED_AT_MOST + 1],
-            ..track("Echoes")
+            ..track("Slow Water")
         };
 
-        assert!(release(vec![track("Echoes")]).travels());
+        assert!(release(vec![track("Slow Water")]).travels());
         assert!(!release(Vec::new()).travels());
         assert!(!release(heavy).travels());
         assert!(!release(vec![coded]).travels());

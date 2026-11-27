@@ -273,9 +273,9 @@ mod tests {
 
     #[test]
     fn a_version_bracket_is_taken_off_and_another_recording_is_left_alone() {
-        assert_eq!(dequalified("Creep (Remastered 2009)"), "Creep");
-        assert_eq!(dequalified("Creep (2009 Remaster) [Explicit]"), "Creep");
-        assert_eq!(dequalified("Creep (Acoustic)"), "Creep (Acoustic)");
+        assert_eq!(dequalified("Lantern (Remastered 2009)"), "Lantern");
+        assert_eq!(dequalified("Lantern (2009 Remaster) [Explicit]"), "Lantern");
+        assert_eq!(dequalified("Lantern (Acoustic)"), "Lantern (Acoustic)");
         assert_eq!(dequalified("(Remastered)"), "(Remastered)");
     }
 

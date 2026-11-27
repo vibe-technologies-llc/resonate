@@ -78,26 +78,30 @@ mod tests {
         }
     }
 
-    fn echoes() -> MediaLocation {
-        MediaLocation::local("/music/Pink Floyd/Echoes.flac")
+    fn slow_water() -> MediaLocation {
+        MediaLocation::local("/music/Example Band/Slow Water.flac")
     }
 
     #[test]
     fn a_track_is_told_as_its_title_over_the_artist_and_the_album() {
-        let tags = tagged(Some("Echoes"), Some("Pink Floyd"), Some("Meddle"));
-        let shown = shown(&tags, &echoes(), Some("file:///tmp/cover.png".to_owned()))
-            .expect("a titled track is worth telling");
+        let tags = tagged(Some("Slow Water"), Some("Example Band"), Some("Low Tide"));
+        let shown = shown(
+            &tags,
+            &slow_water(),
+            Some("file:///tmp/cover.png".to_owned()),
+        )
+        .expect("a titled track is worth telling");
 
-        assert_eq!(shown.summary, "Echoes");
-        assert_eq!(shown.body, "Pink Floyd\nMeddle");
+        assert_eq!(shown.summary, "Slow Water");
+        assert_eq!(shown.body, "Example Band\nLow Tide");
         assert_eq!(shown.art.as_deref(), Some("file:///tmp/cover.png"));
     }
 
     #[test]
     fn a_track_carrying_no_title_is_told_as_the_file_it_came_out_of() {
-        let shown = shown(&TagSet::default(), &echoes(), None).expect("a file names itself");
+        let shown = shown(&TagSet::default(), &slow_water(), None).expect("a file names itself");
 
-        assert_eq!(shown.summary, "Echoes");
+        assert_eq!(shown.summary, "Slow Water");
         assert_eq!(shown.body, "");
     }
 
@@ -105,36 +109,40 @@ mod tests {
     fn text_made_only_of_controls_is_told_as_if_it_were_absent() {
         let hollow = shown(
             &tagged(Some("\0"), Some("\u{1}\0"), Some("Low Tide")),
-            &echoes(),
+            &slow_water(),
             None,
         )
         .expect("a file names itself");
-        let nameless = shown(&tagged(Some("\0"), Some("\0"), Some("\0")), &echoes(), None)
-            .expect("a file names itself");
+        let nameless = shown(
+            &tagged(Some("\0"), Some("\0"), Some("\0")),
+            &slow_water(),
+            None,
+        )
+        .expect("a file names itself");
 
-        assert_eq!(hollow.summary, "Echoes");
+        assert_eq!(hollow.summary, "Slow Water");
         assert_eq!(hollow.body, "Low Tide");
-        assert_eq!(nameless.summary, "Echoes");
+        assert_eq!(nameless.summary, "Slow Water");
         assert_eq!(nameless.body, "");
     }
 
     #[test]
     fn one_line_is_told_where_one_of_the_artist_and_the_album_is_all_there_is() {
         let artist = shown(
-            &tagged(Some("Echoes"), Some("Pink Floyd"), None),
-            &echoes(),
+            &tagged(Some("Slow Water"), Some("Example Band"), None),
+            &slow_water(),
             None,
         )
         .expect("a titled track");
         let album = shown(
-            &tagged(Some("Echoes"), None, Some("Meddle")),
-            &echoes(),
+            &tagged(Some("Slow Water"), None, Some("Low Tide")),
+            &slow_water(),
             None,
         )
         .expect("a titled track");
 
-        assert_eq!(artist.body, "Pink Floyd");
-        assert_eq!(album.body, "Meddle");
+        assert_eq!(artist.body, "Example Band");
+        assert_eq!(album.body, "Low Tide");
     }
 
     #[test]

@@ -235,7 +235,10 @@ mod tests {
             .remove(0);
 
         library
-            .land_release(album.id, &release_of(&["Held", "San Tropez", "Seamus"]))
+            .land_release(
+                album.id,
+                &release_of(&["Held", "The Lighthouse", "Third Light"]),
+            )
             .expect("a release");
         library.rematch(album.id).expect("a match");
         (root, library)
@@ -263,13 +266,13 @@ mod tests {
     fn a_missing_track_is_wanted_by_title_and_wanted_no_longer() {
         let (root, library) = library_missing_two_tracks();
 
-        run(&library, &wants_asked(&["--add", "san tropez"])).expect("a want");
+        run(&library, &wants_asked(&["--add", "the lighthouse"])).expect("a want");
 
         let wanted = titles_wanted(&library);
 
         run(
             &library,
-            &wants_asked(&["--remove", "San Tropez", "--album", "Orbits"]),
+            &wants_asked(&["--remove", "The Lighthouse", "--album", "Orbits"]),
         )
         .expect("an unwant");
 
@@ -277,12 +280,12 @@ mod tests {
         let held = run(&library, &wants_asked(&["--add", "Held"]));
         let elsewhere = run(
             &library,
-            &wants_asked(&["--add", "Seamus", "--artist", "Nobody"]),
+            &wants_asked(&["--add", "Third Light", "--artist", "Nobody"]),
         );
 
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
-        assert_eq!(wanted, ["San Tropez"]);
+        assert_eq!(wanted, ["The Lighthouse"]);
         assert!(after.is_empty());
         assert!(matches!(
             held,
@@ -298,16 +301,16 @@ mod tests {
     fn a_dismissed_missing_track_leaves_the_listing_and_a_name_nothing_matches_is_refused() {
         let (root, library) = library_missing_two_tracks();
 
-        dismiss(&library, "Seamus", Narrowing::default()).expect("a dismissal");
+        dismiss(&library, "Third Light", Narrowing::default()).expect("a dismissal");
 
         let left = titles_missing(&library);
-        let again = dismiss(&library, "Seamus", Narrowing::default());
+        let again = dismiss(&library, "Third Light", Narrowing::default());
         let release = dismiss_release(&library, "Orbits", None);
-        let unwanted = unwant(&library, "San Tropez", Narrowing::default());
+        let unwanted = unwant(&library, "The Lighthouse", Narrowing::default());
 
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
-        assert_eq!(left, ["San Tropez"]);
+        assert_eq!(left, ["The Lighthouse"]);
         assert!(matches!(again, Err(Error::NothingNamed { .. })));
         assert!(matches!(
             release,

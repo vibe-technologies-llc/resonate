@@ -597,7 +597,7 @@ mod tests {
             "playlist",
             "Road",
             "--query",
-            "floyd",
+            "band",
             "--reverse"
         ]));
         assert!(!parsed(&[
@@ -728,7 +728,7 @@ mod tests {
             &["--pin"][..],
             &["--refresh"],
             &["--tidy"],
-            &["--matching", "floyd"],
+            &["--matching", "band"],
             &["--shuffle"],
             &["--volume", "25"],
         ] {
@@ -807,7 +807,7 @@ mod tests {
             "playlist",
             "Evening",
             "--matching",
-            "floyd",
+            "band",
             "--shuffle",
             "--repeat",
             "queue",

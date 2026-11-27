@@ -881,13 +881,13 @@ mod tests {
     #[test]
     fn a_document_whose_uri_holds_an_escape_is_measured_by_its_kept_peaks() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
-        let granted = "content://com.android.externalstorage.documents/document/primary%3AMusic%2FEchoes.flac";
+        let granted = "content://com.android.externalstorage.documents/document/primary%3AMusic%2FSlow%20Water.flac";
 
         let track = catalog
             .upsert(Track {
                 uri: granted.to_owned(),
-                name: "Echoes.flac".to_owned(),
-                title: "Echoes".to_owned(),
+                name: "Slow Water.flac".to_owned(),
+                title: "Slow Water".to_owned(),
                 ..Track::default()
             })
             .expect("a document");

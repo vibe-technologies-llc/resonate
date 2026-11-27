@@ -787,7 +787,7 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
     desk_answers
         .answers
         .lock()
-        .push((b"who sang creep".to_vec(), b"radiohead".to_vec()));
+        .push((b"who sang lantern".to_vec(), b"tideline".to_vec()));
     desk_answers.kept.lock().extend([
         KeptAnswer {
             seq: 1,
@@ -830,19 +830,19 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
     });
 
     let answered = phone
-        .ask_to_consult(desk.device(), b"who sang creep".to_vec())
+        .ask_to_consult(desk.device(), b"who sang lantern".to_vec())
         .answer(SETTLES_WITHIN);
     let unknown = phone
         .ask_to_consult(desk.device(), b"who sang slow water".to_vec())
         .answer(SETTLES_WITHIN);
     let unasked = desk
-        .ask_to_consult(phone.device(), b"who sang creep".to_vec())
+        .ask_to_consult(phone.device(), b"who sang lantern".to_vec())
         .answer(SETTLES_WITHIN);
 
     assert_eq!(
         answered,
         Consulting::Answered {
-            answer: b"radiohead".to_vec(),
+            answer: b"tideline".to_vec(),
             at: Some(ANSWERED_AT),
         }
     );

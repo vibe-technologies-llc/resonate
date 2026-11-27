@@ -153,9 +153,9 @@ impl Drop for Tree {
 
 fn wav() -> Vec<u8> {
     wav_naming(&[
-        (b"INAM", "Echoes"),
-        (b"IART", "Pink Floyd"),
-        (b"IPRD", "Meddle"),
+        (b"INAM", "Slow Water"),
+        (b"IART", "Example Band"),
+        (b"IPRD", "Low Tide"),
     ])
 }
 
@@ -1110,7 +1110,7 @@ fn a_playing_track_is_described_by_its_metadata_and_its_position() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
 
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -1120,12 +1120,12 @@ fn a_playing_track_is_described_by_its_metadata_and_its_position() {
 
     let fields = harness.metadata();
 
-    assert_eq!(text(&fields, "xesam:title").as_deref(), Some("Echoes"));
+    assert_eq!(text(&fields, "xesam:title").as_deref(), Some("Slow Water"));
     assert_eq!(
         strings(&fields, "xesam:artist").as_deref(),
-        Some(["Pink Floyd".to_owned()].as_slice())
+        Some(["Example Band".to_owned()].as_slice())
     );
-    assert_eq!(text(&fields, "xesam:album").as_deref(), Some("Meddle"));
+    assert_eq!(text(&fields, "xesam:album").as_deref(), Some("Low Tide"));
     assert!(
         text(&fields, "xesam:url").is_some_and(|url| url.starts_with("file:///")),
         "no file URI reached the bus"
@@ -1164,7 +1164,7 @@ fn a_playing_track_whose_file_names_no_title_is_titled_by_its_file() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.untitled("Shine On.wav"));
+    harness.load(&tree.untitled("Paper Boats.wav"));
 
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -1174,7 +1174,7 @@ fn a_playing_track_whose_file_names_no_title_is_titled_by_its_file() {
 
     assert_eq!(
         text(&harness.metadata(), "xesam:title").as_deref(),
-        Some("Shine On")
+        Some("Paper Boats")
     );
 }
 
@@ -1185,7 +1185,7 @@ fn the_transport_methods_a_media_key_sends_reach_the_engine() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
@@ -1213,7 +1213,7 @@ fn the_writable_properties_are_pushed_back_into_the_engine() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
@@ -1403,7 +1403,7 @@ fn set_position_seeks_the_track_it_names_and_ignores_any_other() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
@@ -1436,7 +1436,7 @@ fn the_picture_a_track_carries_is_named_by_a_uri_the_desktop_can_open() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.pictured("echoes.wav"));
+    harness.load(&tree.pictured("slow water.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
         |harness| text(&harness.metadata(), "mpris:artUrl").is_some(),
@@ -1476,7 +1476,7 @@ fn set_position_before_the_start_of_a_track_is_ignored_rather_than_seeking_to_it
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
@@ -1508,7 +1508,7 @@ fn a_seek_further_back_than_an_offset_can_name_lands_on_the_start() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
@@ -1575,7 +1575,7 @@ fn next_and_previous_do_nothing_where_the_bus_was_told_they_could_not() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     for (method, able) in [("Next", "CanGoNext"), ("Previous", "CanGoPrevious")] {
@@ -1610,7 +1610,7 @@ fn a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
         "the track list to publish",
@@ -1662,7 +1662,7 @@ fn a_cut_added_by_its_frames_is_queued_as_that_cut_and_named_by_them_again() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
         "the track list to publish",
@@ -1745,7 +1745,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     assert_eq!(described.len(), 2);
     assert_eq!(
         text(described.first().expect("the playing row"), "xesam:title").as_deref(),
-        Some("Echoes"),
+        Some("Slow Water"),
         "the playing row did not carry the tags the engine decoded"
     );
 
@@ -1753,12 +1753,12 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
 
     assert_eq!(
         text(queued, "xesam:title").as_deref(),
-        Some("Echoes"),
+        Some("Slow Water"),
         "a queued row the engine never played carries no tags"
     );
     assert_eq!(
         strings(queued, "xesam:artist"),
-        Some(vec!["Pink Floyd".to_owned()]),
+        Some(vec!["Example Band".to_owned()]),
         "a queued row carried a title but no artist"
     );
     assert!(
@@ -2346,8 +2346,8 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
         .expect("a track is playing");
 
     assert_eq!(playing.location, Some(MediaLocation::local(&paths[0])));
-    assert_eq!(playing.title.as_deref(), Some("Echoes"));
-    assert_eq!(playing.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(playing.title.as_deref(), Some("Slow Water"));
+    assert_eq!(playing.artist.as_deref(), Some("Example Band"));
 
     running
         .seek(Seeking::Forward(Duration::from_secs(10)))
@@ -2395,7 +2395,7 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
                 rows.len() == 3
                     && rows
                         .iter()
-                        .all(|row| row.title.as_deref() == Some("Echoes"))
+                        .all(|row| row.title.as_deref() == Some("Slow Water"))
             })
         },
         "the tags of every queued row to be read",
@@ -2428,7 +2428,7 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
     let standing = running.standing().expect("the player says how it stands");
 
     assert_eq!(standing.queued, 3);
-    assert_eq!(standing.title.as_deref(), Some("Echoes"));
+    assert_eq!(standing.title.as_deref(), Some("Slow Water"));
 
     running
         .remove_track(rows[1].track)
@@ -2663,8 +2663,8 @@ fn a_player_of_this_build_is_listed_with_what_it_is_playing() {
     );
     assert_eq!(standing.playback, Some(PlaybackStatus::Playing));
     assert_eq!(standing.queued, 1);
-    assert_eq!(standing.title.as_deref(), Some("Echoes"));
-    assert_eq!(standing.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(standing.title.as_deref(), Some("Slow Water"));
+    assert_eq!(standing.artist.as_deref(), Some("Example Band"));
 }
 
 #[test]
@@ -2819,12 +2819,12 @@ fn open_uri_hands_a_local_file_to_the_front_end_and_refuses_the_rest() {
     let player = harness.proxy(PLAYER);
 
     player
-        .call::<_, _, ()>("OpenUri", &"file:///music/Pink%20Floyd/Echoes.flac")
+        .call::<_, _, ()>("OpenUri", &"file:///music/Example%20Band/Slow%20Water.flac")
         .expect("OpenUri is served");
 
     assert_eq!(
         harness.opened.lock().first().cloned(),
-        Some(MediaLocation::local("/music/Pink Floyd/Echoes.flac"))
+        Some(MediaLocation::local("/music/Example Band/Slow Water.flac"))
     );
 
     assert!(
@@ -3478,9 +3478,9 @@ fn a_running_player_answers_the_transport_calls_a_client_makes() {
         .expect("a track is playing");
 
     assert_eq!(playing.location, Some(MediaLocation::local(&paths[0])));
-    assert_eq!(playing.title.as_deref(), Some("Echoes"));
-    assert_eq!(playing.artist.as_deref(), Some("Pink Floyd"));
-    assert_eq!(playing.album.as_deref(), Some("Meddle"));
+    assert_eq!(playing.title.as_deref(), Some("Slow Water"));
+    assert_eq!(playing.artist.as_deref(), Some("Example Band"));
+    assert_eq!(playing.album.as_deref(), Some("Low Tide"));
 
     running
         .seek(Seeking::Forward(Duration::from_secs(10)))
@@ -3560,7 +3560,7 @@ fn a_running_player_reads_the_queue_back_through_its_client() {
         |_| {
             running.rows().is_ok_and(|rows| {
                 rows.iter()
-                    .all(|row| row.title.as_deref() == Some("Echoes"))
+                    .all(|row| row.title.as_deref() == Some("Slow Water"))
             })
         },
         "the tags of every queued row to reach the track list",
@@ -4134,7 +4134,7 @@ fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up()
             "nul.flac",
             &[
                 ("TITLE", "a\0b"),
-                ("ARTIST", "Pink\u{1}Floyd"),
+                ("ARTIST", "Example\u{1}Band"),
                 ("COMMENT", sprawling.as_str()),
                 ("LYRICS", sprawling.as_str()),
             ],
@@ -4158,7 +4158,7 @@ fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up()
     assert_eq!(told.summary, "ab");
     assert_eq!(
         strings(&fields, "xesam:artist").as_deref(),
-        Some(["PinkFloyd".to_owned()].as_slice())
+        Some(["ExampleBand".to_owned()].as_slice())
     );
     assert!(
         comment.iter().map(String::len).sum::<usize>() <= 4 * 1024,
@@ -4202,7 +4202,7 @@ fn the_idle_inhibit_is_held_while_sound_plays_and_let_go_when_it_pauses_stops_or
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
 
     let playing = inhibited(&portaled);
 
@@ -4287,7 +4287,7 @@ fn a_session_shut_down_while_sound_plays_lets_the_inhibit_go() {
     };
     let tree = Tree::new();
 
-    harness.load(&tree.wav("echoes.wav"));
+    harness.load(&tree.wav("slow water.wav"));
 
     let playing = inhibited(&portaled);
 
@@ -4329,7 +4329,7 @@ impl Tagged {
 
 fn hostile_tracks() -> Vec<Tagged> {
     vec![
-        Tagged::new("Echoes", Some("Pink Floyd"), Some("Meddle")),
+        Tagged::new("Slow Water", Some("Example Band"), Some("Low Tide")),
         Tagged::new("a\0b", Some("Simon & Garfunkel <live>"), None),
         Tagged::new("<b>Tom & Jerry</b>", Some("\0"), Some("&amp;")),
         Tagged::new("one\ntwo\r\nthree", None, None),
@@ -4394,7 +4394,7 @@ fn what_a_notification_says_is_the_tags_text_fitted_and_each_one_replaces_the_la
     assert_eq!(
         summaries[..5],
         [
-            "Echoes",
+            "Slow Water",
             "ab",
             "<b>Tom & Jerry</b>",
             "one\ntwo\r\nthree",
@@ -4405,7 +4405,7 @@ fn what_a_notification_says_is_the_tags_text_fitted_and_each_one_replaces_the_la
     assert_eq!(
         bodies[..5],
         [
-            "Pink Floyd\nMeddle",
+            "Example Band\nLow Tide",
             "Simon & Garfunkel <live>",
             "&amp;",
             "",
@@ -4435,7 +4435,7 @@ fn a_body_is_escaped_only_for_a_server_that_says_it_reads_markup() {
         return;
     };
 
-    assert_eq!(told[0].body, "Pink Floyd\nMeddle");
+    assert_eq!(told[0].body, "Example Band\nLow Tide");
     assert_eq!(told[1].summary, "ab");
     assert_eq!(told[1].body, "Simon &amp; Garfunkel &lt;live&gt;");
     assert_eq!(told[2].summary, "<b>Tom & Jerry</b>");

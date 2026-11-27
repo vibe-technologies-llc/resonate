@@ -62,10 +62,10 @@ mod tests {
                 Link::new("streaming", "https://tidal.com/album/55391740".to_owned()),
                 Link::new(
                     "purchase for download",
-                    "https://pinkfloyd.bandcamp.com/album/meddle".to_owned(),
+                    "https://exampleband.bandcamp.com/album/low tide".to_owned(),
                 ),
             ],
-            ..Identity::named("Echoes")
+            ..Identity::named("Slow Water")
         };
 
         assert_eq!(
@@ -79,7 +79,7 @@ mod tests {
         assert_eq!(identity.track_on(Service::Bandcamp), None);
         assert_eq!(
             identity.release_on(Service::Bandcamp),
-            Some("https://pinkfloyd.bandcamp.com/album/meddle")
+            Some("https://exampleband.bandcamp.com/album/low tide")
         );
     }
 }

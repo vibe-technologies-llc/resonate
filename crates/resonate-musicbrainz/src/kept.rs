@@ -503,13 +503,13 @@ mod tests {
 
     #[test]
     fn a_recording_indexed_inside_an_isrc_answer_before_this_build_no_longer_answers_its_id() {
-        let echoes = Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid");
+        let slow_water = Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid");
         let code = Isrc::new("GBN9Y7100006").expect("a code");
         let coded = Asked::Isrc(code.clone());
 
         let thin = Answer::Recordings(vec![Recording {
-            id: echoes.clone(),
-            title: "Echoes".to_owned(),
+            id: slow_water.clone(),
+            title: "Slow Water".to_owned(),
             credit: Vec::new(),
             length: None,
             isrcs: vec![code],
@@ -535,7 +535,7 @@ mod tests {
             .execute(
                 "INSERT INTO entities (mbid, kind, key) VALUES (?1, ?2, ?3)",
                 params![
-                    mbid_bytes(&echoes).to_vec(),
+                    mbid_bytes(&slow_water).to_vec(),
                     crate::Entity::Recording.code(),
                     coded.key()
                 ],
@@ -554,7 +554,10 @@ mod tests {
             )
             .expect("the schema read");
 
-        assert_eq!(kept.answer(&Asked::Recording(echoes)).expect("read"), None);
+        assert_eq!(
+            kept.answer(&Asked::Recording(slow_water)).expect("read"),
+            None
+        );
         assert_eq!(kept.answer(&coded).expect("read"), Some(thin));
         assert_eq!(indexes, 0);
     }

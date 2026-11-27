@@ -230,10 +230,10 @@ mod tests {
 
     fn tagged() -> TagSet {
         TagSet {
-            title: Some("Echoes".to_owned()),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
-            album_artist: Some("Pink Floyd".to_owned()),
+            title: Some("Slow Water".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Low Tide".to_owned()),
+            album_artist: Some("Example Band".to_owned()),
             track_number: Some(6),
             ..TagSet::default()
         }
@@ -251,7 +251,7 @@ mod tests {
             },
             shuffle: false,
             repeat: Some(RepeatMode::Off),
-            displayed: Some(Displayed::of(&tagged(), "Echoes", None)),
+            displayed: Some(Displayed::of(&tagged(), "Slow Water", None)),
             timeline: Some(Timeline::of(Frames(0), Some(Frames(44_100)), 44_100, true)),
         }
     }
@@ -332,16 +332,20 @@ mod tests {
 
     #[test]
     fn a_track_is_shown_by_the_title_its_notification_carries_and_the_rest_of_its_tags() {
-        let shown = Displayed::of(&tagged(), "Echoes", Some("file:///C:/art.png".to_owned()));
-        let untitled = Displayed::of(&TagSet::default(), "06 Echoes", None);
+        let shown = Displayed::of(
+            &tagged(),
+            "Slow Water",
+            Some("file:///C:/art.png".to_owned()),
+        );
+        let untitled = Displayed::of(&TagSet::default(), "06 Slow Water", None);
 
-        assert_eq!(shown.title, "Echoes");
-        assert_eq!(shown.artist, "Pink Floyd");
-        assert_eq!(shown.album, "Meddle");
-        assert_eq!(shown.album_artist, "Pink Floyd");
+        assert_eq!(shown.title, "Slow Water");
+        assert_eq!(shown.artist, "Example Band");
+        assert_eq!(shown.album, "Low Tide");
+        assert_eq!(shown.album_artist, "Example Band");
         assert_eq!(shown.track_number, 6);
         assert_eq!(shown.art.as_deref(), Some("file:///C:/art.png"));
-        assert_eq!(untitled.title, "06 Echoes");
+        assert_eq!(untitled.title, "06 Slow Water");
         assert_eq!(untitled.artist, "");
         assert_eq!(untitled.track_number, 0);
     }

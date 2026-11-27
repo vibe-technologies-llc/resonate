@@ -2569,7 +2569,7 @@ mod tests {
             connection
                 .execute(
                     "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec)
-                     VALUES (?1, ?2, 'echoes.flac', 'Echoes', 'Pink Floyd', 'Meddle', 1000, 44100, 'FLAC')",
+                     VALUES (?1, ?2, 'slow water.flac', 'Slow Water', 'Example Band', 'Low Tide', 1000, 44100, 'FLAC')",
                     params![id, uri],
                 )
                 .expect("a song of before");
@@ -2646,7 +2646,7 @@ mod tests {
             connection
                 .execute(
                     "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec)
-                     VALUES (?1, ?2, 'echoes.flac', 'Echoes', 'Pink Floyd', 'Meddle', 1000, 44100, 'FLAC')",
+                     VALUES (?1, ?2, 'slow water.flac', 'Slow Water', 'Example Band', 'Low Tide', 1000, 44100, 'FLAC')",
                     params![id, uri],
                 )
                 .expect("a song of before");
@@ -2724,7 +2724,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec)
-                 VALUES (1, 'content://song/1', 'echoes.flac', 'Echoes', 'Pink Floyd', 'Meddle', 1000, 44100, 'FLAC')",
+                 VALUES (1, 'content://song/1', 'slow water.flac', 'Slow Water', 'Example Band', 'Low Tide', 1000, 44100, 'FLAC')",
                 [],
             )
             .expect("a song of before");

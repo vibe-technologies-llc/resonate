@@ -839,9 +839,9 @@ mod tests {
 
     fn wanted_from_a_service() -> SearchSong {
         SearchSong {
-            title: "Echoes".into(),
-            artist: "Pink Floyd".into(),
-            album: "Meddle".into(),
+            title: "Slow Water".into(),
+            artist: "Example Band".into(),
+            album: "Low Tide".into(),
             served: Some(SERVED.into()),
             ..SearchSong::default()
         }

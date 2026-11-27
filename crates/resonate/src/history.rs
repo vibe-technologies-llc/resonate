@@ -204,8 +204,10 @@ mod tests {
         fixtures::{ALBUM, ARTIST, TITLE, parsed, scanned, scratch, tagged_wave},
     };
 
-    const SONGS: [(&str, &str, &str); 2] =
-        [("Echoes", "Pink Floyd", "Meddle"), ("Say", "Low", "Words")];
+    const SONGS: [(&str, &str, &str); 2] = [
+        ("Slow Water", "Example Band", "Low Tide"),
+        ("Say", "Low", "Words"),
+    ];
     const MOMENTS: [u64; 4] = [1_700_000_000, 1_700_100_000, 1_700_200_000, 1_700_300_000];
 
     fn catalog_of_songs(name: &str) -> (PathBuf, Library) {

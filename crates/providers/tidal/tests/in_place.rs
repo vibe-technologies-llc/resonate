@@ -14,22 +14,22 @@ use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal};
 const SONG_BYTES: usize = 600_000;
 const FAR_AHEAD: u64 = 500_000;
 const COVER: &[u8] = b"\xff\xd8\xff\xe0 a cover";
-const SEARCHED: &str = r#"{"artists":{"items":[{"id":3,"name":"Pink Floyd","picture":"ee-ff"}]},
-    "albums":{"items":[{"id":7,"title":"Meddle","releaseDate":"1971-10-30","numberOfTracks":2,"artist":{"name":"Pink Floyd"},"cover":"aa-bb"}]},
-    "tracks":{"items":[{"id":11,"title":"One of These Days","duration":357,"trackNumber":1,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}}]}}"#;
+const SEARCHED: &str = r#"{"artists":{"items":[{"id":3,"name":"Example Band","picture":"ee-ff"}]},
+    "albums":{"items":[{"id":7,"title":"Low Tide","releaseDate":"1971-10-30","numberOfTracks":2,"artist":{"name":"Example Band"},"cover":"aa-bb"}]},
+    "tracks":{"items":[{"id":11,"title":"Paper Boats","duration":357,"trackNumber":1,"artist":{"name":"Example Band"},"album":{"title":"Low Tide","cover":"aa-bb"}}]}}"#;
 const ALBUM_TRACKS: &str = r#"{"items":[
-    {"id":11,"title":"One of These Days","duration":357,"trackNumber":1,"volumeNumber":1,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}},
-    {"id":12,"title":"A Pillow of Winds","version":"Remastered","duration":310,"trackNumber":2,"volumeNumber":1,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}}]}"#;
+    {"id":11,"title":"Paper Boats","duration":357,"trackNumber":1,"volumeNumber":1,"artist":{"name":"Example Band"},"album":{"title":"Low Tide","cover":"aa-bb"}},
+    {"id":12,"title":"Small Mercies","version":"Remastered","duration":310,"trackNumber":2,"volumeNumber":1,"artist":{"name":"Example Band"},"album":{"title":"Low Tide","cover":"aa-bb"}}]}"#;
 const MIXES: &str = r#"{"items":[
-    {"dateAdded":"2024-02-01","id":"0a1b2c","title":"My Mix 1","subTitle":"Pink Floyd, Camel and more","mixType":"TRACK_MIX"},
+    {"dateAdded":"2024-02-01","id":"0a1b2c","title":"My Mix 1","subTitle":"Example Band, Camel and more","mixType":"TRACK_MIX"},
     {"item":{"id":"3d4e5f","title":"Daily Discovery","subTitle":""}},
     {"id":"../x","title":"Out of the path"},
     {"title":"Nameless"}]}"#;
 const MIX_ITEMS: &str = r#"{"items":[
-    {"item":{"id":11,"title":"One of These Days","duration":357,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}},"type":"track"},
+    {"item":{"id":11,"title":"Paper Boats","duration":357,"artist":{"name":"Example Band"},"album":{"title":"Low Tide","cover":"aa-bb"}},"type":"track"},
     {"item":null,"type":"video"},
-    {"item":{"id":12,"title":"A Pillow of Winds","duration":310,"artist":{"name":"Pink Floyd"}},"type":"track"}]}"#;
-const ARTIST_ALBUMS: &str = r#"{"items":[{"id":7,"title":"Meddle","artist":{"name":"Pink Floyd"},"cover":"aa-bb"},{"id":"x"},{"id":8,"title":"Animals","artist":{"name":"Pink Floyd"}}]}"#;
+    {"item":{"id":12,"title":"Small Mercies","duration":310,"artist":{"name":"Example Band"}},"type":"track"}]}"#;
+const ARTIST_ALBUMS: &str = r#"{"items":[{"id":7,"title":"Low Tide","artist":{"name":"Example Band"},"cover":"aa-bb"},{"id":"x"},{"id":8,"title":"Animals","artist":{"name":"Example Band"}}]}"#;
 
 fn song() -> Vec<u8> {
     let mut song = b"fLaC".to_vec();
@@ -299,10 +299,10 @@ fn tidal_server() -> Fake {
         "/api/search" => Canned::json(SEARCHED),
         "/api/sessions" => Canned::json(r#"{"countryCode":"GB","userId":"42"}"#),
         "/api/users/42/favorites/artists" => Canned::json(
-            r#"{"items":[{"created":"2024-01-01","item":{"id":3,"name":"Pink Floyd","picture":"ee-ff"}},{"item":{"id":null}}]}"#,
+            r#"{"items":[{"created":"2024-01-01","item":{"id":3,"name":"Example Band","picture":"ee-ff"}},{"item":{"id":null}}]}"#,
         ),
         "/api/users/42/favorites/albums" => Canned::json(
-            r#"{"items":[{"item":{"id":7,"title":"Meddle","artist":{"name":"Pink Floyd"},"cover":"aa-bb"}}]}"#,
+            r#"{"items":[{"item":{"id":7,"title":"Low Tide","artist":{"name":"Example Band"},"cover":"aa-bb"}}]}"#,
         ),
         "/api/users/42/favorites/tracks" if asked.method == "POST" => {
             if asked.body.starts_with("trackIds=11&") {
@@ -313,14 +313,14 @@ fn tidal_server() -> Fake {
         }
         "/api/users/42/favorites/tracks/11" if asked.method == "DELETE" => Canned::json("{}"),
         "/api/users/42/favorites/tracks" => Canned::json(
-            r#"{"items":[{"item":{"id":12,"title":"A Pillow of Winds","duration":310,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}}}]}"#,
+            r#"{"items":[{"item":{"id":12,"title":"Small Mercies","duration":310,"artist":{"name":"Example Band"},"album":{"title":"Low Tide","cover":"aa-bb"}}}]}"#,
         ),
         "/api/users/42/favorites/mixes" => Canned::json(MIXES),
         "/api/mixes/0a1b2c/items" => Canned::json(MIX_ITEMS),
         "/api/albums/7/tracks" => Canned::json(ALBUM_TRACKS),
         "/api/artists/3/albums" => Canned::json(ARTIST_ALBUMS),
         "/api/tracks/11" => Canned::json(
-            r#"{"id":11,"title":"One of These Days","album":{"title":"Meddle","cover":"aa-bb"}}"#,
+            r#"{"id":11,"title":"Paper Boats","album":{"title":"Low Tide","cover":"aa-bb"}}"#,
         ),
         "/api/tracks/11/playbackinfopostpaywall" => Canned::json(&playback(own)),
         "/media/whole.flac" => Canned::song(),
@@ -345,23 +345,23 @@ fn a_tidal_account_is_searched_and_its_albums_and_artists_opened_by_their_ids() 
     let fake = tidal_server();
     let tidal = fake.tidal();
 
-    let found = PlaysInPlace::search(&tidal, "meddle").expect("a search");
+    let found = PlaysInPlace::search(&tidal, "low tide").expect("a search");
     let album = PlaysInPlace::album(&tidal, &Id::new("7").expect("an id")).expect("an album");
     let artist = PlaysInPlace::artist(&tidal, &Id::new("3").expect("an id")).expect("an artist");
     let listed = PlaysInPlace::artists(&tidal).expect("nothing listed");
 
-    assert_eq!(found.artists[0].name, "Pink Floyd");
+    assert_eq!(found.artists[0].name, "Example Band");
     assert_eq!(found.albums[0].year, Some(1971));
-    assert_eq!(found.songs[0].title, "One of These Days");
+    assert_eq!(found.songs[0].title, "Paper Boats");
     assert_eq!(
         album
             .songs
             .iter()
             .map(|song| song.title.as_str())
             .collect::<Vec<_>>(),
-        ["One of These Days", "A Pillow of Winds (Remastered)"]
+        ["Paper Boats", "Small Mercies (Remastered)"]
     );
-    assert_eq!(album.album.name, "Meddle");
+    assert_eq!(album.album.name, "Low Tide");
     assert_eq!(album.songs[1].track, Some(2));
     assert_eq!(
         artist
@@ -369,7 +369,7 @@ fn a_tidal_account_is_searched_and_its_albums_and_artists_opened_by_their_ids() 
             .iter()
             .map(|album| album.name.as_str())
             .collect::<Vec<_>>(),
-        ["Meddle", "Animals"]
+        ["Low Tide", "Animals"]
     );
     assert!(listed.is_empty());
     assert!(
@@ -394,10 +394,10 @@ fn a_tidal_accounts_first_page_is_its_favourite_artists_albums_and_songs() {
             .iter()
             .map(|artist| artist.name.as_str())
             .collect::<Vec<_>>(),
-        ["Pink Floyd"]
+        ["Example Band"]
     );
-    assert_eq!(first.albums[0].name, "Meddle");
-    assert_eq!(first.songs[0].title, "A Pillow of Winds");
+    assert_eq!(first.albums[0].name, "Low Tide");
+    assert_eq!(first.songs[0].title, "Small Mercies");
     assert_eq!(
         first.songs[0].cover.as_ref().map(Id::as_str),
         Some("album:aa-bb")
@@ -432,7 +432,7 @@ fn a_tidal_accounts_favourite_mixes_are_on_its_first_page_and_a_mix_is_browsed_a
             .map(|mix| (mix.id.as_str(), mix.name.as_str(), mix.subtitle.as_deref()))
             .collect::<Vec<_>>(),
         [
-            ("0a1b2c", "My Mix 1", Some("Pink Floyd, Camel and more")),
+            ("0a1b2c", "My Mix 1", Some("Example Band, Camel and more")),
             ("3d4e5f", "Daily Discovery", None)
         ]
     );
@@ -444,7 +444,7 @@ fn a_tidal_accounts_favourite_mixes_are_on_its_first_page_and_a_mix_is_browsed_a
             .iter()
             .map(|song| song.title.as_str())
             .collect::<Vec<_>>(),
-        ["One of These Days", "A Pillow of Winds"]
+        ["Paper Boats", "Small Mercies"]
     );
     assert_eq!(
         tidal
@@ -603,18 +603,18 @@ fn hifi_server() -> Fake {
             }
             ("/search/", query) if query.starts_with("a=") => Canned::wrapped(SEARCHED),
             ("/search/", query) if query.starts_with("al=") => Canned::wrapped(
-                r#"{"albums":{"items":[{"id":7,"title":"Meddle","cover":"aa-bb"}]}}"#,
+                r#"{"albums":{"items":[{"id":7,"title":"Low Tide","cover":"aa-bb"}]}}"#,
             ),
             ("/album/", "id=7") => Canned::wrapped(
-                r#"{"id":7,"title":"Meddle","cover":"aa-bb","releaseDate":"1971-10-30","items":[
-                {"item":{"id":11,"title":"One of These Days","trackNumber":1},"type":"track"},
-                {"item":{"id":12,"title":"A Pillow of Winds","trackNumber":2},"type":"track"}]}"#,
+                r#"{"id":7,"title":"Low Tide","cover":"aa-bb","releaseDate":"1971-10-30","items":[
+                {"item":{"id":11,"title":"Paper Boats","trackNumber":1},"type":"track"},
+                {"item":{"id":12,"title":"Small Mercies","trackNumber":2},"type":"track"}]}"#,
             ),
             ("/artist/", "f=3") => {
                 Canned::json(&format!(r#"{{"albums":{ARTIST_ALBUMS},"tracks":[]}}"#))
             }
             ("/info/", "id=11") => Canned::wrapped(
-                r#"{"id":11,"title":"One of These Days","album":{"title":"Meddle","cover":"aa-bb"}}"#,
+                r#"{"id":11,"title":"Paper Boats","album":{"title":"Low Tide","cover":"aa-bb"}}"#,
             ),
             ("/track/", query) if query.starts_with("id=11") => Canned::wrapped(&playback(own)),
             ("/file/", "id=11") if asked.authorization.as_deref() == Some("Bearer hush") => {
@@ -632,7 +632,7 @@ fn a_hifi_api_server_is_searched_by_song_artist_and_album_and_each_is_opened() {
     let fake = hifi_server();
     let hifi = fake.hifi();
 
-    let found = PlaysInPlace::search(&hifi, "meddle").expect("a search");
+    let found = PlaysInPlace::search(&hifi, "low tide").expect("a search");
     let album = PlaysInPlace::album(&hifi, &Id::new("7").expect("an id")).expect("an album");
     let artist = PlaysInPlace::artist(&hifi, &Id::new("3").expect("an id")).expect("an artist");
     let cover = hifi
@@ -640,9 +640,9 @@ fn a_hifi_api_server_is_searched_by_song_artist_and_album_and_each_is_opened() {
         .expect("the song's cover");
 
     assert_eq!(found.songs.len(), 2);
-    assert_eq!(found.artists[0].name, "Pink Floyd");
+    assert_eq!(found.artists[0].name, "Example Band");
     assert_eq!(found.albums.len(), 2);
-    assert_eq!(album.album.name, "Meddle");
+    assert_eq!(album.album.name, "Low Tide");
     assert_eq!(album.album.year, Some(1971));
     assert_eq!(album.songs.len(), 2);
     assert_eq!(artist.albums.len(), 2);
@@ -680,7 +680,7 @@ fn a_keyed_server_streams_its_file_with_the_key_on_every_ask_and_browses_by_sear
     let keyed = HifiApi::at(&fake.url).with_secret("hush");
     let whole = song();
 
-    let found = PlaysInPlace::search(&keyed, "meddle").expect("a search");
+    let found = PlaysInPlace::search(&keyed, "low tide").expect("a search");
     let album = PlaysInPlace::album(&keyed, &Id::new("7").expect("an id")).map(|_| ());
     let mut streamed = PlaysInPlace::streamed(&keyed, &song_id()).expect("a stream");
 
@@ -784,7 +784,7 @@ fn the_hosted_hifi_service_is_browsed_through_tidals_web_api_and_streamed_throug
     let hosted = fake.hosted();
     let whole = song();
 
-    let found = PlaysInPlace::search(&hosted, "meddle").expect("a search");
+    let found = PlaysInPlace::search(&hosted, "low tide").expect("a search");
     let album = PlaysInPlace::album(&hosted, &Id::new("7").expect("an id")).expect("an album");
     let mut streamed = PlaysInPlace::streamed(&hosted, &song_id()).expect("a stream");
 
@@ -794,7 +794,7 @@ fn the_hosted_hifi_service_is_browsed_through_tidals_web_api_and_streamed_throug
 
     let tail = read_some(&mut streamed, 16);
 
-    assert_eq!(found.albums[0].name, "Meddle");
+    assert_eq!(found.albums[0].name, "Low Tide");
     assert_eq!(album.songs.len(), 2);
     assert_eq!(tail, whole[whole.len() - 16..]);
     assert!(

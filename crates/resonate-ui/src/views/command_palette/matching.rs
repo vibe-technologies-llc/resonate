@@ -308,11 +308,14 @@ mod tests {
     #[test]
     fn prefix_scopes_parse_cleanly_and_strip_leading_space() {
         assert_eq!(Scope::parse(""), (Scope::All, ""));
-        assert_eq!(Scope::parse("  echoes"), (Scope::All, "echoes"));
+        assert_eq!(Scope::parse("  slow water"), (Scope::All, "slow water"));
         assert_eq!(Scope::parse("> shuffle"), (Scope::Commands, "shuffle"));
         assert_eq!(Scope::parse(">shuffle"), (Scope::Commands, "shuffle"));
         assert_eq!(Scope::parse("? dither"), (Scope::Settings, "dither"));
-        assert_eq!(Scope::parse("@ pink floyd"), (Scope::Music, "pink floyd"));
+        assert_eq!(
+            Scope::parse("@ example band"),
+            (Scope::Music, "example band")
+        );
         assert_eq!(Scope::parse("# chill"), (Scope::Playlists, "chill"));
     }
 

@@ -1644,10 +1644,10 @@ mod tests {
 
     #[test]
     fn terms_and_words_stand_together() {
-        let search = Search::read("radiohead is:lossless added:<90d");
+        let search = Search::read("tideline is:lossless added:<90d");
 
-        assert_eq!(worded("radiohead is:lossless added:<90d").len(), 1);
-        assert_eq!(terms("radiohead is:lossless added:<90d").len(), 2);
+        assert_eq!(worded("tideline is:lossless added:<90d").len(), 1);
+        assert_eq!(terms("tideline is:lossless added:<90d").len(), 2);
         assert_eq!(
             search.reads(),
             vec!["is:lossless".to_owned(), "added:<3mo".to_owned()]

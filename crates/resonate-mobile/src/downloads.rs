@@ -1448,8 +1448,8 @@ mod tests {
 
     use super::*;
 
-    const ECHOES_ISRC: &str = "GBN9Y1100065";
-    const ECHOES_TRACK: &str = "154140652551016448";
+    const SLOW_WATER_ISRC: &str = "GBN9Y1100065";
+    const SLOW_WATER_TRACK: &str = "154140652551016448";
     const SEARCH_HELD_FOR: Duration = Duration::from_secs(20);
     const CANCEL_HEARD_WITHIN: Duration = Duration::from_secs(2);
 
@@ -1511,7 +1511,7 @@ mod tests {
 
     fn listing() -> Vec<u8> {
         format!(
-            r#"{{"tracks":[{{"id":"{ECHOES_TRACK}","trackId":"{ECHOES_TRACK}","title":"Echoes","artistNames":["Pink Floyd"],"duration":1412451,"isrc":"{ECHOES_ISRC}","playable":true}}]}}"#
+            r#"{{"tracks":[{{"id":"{SLOW_WATER_TRACK}","trackId":"{SLOW_WATER_TRACK}","title":"Slow Water","artistNames":["Example Band"],"duration":1412451,"isrc":"{SLOW_WATER_ISRC}","playable":true}}]}}"#
         )
         .into_bytes()
     }
@@ -1565,13 +1565,13 @@ mod tests {
         url
     }
 
-    fn echoes() -> SearchSong {
+    fn slow_water() -> SearchSong {
         SearchSong {
             recording: "8f2eb3e7-4ff2-4b14-8c0e-8b7c1e7c2b7d".to_owned(),
-            title: "Echoes".to_owned(),
-            artist: "Pink Floyd".to_owned(),
+            title: "Slow Water".to_owned(),
+            artist: "Example Band".to_owned(),
             duration_ms: Some(1_412_451),
-            isrcs: vec![ECHOES_ISRC.to_owned()],
+            isrcs: vec![SLOW_WATER_ISRC.to_owned()],
             ..SearchSong::default()
         }
     }
@@ -1608,7 +1608,7 @@ mod tests {
         const AUDIO: &[u8] = b"fLaC and the rest of a lossless song";
 
         let downloads = Downloads::default();
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
 
         let searched = found(
             &downloads,
@@ -1642,7 +1642,7 @@ mod tests {
     #[test]
     fn a_cancel_during_a_find_is_heard_at_once() {
         let downloads = Arc::new(Downloads::default());
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
         let server = monochrome_serving(b"fLaC", SEARCH_HELD_FOR);
 
         let finding = {
@@ -1675,7 +1675,7 @@ mod tests {
     #[test]
     fn a_cancel_before_the_find_is_kept() {
         let downloads = Downloads::default();
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
 
         downloads.cancel(job);
 
@@ -1705,7 +1705,7 @@ mod tests {
     fn a_find_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not() {
         let (downloads, metering) = stalled_while_metered();
         let downloads = Arc::new(downloads);
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
         let server = monochrome_serving(b"fLaC", Duration::ZERO);
 
         let finding = {
@@ -1737,7 +1737,7 @@ mod tests {
         const AUDIO: &[u8] = b"fLaC waited for a connection that is not metered";
 
         let downloads = Arc::new(Downloads::default());
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
         let server = monochrome_serving(AUDIO, Duration::ZERO);
 
         found(
@@ -1786,7 +1786,7 @@ mod tests {
     fn a_cancel_is_heard_by_a_download_waiting_for_the_connection() {
         let (downloads, _metering) = stalled_while_metered();
         let downloads = Arc::new(downloads);
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
 
         let finding = {
             let downloads = Arc::clone(&downloads);
@@ -1817,7 +1817,7 @@ mod tests {
 
         downloads.stall_by(Gate::new(Metering::new(), true));
 
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
         let server = monochrome_serving(b"fLaC", Duration::ZERO);
 
         let searched = found(
@@ -1833,9 +1833,9 @@ mod tests {
     #[test]
     fn a_refusal_reaches_the_listener_as_the_provider_and_its_status() {
         let downloads = Downloads::default();
-        let refused = downloads.begin(echoes());
-        let unreached = downloads.begin(echoes());
-        let unprovided = downloads.begin(echoes());
+        let refused = downloads.begin(slow_water());
+        let unreached = downloads.begin(slow_water());
+        let unprovided = downloads.begin(slow_water());
 
         let refusal = found(
             &downloads,
@@ -1903,8 +1903,8 @@ mod tests {
 
         downloads.hosted_services_allowed(false);
 
-        let hosted = downloads.begin(echoes());
-        let named = downloads.begin(echoes());
+        let hosted = downloads.begin(slow_water());
+        let named = downloads.begin(slow_water());
 
         let unasked = found(
             &downloads,
@@ -2008,7 +2008,7 @@ mod tests {
         const LET_GO_WITHIN: Duration = Duration::from_secs(5);
 
         let downloads = briefly_holding(HELD_FOR);
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
         let server = monochrome_serving(b"fLaC", Duration::ZERO);
 
         found(
@@ -2053,7 +2053,7 @@ mod tests {
         const HELD_FOR: Duration = Duration::from_millis(100);
 
         let downloads = briefly_holding(HELD_FOR);
-        let job = downloads.begin(echoes());
+        let job = downloads.begin(slow_water());
         let server = monochrome_serving(AUDIO, Duration::ZERO);
 
         found(
@@ -2083,8 +2083,8 @@ mod tests {
         const LONG: &[u8] = b"fLaC a much longer song than the other one";
 
         let downloads = Downloads::default();
-        let short = downloads.begin(echoes());
-        let long = downloads.begin(echoes());
+        let short = downloads.begin(slow_water());
+        let long = downloads.begin(slow_water());
 
         for (job, audio) in [(short, SHORT), (long, LONG)] {
             let server = monochrome_serving(audio, Duration::ZERO);

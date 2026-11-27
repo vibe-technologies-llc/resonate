@@ -128,11 +128,11 @@ mod tests {
 
     #[test]
     fn a_utf8_path_is_its_own_text() {
-        let path = Path::new("/music/Échoes/01 Écho.flac");
+        let path = Path::new("/music/Slów Water/01 Slów.flac");
 
         assert!(matches!(encoded(path), Cow::Borrowed(_)));
-        assert_eq!(encoded(path), "/music/Échoes/01 Écho.flac");
-        assert_eq!(decoded("/music/Échoes/01 Écho.flac"), path);
+        assert_eq!(encoded(path), "/music/Slów Water/01 Slów.flac");
+        assert_eq!(decoded("/music/Slów Water/01 Slów.flac"), path);
     }
 
     #[test]

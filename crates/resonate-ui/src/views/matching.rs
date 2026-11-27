@@ -391,9 +391,9 @@ mod tests {
     fn a_likely_recording_says_its_title_credit_length_and_the_release_it_is_on() {
         let recording = Recording {
             id: Mbid::new("b1a9c0de-1111-4222-8333-444455556666").expect("an mbid"),
-            title: "Echoes".to_owned(),
+            title: "Slow Water".to_owned(),
             credit: vec![Credit {
-                name: "Pink Floyd".to_owned(),
+                name: "Example Band".to_owned(),
                 joined_by: String::new(),
                 mbid: None,
             }],
@@ -401,7 +401,7 @@ mod tests {
             isrcs: Vec::new(),
             releases: vec![RecordingRelease {
                 id: Mbid::new("c2b8d1ef-2222-4333-8444-555566667777").expect("an mbid"),
-                title: "Meddle".to_owned(),
+                title: "Low Tide".to_owned(),
                 date: Some("1971-10-30".to_owned()),
                 disc: Some(1),
                 position: Some(6),
@@ -411,7 +411,7 @@ mod tests {
 
         assert_eq!(
             likely_line(&recording),
-            "Echoes · Pink Floyd · 23:31 · Meddle (1971)"
+            "Slow Water · Example Band · 23:31 · Low Tide (1971)"
         );
     }
 

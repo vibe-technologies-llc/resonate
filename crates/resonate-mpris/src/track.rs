@@ -693,7 +693,7 @@ mod tests {
     fn a_queued_track_nothing_has_decoded_still_carries_its_file() {
         let item = QueueItem {
             id: TrackId::new(3).expect("3 is non-zero"),
-            location: MediaLocation::local("/music/Pink Floyd/Echoes.flac"),
+            location: MediaLocation::local("/music/Example Band/Slow Water.flac"),
             span: None,
         };
         let fields = queued_metadata(&item, &PlayerState::default(), None, None, None, None);
@@ -704,7 +704,7 @@ mod tests {
                 .and_then(
                     |value| String::try_from(value.try_clone().expect("a cloneable value")).ok()
                 ),
-            Some("Echoes".to_owned())
+            Some("Slow Water".to_owned())
         );
         assert!(fields.contains_key("xesam:url"));
         assert!(fields.contains_key("mpris:trackid"));
@@ -723,7 +723,7 @@ mod tests {
     fn a_row_the_catalog_holds_carries_its_count_and_a_row_it_does_not_carries_neither_key() {
         let item = QueueItem {
             id: TrackId::new(3).expect("3 is non-zero"),
-            location: MediaLocation::local("/music/Pink Floyd/Echoes.flac"),
+            location: MediaLocation::local("/music/Example Band/Slow Water.flac"),
             span: None,
         };
         let state = PlayerState::default();

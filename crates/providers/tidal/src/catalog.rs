@@ -531,8 +531,8 @@ mod tests {
     #[test]
     fn a_v1_search_reads_each_kind_and_passes_over_what_does_not_read() {
         let found: V1Found = serde_json::from_str(
-            r#"{"artists":{"items":[{"id":3,"name":"Pink Floyd","picture":"aa-bb"},{"id":null}]},
-                "albums":{"items":[{"id":"7","title":"Meddle","releaseDate":"1971-10-30","numberOfTracks":6,"artist":{"name":"Pink Floyd"},"cover":"cc-dd"}]},
+            r#"{"artists":{"items":[{"id":3,"name":"Example Band","picture":"aa-bb"},{"id":null}]},
+                "albums":{"items":[{"id":"7","title":"Low Tide","releaseDate":"1971-10-30","numberOfTracks":6,"artist":{"name":"Example Band"},"cover":"cc-dd"}]},
                 "tracks":null}"#,
         )
         .expect("a search answer");

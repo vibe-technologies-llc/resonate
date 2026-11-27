@@ -20,28 +20,28 @@ use resonate_musicbrainz::{
     Answer, Asked, Error, Heard, KEPT_FRESH_FOR, Kept, KeptAnswer, Layer, Layered, Peers,
 };
 
-const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
-const MEDDLE: &str = "a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e";
+const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+const LOW_TIDE: &str = "a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e";
 const DESK: &str = "0123456789abcdef0123456789abcdef";
 
 fn mbid(text: &str) -> Mbid {
     Mbid::new(text).expect("a well-formed mbid")
 }
 
-fn echoes() -> Recording {
+fn slow_water() -> Recording {
     Recording {
-        id: mbid(ECHOES),
-        title: "Echoes".to_owned(),
+        id: mbid(SLOW_WATER),
+        title: "Slow Water".to_owned(),
         credit: vec![Credit {
-            name: "Pink Floyd".to_owned(),
+            name: "Example Band".to_owned(),
             joined_by: String::new(),
             mbid: None,
         }],
         length: Some(Duration::from_secs(1_403)),
         isrcs: vec![Isrc::new("GBN9Y7100006").expect("a code")],
         releases: vec![RecordingRelease {
-            id: mbid(MEDDLE),
-            title: "Meddle".to_owned(),
+            id: mbid(LOW_TIDE),
+            title: "Low Tide".to_owned(),
             date: Some("1971-10-30".to_owned()),
             disc: Some(1),
             position: Some(6),
@@ -65,30 +65,30 @@ fn scratch(name: &str) -> PathBuf {
 #[test]
 fn every_lookup_and_answer_reads_back_as_itself_and_a_cut_one_is_refused() {
     let asked = [
-        Asked::Recording(mbid(ECHOES)),
+        Asked::Recording(mbid(SLOW_WATER)),
         Asked::Isrc(Isrc::new("GBN9Y7100006").expect("a code")),
         Asked::FindRecording(RecordingAsked {
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            title: "Slow Water".to_owned(),
+            artist: Some("Example Band".to_owned()),
             artist_mbid: None,
-            release: Some("Meddle".to_owned()),
+            release: Some("Low Tide".to_owned()),
             length: Some(Duration::from_secs(1_403)),
             wording: Wording::Phrase,
         }),
         Asked::FindGroup(GroupAsked {
-            title: "Meddle".to_owned(),
+            title: "Low Tide".to_owned(),
             artist: None,
-            artist_mbid: Some(mbid(ECHOES)),
+            artist_mbid: Some(mbid(SLOW_WATER)),
             year: Some(1971),
             wording: Wording::Words,
         }),
         Asked::Barcode(Barcode::new("077774638320").expect("a barcode")),
         Asked::GroupsOf {
-            artist: mbid(ECHOES),
+            artist: mbid(SLOW_WATER),
             from: 1_000,
         },
     ];
-    let answer = Answer::Recording(Some(echoes()));
+    let answer = Answer::Recording(Some(slow_water()));
     let encoded = answer.encoded();
 
     for asked in asked {
@@ -106,34 +106,37 @@ fn a_search_is_kept_under_its_folded_words_and_a_miss_is_never_kept() {
     let asked = |title: &str| {
         Asked::FindRecording(RecordingAsked {
             title: title.to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            artist: Some("Example Band".to_owned()),
             artist_mbid: None,
             release: None,
             length: None,
             wording: Wording::Words,
         })
     };
-    let found = Answer::RecordingMatches(vec![RecordingMatch::from(echoes())]);
+    let found = Answer::RecordingMatches(vec![RecordingMatch::from(slow_water())]);
 
     let missed = kept
-        .keep(&asked("Echoes"), &Answer::RecordingMatches(Vec::new()))
+        .keep(&asked("Slow Water"), &Answer::RecordingMatches(Vec::new()))
         .expect("asked");
     let otherwise = kept
-        .keep(&Asked::Recording(mbid(ECHOES)), &found)
+        .keep(&Asked::Recording(mbid(SLOW_WATER)), &found)
         .expect("asked");
-    let held = kept.keep(&asked("Echoes"), &found).expect("kept");
+    let held = kept.keep(&asked("Slow Water"), &found).expect("kept");
 
     assert!(!missed);
     assert!(!otherwise);
     assert!(held);
-    assert_eq!(kept.answer(&asked("  ÉCHOES ")).expect("read"), Some(found));
+    assert_eq!(
+        kept.answer(&asked("  SLÓW WATER ")).expect("read"),
+        Some(found)
+    );
 }
 
-fn pressing_of_meddle() -> Release {
+fn pressing_of_low_tide() -> Release {
     Release {
-        id: mbid(MEDDLE),
+        id: mbid(LOW_TIDE),
         group: None,
-        title: "Meddle".to_owned(),
+        title: "Low Tide".to_owned(),
         credit: Vec::new(),
         date: Some("1971-10-30".to_owned()),
         country: None,
@@ -154,31 +157,32 @@ fn a_thinner_copy_held_inside_another_answer_never_answers_a_lookup_by_its_id() 
     let coded = Asked::Isrc(Isrc::new("GBN9Y7100006").expect("a code"));
     let pressed = Asked::ReleasesOfGroup(mbid(TIME));
 
-    kept.keep(&coded, &Answer::Recordings(vec![echoes()]))
+    kept.keep(&coded, &Answer::Recordings(vec![slow_water()]))
         .expect("kept");
-    kept.keep(&pressed, &Answer::Pressings(vec![pressing_of_meddle()]))
+    kept.keep(&pressed, &Answer::Pressings(vec![pressing_of_low_tide()]))
         .expect("kept");
 
     assert_eq!(
-        kept.answer(&Asked::Recording(mbid(ECHOES))).expect("read"),
+        kept.answer(&Asked::Recording(mbid(SLOW_WATER)))
+            .expect("read"),
         None
     );
     assert_eq!(
-        kept.answer(&Asked::Release(mbid(MEDDLE))).expect("read"),
+        kept.answer(&Asked::Release(mbid(LOW_TIDE))).expect("read"),
         None
     );
     assert_eq!(
         kept.answer(&coded).expect("read"),
-        Some(Answer::Recordings(vec![echoes()]))
+        Some(Answer::Recordings(vec![slow_water()]))
     );
 }
 
 #[test]
 fn a_kept_answer_older_than_a_month_is_not_served() {
     let kept = Kept::in_memory().expect("a kept store");
-    let asked = Asked::Recording(mbid(ECHOES));
+    let asked = Asked::Recording(mbid(SLOW_WATER));
 
-    kept.keep(&asked, &Answer::Recording(Some(echoes())))
+    kept.keep(&asked, &Answer::Recording(Some(slow_water())))
         .expect("kept");
 
     let later = resonate_musicbrainz_now() + KEPT_FRESH_FOR.as_secs() + 1;
@@ -193,9 +197,9 @@ const A_DAY: u64 = 24 * 60 * 60;
 fn an_answer_a_device_stamped_in_the_future_is_kept_as_of_now_and_ages_as_any_other() {
     let desk = Kept::in_memory().expect("a kept store");
     let phone = Kept::in_memory().expect("a kept store");
-    let asked = Asked::Recording(mbid(ECHOES));
+    let asked = Asked::Recording(mbid(SLOW_WATER));
 
-    desk.keep(&asked, &Answer::Recording(Some(echoes())))
+    desk.keep(&asked, &Answer::Recording(Some(slow_water())))
         .expect("kept");
 
     let ahead = KeptAnswer {
@@ -216,7 +220,7 @@ fn an_answer_a_device_stamped_in_the_future_is_kept_as_of_now_and_ages_as_any_ot
 fn an_answer_stamped_in_the_future_before_this_build_is_brought_back_to_now_as_the_store_opens() {
     let folder = scratch("ahead");
     let path = folder.join("kept.sqlite");
-    let (asked, answer) = recorded(ECHOES);
+    let (asked, answer) = recorded(SLOW_WATER);
 
     Kept::open(&path)
         .expect("laid out")
@@ -248,14 +252,14 @@ fn resonate_musicbrainz_now() -> u64 {
 fn answers_taken_from_a_device_are_marked_and_never_told_back_to_it() {
     let desk = Kept::in_memory().expect("a kept store");
     let phone = Kept::in_memory().expect("a kept store");
-    let asked = Asked::Recording(mbid(ECHOES));
+    let asked = Asked::Recording(mbid(SLOW_WATER));
 
-    desk.keep(&asked, &Answer::Recording(Some(echoes())))
+    desk.keep(&asked, &Answer::Recording(Some(slow_water())))
         .expect("kept");
 
     let told = desk.after(0, 512, "phone").expect("listed");
     let forged = KeptAnswer {
-        key: Asked::Recording(mbid(MEDDLE)).key(),
+        key: Asked::Recording(mbid(LOW_TIDE)).key(),
         ..told[0].clone()
     };
 
@@ -267,7 +271,7 @@ fn answers_taken_from_a_device_are_marked_and_never_told_back_to_it() {
     assert_eq!(phone.mark_of(DESK).expect("read"), told[0].seq);
     assert_eq!(
         phone.answer(&asked).expect("read"),
-        Some(Answer::Recording(Some(echoes())))
+        Some(Answer::Recording(Some(slow_water())))
     );
     assert!(phone.after(0, 512, DESK).expect("listed").is_empty());
     assert_eq!(phone.after(0, 512, "laptop").expect("listed").len(), 1);
@@ -282,7 +286,7 @@ fn recorded(id: &str) -> (Asked, Answer) {
         Asked::Recording(mbid(id)),
         Answer::Recording(Some(Recording {
             id: mbid(id),
-            ..echoes()
+            ..slow_water()
         })),
     )
 }
@@ -294,7 +298,7 @@ fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_i
     let path = folder.join("kept.sqlite");
     let desk = Kept::open(&path).expect("laid out");
 
-    for id in [ECHOES, TIME] {
+    for id in [SLOW_WATER, TIME] {
         let (asked, answer) = recorded(id);
 
         desk.keep(&asked, &answer).expect("kept");
@@ -336,9 +340,10 @@ fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_i
 #[test]
 fn a_device_holding_a_mark_past_every_number_here_is_told_what_is_kept_next() {
     let desk = Kept::in_memory().expect("a kept store");
-    let (echoes_asked, echoes_answer) = recorded(ECHOES);
+    let (slow_water_asked, slow_water_answer) = recorded(SLOW_WATER);
 
-    desk.keep(&echoes_asked, &echoes_answer).expect("kept");
+    desk.keep(&slow_water_asked, &slow_water_answer)
+        .expect("kept");
 
     let beyond = desk.after(u64::MAX, 512, "laptop").expect("listed");
     let unmoved = desk.last_seq().expect("read");
@@ -373,8 +378,8 @@ fn kept_answers_laid_out_by_a_later_build_are_refused_and_this_builds_open_again
         let kept = Kept::open(&path).expect("laid out");
 
         kept.keep(
-            &Asked::Recording(mbid(ECHOES)),
-            &Answer::Recording(Some(echoes())),
+            &Asked::Recording(mbid(SLOW_WATER)),
+            &Answer::Recording(Some(slow_water())),
         )
         .expect("kept");
     }
@@ -433,7 +438,7 @@ impl Reference for Online {
 
     fn recording(&self, _: &Mbid) -> resonate_library::Result<Option<Recording>> {
         self.asked.fetch_add(1, Ordering::Relaxed);
-        Ok(Some(echoes()))
+        Ok(Some(slow_water()))
     }
 
     fn recordings_of_isrc(&self, _: &Isrc) -> resonate_library::Result<Vec<Recording>> {
@@ -539,7 +544,7 @@ impl Peers for Desk {
     fn consult(&self, asked: &Asked) -> Option<Heard> {
         self.asked.fetch_add(1, Ordering::Relaxed);
         (self.holds && matches!(asked, Asked::Recording(_))).then(|| Heard {
-            answer: Answer::Recording(Some(echoes())),
+            answer: Answer::Recording(Some(slow_water())),
             device: DESK.to_owned(),
             at: self.kept_since,
         })
@@ -560,8 +565,8 @@ fn a_device_holding_the_answer_is_asked_before_the_network_and_what_either_answe
         .consulting(Some(Arc::clone(&desk) as Arc<dyn Peers>))
         .falling_back_on(Some(Arc::clone(&online) as Arc<dyn Reference>));
 
-    let first = layered.answered(&Asked::Recording(mbid(ECHOES)));
-    let again = layered.answered(&Asked::Recording(mbid(ECHOES)));
+    let first = layered.answered(&Asked::Recording(mbid(SLOW_WATER)));
+    let again = layered.answered(&Asked::Recording(mbid(SLOW_WATER)));
 
     assert_eq!(first.map(|(layer, _)| layer), Some(Layer::Peer));
     assert_eq!(again.map(|(layer, _)| layer), Some(Layer::Kept));
@@ -582,7 +587,7 @@ fn an_answer_consulted_from_a_device_keeps_its_age_and_the_device_and_is_never_t
     let layered = Layered::new()
         .keeping(Some(Arc::clone(&kept)))
         .consulting(Some(Arc::clone(&desk) as Arc<dyn Peers>));
-    let asked = Asked::Recording(mbid(ECHOES));
+    let asked = Asked::Recording(mbid(SLOW_WATER));
 
     let consulted = layered.answered(&asked);
     let told_back = kept.after(0, 512, DESK).expect("listed");
@@ -607,11 +612,11 @@ fn the_network_is_asked_only_where_nothing_nearer_answers_and_its_answer_is_kept
         .consulting(Some(Arc::clone(&desk) as Arc<dyn Peers>))
         .falling_back_on(Some(Arc::clone(&online) as Arc<dyn Reference>));
 
-    let first = layered.recording(&mbid(ECHOES)).expect("asked");
-    let again = layered.recording(&mbid(ECHOES)).expect("asked");
+    let first = layered.recording(&mbid(SLOW_WATER)).expect("asked");
+    let again = layered.recording(&mbid(SLOW_WATER)).expect("asked");
 
-    assert_eq!(first, Some(echoes()));
-    assert_eq!(again, Some(echoes()));
+    assert_eq!(first, Some(slow_water()));
+    assert_eq!(again, Some(slow_water()));
     assert_eq!(online.asked.load(Ordering::Relaxed), 1);
     assert_eq!(desk.asked.load(Ordering::Relaxed), 1);
 }

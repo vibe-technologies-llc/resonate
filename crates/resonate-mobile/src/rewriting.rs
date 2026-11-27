@@ -459,10 +459,13 @@ mod tests {
     fn a_stage_names_its_files_as_the_song_is_named_and_leaves_nothing_when_dropped() {
         let data = under("names");
 
-        let stage = Stage::made(&data, "Echoes.FLAC").expect("a stage");
+        let stage = Stage::made(&data, "Slow Water.FLAC").expect("a stage");
         let folder = stage.folder.clone();
 
-        assert_eq!(stage.working().file_name(), Some(OsStr::new("Echoes.FLAC")));
+        assert_eq!(
+            stage.working().file_name(),
+            Some(OsStr::new("Slow Water.FLAC"))
+        );
         assert_ne!(stage.working(), stage.original());
 
         drop(stage);

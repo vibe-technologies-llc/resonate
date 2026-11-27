@@ -115,16 +115,16 @@ mod tests {
     #[test]
     fn a_wikipedia_link_names_the_article_and_the_wiki_it_is_on() {
         assert_eq!(
-            page("https://en.wikipedia.org/wiki/Pink_Floyd"),
-            page_of("enwiki", "Pink Floyd")
+            page("https://en.wikipedia.org/wiki/Example_Band"),
+            page_of("enwiki", "Example Band")
         );
         assert_eq!(
             page("https://is.wikipedia.org/wiki/Bj%C3%B6rk#Early_life"),
             page_of("iswiki", "Björk")
         );
         assert_eq!(
-            page("https://en.m.wikipedia.org/wiki/Echoes_(song)"),
-            page_of("enwiki", "Echoes (song)")
+            page("https://en.m.wikipedia.org/wiki/Slow_Water_(song)"),
+            page_of("enwiki", "Slow Water (song)")
         );
         assert_eq!(
             page("https://zh-yue.wikipedia.org/wiki/Beyond"),

@@ -235,8 +235,8 @@ mod tests {
     #[test]
     fn a_numeric_id_and_a_number_spelt_as_text_are_read_and_an_odd_listing_passed_over() {
         let found: FoundDoc = serde_json::from_str(
-            r#"{"artist":[{"id":3,"name":"Pink Floyd","albumCount":"2"},{"id":null}],
-                "album":[{"id":"a1","title":"Meddle","year":1971}],
+            r#"{"artist":[{"id":3,"name":"Example Band","albumCount":"2"},{"id":null}],
+                "album":[{"id":"a1","title":"Low Tide","year":1971}],
                 "song":null}"#,
         )
         .expect("a search answer");
@@ -245,7 +245,7 @@ mod tests {
         assert_eq!(found.artists.len(), 1);
         assert_eq!(found.artists[0].id.as_str(), "3");
         assert_eq!(found.artists[0].albums, Some(2));
-        assert_eq!(found.albums[0].name, "Meddle");
+        assert_eq!(found.albums[0].name, "Low Tide");
         assert_eq!(found.albums[0].year, Some(1971));
         assert!(found.songs.is_empty());
     }

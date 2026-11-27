@@ -383,8 +383,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            Identity::named("Echoes").wordings(),
-            ["Echoes"],
+            Identity::named("Slow Water").wordings(),
+            ["Slow Water"],
             "a want with no artist is asked by its title alone"
         );
         assert!(Identity::named("  ").wordings().is_empty());
@@ -539,7 +539,7 @@ mod tests {
             }
             .may_be_listed()
         );
-        assert!(!Identity::named("Echoes").may_be_listed());
+        assert!(!Identity::named("Slow Water").may_be_listed());
     }
 
     #[test]

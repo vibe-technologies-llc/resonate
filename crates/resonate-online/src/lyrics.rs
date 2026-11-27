@@ -344,7 +344,9 @@ mod tests {
 
         assert_eq!(provider.source().as_str(), ONLINE_LYRICS);
 
-        let bare = Wanted::for_media(resonate_core::MediaLocation::local("/music/Echoes.flac"));
+        let bare = Wanted::for_media(resonate_core::MediaLocation::local(
+            "/music/Slow Water.flac",
+        ));
 
         assert!(provider.lyrics(&bare).expect("nothing was asked").is_none());
     }

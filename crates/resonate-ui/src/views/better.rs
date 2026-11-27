@@ -455,9 +455,9 @@ mod tests {
         Track {
             explicit: None,
             id: TrackId::new(1).expect("a valid id"),
-            location: MediaLocation::local("/music/Echoes.flac"),
-            title: "Echoes (2011 Remaster)".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            location: MediaLocation::local("/music/Slow Water.flac"),
+            title: "Slow Water (2011 Remaster)".to_owned(),
+            artist: Some("Example Band".to_owned()),
             artist_id: None,
             album_id: None,
             track_number: None,
@@ -495,8 +495,8 @@ mod tests {
 
     #[test]
     fn a_song_with_a_version_chosen_is_queued_as_that_version_wherever_it_is_played() {
-        let opus = rated(1, None, "Echoes");
-        let flac = rated(2, None, "Echoes");
+        let opus = rated(1, None, "Slow Water");
+        let flac = rated(2, None, "Slow Water");
         let other = rated(3, None, "Time");
         let row = |track: &Track| QueueItem {
             id: track.id,
@@ -530,30 +530,30 @@ mod tests {
         let services = ["TIDAL".to_owned(), "Subsonic".to_owned()];
 
         assert_eq!(
-            nothing_said(Sought::Better, Nothing::NoneOn, "Echoes", &services),
-            "No higher quality version of Echoes in your library or on TIDAL, Subsonic"
+            nothing_said(Sought::Better, Nothing::NoneOn, "Slow Water", &services),
+            "No higher quality version of Slow Water in your library or on TIDAL, Subsonic"
         );
         assert_eq!(
-            nothing_said(Sought::Better, Nothing::AlreadyLossless, "Echoes", &[]),
-            "Echoes is already lossless, and no copy you hold is better"
+            nothing_said(Sought::Better, Nothing::AlreadyLossless, "Slow Water", &[]),
+            "Slow Water is already lossless, and no copy you hold is better"
         );
         assert_eq!(
             nothing_said(
                 Sought::Rated(Rating::Clean),
                 Nothing::NowhereToAsk,
-                "Echoes",
+                "Slow Water",
                 &[]
             ),
-            "No Clean version of Echoes in your library, and no service is set up to ask"
+            "No Clean version of Slow Water in your library, and no service is set up to ask"
         );
         assert_eq!(
             nothing_said(
                 Sought::Rated(Rating::Explicit),
                 Nothing::NoneOn,
-                "Echoes",
+                "Slow Water",
                 &services[..1]
             ),
-            "No Explicit version of Echoes in your library or on TIDAL"
+            "No Explicit version of Slow Water in your library or on TIDAL"
         );
     }
 }

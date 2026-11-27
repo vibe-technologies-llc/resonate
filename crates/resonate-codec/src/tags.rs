@@ -2268,7 +2268,7 @@ mod tests {
     fn an_info_id_the_set_now_has_a_field_for_no_longer_stops_at_the_raw_listing() {
         let set = absorb_info(&[
             info("IENG", "Alan Parsons"),
-            info("IMUS", "Richard Wright"),
+            info("IMUS", "Sam Keeper"),
             info("IWRI", "Another Band"),
             info("IPRO", "Example Band"),
             info("ICOP", "(c) 1971 Harvest"),
@@ -2277,7 +2277,7 @@ mod tests {
         ]);
 
         assert_eq!(set.credits.engineer.as_deref(), Some("Alan Parsons"));
-        assert_eq!(set.credits.composer.as_deref(), Some("Richard Wright"));
+        assert_eq!(set.credits.composer.as_deref(), Some("Sam Keeper"));
         assert_eq!(set.credits.lyricist.as_deref(), Some("Another Band"));
         assert_eq!(set.credits.producer.as_deref(), Some("Example Band"));
         assert_eq!(set.copyright.as_deref(), Some("(c) 1971 Harvest"));
@@ -2317,7 +2317,7 @@ mod tests {
     fn a_credit_the_container_could_not_map_still_reaches_the_set_under_vorbis_naming() {
         let set = absorb(&[
             keyed("TRACKNUMBER", "2/12"),
-            keyed("COMPOSER", "Richard Wright"),
+            keyed("COMPOSER", "Sam Keeper"),
             keyed("CONDUCTOR", "Ron Goodwin"),
             keyed("LYRICIST", "Another Band"),
             keyed("PERFORMER", "Third Band"),
@@ -2326,7 +2326,7 @@ mod tests {
             keyed("PRODUCER", "Example Band"),
         ]);
 
-        assert_eq!(set.credits.composer.as_deref(), Some("Richard Wright"));
+        assert_eq!(set.credits.composer.as_deref(), Some("Sam Keeper"));
         assert_eq!(set.credits.conductor.as_deref(), Some("Ron Goodwin"));
         assert_eq!(set.credits.lyricist.as_deref(), Some("Another Band"));
         assert_eq!(set.credits.performer.as_deref(), Some("Third Band"));

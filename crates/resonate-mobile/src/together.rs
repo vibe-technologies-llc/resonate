@@ -952,15 +952,15 @@ mod tests {
     #[test]
     fn a_document_whose_uri_holds_an_escape_is_named_to_the_party_by_its_catalog_row() {
         let phone = crate::playlists::tests::player();
-        let granted = "content://com.android.externalstorage.documents/document/primary%3AMusic%2FEchoes.flac";
+        let granted = "content://com.android.externalstorage.documents/document/primary%3AMusic%2FSlow%20Water.flac";
 
         phone
             .catalog
             .upsert(crate::Track {
                 uri: granted.to_owned(),
-                name: "Echoes.flac".to_owned(),
-                title: "Echoes".to_owned(),
-                artist: "Pink Floyd".to_owned(),
+                name: "Slow Water.flac".to_owned(),
+                title: "Slow Water".to_owned(),
+                artist: "Example Band".to_owned(),
                 ..crate::Track::default()
             })
             .expect("a document");
@@ -968,8 +968,8 @@ mod tests {
         let queued = location(granted).expect("a location");
         let song = song_of(&phone.catalog, &phone.served, &queued, None).expect("a song named");
 
-        assert_eq!(song.recording.title, "Echoes");
-        assert_eq!(song.recording.artist, "Pink Floyd");
+        assert_eq!(song.recording.title, "Slow Water");
+        assert_eq!(song.recording.artist, "Example Band");
     }
 
     fn a_party_nowhere_reached() -> PartySettings {
@@ -1128,8 +1128,8 @@ mod tests {
 
     #[test]
     fn a_request_is_found_by_its_name_whatever_place_the_list_has_moved_it_to() {
-        let first = asked_by(1, 1, "Echoes");
-        let second = asked_by(2, 1, "Meddle");
+        let first = asked_by(1, 1, "Slow Water");
+        let second = asked_by(2, 1, "Low Tide");
 
         let mut list = vec![first.clone(), second.clone()];
         let named_first = first.id();

@@ -311,8 +311,8 @@ mod tests {
     #[test]
     fn a_file_uri_names_the_file_a_command_reads_and_a_path_is_taken_as_written() {
         assert_eq!(
-            local_path(Path::new("file:///music/Pink%20Floyd/Echoes.flac")),
-            Path::new("/music/Pink Floyd/Echoes.flac")
+            local_path(Path::new("file:///music/Example%20Band/Slow%20Water.flac")),
+            Path::new("/music/Example Band/Slow Water.flac")
         );
         assert_eq!(
             local_path(Path::new("FILE://localhost/music/a.flac")),
@@ -332,15 +332,15 @@ mod tests {
     fn a_uri_naming_frames_queues_that_cut_and_one_naming_no_span_queues_nothing() {
         let (uri, path, unreadable) = if cfg!(windows) {
             (
-                "file:///C:/music/Meddle.flac#frames=588-44100",
-                r"\\?\C:\music\Meddle.flac",
-                "file:///C:/music/Meddle.flac#frames=100-50",
+                "file:///C:/music/Low%20Tide.flac#frames=588-44100",
+                r"\\?\C:\music\Low Tide.flac",
+                "file:///C:/music/Low%20Tide.flac#frames=100-50",
             )
         } else {
             (
-                "file:///music/Meddle.flac#frames=588-44100",
-                "/music/Meddle.flac",
-                "file:///music/Meddle.flac#frames=100-50",
+                "file:///music/Low%20Tide.flac#frames=588-44100",
+                "/music/Low Tide.flac",
+                "file:///music/Low%20Tide.flac#frames=100-50",
             )
         };
         let queued = queue_items(&[OsString::from(uri)]);
@@ -520,13 +520,13 @@ mod tests {
     fn a_uri_a_file_manager_passes_names_the_file_it_points_at() {
         let (uri, path) = if cfg!(windows) {
             (
-                "file:///C:/music/Pink%20Floyd/Echoes.flac",
-                r"\\?\C:\music\Pink Floyd\Echoes.flac",
+                "file:///C:/music/Example%20Band/Slow%20Water.flac",
+                r"\\?\C:\music\Example Band\Slow Water.flac",
             )
         } else {
             (
-                "file:///music/Pink%20Floyd/Echoes.flac",
-                "/music/Pink Floyd/Echoes.flac",
+                "file:///music/Example%20Band/Slow%20Water.flac",
+                "/music/Example Band/Slow Water.flac",
             )
         };
 
@@ -538,16 +538,16 @@ mod tests {
         let paths = if cfg!(windows) {
             [
                 (
-                    r"C:\music\Pink Floyd\Echoes.flac",
-                    r"\\?\C:\music\Pink Floyd\Echoes.flac",
+                    r"C:\music\Example Band\Slow Water.flac",
+                    r"\\?\C:\music\Example Band\Slow Water.flac",
                 ),
                 (r"C:\music\a.flac", r"\\?\C:\music\a.flac"),
             ]
         } else {
             [
                 (
-                    "/music/Pink Floyd/Echoes.flac",
-                    "/music/Pink Floyd/Echoes.flac",
+                    "/music/Example Band/Slow Water.flac",
+                    "/music/Example Band/Slow Water.flac",
                 ),
                 ("/music/a:b.flac", "/music/a:b.flac"),
             ]

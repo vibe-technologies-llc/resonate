@@ -184,9 +184,9 @@ mod tests {
 
     #[test]
     fn a_field_nothing_answered_is_left_out_rather_than_written_as_null() {
-        let written = compact(json!({ "title": "Echoes", "artist": null, "plays": 0 }));
+        let written = compact(json!({ "title": "Slow Water", "artist": null, "plays": 0 }));
 
-        assert_eq!(written, json!({ "title": "Echoes", "plays": 0 }));
+        assert_eq!(written, json!({ "title": "Slow Water", "plays": 0 }));
     }
 
     #[test]

@@ -345,15 +345,15 @@ mod tests {
     #[test]
     fn a_missing_file_says_it_may_have_moved_and_a_damaged_one_says_so() {
         assert_eq!(
-            would_not_play(Cause::Unreadable, "Echoes"),
-            "Couldn't find “Echoes” — it may have been moved or deleted"
+            would_not_play(Cause::Unreadable, "Slow Water"),
+            "Couldn't find “Slow Water” — it may have been moved or deleted"
         );
         assert_eq!(
-            would_not_play(Cause::Damaged, "Echoes"),
-            "Couldn't play “Echoes” — the file looks damaged"
+            would_not_play(Cause::Damaged, "Slow Water"),
+            "Couldn't play “Slow Water” — the file looks damaged"
         );
         assert_eq!(
-            would_not_play(Cause::NoDevice, "Echoes"),
+            would_not_play(Cause::NoDevice, "Slow Water"),
             "No speakers or headphones to play through"
         );
     }

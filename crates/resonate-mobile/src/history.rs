@@ -470,8 +470,10 @@ pub(crate) mod tests {
     use super::*;
     use crate::{Track, playlists::tests::player};
 
-    const SONGS: [(&str, &str, &str); 2] =
-        [("Echoes", "Pink Floyd", "Meddle"), ("Say", "Low", "Words")];
+    const SONGS: [(&str, &str, &str); 2] = [
+        ("Slow Water", "Example Band", "Low Tide"),
+        ("Say", "Low", "Words"),
+    ];
 
     const MOMENTS: [i64; 3] = [1_700_000_000, 1_700_100_000, 1_700_200_000];
 
@@ -565,12 +567,12 @@ pub(crate) mod tests {
     fn a_history_exported_from_one_phone_lands_on_another_once_and_a_pass_stays_behind() {
         let from = player();
         let to = player();
-        let [echoes, say] = songs_held(&from);
-        let [held_echoes, held_say] = songs_held(&to);
+        let [slow_water, say] = songs_held(&from);
+        let [held_slow_water, held_say] = songs_held(&to);
 
-        heard_here(&from, echoes, MOMENTS[0], 200_000);
+        heard_here(&from, slow_water, MOMENTS[0], 200_000);
         heard_here(&from, say, MOMENTS[1], 100_000);
-        heard_here(&from, echoes, MOMENTS[2], 30_000);
+        heard_here(&from, slow_water, MOMENTS[2], 30_000);
         passed_over(&from, MOMENTS[2] + 60);
         listened(
             &from,
@@ -592,7 +594,7 @@ pub(crate) mod tests {
         assert_eq!(written, 4);
         assert_eq!(text.lines().count(), 4);
         assert!(text.contains("\"origin_url\":\"subsonic://server/song/7\""));
-        assert!(text.contains("\"origin_url\":\"content://test/Echoes.flac\""));
+        assert!(text.contains("\"origin_url\":\"content://test/Slow Water.flac\""));
         assert_eq!(
             first,
             HistoryBroughtIn {
@@ -612,9 +614,9 @@ pub(crate) mod tests {
         assert_eq!(
             listens(&to),
             [
-                (Some(held_echoes), MOMENTS[0], 240_000, true, true),
+                (Some(held_slow_water), MOMENTS[0], 240_000, true, true),
                 (Some(held_say), MOMENTS[1], 240_000, true, true),
-                (Some(held_echoes), MOMENTS[2], 240_000, true, true),
+                (Some(held_slow_water), MOMENTS[2], 240_000, true, true),
             ]
         );
     }
@@ -652,11 +654,11 @@ pub(crate) mod tests {
             catalog: Arc::new(Catalog::open(&folder.join("catalog.sqlite")).expect("a catalog")),
             ..player()
         };
-        let [echoes, say] = songs_held(&phone);
+        let [slow_water, say] = songs_held(&phone);
 
-        heard_here(&phone, echoes, MOMENTS[0], 200_000);
+        heard_here(&phone, slow_water, MOMENTS[0], 200_000);
         heard_here(&phone, say, MOMENTS[1], 100_000);
-        heard_here(&phone, echoes, MOMENTS[2], 30_000);
+        heard_here(&phone, slow_water, MOMENTS[2], 30_000);
         listened(
             &phone,
             "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, ?2, 5000, 0)",
@@ -669,11 +671,11 @@ pub(crate) mod tests {
         );
 
         let kept = PhoneListens(&phone.catalog);
-        let echoes_at = "content://test/Echoes.flac".to_owned();
+        let slow_water_at = "content://test/Slow Water.flac".to_owned();
         let at_its_start = vec![
-            (moment(MOMENTS[0]), echoes_at.clone()),
+            (moment(MOMENTS[0]), slow_water_at.clone()),
             (moment(MOMENTS[1]), "content://test/Say.flac".to_owned()),
-            (moment(MOMENTS[2]), echoes_at),
+            (moment(MOMENTS[2]), slow_water_at),
             (
                 moment(MOMENTS[2] + 600),
                 "subsonic://server/song/7".to_owned(),
@@ -990,7 +992,7 @@ pub(crate) mod tests {
     fn lastfm_scrobbles_land_on_the_songs_held_once_and_one_scrobbled_from_here_is_not_counted_again()
      {
         let phone = player();
-        let [echoes, say] = songs_held(&phone);
+        let [slow_water, say] = songs_held(&phone);
 
         heard_here(&phone, say, MOMENTS[1] + 1, 100_000);
 
@@ -998,7 +1000,7 @@ pub(crate) mod tests {
             pages: vec![
                 HeardPage {
                     heard: vec![
-                        scrobbled("Echoes", "Pink Floyd", MOMENTS[0], None),
+                        scrobbled("Slow Water", "Example Band", MOMENTS[0], None),
                         scrobbled("Say", "Low", MOMENTS[1], None),
                     ],
                     next: Some(2),
@@ -1045,7 +1047,7 @@ pub(crate) mod tests {
         assert_eq!(
             listens(&phone),
             [
-                (Some(echoes), MOMENTS[0], 240_000, true, true),
+                (Some(slow_water), MOMENTS[0], 240_000, true, true),
                 (Some(say), MOMENTS[1] + 1, 100_000, true, false),
             ]
         );

@@ -717,7 +717,7 @@ mod tests {
         );
 
         assert!(matches!(
-            tidal.find(&Identity::named("Echoes")),
+            tidal.find(&Identity::named("Slow Water")),
             Ok(Obtained::Nothing)
         ));
     }

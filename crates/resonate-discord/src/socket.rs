@@ -461,8 +461,8 @@ mod tests {
             ..Presence::OFF
         };
         let playing = Playing {
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            title: "Slow Water".to_owned(),
+            artist: Some("Example Band".to_owned()),
             album: None,
             cover: None,
             position: Duration::ZERO,
@@ -497,8 +497,8 @@ mod tests {
         assert_eq!(set["cmd"], "SET_ACTIVITY");
         assert_eq!(set["args"]["pid"], process::id());
         assert_eq!(set["args"]["activity"]["type"], 2);
-        assert_eq!(set["args"]["activity"]["details"], "Echoes");
-        assert_eq!(set["args"]["activity"]["state"], "Pink Floyd");
+        assert_eq!(set["args"]["activity"]["details"], "Slow Water");
+        assert_eq!(set["args"]["activity"]["state"], "Example Band");
         assert!(set["args"]["activity"]["timestamps"]["start"].as_u64() > Some(0));
         assert_eq!(pong.opcode, Opcode::Pong);
         assert_eq!(body(&pong), json!({ "beat": 1 }));

@@ -325,11 +325,11 @@ mod tests {
         }
     }
 
-    fn echoes() -> SearchSong {
+    fn slow_water() -> SearchSong {
         SearchSong {
             recording: "8f2eb3e7-4ff2-4b14-8c0e-8b7c1e7c2b7d".to_owned(),
-            title: "Echoes".to_owned(),
-            artist: "Pink Floyd".to_owned(),
+            title: "Slow Water".to_owned(),
+            artist: "Example Band".to_owned(),
             ..SearchSong::default()
         }
     }
@@ -343,9 +343,9 @@ mod tests {
 
     fn partial_of(partials: &Partials, from: u64, chunk: &[u8]) -> Partial {
         let partial = partials
-            .claim(&echoes(), TAKEN_FROM)
+            .claim(&slow_water(), TAKEN_FROM)
             .expect("a claimed partial")
-            .begun(&echoes(), TAKEN_FROM, from, Some(100), tagged("\"v1\""))
+            .begun(&slow_water(), TAKEN_FROM, from, Some(100), tagged("\"v1\""))
             .expect("a begun partial");
 
         partial.append(chunk).expect("written");
@@ -432,11 +432,11 @@ mod tests {
     fn a_partial_whose_note_names_a_validator_of_no_kind_that_can_be_told_is_begun_again() {
         let scratch = Scratch::new("first-shape");
         let partials = Partials::under(&scratch.0);
-        let (data, notes) = partials.paths(&echoes());
+        let (data, notes) = partials.paths(&slow_water());
         let noted = |validator: &str| {
             [
                 NOTES_OF_ONE_VALIDATOR,
-                &wanted_key(&echoes()),
+                &wanted_key(&slow_water()),
                 TAKEN_FROM,
                 "100",
                 validator,
@@ -451,14 +451,14 @@ mod tests {
         fs::write(&notes, noted("\"v1\"")).expect("a note");
 
         let told = partials
-            .claim(&echoes(), TAKEN_FROM)
+            .claim(&slow_water(), TAKEN_FROM)
             .expect("a claim")
             .held();
 
         fs::write(&notes, noted("abc123")).expect("a note");
 
         let untold = partials
-            .claim(&echoes(), TAKEN_FROM)
+            .claim(&slow_water(), TAKEN_FROM)
             .expect("a claim")
             .held();
 
@@ -478,7 +478,7 @@ mod tests {
         let scratch = Scratch::new("fresh");
         let partials = Partials::under(&scratch.0);
 
-        let claimed = partials.claim(&echoes(), TAKEN_FROM).expect("a claim");
+        let claimed = partials.claim(&slow_water(), TAKEN_FROM).expect("a claim");
 
         assert_eq!(claimed.held(), None);
     }
@@ -490,13 +490,13 @@ mod tests {
 
         drop(partial_of(&partials, 0, b"abcde"));
 
-        let same = partials.claim(&echoes(), TAKEN_FROM).expect("a claim");
+        let same = partials.claim(&slow_water(), TAKEN_FROM).expect("a claim");
         let held = same.held();
 
         drop(same);
 
         let other = partials
-            .claim(&echoes(), "monochrome:track/43")
+            .claim(&slow_water(), "monochrome:track/43")
             .expect("a claim");
 
         assert_eq!(
@@ -516,13 +516,13 @@ mod tests {
         let partials = Partials::under(&scratch.0);
         let writing = partial_of(&partials, 0, b"abc");
 
-        let second = partials.claim(&echoes(), TAKEN_FROM);
+        let second = partials.claim(&slow_water(), TAKEN_FROM);
 
         assert!(second.is_none());
 
         drop(writing);
 
-        assert!(partials.claim(&echoes(), TAKEN_FROM).is_some());
+        assert!(partials.claim(&slow_water(), TAKEN_FROM).is_some());
     }
 
     #[test]
@@ -533,9 +533,9 @@ mod tests {
         drop(partial_of(&partials, 0, b"abcdef"));
 
         let resumed = partials
-            .claim(&echoes(), TAKEN_FROM)
+            .claim(&slow_water(), TAKEN_FROM)
             .expect("a claim")
-            .begun(&echoes(), TAKEN_FROM, 6, Some(9), tagged("\"v1\""))
+            .begun(&slow_water(), TAKEN_FROM, 6, Some(9), tagged("\"v1\""))
             .expect("resumed");
 
         resumed.append(b"ghi").expect("written");
@@ -561,9 +561,9 @@ mod tests {
         drop(partial_of(&partials, 0, b"abcdef"));
 
         let restarted = partials
-            .claim(&echoes(), TAKEN_FROM)
+            .claim(&slow_water(), TAKEN_FROM)
             .expect("a claim")
-            .begun(&echoes(), TAKEN_FROM, 0, Some(3), tagged("\"v2\""))
+            .begun(&slow_water(), TAKEN_FROM, 0, Some(3), tagged("\"v2\""))
             .expect("restarted");
 
         restarted.append(b"xyz").expect("written");
@@ -588,9 +588,15 @@ mod tests {
         drop(partial_of(&partials, 0, b"abc"));
 
         let refused = partials
-            .claim(&echoes(), TAKEN_FROM)
+            .claim(&slow_water(), TAKEN_FROM)
             .expect("a claim")
-            .begun(&echoes(), TAKEN_FROM, 9, Some(20), Validators::default())
+            .begun(
+                &slow_water(),
+                TAKEN_FROM,
+                9,
+                Some(20),
+                Validators::default(),
+            )
             .map(drop);
 
         assert_eq!(
@@ -639,7 +645,7 @@ mod tests {
     fn a_note_whose_partial_is_gone_is_swept_with_no_age_to_wait_for() {
         let scratch = Scratch::new("orphan");
         let partials = Partials::under(&scratch.0);
-        let (data, notes) = partials.paths(&echoes());
+        let (data, notes) = partials.paths(&slow_water());
 
         fs::create_dir_all(&partials.folder).expect("a folder");
         fs::write(&notes, "left").expect("a note");

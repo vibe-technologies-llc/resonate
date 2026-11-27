@@ -25,7 +25,7 @@ const PORTALS: [&str; 3] = [
 ];
 const PATIENCE: Duration = Duration::from_secs(20);
 const POLL_EVERY: Duration = Duration::from_millis(100);
-const SONG: &str = "echoes.flac";
+const SONG: &str = "slow-water.flac";
 const TRASH_MODE_THE_PORTAL_REFUSES: u32 = 0o755;
 
 const A_BUS_WITH_NOTHING_TO_ACTIVATE: &str = r#"<!DOCTYPE busconfig PUBLIC

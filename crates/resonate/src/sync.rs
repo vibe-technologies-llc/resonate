@@ -2995,7 +2995,7 @@ mod tests {
 
         use crate::fixtures::{ALBUM, ARTIST, TITLE, tagged_wave};
 
-        let (folder, there, locations) = kept_songs(&["San Tropez (2011 Remaster)"]);
+        let (folder, there, locations) = kept_songs(&["The Lighthouse (2011 Remaster)"]);
 
         there
             .start_playlist("Mix", &[Cut::whole(locations[0].clone())])
@@ -3029,7 +3029,7 @@ mod tests {
                 &HeldTags::default(),
                 "wav",
                 &mut Cursor::new(tagged_wave(&[
-                    (TITLE, "San Tropez"),
+                    (TITLE, "The Lighthouse"),
                     (ARTIST, "Artist"),
                     (ALBUM, "Album"),
                 ])),
@@ -3084,7 +3084,7 @@ mod tests {
         assert_eq!(receiver.revision(), written_at);
         assert_eq!(
             named(&receiver.playlists().expect("the playlists")[0].entries),
-            [Some("San Tropez")]
+            [Some("The Lighthouse")]
         );
         assert_eq!(
             receiver
@@ -3093,7 +3093,7 @@ mod tests {
                 .iter()
                 .map(|recording| recording.title.as_str())
                 .collect::<Vec<_>>(),
-            ["San Tropez"]
+            ["The Lighthouse"]
         );
         assert!(
             !echoed

@@ -29,20 +29,20 @@ fn a_suggestion_is_read_against_the_catalog_as_the_scan_left_it() -> Result<()> 
 
     scan(&library, &options(&tree))?;
 
-    assert_eq!(library.did_you_mean("metalica")?, None);
+    assert_eq!(library.did_you_mean("tidline")?, None);
 
     tree.write(
         "ride.wav",
         &Wav::new()
-            .text(TITLE, "Ride the Lightning")
-            .text(ARTIST, "Metallica")
+            .text(TITLE, "Paper Boats")
+            .text(ARTIST, "Tideline")
             .build(),
     );
     scan(&library, &options(&tree))?;
 
     assert_eq!(
-        library.did_you_mean("metalica")?,
-        Some("Metallica".to_owned()),
+        library.did_you_mean("tidline")?,
+        Some("Tideline".to_owned()),
         "a suggestion was read against the catalog as it stood before the scan"
     );
     Ok(())

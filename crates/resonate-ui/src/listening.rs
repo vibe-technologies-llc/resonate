@@ -627,12 +627,12 @@ mod tests {
 
     #[test]
     fn following_tells_a_new_song_and_keeps_quiet_about_the_same_one_or_a_miss() {
-        let standing = heard("Echoes", "Pink Floyd");
+        let standing = heard("Slow Water", "Example Band");
 
         assert!(matches!(
             then(
                 Purpose::Following,
-                Answer::Named(heard("ECHOES", "pink floyd")),
+                Answer::Named(heard("SLOW WATER", "example band")),
                 Some(&standing)
             ),
             Then::KeepWhatWasNamed
@@ -640,7 +640,7 @@ mod tests {
         assert!(matches!(
             then(
                 Purpose::Following,
-                Answer::Named(heard("Dogs", "Pink Floyd")),
+                Answer::Named(heard("Dogs", "Example Band")),
                 Some(&standing)
             ),
             Then::Tell(told) if told.title == "Dogs"
@@ -660,7 +660,7 @@ mod tests {
         assert!(matches!(
             then(
                 Purpose::Following,
-                Answer::Named(heard("Dogs", "Pink Floyd")),
+                Answer::Named(heard("Dogs", "Example Band")),
                 None
             ),
             Then::Tell(_)

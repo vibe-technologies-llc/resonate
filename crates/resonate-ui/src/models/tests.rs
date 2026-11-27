@@ -111,7 +111,7 @@ impl Keeping {
     fn a_lossy_song_replaced_from_the_service(&mut self) -> bool {
         let Some(opus) =
             self.music
-                .encoded_titled("A.opus", &["-c:a", "libopus", "-b:a", "96k"], "Echoes")
+                .encoded_titled("A.opus", &["-c:a", "libopus", "-b:a", "96k"], "Slow Water")
         else {
             return false;
         };
@@ -134,7 +134,7 @@ impl Keeping {
             .expect("the lossy songs");
 
         rows[0].looked = Some(Looked::Offered {
-            at: MediaLocation::new(by.clone(), "track/Echoes"),
+            at: MediaLocation::new(by.clone(), "track/Slow Water"),
             by,
         });
 
@@ -424,7 +424,7 @@ fn a_keep_replacing_a_lossy_song_is_taken_up_at_open_and_kept_on_with_youtube_mu
         still_keeping,
         "a pass begun with YouTube Music off was stopped for it being off"
     );
-    assert_eq!(keeping.asked.lock().clone(), ["Echoes"]);
+    assert_eq!(keeping.asked.lock().clone(), ["Slow Water"]);
 }
 
 #[test]
@@ -489,7 +489,7 @@ fn a_pass_says_what_it_kept_and_one_stopped_by_its_service_says_so() {
             stopped_by: SourceId::new(KEPT_FROM).ok(),
             stopped: Some(KeepStopped {
                 why: WhyAway::NotAnswering,
-                song: "Creep".to_owned(),
+                song: "Lantern".to_owned(),
             }),
             ..landed
         }),
@@ -508,10 +508,10 @@ fn a_pass_stopped_names_the_song_and_says_what_to_do() {
     .map(|(why, words)| {
         let told = stopped_told(&KeepStopped {
             why,
-            song: "Creep".to_owned(),
+            song: "Lantern".to_owned(),
         });
 
-        assert!(told.contains("Creep"), "{told}");
+        assert!(told.contains("Lantern"), "{told}");
         assert!(told.contains(words), "{told}");
         told
     });
@@ -1483,14 +1483,14 @@ fn the_favourites_heading_leaves_out_what_there_is_none_of() {
 #[test]
 fn what_a_share_put_on_the_clipboard_is_named_by_its_artist_and_title() {
     let shared = Shared {
-        title: "Echoes".to_owned(),
-        artist: Some("Pink Floyd".to_owned()),
+        title: "Slow Water".to_owned(),
+        artist: Some("Example Band".to_owned()),
         ..Shared::default()
     };
 
     assert_eq!(
         on_the_clipboard(&shared),
-        "Pink Floyd — Echoes is on the clipboard"
+        "Example Band — Slow Water is on the clipboard"
     );
 }
 
@@ -1512,13 +1512,13 @@ fn linked(title: &str, recording: &str) -> Shared {
     }
 }
 
-const ECHOES: &str = "6bcb2fc4-38b2-4b2c-b8ee-5d7dbf9a4a1b";
+const SLOW_WATER: &str = "6bcb2fc4-38b2-4b2c-b8ee-5d7dbf9a4a1b";
 const MONEY: &str = "0d1d8d7e-72f6-4e72-9b0c-3a3b6c2f0e1a";
 
 #[test]
 fn several_shared_links_are_copied_one_to_a_line_and_counted() {
     let sharing = sharing_told(vec![
-        Ok(Some(linked("Echoes", ECHOES))),
+        Ok(Some(linked("Slow Water", SLOW_WATER))),
         Ok(Some(linked("Money", MONEY))),
     ]);
 
@@ -1535,7 +1535,7 @@ fn several_shared_links_are_copied_one_to_a_line_and_counted() {
 #[test]
 fn a_choice_where_one_track_has_no_link_says_how_many_were_copied() {
     let sharing = sharing_told(vec![
-        Ok(Some(linked("Echoes", ECHOES))),
+        Ok(Some(linked("Slow Water", SLOW_WATER))),
         Ok(None),
         Ok(Some(Shared::default())),
     ]);

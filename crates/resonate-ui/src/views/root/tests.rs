@@ -1055,8 +1055,8 @@ mod driven {
         let joining = Arc::new(party_offer::joined::Joining::default());
 
         *joining.at.lock() = Some(hosting_with_requests(vec![
-            requested(1, "Echoes"),
-            requested(2, "Meddle"),
+            requested(1, "Slow Water"),
+            requested(2, "Low Tide"),
             requested(3, "Time"),
         ]));
         together_over(&mut driven, joining.clone());
@@ -1420,7 +1420,7 @@ mod driven {
 
         driven.cx.update(|_, cx| {
             model.update(cx, |model, cx| {
-                model.create_playlist("Meddle".to_owned(), Vec::new(), cx);
+                model.create_playlist("Low Tide".to_owned(), Vec::new(), cx);
                 model.create_playlist("Animals".to_owned(), Vec::new(), cx);
             });
         });
@@ -1585,8 +1585,8 @@ mod driven {
         assert_eq!(reach(&mut driven), None);
     }
 
-    fn encoded_as_echoes(folder: &Folder, name: &str, codec: &[&str]) -> Option<PathBuf> {
-        folder.encoded_titled(name, codec, "Echoes")
+    fn encoded_as_slow_water(folder: &Folder, name: &str, codec: &[&str]) -> Option<PathBuf> {
+        folder.encoded_titled(name, codec, "Slow Water")
     }
 
     fn playlist_row(playlist: resonate_core::PlaylistId) -> &'static str {
@@ -1630,8 +1630,8 @@ mod driven {
     fn a_lossy_song_plays_from_its_lossless_copy_once_kept_beside_it(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (Some(opus), Some(flac)) = (
-            encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"]),
-            encoded_as_echoes(&folder, "A.flac", &["-c:a", "flac"]),
+            encoded_as_slow_water(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"]),
+            encoded_as_slow_water(&folder, "A.flac", &["-c:a", "flac"]),
         ) else {
             return;
         };
@@ -1690,8 +1690,8 @@ mod driven {
         assert_eq!(queued_at(&mut driven), [lossless]);
     }
 
-    const ECHOES_RECORDING: &str = "b1a9c0de-1111-4222-8333-444455556666";
-    const MEDDLE_RELEASE: &str = "1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f";
+    const SLOW_WATER_RECORDING: &str = "b1a9c0de-1111-4222-8333-444455556666";
+    const LOW_TIDE_RELEASE: &str = "1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f";
 
     struct Unanswering(resonate_core::SourceId);
 
@@ -1757,9 +1757,9 @@ mod driven {
             .land_release(
                 album,
                 &resonate_library::Release {
-                    id: mbid(MEDDLE_RELEASE),
+                    id: mbid(LOW_TIDE_RELEASE),
                     group: None,
-                    title: "Meddle".to_owned(),
+                    title: "Low Tide".to_owned(),
                     credit: Vec::new(),
                     date: None,
                     country: None,
@@ -1777,9 +1777,9 @@ mod driven {
                         tracks: vec![resonate_library::ReleaseTrack {
                             position: 1,
                             number: "1".to_owned(),
-                            title: "Echoes".to_owned(),
+                            title: "Slow Water".to_owned(),
                             artist: None,
-                            recording: Some(mbid(ECHOES_RECORDING)),
+                            recording: Some(mbid(SLOW_WATER_RECORDING)),
                             track: None,
                             length: Some(Duration::from_secs(2)),
                             isrcs: Vec::new(),
@@ -1797,7 +1797,8 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        let Some(opus) =
+            encoded_as_slow_water(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
         else {
             return;
         };
@@ -1869,7 +1870,7 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let long = "Echoes ".repeat(40);
+        let long = "Slow Water ".repeat(40);
 
         let Some(opus) =
             folder.encoded_titled("A.opus", &["-c:a", "libopus", "-b:a", "96k"], long.trim())
@@ -1915,7 +1916,8 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        let Some(opus) =
+            encoded_as_slow_water(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
         else {
             return;
         };
@@ -1959,7 +1961,8 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        let Some(opus) =
+            encoded_as_slow_water(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
         else {
             return;
         };
@@ -2039,7 +2042,8 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
-        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        let Some(opus) =
+            encoded_as_slow_water(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
         else {
             return;
         };
@@ -2173,8 +2177,8 @@ mod driven {
     ) {
         let folder = Folder::new();
         let (Some(opus), Some(flac)) = (
-            encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"]),
-            encoded_as_echoes(&folder, "A.flac", &["-c:a", "flac"]),
+            encoded_as_slow_water(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"]),
+            encoded_as_slow_water(&folder, "A.flac", &["-c:a", "flac"]),
         ) else {
             return;
         };
@@ -2223,7 +2227,7 @@ mod driven {
             )
         });
 
-        assert_eq!(listed, ["Echoes"]);
+        assert_eq!(listed, ["Slow Water"]);
         assert!(ticked, "the song that can be replaced starts ticked");
 
         driven.cx.simulate_keystrokes("escape");

@@ -2057,7 +2057,7 @@ fn the_credits_a_matroska_carries_reach_the_set_rather_than_stopping_at_the_raw_
         &["-c:a", "libvorbis"],
         &[
             "title=Slow Water",
-            "COMPOSER=Richard Wright",
+            "COMPOSER=Sam Keeper",
             "CONDUCTOR=Ron Goodwin",
             "LYRICIST=Another Band",
             "PRODUCER=Example Band",
@@ -2076,7 +2076,7 @@ fn the_credits_a_matroska_carries_reach_the_set_rather_than_stopping_at_the_raw_
         probe(&Sources::local(), &MediaLocation::local(&path)).expect("a well-formed file probes");
     let tags = &probed.tags;
 
-    assert_eq!(tags.credits.composer.as_deref(), Some("Richard Wright"));
+    assert_eq!(tags.credits.composer.as_deref(), Some("Sam Keeper"));
     assert_eq!(tags.credits.conductor.as_deref(), Some("Ron Goodwin"));
     assert_eq!(tags.credits.lyricist.as_deref(), Some("Another Band"));
     assert_eq!(tags.credits.producer.as_deref(), Some("Example Band"));
@@ -5809,14 +5809,14 @@ fn a_matroska_file_is_tagged_and_every_audio_packet_stays_as_it_was() {
 
     tags.write(
         &location,
-        only_edits(&title_and_artist("Creep", "Radiohead")),
+        only_edits(&title_and_artist("Lantern", "Tideline")),
     )
     .expect("a written Matroska file");
 
     let read = tags_of(&location);
 
-    assert_eq!(read.title.as_deref(), Some("Creep"));
-    assert_eq!(read.artist.as_deref(), Some("Radiohead"));
+    assert_eq!(read.title.as_deref(), Some("Lantern"));
+    assert_eq!(read.artist.as_deref(), Some("Tideline"));
     assert_eq!(read.album, None);
     assert_eq!(read.album_artist, None);
     assert_eq!(packets_of(&path), before);
@@ -5835,7 +5835,7 @@ fn a_matroska_tag_written_twice_is_replaced_and_lands_in_the_room_left_for_it() 
 
     tags.write(
         &location,
-        only_edits(&title_and_artist("Creep", "Radiohead")),
+        only_edits(&title_and_artist("Lantern", "Tideline")),
     )
     .expect("a first write");
 
@@ -5843,7 +5843,7 @@ fn a_matroska_tag_written_twice_is_replaced_and_lands_in_the_room_left_for_it() 
 
     tags.write(
         &location,
-        only_edits(&title_and_artist("Karma Police", "Radiohead")),
+        only_edits(&title_and_artist("Paper Boats", "Tideline")),
     )
     .expect("a second write");
 
@@ -5851,9 +5851,9 @@ fn a_matroska_tag_written_twice_is_replaced_and_lands_in_the_room_left_for_it() 
 
     assert_eq!(tags_elements(&second), 1);
     assert_eq!(second.len(), first.len());
-    assert_eq!(tags_of(&location).title.as_deref(), Some("Karma Police"));
+    assert_eq!(tags_of(&location).title.as_deref(), Some("Paper Boats"));
     assert!(
-        !second.windows(5).any(|held| held == b"Creep"),
+        !second.windows(5).any(|held| held == b"Lantern"),
         "the old title is still in the file"
     );
 }
@@ -5875,7 +5875,7 @@ fn a_matroska_seek_head_still_finds_every_element_after_a_write() {
                 &location,
                 only_edits(&title_and_artist(
                     "A title long enough that ffmpeg's tags have no room for it",
-                    "Radiohead",
+                    "Tideline",
                 )),
             )
             .expect("a written Matroska file");
@@ -5918,7 +5918,7 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
         let tags = FileTags::over(Sources::local());
         let before = packets_of(&path);
         let samples = decode(&path).samples;
-        let edits = title_and_artist("Creep", "Radiohead");
+        let edits = title_and_artist("Lantern", "Tideline");
 
         tags.write(
             &location,
@@ -5934,7 +5934,7 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
             .expect("a readable file");
 
         assert_eq!(read.picture.into_copied(), Some(picture.clone()), "{name}");
-        assert_eq!(read.tags.title.as_deref(), Some("Creep"), "{name}");
+        assert_eq!(read.tags.title.as_deref(), Some("Lantern"), "{name}");
         assert_eq!(packets_of(&path), before, "{name} had its packets moved");
         assert_eq!(decode(&path).samples, samples, "{name} had its audio moved");
 
@@ -5960,7 +5960,7 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
             "{name} was read with complaints after its picture was attached"
         );
 
-        let again = title_and_artist("Karma Police", "Radiohead");
+        let again = title_and_artist("Paper Boats", "Tideline");
 
         tags.write(&location, only_edits(&again))
             .expect("a second write over a file holding a picture");
@@ -5970,7 +5970,7 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
             .expect("a readable file");
 
         assert_eq!(kept.picture.into_copied(), Some(picture.clone()), "{name}");
-        assert_eq!(kept.tags.title.as_deref(), Some("Karma Police"), "{name}");
+        assert_eq!(kept.tags.title.as_deref(), Some("Paper Boats"), "{name}");
     }
 }
 
@@ -6207,7 +6207,7 @@ fn tags_written_with_a_picture_a_matroska_file_refuses_leave_the_file_as_it_stoo
         format: ImageFormat::Png,
         bytes: ONE_PIXEL_PNG.to_vec(),
     };
-    let edits = title_and_artist("Creep", "Radiohead");
+    let edits = title_and_artist("Lantern", "Tideline");
 
     tags.write(
         &location,
@@ -6237,7 +6237,7 @@ fn tags_written_with_a_picture_a_matroska_file_refuses_leave_the_file_as_it_stoo
         .read(&location, Picturing::Copied)
         .expect("a readable file");
 
-    assert_eq!(read.tags.title.as_deref(), Some("Creep"));
+    assert_eq!(read.tags.title.as_deref(), Some("Lantern"));
     assert_eq!(read.picture.into_copied(), Some(picture));
 }
 
@@ -6276,7 +6276,7 @@ fn a_matroska_cue_still_points_at_its_cluster_after_a_write() {
         FileTags::over(Sources::local())
             .write(
                 &location,
-                only_edits(&title_and_artist("Creep", "Radiohead")),
+                only_edits(&title_and_artist("Lantern", "Tideline")),
             )
             .expect("a written Matroska file");
 
@@ -6316,7 +6316,7 @@ fn a_matroska_tags_element_after_the_clusters_is_replaced_rather_than_shadowed()
     FileTags::over(Sources::local())
         .write(
             &location,
-            only_edits(&title_and_artist("Creep", "Radiohead")),
+            only_edits(&title_and_artist("Lantern", "Tideline")),
         )
         .expect("a written Matroska file");
 
@@ -6324,8 +6324,8 @@ fn a_matroska_tags_element_after_the_clusters_is_replaced_rather_than_shadowed()
     let read = tags_of(&location);
 
     assert_eq!(tags_elements(&after), 1);
-    assert_eq!(read.title.as_deref(), Some("Creep"));
-    assert_eq!(read.artist.as_deref(), Some("Radiohead"));
+    assert_eq!(read.title.as_deref(), Some("Lantern"));
+    assert_eq!(read.artist.as_deref(), Some("Tideline"));
     assert_eq!(read.album.as_deref(), Some("Low Tide"));
     assert_eq!(read.album_artist.as_deref(), Some("Example Band"));
     assert_eq!(packets_of(&path), before);
@@ -6354,7 +6354,7 @@ fn a_matroska_segment_of_unknown_size_is_refused_rather_than_guessed_at() {
 
     let refused = FileTags::over(Sources::local()).write(
         &MediaLocation::local(&path),
-        only_edits(&title_and_artist("Creep", "Radiohead")),
+        only_edits(&title_and_artist("Lantern", "Tideline")),
     );
 
     assert!(matches!(refused, Err(Error::Unwritable { .. })));

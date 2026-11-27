@@ -1076,7 +1076,7 @@ mod tests {
     fn a_credit_with_and_without_an_mbid_reads_back() {
         let credit = vec![
             Credit {
-                name: "Pink Floyd".to_owned(),
+                name: "Example Band".to_owned(),
                 joined_by: " & ".to_owned(),
                 mbid: Some(mbid()),
             },
@@ -1115,7 +1115,7 @@ mod tests {
     #[test]
     fn every_prefix_of_a_value_is_refused_and_never_panics() {
         let credit = vec![Credit {
-            name: "Pink Floyd".to_owned(),
+            name: "Example Band".to_owned(),
             joined_by: " & ".to_owned(),
             mbid: Some(mbid()),
         }];

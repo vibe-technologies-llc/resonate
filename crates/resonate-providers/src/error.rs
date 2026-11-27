@@ -399,7 +399,7 @@ mod tests {
     fn a_file_still_arriving_is_about_the_want_and_never_the_provider_being_away() {
         let arriving = Error::StillArriving {
             provider: SourceId::new("inbox").expect("a nameable source"),
-            file: PathBuf::from("/inbox/echoes.flac"),
+            file: PathBuf::from("/inbox/slow water.flac"),
         };
 
         assert!(!arriving.is_the_provider_away());

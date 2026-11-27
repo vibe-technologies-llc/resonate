@@ -1612,8 +1612,8 @@ mod tests {
     const ARTIST: &str = include_str!("../tests/fixtures/artist.json");
     const ARTIST_SEARCH: &str = include_str!("../tests/fixtures/artist_search.json");
 
-    const MEDDLE: &str = "aadf62d6-d475-42e0-b622-e6da7a59fdf7";
-    const MEDDLE_GROUP: &str = "4e98c9b4-92f6-3049-b9da-a1088b623672";
+    const LOW_TIDE: &str = "aadf62d6-d475-42e0-b622-e6da7a59fdf7";
+    const LOW_TIDE_GROUP: &str = "4e98c9b4-92f6-3049-b9da-a1088b623672";
     const PINK_FLOYD: &str = "83d91898-7763-47d7-b03b-b92132375c47";
     const ONE_OF_THESE_DAYS: &str = "8a313f74-75fe-40ff-a1a9-0b000216c555";
 
@@ -1656,8 +1656,11 @@ mod tests {
     fn the_release_lookup_maps_every_track_its_recording_and_its_links() {
         let release = read_release(RELEASE);
 
-        assert_eq!(release.id.as_str(), MEDDLE);
-        assert_eq!(release.group.as_ref().map(Mbid::as_str), Some(MEDDLE_GROUP));
+        assert_eq!(release.id.as_str(), LOW_TIDE);
+        assert_eq!(
+            release.group.as_ref().map(Mbid::as_str),
+            Some(LOW_TIDE_GROUP)
+        );
         assert_eq!(release.title, "Meddle");
         assert_eq!(release.credited_as(), "Pink Floyd");
         assert_eq!(
@@ -1833,12 +1836,12 @@ mod tests {
                 .iter()
                 .all(|found| found.credited_as() == "Pink Floyd")
         );
-        assert_eq!(found[1].release.as_str(), MEDDLE);
+        assert_eq!(found[1].release.as_str(), LOW_TIDE);
         assert_eq!(found[1].date.as_deref(), Some("1986"));
         assert_eq!(found[0].date.as_deref(), Some("2016-01-15"));
         assert_eq!(
             found[0].group.as_ref().map(Mbid::as_str),
-            Some(MEDDLE_GROUP)
+            Some(LOW_TIDE_GROUP)
         );
         assert_eq!(
             found[0]
@@ -1893,7 +1896,7 @@ mod tests {
     #[test]
     fn a_release_query_names_only_what_was_asked() {
         let asked = ReleaseAsked {
-            title: "Meddle".to_owned(),
+            title: "Low Tide".to_owned(),
             artist: None,
             artist_mbid: None,
             barcode: None,
@@ -1901,10 +1904,10 @@ mod tests {
             wording: Wording::Phrase,
         };
 
-        assert_eq!(release_query(&asked), "release:\"Meddle\"");
+        assert_eq!(release_query(&asked), "release:\"Low Tide\"");
 
         let asked = ReleaseAsked {
-            artist: Some("Pink \"the\" Floyd".to_owned()),
+            artist: Some("Example \"the\" Band".to_owned()),
             barcode: Some("5099968083755".to_owned()),
             catalog_number: Some("CDP 7 46034 2".to_owned()),
             ..asked
@@ -1912,15 +1915,15 @@ mod tests {
 
         assert_eq!(
             release_query(&asked),
-            "release:\"Meddle\" AND artist:\"Pink \\\"the\\\" Floyd\" AND barcode:\"5099968083755\" AND catno:\"CDP 7 46034 2\""
+            "release:\"Low Tide\" AND artist:\"Example \\\"the\\\" Band\" AND barcode:\"5099968083755\" AND catno:\"CDP 7 46034 2\""
         );
     }
 
     #[test]
     fn a_release_query_asks_by_the_artist_id_over_the_name_where_it_has_one() {
         let asked = ReleaseAsked {
-            title: "Meddle".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            title: "Low Tide".to_owned(),
+            artist: Some("Example Band".to_owned()),
             artist_mbid: Some(Mbid::new(PINK_FLOYD).expect("a well-formed mbid")),
             barcode: None,
             catalog_number: None,
@@ -1929,7 +1932,7 @@ mod tests {
 
         assert_eq!(
             release_query(&asked),
-            "release:\"Meddle\" AND arid:83d91898-7763-47d7-b03b-b92132375c47"
+            "release:\"Low Tide\" AND arid:83d91898-7763-47d7-b03b-b92132375c47"
         );
     }
 
@@ -2140,8 +2143,8 @@ mod tests {
     #[test]
     fn a_title_by_an_artist_is_searched_for_by_the_title_and_the_artists_words_spelt_loosely() {
         let by = ByArtist {
-            title: "you f o".to_owned(),
-            artist: "stela cole".to_owned(),
+            title: "hey a b".to_owned(),
+            artist: "mira vale".to_owned(),
         };
         let path = songs_by_search(&by, Coded::Either);
         let coded = songs_by_search(&by, Coded::Required);
@@ -2151,7 +2154,7 @@ mod tests {
             path.contains(&format!(
                 "query={}",
                 crate::query::escape_query(
-                    r#"+artist:(stela~ AND cole~) recording:(you f o) recording:"you f o""#
+                    r#"+artist:(mira~ AND vale~) recording:(hey a b) recording:"hey a b""#
                 )
             )),
             "{path}"
@@ -2161,7 +2164,7 @@ mod tests {
             coded.contains(&format!(
                 "query={}",
                 crate::query::escape_query(
-                    r#"+artist:(stela~ AND cole~) recording:(you f o) recording:"you f o" +isrc:*"#
+                    r#"+artist:(mira~ AND vale~) recording:(hey a b) recording:"hey a b" +isrc:*"#
                 )
             )),
             "{coded}"
@@ -2249,9 +2252,9 @@ mod tests {
 
     #[test]
     fn a_title_by_an_artist_an_answer_bears_out_is_taken_without_asking_more() {
-        let words = asked("you fo by stella cole");
+        let words = asked("hey ab by mirra vale");
         let by = words.by.clone().expect("a reading");
-        let you_f_o = credited_match(1, "You F.O.", "Stela Cole");
+        let you_f_o = credited_match(1, "Hey A.B.", "Mira Vale");
 
         let answers = vec![(songs_by_search(&by, Coded::Required), vec![you_f_o.clone()])];
 
@@ -2314,10 +2317,10 @@ mod tests {
         assert_eq!(SONGS_FOUND_AT_MOST, 100);
 
         for path in [
-            songs_coded_search("creep", Spelt::AsTyped).expect("words to ask"),
+            songs_coded_search("lantern", Spelt::AsTyped).expect("words to ask"),
             songs_coded_search("bohemian rapsody", Spelt::Loosely).expect("words to ask"),
-            songs_credited_search("creep"),
-            songs_search("creep"),
+            songs_credited_search("lantern"),
+            songs_search("lantern"),
         ] {
             assert!(path.contains("limit=100"), "{path}");
             for release_field in ["status", "primarytype", "secondarytype", "date", "country"] {
@@ -2417,10 +2420,13 @@ mod tests {
 
     #[test]
     fn a_song_is_searched_for_in_the_words_it_was_typed_in_under_dismax() {
-        let path = songs_search("echoes pink floyd");
+        let path = songs_search("slow water example band");
 
         assert!(path.starts_with("/recording/?"), "{path}");
-        assert!(path.contains("query=echoes%20pink%20floyd"), "{path}");
+        assert!(
+            path.contains("query=slow%20water%20example%20band"),
+            "{path}"
+        );
         assert!(path.contains("dismax=true"), "{path}");
         assert!(
             path.contains(&format!("limit={SONGS_FOUND_AT_MOST}")),
@@ -2431,7 +2437,7 @@ mod tests {
     #[test]
     fn a_recording_query_names_only_what_was_asked() {
         let asked = RecordingAsked {
-            title: "One of These Days".to_owned(),
+            title: "Paper Boats".to_owned(),
             artist: None,
             artist_mbid: None,
             release: None,
@@ -2439,18 +2445,18 @@ mod tests {
             wording: Wording::Phrase,
         };
 
-        assert_eq!(recording_query(&asked), "recording:\"One of These Days\"");
+        assert_eq!(recording_query(&asked), "recording:\"Paper Boats\"");
 
         let asked = RecordingAsked {
-            artist: Some("Pink \"the\" Floyd".to_owned()),
-            release: Some("Meddle".to_owned()),
+            artist: Some("Example \"the\" Band".to_owned()),
+            release: Some("Low Tide".to_owned()),
             length: Some(Duration::from_millis(356_000)),
             ..asked
         };
 
         assert_eq!(
             recording_query(&asked),
-            "recording:\"One of These Days\" AND artist:\"Pink \\\"the\\\" Floyd\" AND release:\"Meddle\" AND dur:[346000 TO 366000]"
+            "recording:\"Paper Boats\" AND artist:\"Example \\\"the\\\" Band\" AND release:\"Low Tide\" AND dur:[346000 TO 366000]"
         );
 
         let asked = RecordingAsked {
@@ -2469,15 +2475,15 @@ mod tests {
 
         assert_eq!(
             recording_query(&asked),
-            "recording:\"One of These Days\" AND arid:83d91898-7763-47d7-b03b-b92132375c47"
+            "recording:\"Paper Boats\" AND arid:83d91898-7763-47d7-b03b-b92132375c47"
         );
     }
 
     #[test]
     fn a_recording_search_is_a_lucene_phrase_or_the_words_under_dismax() {
         let asked = RecordingAsked {
-            title: "One of These Days".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            title: "Paper Boats".to_owned(),
+            artist: Some("Example Band".to_owned()),
             artist_mbid: None,
             release: None,
             length: None,
@@ -2486,7 +2492,7 @@ mod tests {
 
         assert_eq!(
             recording_search(&asked),
-            "/recording/?query=recording%3A%22One%20of%20These%20Days%22%20AND%20artist%3A%22Pink%20Floyd%22&fmt=json&limit=5"
+            "/recording/?query=recording%3A%22Paper%20Boats%22%20AND%20artist%3A%22Example%20Band%22&fmt=json&limit=5"
         );
 
         let asked = RecordingAsked {
@@ -2496,18 +2502,18 @@ mod tests {
 
         assert_eq!(
             recording_search(&asked),
-            "/recording/?query=One%20of%20These%20Days%20Pink%20Floyd&dismax=true&fmt=json&limit=5"
+            "/recording/?query=Paper%20Boats%20Example%20Band&dismax=true&fmt=json&limit=5"
         );
 
         let asked = RecordingAsked {
             artist: None,
-            release: Some("Meddle".to_owned()),
+            release: Some("Low Tide".to_owned()),
             ..asked
         };
 
         assert_eq!(
             recording_search(&asked),
-            "/recording/?query=One%20of%20These%20Days%20Meddle&dismax=true&fmt=json&limit=5"
+            "/recording/?query=Paper%20Boats%20Low%20Tide&dismax=true&fmt=json&limit=5"
         );
 
         let asked = RecordingAsked {
@@ -2517,7 +2523,7 @@ mod tests {
 
         assert_eq!(
             recording_search(&asked),
-            "/recording/?query=One%20of%20These%20Days&dismax=true&fmt=json&limit=5"
+            "/recording/?query=Paper%20Boats&dismax=true&fmt=json&limit=5"
         );
     }
 
@@ -2528,7 +2534,7 @@ mod tests {
             .into_group(LookupOp::ReleaseGroup)
             .expect("the fixture maps");
 
-        assert_eq!(group.id.as_str(), MEDDLE_GROUP);
+        assert_eq!(group.id.as_str(), LOW_TIDE_GROUP);
         assert_eq!(group.title, "Meddle");
         assert_eq!(group.kind.as_deref(), Some("Album"));
         assert_eq!(group.first_released.as_deref(), Some("1971-10-30"));
@@ -2574,7 +2580,7 @@ mod tests {
             group
                 .releases
                 .iter()
-                .any(|release| release.id.as_str() == MEDDLE)
+                .any(|release| release.id.as_str() == LOW_TIDE)
         );
     }
 
@@ -2588,7 +2594,7 @@ mod tests {
             .collect();
 
         assert_eq!(found.len(), 2);
-        assert_eq!(found[0].group.as_str(), MEDDLE_GROUP);
+        assert_eq!(found[0].group.as_str(), LOW_TIDE_GROUP);
         assert_eq!(found[0].score, 100);
         assert_eq!(found[0].title, "Meddle");
         assert_eq!(found[0].credited_as(), "Pink Floyd");
@@ -2606,7 +2612,7 @@ mod tests {
             .filter_map(GroupFoundDoc::into_album_match)
             .collect();
 
-        assert_eq!(found[0].group.as_str(), MEDDLE_GROUP);
+        assert_eq!(found[0].group.as_str(), LOW_TIDE_GROUP);
         assert_eq!(found[0].title, "Meddle");
         assert_eq!(found[0].credited_as(), "Pink Floyd");
         assert_eq!(found[0].kind.as_deref(), Some("Album"));
@@ -2616,36 +2622,36 @@ mod tests {
     #[test]
     fn albums_are_searched_by_their_credit_and_then_by_the_words_alone() {
         assert_eq!(
-            albums_credited_search("pink floyd"),
-            "/release-group/?query=artist%3A%22pink%20floyd%22&fmt=json&limit=25"
+            albums_credited_search("example band"),
+            "/release-group/?query=artist%3A%22example%20band%22&fmt=json&limit=25"
         );
         assert_eq!(
-            albums_search("pink floyd"),
-            "/release-group/?query=pink%20floyd&dismax=true&fmt=json&limit=25"
+            albums_search("example band"),
+            "/release-group/?query=example%20band&dismax=true&fmt=json&limit=25"
         );
     }
 
     #[test]
     fn a_release_group_query_names_only_what_was_asked() {
         let asked = GroupAsked {
-            title: "Meddle".to_owned(),
+            title: "Low Tide".to_owned(),
             artist: None,
             artist_mbid: None,
             year: None,
             wording: Wording::Phrase,
         };
 
-        assert_eq!(release_group_query(&asked), "releasegroup:\"Meddle\"");
+        assert_eq!(release_group_query(&asked), "releasegroup:\"Low Tide\"");
 
         let asked = GroupAsked {
-            artist: Some("Pink \"the\" Floyd".to_owned()),
+            artist: Some("Example \"the\" Band".to_owned()),
             year: Some(1971),
             ..asked
         };
 
         assert_eq!(
             release_group_query(&asked),
-            "releasegroup:\"Meddle\" AND artist:\"Pink \\\"the\\\" Floyd\" AND firstreleasedate:1971*"
+            "releasegroup:\"Low Tide\" AND artist:\"Example \\\"the\\\" Band\" AND firstreleasedate:1971*"
         );
 
         let asked = GroupAsked {
@@ -2655,7 +2661,7 @@ mod tests {
 
         assert_eq!(
             release_group_query(&asked),
-            "releasegroup:\"Meddle\" AND arid:83d91898-7763-47d7-b03b-b92132375c47 AND firstreleasedate:1971*"
+            "releasegroup:\"Low Tide\" AND arid:83d91898-7763-47d7-b03b-b92132375c47 AND firstreleasedate:1971*"
         );
     }
 

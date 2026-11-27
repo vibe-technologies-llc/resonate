@@ -101,9 +101,12 @@ mod tests {
 
     #[test]
     fn a_name_that_fits_is_kept_whole() {
-        let named = named_within(".", OsStr::new("Echoes.flac"), ".123-0.resonate-part");
+        let named = named_within(".", OsStr::new("Slow Water.flac"), ".123-0.resonate-part");
 
-        assert_eq!(named, OsString::from(".Echoes.flac.123-0.resonate-part"));
+        assert_eq!(
+            named,
+            OsString::from(".Slow Water.flac.123-0.resonate-part")
+        );
     }
 
     #[test]

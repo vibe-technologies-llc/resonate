@@ -78,19 +78,21 @@ fn escaped(text: &str) -> String {
 mod tests {
     use super::*;
 
-    fn echoes() -> Shown {
+    fn slow_water() -> Shown {
         Shown::told(
-            "Echoes".to_owned(),
-            "Pink Floyd\nMeddle".to_owned(),
+            "Slow Water".to_owned(),
+            "Example Band\nLow Tide".to_owned(),
             Some("file:///C:/Users/a/AppData/Local/Temp/resonate-art/1.png".to_owned()),
         )
     }
 
     #[test]
     fn a_toast_says_the_title_over_the_artist_and_the_album_with_the_cover_beside() {
-        let xml = document(&echoes(), Buttons::Withheld);
+        let xml = document(&slow_water(), Buttons::Withheld);
 
-        assert!(xml.contains("<text>Echoes</text><text>Pink Floyd</text><text>Meddle</text>"));
+        assert!(
+            xml.contains("<text>Slow Water</text><text>Example Band</text><text>Low Tide</text>")
+        );
         assert!(xml.contains(
             r#"<image placement="appLogoOverride" src="file:///C:/Users/a/AppData/Local/Temp/resonate-art/1.png"/>"#
         ));
@@ -99,7 +101,7 @@ mod tests {
 
     #[test]
     fn a_toast_with_no_cover_names_no_image_and_one_with_no_body_no_second_line() {
-        let shown = Shown::told("Echoes".to_owned(), String::new(), None);
+        let shown = Shown::told("Slow Water".to_owned(), String::new(), None);
         let xml = document(&shown, Buttons::Withheld);
 
         assert!(!xml.contains("<image"));
@@ -108,7 +110,7 @@ mod tests {
 
     #[test]
     fn each_button_a_toast_offers_is_a_transport_key_pressed_in_the_window() {
-        let xml = document(&echoes(), Buttons::Offered);
+        let xml = document(&slow_water(), Buttons::Offered);
 
         for (key, label) in [
             ("previous", "Previous"),
@@ -125,7 +127,7 @@ mod tests {
 
     #[test]
     fn a_toast_told_without_buttons_carries_no_actions() {
-        assert!(!document(&echoes(), Buttons::Withheld).contains("<actions>"));
+        assert!(!document(&slow_water(), Buttons::Withheld).contains("<actions>"));
     }
 
     #[test]

@@ -1071,9 +1071,9 @@ fn a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds() 
     let tree = Tree::new();
 
     for (file, title, artist) in [
-        ("1.wav", "You F.O.", "Stela Cole"),
-        ("2.wav", "You F.O.", "Somebody Else"),
-        ("3.wav", "Dream a Little Dream", "Stela Cole"),
+        ("1.wav", "Hey A.B.", "Mira Vale"),
+        ("2.wav", "Hey A.B.", "Somebody Else"),
+        ("3.wav", "Small Mercies", "Mira Vale"),
     ] {
         tree.write(
             file,
@@ -1086,37 +1086,37 @@ fn a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds() 
     scan(&library, &options(&tree))?;
 
     let meant = library
-        .meant("You F O by stela cole")?
+        .meant("Hey A B by mira vale")?
         .expect("the words read as a title by a held artist");
     let found = library.tracks(&TrackQuery {
         text: Some(meant.searched.clone()),
         ..TrackQuery::default()
     })?;
 
-    assert_eq!(meant.title, "You F O");
-    assert_eq!(meant.artist, "Stela Cole");
+    assert_eq!(meant.title, "Hey A B");
+    assert_eq!(meant.artist, "Mira Vale");
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].artist.as_deref(), Some("Stela Cole"));
-    assert_eq!(found[0].title, "You F.O.");
+    assert_eq!(found[0].artist.as_deref(), Some("Mira Vale"));
+    assert_eq!(found[0].title, "Hey A.B.");
     assert_eq!(
         library
-            .meant("Stela Cole - You F.O.")?
+            .meant("Mira Vale - Hey A.B.")?
             .map(|meant| meant.artist),
-        Some("Stela Cole".to_owned())
+        Some("Mira Vale".to_owned())
     );
     assert_eq!(
         library
-            .meant("you f o by stella cole")?
+            .meant("hey a b by mirra vale")?
             .map(|meant| meant.artist),
-        Some("Stela Cole".to_owned()),
+        Some("Mira Vale".to_owned()),
         "a name a letter off is the artist the catalog holds"
     );
-    assert_eq!(library.meant("you f o by nobody held")?, None);
+    assert_eq!(library.meant("hey a b by nobody held")?, None);
     assert_eq!(
-        library.meant("purple rain by stela cole")?,
+        library.meant("silver rain by mira vale")?,
         None,
         "a reading that would find nothing is not taken"
     );
-    assert_eq!(library.meant("stela cole")?, None);
+    assert_eq!(library.meant("mira vale")?, None);
     Ok(())
 }

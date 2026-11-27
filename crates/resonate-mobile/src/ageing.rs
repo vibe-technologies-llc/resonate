@@ -118,16 +118,16 @@ mod tests {
     #[test]
     fn ageing_forgets_listens_and_passes_past_the_span_but_not_a_listen_a_service_is_owed() {
         let phone = player();
-        let [echoes, _] = songs_held(&phone);
+        let [slow_water, _] = songs_held(&phone);
         let now = seconds_since_the_epoch(SystemTime::now());
         let old = now - 400 * A_DAY;
         let recent = now - 10 * A_DAY;
 
-        heard_here(&phone, echoes, old, 200_000);
+        heard_here(&phone, slow_water, old, 200_000);
         passed_over(&phone, old + 60);
-        heard_here(&phone, echoes, recent, 200_000);
+        heard_here(&phone, slow_water, recent, 200_000);
         passed_over(&phone, recent + 60);
-        heard_here(&phone, echoes, old + 120, 200_000);
+        heard_here(&phone, slow_water, old + 120, 200_000);
 
         let owed_from: i64 = phone
             .catalog
@@ -170,10 +170,10 @@ mod tests {
     #[test]
     fn ageing_keeps_a_year_over_as_it_was_heard_before_forgetting_its_listens() {
         let phone = player();
-        let [echoes, _] = songs_held(&phone);
+        let [slow_water, _] = songs_held(&phone);
         let three_years_ago = seconds_since_the_epoch(SystemTime::now()) - 3 * 366 * A_DAY;
 
-        heard_here(&phone, echoes, three_years_ago, 3_600_000);
+        heard_here(&phone, slow_water, three_years_ago, 3_600_000);
 
         let year = Calendar::utc()
             .date_at(UNIX_EPOCH + Duration::from_secs(three_years_ago.cast_unsigned()))

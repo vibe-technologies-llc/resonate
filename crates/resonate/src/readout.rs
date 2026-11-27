@@ -276,9 +276,12 @@ mod tests {
 
     #[test]
     fn a_title_holding_a_newline_or_a_tab_draws_on_one_line() {
-        let line = line_of(&playing(0, 60), "Pink\nFloyd\tEchoes", "a\nb");
+        let line = line_of(&playing(0, 60), "Example\nBand\tSlow Water", "a\nb");
 
-        assert_eq!(line, "▶ 0:00 / 1:00  vol 80%  Pink Floyd Echoes  > a b");
+        assert_eq!(
+            line,
+            "▶ 0:00 / 1:00  vol 80%  Example Band Slow Water  > a b"
+        );
         assert!(!line.contains(['\n', '\t']));
     }
 

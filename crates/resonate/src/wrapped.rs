@@ -85,8 +85,8 @@ mod tests {
             artists: 1,
             albums: 1,
             top_songs: vec![Ranked {
-                name: "Echoes".to_owned(),
-                by: Some("Pink Floyd".to_owned()),
+                name: "Slow Water".to_owned(),
+                by: Some("Example Band".to_owned()),
                 plays: 30,
                 listened: Duration::from_secs(3 * 3_600),
             }],
@@ -96,7 +96,7 @@ mod tests {
         let told = told(&review);
 
         assert!(told.contains("RESONATE WRAPPED 2026\n3 hours of music\n"));
-        assert!(told.contains("YOUR SONG OF THE YEAR\nEchoes\nPink Floyd\n"));
+        assert!(told.contains("YOUR SONG OF THE YEAR\nSlow Water\nExample Band\n"));
         assert!(told.contains("That was your 2026"));
     }
 

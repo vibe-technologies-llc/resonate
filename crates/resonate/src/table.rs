@@ -98,8 +98,8 @@ mod tests {
         let mut table = Table::new(vec!["TITLE", "ARTIST"]);
 
         table.push(vec![
-            "Echoes\x1b]0;owned\x07".to_owned(),
-            "Pink\nFloyd  forged\u{202e}".to_owned(),
+            "Slow Water\x1b]0;owned\x07".to_owned(),
+            "Example\nBand  forged\u{202e}".to_owned(),
         ]);
 
         let rendered = table.render();
@@ -112,7 +112,7 @@ mod tests {
             "{rendered:?}"
         );
         assert!(!rendered.contains('\u{202e}'));
-        assert!(rendered.contains("Echoes ]0;owned "));
+        assert!(rendered.contains("Slow Water ]0;owned "));
     }
 
     #[test]

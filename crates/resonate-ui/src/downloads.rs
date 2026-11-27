@@ -496,14 +496,14 @@ mod tests {
 
     use super::*;
 
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
-    const SEAMUS: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const THIRD_LIGHT: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
 
     fn found(recording: &str) -> Found {
         Found {
             recording: Mbid::new(recording).expect("an mbid"),
-            title: "Echoes".to_owned(),
-            artist: "Pink Floyd".to_owned(),
+            title: "Slow Water".to_owned(),
+            artist: "Example Band".to_owned(),
             length: None,
             release: None,
             releases: Vec::new(),
@@ -547,11 +547,11 @@ mod tests {
         let now = SystemTime::now();
         let mut downloads = Downloads::default();
 
-        downloads.landing(found(ECHOES), now);
+        downloads.landing(found(SLOW_WATER), now);
 
         let landing = fetching(&downloads, None);
 
-        downloads.wanted(&found(ECHOES).recording, want(7), Fetcher::AProvider);
+        downloads.wanted(&found(SLOW_WATER).recording, want(7), Fetcher::AProvider);
 
         assert_eq!(landing, vec![Fetching::Landing]);
         assert_eq!(fetching(&downloads, None), vec![Fetching::Queued]);
@@ -579,10 +579,10 @@ mod tests {
     fn a_want_delivered_is_downloaded_one_tried_in_vain_is_retried_and_the_last_try_gives_up() {
         let now = SystemTime::now();
         let later = now + Duration::from_secs(1);
-        let mut delivered = queued(ECHOES, want(1), now);
-        let mut unanswered = queued(SEAMUS, want(2), now);
-        let mut tried_before = queued(SEAMUS, want(3), now);
-        let mut given_up = queued(SEAMUS, want(4), now);
+        let mut delivered = queued(SLOW_WATER, want(1), now);
+        let mut unanswered = queued(THIRD_LIGHT, want(2), now);
+        let mut tried_before = queued(THIRD_LIGHT, want(3), now);
+        let mut given_up = queued(THIRD_LIGHT, want(4), now);
 
         let standings = AHashMap::from_iter([
             (want(1), standing(now, 0, true)),
@@ -627,16 +627,16 @@ mod tests {
         let now = SystemTime::now();
         let pressed = Instant::now();
         let track = TrackId::new(9).expect("a track id");
-        let mut quick = queued(ECHOES, want(1), now);
-        let mut slow = queued(ECHOES, want(1), now);
-        let mut unscanned = queued(ECHOES, want(1), now);
-        let mut unpressed = queued(ECHOES, want(1), now);
+        let mut quick = queued(SLOW_WATER, want(1), now);
+        let mut slow = queued(SLOW_WATER, want(1), now);
+        let mut unscanned = queued(SLOW_WATER, want(1), now);
+        let mut unpressed = queued(SLOW_WATER, want(1), now);
         let landed = AHashMap::from_iter([(want(1), delivered_as(Some(track)))]);
         let offered = AHashMap::from_iter([(want(1), delivered_as(None))]);
         let late = pressed + PLAYED_IF_LANDED_WITHIN + Duration::from_secs(1);
 
         for downloads in [&mut quick, &mut slow, &mut unscanned] {
-            downloads.play_once_landed(found(ECHOES).recording, ZoneId::FIRST, pressed);
+            downloads.play_once_landed(found(SLOW_WATER).recording, ZoneId::FIRST, pressed);
         }
         quick.followed(&landed);
         slow.followed(&landed);
@@ -652,9 +652,9 @@ mod tests {
         );
         assert_eq!(quick.landed_to_play(&landed, pressed), None, "played once");
         assert_eq!(slow.landed_to_play(&landed, late), None);
-        assert!(!slow.is_awaited(&found(ECHOES).recording));
+        assert!(!slow.is_awaited(&found(SLOW_WATER).recording));
         assert_eq!(unscanned.landed_to_play(&offered, pressed), None);
-        assert!(unscanned.is_awaited(&found(ECHOES).recording));
+        assert!(unscanned.is_awaited(&found(SLOW_WATER).recording));
         assert_eq!(
             unscanned.landed_to_play(&landed, pressed),
             Some(Arrival {
@@ -669,19 +669,19 @@ mod tests {
     fn a_song_given_up_or_dismissed_is_no_longer_awaited() {
         let now = SystemTime::now();
         let pressed = Instant::now();
-        let mut given_up = queued(ECHOES, want(1), now);
-        let mut dismissed = queued(ECHOES, want(1), now);
+        let mut given_up = queued(SLOW_WATER, want(1), now);
+        let mut dismissed = queued(SLOW_WATER, want(1), now);
         let gave_up =
             AHashMap::from_iter([(want(1), standing(now, TRIES_BEFORE_GIVING_UP, false))]);
 
-        given_up.play_once_landed(found(ECHOES).recording, ZoneId::FIRST, pressed);
-        dismissed.play_once_landed(found(ECHOES).recording, ZoneId::FIRST, pressed);
+        given_up.play_once_landed(found(SLOW_WATER).recording, ZoneId::FIRST, pressed);
+        dismissed.play_once_landed(found(SLOW_WATER).recording, ZoneId::FIRST, pressed);
         given_up.followed(&gave_up);
-        dismissed.dismiss(&found(ECHOES).recording);
+        dismissed.dismiss(&found(SLOW_WATER).recording);
 
         assert_eq!(given_up.landed_to_play(&gave_up, pressed), None);
-        assert!(!given_up.is_awaited(&found(ECHOES).recording));
-        assert!(!dismissed.is_awaited(&found(ECHOES).recording));
+        assert!(!given_up.is_awaited(&found(SLOW_WATER).recording));
+        assert!(!dismissed.is_awaited(&found(SLOW_WATER).recording));
     }
 
     #[test]
@@ -820,20 +820,20 @@ mod tests {
     fn what_was_still_underway_comes_back_after_a_restart_and_nothing_finished_does() {
         let now = SystemTime::now();
         let underway = Unfinished {
-            found: found(ECHOES),
+            found: found(SLOW_WATER),
             want: want(1),
             queued: now,
             fetching: Fetching::Retrying { tries: 2, at: now },
         };
         let given_up = Unfinished {
-            found: found(SEAMUS),
+            found: found(THIRD_LIGHT),
             want: want(2),
             queued: now,
             fetching: Fetching::GaveUp,
         };
-        let mut downloads = queued(ECHOES, want(1), now);
+        let mut downloads = queued(SLOW_WATER, want(1), now);
 
-        downloads.dismiss(&found(ECHOES).recording);
+        downloads.dismiss(&found(SLOW_WATER).recording);
 
         downloads.restored(vec![underway.clone(), given_up]);
         downloads.restored(vec![underway]);
@@ -849,8 +849,8 @@ mod tests {
         let now = SystemTime::now();
         let mut downloads = Downloads::default();
 
-        downloads.landing(found(ECHOES), now);
-        downloads.wanted(&found(ECHOES).recording, want(1), Fetcher::Nobody);
+        downloads.landing(found(SLOW_WATER), now);
+        downloads.wanted(&found(SLOW_WATER).recording, want(1), Fetcher::Nobody);
 
         let unprovided = fetching(&downloads, None);
         let moved = downloads.provided();
@@ -864,16 +864,16 @@ mod tests {
     #[test]
     fn clearing_keeps_what_is_underway_and_a_song_landed_again_starts_over() {
         let now = SystemTime::now();
-        let mut downloads = queued(ECHOES, want(1), now);
+        let mut downloads = queued(SLOW_WATER, want(1), now);
 
-        downloads.landing(found(SEAMUS), now);
-        downloads.unwanted(&found(SEAMUS).recording);
+        downloads.landing(found(THIRD_LIGHT), now);
+        downloads.unwanted(&found(THIRD_LIGHT).recording);
 
         downloads.clear_finished();
 
         let cleared = fetching(&downloads, None);
 
-        downloads.landing(found(ECHOES), now);
+        downloads.landing(found(SLOW_WATER), now);
 
         assert_eq!(cleared, vec![Fetching::Queued]);
         assert_eq!(fetching(&downloads, None), vec![Fetching::Landing]);

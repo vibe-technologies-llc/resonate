@@ -246,7 +246,11 @@ fn titles(zone: &RemoteZone) -> Vec<&str> {
 
 fn load_three(player: &Player, folder: &Folder, autoplay: bool) {
     let items = vec![
-        folder.song("echoes", &[(b"INAM", "Echoes"), (b"IART", "Pink Floyd")], 1),
+        folder.song(
+            "slow water",
+            &[(b"INAM", "Slow Water"), (b"IART", "Example Band")],
+            1,
+        ),
         folder.song("time", &[], 2),
         folder.song("money", &[], 3),
     ];
@@ -286,8 +290,8 @@ fn a_real_engine_is_mirrored_and_takes_every_command_a_device_may_send() {
             && zone.queue_length == 3
             && zone.first_row == 0
             && zone.playing == Some(0)
-            && titles(&zone) == ["Echoes", "time", "money"]
-            && zone.rows[0].artist == "Pink Floyd"
+            && titles(&zone) == ["Slow Water", "time", "money"]
+            && zone.rows[0].artist == "Example Band"
             && zone.rows[1].length == Some(Duration::from_secs(u64::from(SECONDS_A_SONG)))
     });
 
@@ -341,14 +345,14 @@ fn a_real_engine_is_mirrored_and_takes_every_command_a_device_may_send() {
         .expect("move");
     eventually("the row moved with the song still heard", || {
         let zone = the_zone(&driven, first);
-        titles(&zone) == ["money", "Echoes", "time"] && zone.playing == Some(0)
+        titles(&zone) == ["money", "Slow Water", "time"] && zone.playing == Some(0)
     });
 
     driven
         .control(first, RemoteCommand::Move { from: 1, to: 2 })
         .expect("move down");
     eventually("the row moved down", || {
-        titles(&the_zone(&driven, first)) == ["money", "time", "Echoes"]
+        titles(&the_zone(&driven, first)) == ["money", "time", "Slow Water"]
     });
 
     driven
@@ -356,7 +360,7 @@ fn a_real_engine_is_mirrored_and_takes_every_command_a_device_may_send() {
         .expect("remove");
     eventually("the row gone", || {
         let zone = the_zone(&driven, first);
-        titles(&zone) == ["money", "Echoes"] && zone.queue_length == 2
+        titles(&zone) == ["money", "Slow Water"] && zone.queue_length == 2
     });
 
     driven
@@ -411,7 +415,7 @@ fn an_edit_by_row_aimed_at_a_queue_since_edited_here_is_refused_and_moves_nothin
         })
         .expect("an edit made on the driven device");
     eventually("the edit made here mirrored", || {
-        titles(&the_zone(&driven, first)) == ["money", "Echoes", "time"]
+        titles(&the_zone(&driven, first)) == ["money", "Slow Water", "time"]
     });
 
     let aimed_at_the_old_queue =
@@ -428,7 +432,7 @@ fn an_edit_by_row_aimed_at_a_queue_since_edited_here_is_refused_and_moves_nothin
     assert_eq!(aimed_at_the_queue_as_it_is, Ok(()));
 
     eventually("only the row aimed at in the queue as it is gone", || {
-        titles(&the_zone(&driven, first)) == ["money", "Echoes"]
+        titles(&the_zone(&driven, first)) == ["money", "Slow Water"]
     });
 }
 
@@ -499,7 +503,7 @@ fn each_zone_is_driven_alone_named_as_the_seam_names_its_rows_and_gone_with_its_
             && held[1].name == "Zone 2"
             && titles(&held[1])
                 == [
-                    "catalog says echoes",
+                    "catalog says slow water",
                     "catalog says time",
                     "catalog says money",
                 ]
@@ -523,7 +527,7 @@ fn each_zone_is_driven_alone_named_as_the_seam_names_its_rows_and_gone_with_its_
     let by_tags = Driven::zones(&zones, ByTheirTags);
 
     eventually("the tags read for the same rows", || {
-        titles(&the_zone(&by_tags, second.id)) == ["Echoes", "time", "money"]
+        titles(&the_zone(&by_tags, second.id)) == ["Slow Water", "time", "money"]
     });
 
     drop(second);
@@ -669,7 +673,7 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
 
     eventually("the desk's queue mirrored on the phone", || {
         mirrored_on(&phone, driven, |zone| {
-            titles(zone) == ["Echoes", "time", "money"]
+            titles(zone) == ["Slow Water", "time", "money"]
         })
     });
 
@@ -692,7 +696,7 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
 
     eventually("the move mirrored back", || {
         mirrored_on(&phone, driven, |zone| {
-            titles(zone) == ["Echoes", "money", "time"]
+            titles(zone) == ["Slow Water", "money", "time"]
         })
     });
 

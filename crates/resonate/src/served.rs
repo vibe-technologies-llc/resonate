@@ -729,7 +729,7 @@ mod tests {
     const VERBATIM: u8 = 0x02;
     const CRC8_POLYNOMIAL: u8 = 0x07;
     const CRC16_POLYNOMIAL: u16 = 0x8005;
-    const ALBUM: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","album":{"id":"al-1","name":"Meddle","song":[{"id":"so-1","title":"One","suffix":"flac"},{"id":"so-2","title":"Two","suffix":"flac"}]}}}"#;
+    const ALBUM: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","album":{"id":"al-1","name":"Low Tide","song":[{"id":"so-1","title":"One","suffix":"flac"},{"id":"so-2","title":"Two","suffix":"flac"}]}}}"#;
     const TIDAL_ALBUM: &str = r#"{"items":[{"id":11,"title":"One"},{"id":12,"title":"Two"}]}"#;
     const KEY: &str = "Bearer hush";
 
@@ -998,11 +998,11 @@ mod tests {
                     .to_owned(),
             ),
             "/api/users/42/favorites/albums" => Answer::Json(
-                r#"{"items":[{"item":{"id":7,"title":"Meddle","artist":{"name":"Pink Floyd"}}}]}"#
+                r#"{"items":[{"item":{"id":7,"title":"Low Tide","artist":{"name":"Example Band"}}}]}"#
                     .to_owned(),
             ),
             "/api/users/42/favorites/tracks" => Answer::Json(
-                r#"{"items":[{"item":{"id":12,"title":"Echoes","duration":1412,"artist":{"name":"Pink Floyd"}}}]}"#
+                r#"{"items":[{"item":{"id":12,"title":"Slow Water","duration":1412,"artist":{"name":"Example Band"}}}]}"#
                     .to_owned(),
             ),
             _ => Answer::Missing,
@@ -1030,8 +1030,8 @@ mod tests {
         assert!(matches!(none, Err(Error::NoServedService)));
         assert!(matches!(only_on_the_network, Err(Error::NoServedService)));
         assert_eq!(rendered.len(), 2);
-        assert!(rendered[0].contains("Meddle") && rendered[0].contains("tidal:album/7"));
-        assert!(rendered[1].contains("Echoes") && rendered[1].contains("tidal:track/12"));
+        assert!(rendered[0].contains("Low Tide") && rendered[0].contains("tidal:album/7"));
+        assert!(rendered[1].contains("Slow Water") && rendered[1].contains("tidal:track/12"));
     }
 
     #[test]
@@ -1044,11 +1044,11 @@ mod tests {
                     .to_owned(),
             ),
             "/api/users/42/favorites/mixes" => Answer::Json(
-                r#"{"items":[{"id":"0a1b","title":"My Mix 1","subTitle":"Pink Floyd and more"}]}"#
+                r#"{"items":[{"id":"0a1b","title":"My Mix 1","subTitle":"Example Band and more"}]}"#
                     .to_owned(),
             ),
             "/api/mixes/0a1b/items" => Answer::Json(
-                r#"{"items":[{"item":{"id":12,"title":"Echoes","duration":1412,"artist":{"name":"Pink Floyd"}},"type":"track"}]}"#
+                r#"{"items":[{"item":{"id":12,"title":"Slow Water","duration":1412,"artist":{"name":"Example Band"}},"type":"track"}]}"#
                     .to_owned(),
             ),
             "/api/users/42/favorites/tracks" => Answer::Json("{}".to_owned()),
@@ -1077,9 +1077,11 @@ mod tests {
 
         assert_eq!(first.len(), 1);
         assert!(first[0].render().contains("My Mix 1"));
-        assert!(first[0].render().contains("Pink Floyd and more"));
+        assert!(first[0].render().contains("Example Band and more"));
         assert!(first[0].render().contains("tidal:mix/0a1b"));
-        assert!(mix[0].render().contains("Echoes") && mix[0].render().contains("tidal:track/12"));
+        assert!(
+            mix[0].render().contains("Slow Water") && mix[0].render().contains("tidal:track/12")
+        );
         assert!(favoured[0].render().contains("kept"));
         assert!(favoured[0].render().contains("tidal:track/12"));
     }
@@ -1220,8 +1222,8 @@ mod tests {
     fn album_held() -> resonate_upnp::Held {
         resonate_upnp::Held {
             shelf: album_shelf(),
-            title: "Meddle".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            title: "Low Tide".to_owned(),
+            artist: Some("Example Band".to_owned()),
             children: 2,
             cover: None,
         }
@@ -1231,8 +1233,8 @@ mod tests {
         resonate_upnp::Song {
             id: resonate_core::TrackId::new(raw).expect("an id"),
             title: ["One", "Two"][usize::try_from(raw - 1).expect("a small id")].to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Low Tide".to_owned()),
             cover: None,
             genre: None,
             track_number: u32::try_from(raw).ok(),
@@ -1415,7 +1417,7 @@ mod tests {
         assert!(top[0].contains("Albums"), "{}", top[0]);
         assert!(top[0].contains("Playlists"), "{}", top[0]);
         assert_eq!(albums.len(), 1);
-        assert!(albums[0].contains("Meddle"), "{}", albums[0]);
+        assert!(albums[0].contains("Low Tide"), "{}", albums[0]);
         assert_eq!(songs.len(), 1);
         assert!(songs[0].contains("Two"), "{}", songs[0]);
         assert!(songs[0].contains("dlna:track/"), "{}", songs[0]);

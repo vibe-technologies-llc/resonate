@@ -206,7 +206,7 @@ mod tests {
     fn a_long_name_is_cut_on_a_letter_and_a_short_one_stands_whole() {
         let long = "ñ".repeat(A_NAME_DRAWN_AT_MOST + 9);
 
-        assert_eq!(cut("Echoes"), "Echoes");
+        assert_eq!(cut("Slow Water"), "Slow Water");
         assert_eq!(cut(&long).chars().count(), A_NAME_DRAWN_AT_MOST);
         assert!(cut(&long).ends_with('…'));
     }

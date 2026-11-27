@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     fn words_are_escaped_byte_by_byte_but_for_the_unreserved() {
-        assert_eq!(escaped("Echoes & more"), "Echoes%20%26%20more");
+        assert_eq!(escaped("Slow Water & more"), "Slow%20Water%20%26%20more");
         assert_eq!(escaped("a-b_c.d~e"), "a-b_c.d~e");
         assert_eq!(escaped("Sigur Rós"), "Sigur%20R%C3%B3s");
     }

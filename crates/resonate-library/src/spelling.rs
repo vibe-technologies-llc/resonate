@@ -919,7 +919,7 @@ mod tests {
 
     #[test]
     fn a_word_that_is_the_beginning_of_one_is_left_alone() {
-        assert_eq!(catalogued().did_you_mean("floy"), None);
+        assert_eq!(catalogued().did_you_mean("lante"), None);
         assert_eq!(catalogued().did_you_mean("przyby"), None);
     }
 
@@ -952,7 +952,7 @@ mod tests {
 
     #[test]
     fn a_word_no_spelling_is_near_is_left_as_it_was() {
-        assert_eq!(catalogued().did_you_mean("metallica"), None);
+        assert_eq!(catalogued().did_you_mean("tideline"), None);
     }
 
     #[test]
@@ -1038,8 +1038,8 @@ mod tests {
         let spellings = catalogued();
 
         assert_eq!(
-            spellings.did_you_mean("the long walk in teh rain metallica"),
-            Some("The Long Walk in the Rain metallica".to_owned()),
+            spellings.did_you_mean("the long walk in teh rain tideline"),
+            Some("The Long Walk in the Rain tideline".to_owned()),
             "a token beside the name was drawn into it or lost"
         );
     }
@@ -1228,7 +1228,7 @@ mod tests {
     #[test]
     fn a_word_is_spelt_alike_within_what_its_length_affords_and_a_short_one_only_exactly() {
         assert!(spelt_alike("rapsody", "rhapsody"));
-        assert!(spelt_alike("stella", "stela"));
+        assert!(spelt_alike("mirra", "mira"));
         assert!(spelt_alike("wierzynkiewcz", "wierzynkiewicz"));
         assert!(spelt_alike("me", "me"));
         assert!(!spelt_alike("me", "my"));

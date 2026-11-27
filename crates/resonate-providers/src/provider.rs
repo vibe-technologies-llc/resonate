@@ -506,7 +506,7 @@ mod tests {
         let providers = Providers::none().and(Fixed::registered("lapsed", lapsed));
         let mut away = Away::default();
 
-        providers.first(&Identity::named("Echoes"), &patient(), &mut away);
+        providers.first(&Identity::named("Slow Water"), &patient(), &mut away);
 
         assert_eq!(away.why(&source), Some(WhyAway::SignInLapsed));
 
@@ -547,7 +547,11 @@ mod tests {
             .and(Fixed::registered("shop", found))
             .and(Fixed::registered("later", found));
 
-        let answer = providers.first(&Identity::named("Echoes"), &patient(), &mut Away::default());
+        let answer = providers.first(
+            &Identity::named("Slow Water"),
+            &patient(),
+            &mut Away::default(),
+        );
 
         assert_eq!(answer.refused, 1);
 
@@ -614,7 +618,7 @@ mod tests {
         let started = Instant::now();
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(100, 200),
             &mut Away::default(),
         );
@@ -635,7 +639,7 @@ mod tests {
             .and(Fixed::registered("shop", found));
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(100, 2_000),
             &mut Away::default(),
         );
@@ -719,7 +723,7 @@ mod tests {
             .and(Arc::clone(&shop) as Arc<dyn Provider>);
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(100, 2_000),
             &mut Away::default(),
         );
@@ -745,7 +749,7 @@ mod tests {
         let started = Instant::now();
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(100, 200),
             &mut Away::default(),
         );
@@ -766,7 +770,7 @@ mod tests {
             .and(Arc::clone(&later) as Arc<dyn Provider>);
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(2_000, 2_000),
             &mut Away::default(),
         );
@@ -777,8 +781,11 @@ mod tests {
 
     #[test]
     fn nothing_registered_delivers_nothing() {
-        let answer =
-            Providers::none().first(&Identity::named("Echoes"), &patient(), &mut Away::default());
+        let answer = Providers::none().first(
+            &Identity::named("Slow Water"),
+            &patient(),
+            &mut Away::default(),
+        );
 
         assert!(answer.delivered.is_none());
         assert_eq!(answer.refused, 0);
@@ -840,7 +847,7 @@ mod tests {
         let first = SourceId::new("first").expect("a nameable source");
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &Asking {
                 passing: std::slice::from_ref(&first),
                 ..patient()
@@ -868,7 +875,7 @@ mod tests {
         let started = Instant::now();
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &Asking {
                 within: Duration::from_millis(100),
                 ..patient()
@@ -894,7 +901,7 @@ mod tests {
         let started = Instant::now();
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &Asking {
                 cancelled: &always,
                 ..patient()
@@ -930,7 +937,7 @@ mod tests {
             .and(Fixed::registered("inbox", nothing));
         let mut away = Away::default();
 
-        let first = providers.first(&Identity::named("Echoes"), &patient(), &mut away);
+        let first = providers.first(&Identity::named("Slow Water"), &patient(), &mut away);
         let second = providers.first(&Identity::named("Time"), &patient(), &mut away);
 
         assert_eq!((first.refused, first.passed_over), (1, 0));
@@ -945,7 +952,7 @@ mod tests {
         let providers = Providers::none().and(Fixed::registered("server", not_found));
         let mut away = Away::default();
 
-        let first = providers.first(&Identity::named("Echoes"), &patient(), &mut away);
+        let first = providers.first(&Identity::named("Slow Water"), &patient(), &mut away);
         let second = providers.first(&Identity::named("Time"), &patient(), &mut away);
 
         assert_eq!((first.refused, second.refused), (1, 1));
@@ -966,7 +973,7 @@ mod tests {
             ..patient()
         };
 
-        let first = providers.first(&Identity::named("Echoes"), &hurried, &mut away);
+        let first = providers.first(&Identity::named("Slow Water"), &hurried, &mut away);
         let turned_after_first = turned_to.load(std::sync::atomic::Ordering::Relaxed);
         let second = providers.first(&Identity::named("Time"), &hurried, &mut away);
 
@@ -980,7 +987,11 @@ mod tests {
     fn only_an_answer_every_provider_gave_is_heard_from_every_provider() {
         let providers = Providers::none().and(Fixed::registered("inbox", nothing));
 
-        let answer = providers.first(&Identity::named("Echoes"), &patient(), &mut Away::default());
+        let answer = providers.first(
+            &Identity::named("Slow Water"),
+            &patient(),
+            &mut Away::default(),
+        );
 
         assert!(answer.heard_from_every_provider());
     }
@@ -997,7 +1008,7 @@ mod tests {
             let _ = told.send(source.as_str().to_owned());
         };
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &Asking {
                 turning_to: &turning_to,
                 ..*asking
@@ -1152,7 +1163,7 @@ mod tests {
             let _ = told.send((source.as_str().to_owned(), Instant::now()));
         };
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &Asking {
                 turning_to: &turning_to,
                 ..*asking
@@ -1190,7 +1201,7 @@ mod tests {
             .and(LastResort::registered(Fixed::registered("tube", found)));
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(10, 10),
             &mut Away::default(),
         );
@@ -1209,7 +1220,11 @@ mod tests {
             ..racing(10, 10)
         };
 
-        let answer = providers.first(&Identity::named("Echoes"), &asking, &mut Away::default());
+        let answer = providers.first(
+            &Identity::named("Slow Water"),
+            &asking,
+            &mut Away::default(),
+        );
 
         assert!(answer.delivered.is_none());
         assert_eq!(answer.late, 1);
@@ -1225,7 +1240,7 @@ mod tests {
             .and(LastResort::registered(tube.clone()));
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(10, 10),
             &mut Away::default(),
         );
@@ -1243,7 +1258,7 @@ mod tests {
 
         away.note(&SourceId::new("empty").expect("a nameable source"));
 
-        let answer = providers.first(&Identity::named("Echoes"), &racing(10, 10), &mut away);
+        let answer = providers.first(&Identity::named("Slow Water"), &racing(10, 10), &mut away);
 
         assert!(answer.delivered.is_none());
         assert!(!away_tube.was_asked());
@@ -1261,7 +1276,7 @@ mod tests {
             .and(LastResort::registered(second.clone()));
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(10, 10),
             &mut Away::default(),
         );
@@ -1278,7 +1293,7 @@ mod tests {
             .and(LastResort::registered(second.clone()));
 
         let answer = providers.first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(10, 10),
             &mut Away::default(),
         );
@@ -1297,7 +1312,7 @@ mod tests {
             .and(LastResort::registered(Fixed::registered("tube", found)));
 
         let answer = providers.only(&tube).first(
-            &Identity::named("Echoes"),
+            &Identity::named("Slow Water"),
             &racing(10, 10),
             &mut Away::default(),
         );
@@ -1315,7 +1330,11 @@ mod tests {
             ..racing(10, 10)
         };
 
-        let answer = providers.first(&Identity::named("Echoes"), &asking, &mut Away::default());
+        let answer = providers.first(
+            &Identity::named("Slow Water"),
+            &asking,
+            &mut Away::default(),
+        );
 
         assert!(answer.delivered.is_none());
         assert_eq!(answer.passed_over, 1);
@@ -1334,7 +1353,11 @@ mod tests {
             ..racing(10, 10)
         };
 
-        let answer = providers.first(&Identity::named("Echoes"), &asking, &mut Away::default());
+        let answer = providers.first(
+            &Identity::named("Slow Water"),
+            &asking,
+            &mut Away::default(),
+        );
 
         assert_eq!(delivered_by(&answer), Some("tube"));
     }
@@ -1349,7 +1372,11 @@ mod tests {
             ..racing(10, 10)
         };
 
-        let answer = providers.first(&Identity::named("Echoes"), &asking, &mut Away::default());
+        let answer = providers.first(
+            &Identity::named("Slow Water"),
+            &asking,
+            &mut Away::default(),
+        );
 
         assert_eq!(answer.declined, 1);
         assert_eq!(delivered_by(&answer), Some("tube"));

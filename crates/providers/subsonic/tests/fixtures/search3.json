@@ -8,7 +8,7 @@
       "song": [
         {
           "id": "song-1",
-          "title": "Echoes",
+          "title": "Slow Water",
           "artist": "A Tribute Band",
           "suffix": "mp3",
           "musicBrainzId": "",
@@ -16,9 +16,9 @@
         },
         {
           "id": "song-2",
-          "title": "Echoes",
-          "artist": "Pink Floyd",
-          "album": "Meddle",
+          "title": "Slow Water",
+          "artist": "Example Band",
+          "album": "Low Tide",
           "duration": 1412,
           "suffix": "flac",
           "musicBrainzId": "83d91898-7763-47d7-b03b-b92132375c47",
@@ -26,8 +26,8 @@
         },
         {
           "id": "song-3",
-          "title": "Echoes (2011 Remaster)",
-          "artist": "Pink Floyd",
+          "title": "Slow Water (2011 Remaster)",
+          "artist": "Example Band",
           "suffix": "flac",
           "isrc": "GBN9Y1100089"
         }

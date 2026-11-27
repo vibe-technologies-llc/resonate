@@ -9799,15 +9799,15 @@ fn a_queue_row_cut_to_a_span_hands_the_graph_that_span_and_stops() -> Result<()>
     Ok(())
 }
 
-const SHEET: &str = r#"PERFORMER "Pink Floyd"
-TITLE "Meddle"
-FILE "Meddle.wav" WAVE
+const SHEET: &str = r#"PERFORMER "Example Band"
+TITLE "Low Tide"
+FILE "Low Tide.wav" WAVE
   TRACK 01 AUDIO
-    TITLE "One of These Days"
+    TITLE "Paper Boats"
     REM REPLAYGAIN_TRACK_GAIN -3.00 dB
     INDEX 01 00:00:00
   TRACK 02 AUDIO
-    TITLE "Echoes"
+    TITLE "Slow Water"
     REM REPLAYGAIN_TRACK_GAIN -7.06 dB
     INDEX 01 00:00:15
 "#;
@@ -9883,9 +9883,9 @@ fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each
 #[test]
 fn a_row_a_sheet_cut_it_out_of_plays_at_the_gain_that_sheet_declares_for_it() -> Result<()> {
     let tree = Tree::new();
-    let file = tree.write("Meddle.wav", &pcm(16, FRAMES).file);
+    let file = tree.write("Low Tide.wav", &pcm(16, FRAMES).file);
 
-    tree.write("Meddle.cue", SHEET.as_bytes());
+    tree.write("Low Tide.cue", SHEET.as_bytes());
 
     let (player, graph) = settled_over(
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
@@ -9918,7 +9918,7 @@ fn a_row_a_sheet_cut_it_out_of_plays_at_the_gain_that_sheet_declares_for_it() ->
 
     assert_eq!(
         digest.info.tags.title.as_deref(),
-        Some("Echoes"),
+        Some("Slow Water"),
         "the row was billed as the file it was cut out of"
     );
     assert_eq!(

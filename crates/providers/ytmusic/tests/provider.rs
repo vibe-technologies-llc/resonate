@@ -24,7 +24,7 @@ use crate::support;
 
 const SONGS: &str = include_str!("fixtures/songs.json");
 const CLIENT_DATA: &str = ")]}'\n[[\"yt.sw.adr\",null,[[[\"lt\",\"LT\",null,\"78.57.30.54\",\"resonate/0.5.0,gzip(gfe)\",67,\"1.20261104.00.00\",null]]]]]";
-const CREEP: &str = "9RfVp-GhKfs";
+const LANTERN: &str = "9RfVp-GhKfs";
 const ANOTHER: &str = "QQnc-hM80UQ";
 const CHECKED_WITH: &str = "9RfVp-GhKfs";
 const AUDIO: &str = "the served stream";
@@ -211,18 +211,18 @@ fn answer_of(rows: &[Value]) -> String {
     .to_string()
 }
 
-fn creep() -> Identity {
+fn lantern() -> Identity {
     Identity {
-        artist: Some("Radiohead".to_owned()),
+        artist: Some("Tideline".to_owned()),
         length: Some(Duration::from_secs(239)),
-        ..Identity::named("Creep")
+        ..Identity::named("Lantern")
     }
 }
 
 fn linked(url: &str) -> Identity {
     Identity {
         links: vec![Link::new("streaming", url.to_owned())],
-        ..creep()
+        ..lantern()
     }
 }
 
@@ -272,7 +272,7 @@ fn a_want_that_may_not_be_listed_is_not_searched_for_and_the_tool_is_not_run() {
 
     let obtained = music
         .provider(&fake, Cookies::None)
-        .find(&Identity::named("Creep"))
+        .find(&Identity::named("Lantern"))
         .expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
@@ -287,7 +287,7 @@ fn a_want_named_alike_is_offered_and_opened_only_when_taken() {
 
     let obtained = music
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     let (key, extension, opening) = offered(obtained);
@@ -318,7 +318,7 @@ fn a_tier_of_aac_lands_under_the_name_it_was_served_with() {
     let (_, extension, _) = offered(
         music
             .provider(&fake, Cookies::None)
-            .find(&creep())
+            .find(&lantern())
             .expect("an answer"),
     );
 
@@ -332,7 +332,7 @@ fn a_search_is_signed_out_of_the_songs_filter_as_the_web_client_read_from_the_se
 
     music
         .provider(&fake, Cookies::read("firefox"))
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     let searches = music.searches();
@@ -344,7 +344,7 @@ fn a_search_is_signed_out_of_the_songs_filter_as_the_web_client_read_from_the_se
         "1.20261104.00.00"
     );
     assert_eq!(body["context"]["client"]["hl"], "en");
-    assert_eq!(body["query"], "Creep Radiohead");
+    assert_eq!(body["query"], "Lantern Tideline");
     assert_eq!(body["params"], "EgWKAQIIAWoKEAkQBRAKEAMQBA==");
     assert_eq!(
         searches[0].header("origin"),
@@ -363,8 +363,8 @@ fn the_client_version_is_read_once_and_kept() {
 
     let provider = music.provider(&fake, Cookies::None);
 
-    provider.find(&creep()).expect("an answer");
-    provider.find(&creep()).expect("an answer");
+    provider.find(&lantern()).expect("an answer");
+    provider.find(&lantern()).expect("an answer");
 
     let asked = music.asked();
 
@@ -383,7 +383,7 @@ fn a_service_that_names_no_client_version_is_the_provider_away() {
 
     let refused = music
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect_err("no version to ask with");
 
     assert!(refused.is_the_provider_away());
@@ -405,11 +405,11 @@ fn a_search_answered_with_a_page_is_the_provider_away_and_an_odd_document_the_wa
 
     let page_refused = a_page
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect_err("a page");
     let odd_refused = odd
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect_err("an odd document");
 
     assert!(matches!(page_refused, Error::NotTheService { .. }));
@@ -425,18 +425,18 @@ fn every_wording_is_asked_until_one_holds_the_song_and_nothing_found_is_nothing(
 
     let obtained = music
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
-    assert_eq!(music.searches().len(), creep().wordings().len());
+    assert_eq!(music.searches().len(), lantern().wordings().len());
     assert!(fake.calls().is_empty());
 
     let found = Music::answering(SONGS);
 
     found
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     assert_eq!(found.searches().len(), 1);
@@ -452,7 +452,7 @@ fn every_request_waits_its_turn_apart_from_the_last() {
         .asked_apart(PACED_APART);
     let began = Instant::now();
 
-    provider.find(&creep()).expect("an answer");
+    provider.find(&lantern()).expect("an answer");
 
     let requests = u32::try_from(music.asked().len()).expect("a few requests");
 
@@ -469,13 +469,13 @@ fn a_song_of_another_length_or_by_another_artist_is_not_the_song() {
     let longer = provider
         .find(&Identity {
             length: Some(Duration::from_secs(250)),
-            ..creep()
+            ..lantern()
         })
         .expect("an answer");
     let another = provider
         .find(&Identity {
             artist: Some("Lena Hall".to_owned()),
-            ..creep()
+            ..lantern()
         })
         .expect("an answer");
 
@@ -493,7 +493,7 @@ fn any_artist_a_row_credits_may_be_the_one_wanted() {
         .find(&Identity {
             artist: Some("Josy".to_owned()),
             length: Some(Duration::from_secs(131)),
-            ..Identity::named("Creep (Aus the Voice Kids) (Live)")
+            ..Identity::named("Lantern (Aus the Voice Kids) (Live)")
         })
         .expect("an answer");
 
@@ -577,20 +577,25 @@ fn a_link_naming_no_video_that_can_be_asked_is_searched_for() {
 fn a_linked_song_found_gone_is_searched_for_and_a_listed_one_is_passed_over() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(&answer_of(&[
-        row(CREEP, "Creep", "Radiohead • Creep • 3:59", true),
-        row(ANOTHER, "Creep", "Radiohead • Pablo Honey • 3:58", false),
+        row(LANTERN, "Lantern", "Tideline • Lantern • 3:59", true),
+        row(
+            ANOTHER,
+            "Lantern",
+            "Tideline • Harbour Lights • 3:58",
+            false,
+        ),
     ]));
 
     let provider = music.provider(&fake, Cookies::None);
     let gone = resonate_core::MediaLocation::new(
         provider.source().clone(),
-        format!("track/{CREEP}").into_boxed_str(),
+        format!("track/{LANTERN}").into_boxed_str(),
     );
 
     let obtained = provider
         .find(&Identity {
             gone: vec![gone],
-            ..song_at(CREEP)
+            ..song_at(LANTERN)
         })
         .expect("an answer");
 
@@ -604,7 +609,7 @@ fn a_song_with_no_wanted_tier_is_nothing() {
 
     let obtained = music
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
@@ -616,17 +621,17 @@ fn an_explicit_row_is_taken_over_one_read_as_clean_and_over_one_unmarked() {
     let music = Music::answering(&answer_of(&[
         row(
             "cleanTake",
-            "Creep (Clean)",
-            "Radiohead • Creep • 3:59",
+            "Lantern (Clean)",
+            "Tideline • Lantern • 3:59",
             false,
         ),
-        row("unmarked", "Creep", "Radiohead • Creep • 3:59", false),
-        row("explicit", "Creep", "Radiohead • Creep • 3:59", true),
+        row("unmarked", "Lantern", "Tideline • Lantern • 3:59", false),
+        row("explicit", "Lantern", "Tideline • Lantern • 3:59", true),
     ]));
 
     let obtained = music
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     assert_eq!(&*key_of(obtained), "track/explicit");
@@ -637,14 +642,14 @@ fn a_row_read_as_clean_is_not_taken_though_nothing_else_is_listed() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(&answer_of(&[row(
         "cleanTake",
-        "Creep (Clean)",
-        "Radiohead • Creep • 3:59",
+        "Lantern (Clean)",
+        "Tideline • Lantern • 3:59",
         false,
     )]));
 
     let obtained = music
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
@@ -656,14 +661,14 @@ fn an_unmarked_row_with_no_badge_may_be_taken() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(&answer_of(&[row(
         "unmarked",
-        "Creep",
-        "Radiohead • Creep • 3:59",
+        "Lantern",
+        "Tideline • Lantern • 3:59",
         false,
     )]));
 
     let obtained = music
         .provider(&fake, Cookies::None)
-        .find(&creep())
+        .find(&lantern())
         .expect("an answer");
 
     assert_eq!(&*key_of(obtained), "track/unmarked");
@@ -676,7 +681,7 @@ fn lapsed_cookies_stop_the_poll_and_leave_the_want_due() {
 
     let error = music
         .provider(&fake, Cookies::read("firefox"))
-        .find(&creep())
+        .find(&lantern())
         .expect_err("lapsed cookies");
 
     assert!(error.is_the_provider_away());
@@ -859,7 +864,7 @@ fn one_download_runs_at_a_time_for_as_long_as_its_reader_lives() {
     let music = no_server();
 
     let provider = music.provider(&fake, Cookies::None);
-    let (_, _, first) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
+    let (_, _, first) = offered(provider.find(&song_at(LANTERN)).expect("an answer"));
     let (_, _, second) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
     let reader = reader_of(first);
     let (opened, took_its_turn) = mpsc::channel();
@@ -886,7 +891,7 @@ fn a_turn_not_had_within_its_limit_is_busy_and_starts_no_tool() {
     let provider = music
         .provider(&fake, Cookies::None)
         .waiting_for_a_turn_at_most(A_SHORT_WAIT_FOR_A_TURN);
-    let (_, _, first) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
+    let (_, _, first) = offered(provider.find(&song_at(LANTERN)).expect("an answer"));
     let (_, _, second) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
     let _reader = reader_of(first);
     let started = fake.calls().len();
@@ -912,7 +917,7 @@ fn a_turn_is_handed_on_though_the_reader_holding_it_went_down_in_a_panic() {
     let music = no_server();
 
     let provider = music.provider(&fake, Cookies::None);
-    let (_, _, first) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
+    let (_, _, first) = offered(provider.find(&song_at(LANTERN)).expect("an answer"));
     let (_, _, second) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
 
     let panicked = thread::spawn(move || {
@@ -941,7 +946,7 @@ fn a_song_found_gone_when_opened_hands_its_turn_on() {
     let music = no_server();
 
     let provider = music.provider(&fake, Cookies::None);
-    let (_, _, gone) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
+    let (_, _, gone) = offered(provider.find(&song_at(LANTERN)).expect("an answer"));
     let (_, _, next) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
 
     assert!(matches!(gone.open(), Ok(Opened::Gone)));

@@ -203,12 +203,13 @@ mod tests {
 
     #[test]
     fn a_named_song_carries_a_key_its_other_spellings_share() {
-        let named = answer_of(asking(Some(("Echoes", "Pink Floyd")), false).recognise(&sounding()))
-            .expect("an answer");
-        let shouted =
-            answer_of(asking(Some(("ECHOES", "pink floyd")), false).recognise(&sounding()))
+        let named =
+            answer_of(asking(Some(("Slow Water", "Example Band")), false).recognise(&sounding()))
                 .expect("an answer");
-        let other = answer_of(asking(Some(("Dogs", "Pink Floyd")), false).recognise(&sounding()))
+        let shouted =
+            answer_of(asking(Some(("SLOW WATER", "example band")), false).recognise(&sounding()))
+                .expect("an answer");
+        let other = answer_of(asking(Some(("Dogs", "Example Band")), false).recognise(&sounding()))
             .expect("an answer");
 
         let key = key_of(named);
@@ -220,15 +221,15 @@ mod tests {
     #[test]
     fn a_named_song_keeps_what_the_service_said_and_leaves_the_rest_blank() {
         let answer =
-            answer_of(asking(Some(("Echoes", "Pink Floyd")), false).recognise(&sounding()))
+            answer_of(asking(Some(("Slow Water", "Example Band")), false).recognise(&sounding()))
                 .expect("an answer");
 
         let HeardAnswer::Named { song } = answer else {
             panic!("nothing was named");
         };
 
-        assert_eq!(song.title, "Echoes");
-        assert_eq!(song.artist, "Pink Floyd");
+        assert_eq!(song.title, "Slow Water");
+        assert_eq!(song.artist, "Example Band");
         assert_eq!(song.year, Some(1971));
         assert_eq!(song.by, "Shazam");
         assert!(song.album.is_empty() && song.link.is_empty() && song.picture.is_none());
@@ -236,7 +237,8 @@ mod tests {
 
     #[test]
     fn a_silent_clip_a_miss_and_a_service_out_of_reach_are_told_apart() {
-        let silent = answer_of(asking(Some(("Echoes", "Pink Floyd")), false).recognise(&silence()));
+        let silent =
+            answer_of(asking(Some(("Slow Water", "Example Band")), false).recognise(&silence()));
         let missed = answer_of(asking(None, false).recognise(&sounding()));
         let away = answer_of(asking(None, true).recognise(&sounding()));
 

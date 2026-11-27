@@ -390,7 +390,10 @@ mod tests {
             albums: 80,
             songs_new: Some(310),
             songs_added: 505,
-            top_songs: vec![ranked("Echoes", Some("Pink Floyd")), ranked("Łódź ♪", None)],
+            top_songs: vec![
+                ranked("Slow Water", Some("Example Band")),
+                ranked("Łódź ♪", None),
+            ],
             top_artists: vec![ranked("Björk", None)],
             top_albums: vec![ranked("Homogenic", Some("Björk"))],
             top_genres: vec![ranked("Ambient", None)],

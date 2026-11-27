@@ -24,7 +24,7 @@ use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal, Ti
 
 const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
 const SEARCH_RESULTS: &str = include_str!("fixtures/search_results.json");
-const ECHOES_ISRC: &str = "GBN9Y1100089";
+const SLOW_WATER_ISRC: &str = "GBN9Y1100089";
 const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
 const TRACK: u64 = 55_391_743;
 const BEARER: &str = "Bearer fresh-access";
@@ -349,7 +349,7 @@ fn granted() -> Canned {
 
 fn listed(isrc: &str) -> Canned {
     Canned::json(&format!(
-        r#"{{"data":[{{"id":"{TRACK}","type":"tracks","attributes":{{"title":"Echoes","isrc":"{isrc}"}}}}]}}"#
+        r#"{{"data":[{{"id":"{TRACK}","type":"tracks","attributes":{{"title":"Slow Water","isrc":"{isrc}"}}}}]}}"#
     ))
 }
 
@@ -359,7 +359,7 @@ fn is_a_text_search(path: &str) -> bool {
 
 fn nothing_searched() -> Canned {
     Canned::json(
-        r#"{"data":{"id":"echoes","type":"searchResults","relationships":{"tracks":{"data":[]}}}}"#,
+        r#"{"data":{"id":"slow water","type":"searchResults","relationships":{"tracks":{"data":[]}}}}"#,
     )
 }
 
@@ -389,7 +389,7 @@ fn tidal_server(
         }
         match asked.path.as_str() {
             "/auth/token" => granted(),
-            "/openapi/tracks" => listed(ECHOES_ISRC),
+            "/openapi/tracks" => listed(SLOW_WATER_ISRC),
             path if is_a_text_search(path) => Canned::json(SEARCH_RESULTS),
             "/api/tracks/55391743/playbackinfopostpaywall" => {
                 playback(presentation, &dash(&media_at(own), count))
@@ -412,9 +412,9 @@ fn on_itself(own: &str) -> String {
 
 fn by_isrc() -> Identity {
     Identity {
-        isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
-        artist: Some("Pink Floyd".to_owned()),
-        ..Identity::named("Echoes")
+        isrcs: vec![Isrc::new(SLOW_WATER_ISRC).expect("an isrc")],
+        artist: Some("Example Band".to_owned()),
+        ..Identity::named("Slow Water")
     }
 }
 
@@ -485,7 +485,7 @@ fn a_wanted_track_is_found_by_its_isrc_and_delivered_as_native_flac() {
     assert!(
         searched
             .query
-            .contains(&format!("filter%5Bisrc%5D={ECHOES_ISRC}"))
+            .contains(&format!("filter%5Bisrc%5D={SLOW_WATER_ISRC}"))
     );
     assert!(
         heard[1..3]
@@ -501,7 +501,7 @@ fn every_code_of_the_want_is_asked_for_until_one_names_the_track() {
     let two_codes = Identity {
         isrcs: vec![
             Isrc::new("USSM12409270").expect("an isrc"),
-            Isrc::new(ECHOES_ISRC).expect("an isrc"),
+            Isrc::new(SLOW_WATER_ISRC).expect("an isrc"),
         ],
         ..by_isrc()
     };
@@ -520,14 +520,14 @@ fn every_code_of_the_want_is_asked_for_until_one_names_the_track() {
 
     assert_eq!(searched.len(), 2);
     assert!(searched[0].contains("filter%5Bisrc%5D=USSM12409270"));
-    assert!(searched[1].contains(&format!("filter%5Bisrc%5D={ECHOES_ISRC}")));
+    assert!(searched[1].contains(&format!("filter%5Bisrc%5D={SLOW_WATER_ISRC}")));
 }
 
-fn echoes_by_name() -> Identity {
+fn slow_water_by_name() -> Identity {
     Identity {
-        artist: Some("Pink Floyd".to_owned()),
+        artist: Some("Example Band".to_owned()),
         length: Some(Duration::from_secs(1397)),
-        ..Identity::named("Echoes")
+        ..Identity::named("Slow Water")
     }
 }
 
@@ -543,7 +543,7 @@ fn a_want_with_no_code_is_searched_by_its_name_and_only_the_track_named_alike_is
     let fake = tidal_server("FULL", on_itself, whole_segment);
 
     let (key, extension, bytes) =
-        streamed(fake.tidal().find(&echoes_by_name()).expect("an answer")).expect("a delivery");
+        streamed(fake.tidal().find(&slow_water_by_name()).expect("an answer")).expect("a delivery");
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(extension, "flac");
@@ -555,7 +555,7 @@ fn a_want_with_no_code_is_searched_by_its_name_and_only_the_track_named_alike_is
     assert_eq!(searched.len(), 1);
     assert_eq!(
         searched[0].path,
-        "/openapi/searchResults/Echoes%20Pink%20Floyd"
+        "/openapi/searchResults/Slow%20Water%20Example%20Band"
     );
     assert!(searched[0].query.contains("countryCode=GB"));
     assert!(
@@ -577,7 +577,7 @@ fn a_want_whose_code_tidal_lists_nothing_under_is_searched_by_its_name() {
     let fake = tidal_server("FULL", on_itself, whole_segment);
     let reissued = Identity {
         isrcs: vec![Isrc::new("USXYZ1234567").expect("an isrc")],
-        ..echoes_by_name()
+        ..slow_water_by_name()
     };
 
     let (key, ..) = streamed(fake.tidal().find(&reissued).expect("an answer")).expect("a delivery");
@@ -602,11 +602,11 @@ fn a_track_tidal_lists_under_another_artist_or_another_length_is_never_taken_by_
     for wanted in [
         Identity {
             artist: Some("Nobody At All".to_owned()),
-            ..echoes_by_name()
+            ..slow_water_by_name()
         },
         Identity {
             length: Some(Duration::from_secs(1390)),
-            ..echoes_by_name()
+            ..slow_water_by_name()
         },
     ] {
         let fake = tidal_server("FULL", on_itself, whole_segment);
@@ -632,7 +632,7 @@ fn a_name_search_tidal_does_not_hold_is_nothing_and_is_not_asked_without_an_arti
     });
 
     assert!(matches!(
-        fake.tidal().find(&echoes_by_name()),
+        fake.tidal().find(&slow_water_by_name()),
         Ok(Obtained::Nothing)
     ));
     assert!(!text_searches(&fake).is_empty());
@@ -640,7 +640,7 @@ fn a_name_search_tidal_does_not_hold_is_nothing_and_is_not_asked_without_an_arti
     let silent = Fake::serving(|_, _, _| Canned::refused(500, "{}"));
 
     assert!(matches!(
-        silent.tidal().find(&Identity::named("Echoes")),
+        silent.tidal().find(&Identity::named("Slow Water")),
         Ok(Obtained::Nothing)
     ));
     assert!(silent.heard().is_empty());
@@ -665,7 +665,7 @@ fn a_search_result_that_does_not_read_is_passed_over_and_the_rest_taken() {
     });
 
     let (key, ..) =
-        streamed(fake.tidal().find(&echoes_by_name()).expect("an answer")).expect("a delivery");
+        streamed(fake.tidal().find(&slow_water_by_name()).expect("an answer")).expect("a delivery");
 
     assert_eq!(key, format!("track/{TRACK}"));
 }
@@ -699,7 +699,7 @@ fn a_track_musicbrainz_links_to_tidal_is_taken_without_a_search() {
             "streaming",
             format!("https://tidal.com/track/{TRACK}"),
         )],
-        ..Identity::named("Echoes")
+        ..Identity::named("Slow Water")
     };
 
     let delivered = streamed(fake.tidal().find(&linked).expect("an answer"));
@@ -982,9 +982,9 @@ fn a_session_that_lapsed_signs_in_again_once() {
             "/openapi/tracks".to_owned(),
             "/auth/token".to_owned(),
             "/openapi/tracks".to_owned(),
-            "/openapi/searchResults/Echoes%20Pink%20Floyd".to_owned(),
-            "/openapi/searchResults/Pink%20Floyd%20Echoes".to_owned(),
-            "/openapi/searchResults/Echoes".to_owned(),
+            "/openapi/searchResults/Slow%20Water%20Example%20Band".to_owned(),
+            "/openapi/searchResults/Example%20Band%20Slow%20Water".to_owned(),
+            "/openapi/searchResults/Slow%20Water".to_owned(),
         ]
     );
 }
@@ -1382,7 +1382,7 @@ fn wrapped(canned: Canned) -> Canned {
 
 fn hifi_listed(isrc: &str) -> Canned {
     Canned::json(&format!(
-        r#"{{"version":"2.10","data":{{"limit":25,"offset":0,"totalNumberOfItems":1,"items":[{{"id":{TRACK},"title":"Echoes","isrc":"{isrc}"}}]}}}}"#
+        r#"{{"version":"2.10","data":{{"limit":25,"offset":0,"totalNumberOfItems":1,"items":[{{"id":{TRACK},"title":"Slow Water","isrc":"{isrc}"}}]}}}}"#
     ))
 }
 
@@ -1407,7 +1407,7 @@ fn hifi_server(track: impl Fn(&Asked, &[Asked], &str) -> Canned + Send + Sync + 
             return Canned::media(&segmented()[nth]);
         }
         match asked.path.as_str() {
-            "/search/" => hifi_listed(ECHOES_ISRC),
+            "/search/" => hifi_listed(SLOW_WATER_ISRC),
             _ => track(asked, before, own),
         }
     })
@@ -1438,7 +1438,7 @@ fn a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac
     let heard = fake.heard();
 
     assert_eq!(heard[0].path, "/search/");
-    assert_eq!(heard[0].query, format!("i={ECHOES_ISRC}&limit=25"));
+    assert_eq!(heard[0].query, format!("i={SLOW_WATER_ISRC}&limit=25"));
     assert_eq!(heard[1].path, "/track/");
     assert_eq!(
         heard[1].query,
@@ -1582,7 +1582,7 @@ const TIDAL_BEARER: &str = "Bearer tidal-granted";
 
 fn hosted_listing() -> Canned {
     Canned::json(&format!(
-        r#"{{"items":[{{"id":{TRACK},"title":"Echoes","isrc":"{ECHOES_ISRC}","duration":1385,"artists":[{{"name":"Pink Floyd"}}]}}]}}"#
+        r#"{{"items":[{{"id":{TRACK},"title":"Slow Water","isrc":"{SLOW_WATER_ISRC}","duration":1385,"artists":[{{"name":"Example Band"}}]}}]}}"#
     ))
 }
 
@@ -2104,7 +2104,7 @@ fn a_keyed_hifi_api_is_asked_about_one_download_at_once_and_an_open_one_about_as
 fn a_linked_track_found_gone_is_not_offered_again_and_the_codes_are_asked_instead() {
     let fake = hifi_server(|asked, _, _| match asked.path.as_str() {
         "/search/" => Canned::json(&format!(
-            r#"{{"data":{{"items":[{{"id":{TRACK},"isrc":"{ECHOES_ISRC}"}}]}}}}"#
+            r#"{{"data":{{"items":[{{"id":{TRACK},"isrc":"{SLOW_WATER_ISRC}"}}]}}}}"#
         )),
         _ => Canned::refused(404, "{}"),
     });
@@ -2170,16 +2170,16 @@ fn a_keyed_hifi_api_whose_server_lacks_the_track_or_turns_the_key_away_says_so()
 fn named_listing() -> Canned {
     Canned::json(&format!(
         r#"{{"version":"2.10","data":{{"limit":25,"offset":0,"totalNumberOfItems":2,"items":[
-            {{"id":1,"title":"Echoes","duration":1400,"artists":[{{"name":"Pink Floyd"}}]}},
-            {{"id":{TRACK},"title":"Echoes","isrc":"{ECHOES_ISRC}","duration":1396,"artists":[{{"name":"Pink Floyd"}}]}}]}}}}"#
+            {{"id":1,"title":"Slow Water","duration":1400,"artists":[{{"name":"Example Band"}}]}},
+            {{"id":{TRACK},"title":"Slow Water","isrc":"{SLOW_WATER_ISRC}","duration":1396,"artists":[{{"name":"Example Band"}}]}}]}}}}"#
     ))
 }
 
 fn without_a_code() -> Identity {
     Identity {
-        artist: Some("Pink Floyd".to_owned()),
+        artist: Some("Example Band".to_owned()),
         length: Some(Duration::from_secs(1396)),
-        ..Identity::named("Echoes")
+        ..Identity::named("Slow Water")
     }
 }
 
@@ -2207,7 +2207,11 @@ fn a_want_with_no_code_is_searched_by_its_name_and_a_listing_with_a_code_is_aske
     let heard = fake.heard();
 
     assert_eq!(heard[0].path, "/search/");
-    assert!(heard[0].query.starts_with("s=Echoes"), "{}", heard[0].query);
+    assert!(
+        heard[0].query.starts_with("s=Slow%20Water"),
+        "{}",
+        heard[0].query
+    );
     assert_eq!(heard[1].query, format!("id={TRACK}"));
 }
 
@@ -2239,7 +2243,11 @@ fn a_want_whose_codes_the_server_lists_nothing_under_is_searched_by_its_name() {
         "{}",
         heard[0].query
     );
-    assert!(heard[1].query.starts_with("s=Echoes"), "{}", heard[1].query);
+    assert!(
+        heard[1].query.starts_with("s=Slow%20Water"),
+        "{}",
+        heard[1].query
+    );
 }
 
 #[test]
@@ -2248,7 +2256,7 @@ fn a_want_with_no_artist_and_no_code_is_not_searched_at_all() {
 
     let found = fake
         .hifi()
-        .find(&Identity::named("Echoes"))
+        .find(&Identity::named("Slow Water"))
         .expect("an answer");
 
     assert!(matches!(found, Obtained::Nothing));
@@ -2260,7 +2268,7 @@ fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling_by_the_account()
     let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
         "/auth/token" if before.is_empty() => Canned::unavailable_for(FAR_PAST_ANY_CEILING),
         "/auth/token" => granted(),
-        "/openapi/tracks" => listed(ECHOES_ISRC),
+        "/openapi/tracks" => listed(SLOW_WATER_ISRC),
         _ => Canned::refused(404, "{}"),
     });
     let tidal = fake.tidal().retrying_after_at_most(LOWERED_CEILING);
@@ -2285,7 +2293,7 @@ fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling_by_the_account()
 fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling_by_a_hifi_api() {
     let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
         "/search/" if before.is_empty() => Canned::unavailable_for(FAR_PAST_ANY_CEILING),
-        "/search/" => hifi_listed(ECHOES_ISRC),
+        "/search/" => hifi_listed(SLOW_WATER_ISRC),
         _ => Canned::refused(404, "{}"),
     });
     let hifi = fake.hifi().retrying_after_at_most(LOWERED_CEILING);

@@ -489,8 +489,8 @@ mod tests {
             at: SystemTime::UNIX_EPOCH + Duration::from_secs(seconds),
             billed: Billed {
                 title: title.to_owned(),
-                artist: "Pink Floyd".to_owned(),
-                album: Some("Meddle".to_owned()),
+                artist: "Example Band".to_owned(),
+                album: Some("Low Tide".to_owned()),
                 recording: None,
                 release: None,
                 release_group: None,
@@ -522,12 +522,15 @@ mod tests {
 
     #[test]
     fn a_batch_of_listens_is_numbered_and_each_carries_when_it_began() {
-        let fields = scrobbled(&[heard("Echoes", 100), heard("Fearless", 200)]);
+        let fields = scrobbled(&[heard("Slow Water", 100), heard("Harbour Lights", 200)]);
 
-        assert_eq!(fields.0.get("track[0]").map(String::as_str), Some("Echoes"));
+        assert_eq!(
+            fields.0.get("track[0]").map(String::as_str),
+            Some("Slow Water")
+        );
         assert_eq!(
             fields.0.get("track[1]").map(String::as_str),
-            Some("Fearless")
+            Some("Harbour Lights")
         );
         assert_eq!(
             fields.0.get("timestamp[1]").map(String::as_str),
@@ -547,14 +550,17 @@ mod tests {
     #[test]
     fn a_love_names_the_track_by_its_artist_and_title() {
         let fields = loved_as(&LovedNames {
-            title: "Echoes".to_owned(),
-            artist: "Pink Floyd".to_owned(),
+            title: "Slow Water".to_owned(),
+            artist: "Example Band".to_owned(),
         });
 
-        assert_eq!(fields.0.get("track").map(String::as_str), Some("Echoes"));
+        assert_eq!(
+            fields.0.get("track").map(String::as_str),
+            Some("Slow Water")
+        );
         assert_eq!(
             fields.0.get("artist").map(String::as_str),
-            Some("Pink Floyd")
+            Some("Example Band")
         );
         assert_eq!(fields.0.len(), 2);
     }

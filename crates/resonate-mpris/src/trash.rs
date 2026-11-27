@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn only_the_portals_success_code_is_a_file_trashed() {
-        let file = Path::new("/music/echoes.flac");
+        let file = Path::new("/music/slow water.flac");
 
         assert!(answered(1, file).is_ok());
         assert!(matches!(
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_there_is_gone_and_not_refused() {
-        let missing = Path::new("/nowhere/at/all/echoes.flac");
+        let missing = Path::new("/nowhere/at/all/slow water.flac");
 
         let Err(trashing) = trash_through_the_portal(missing) else {
             panic!("a missing file was trashed");
@@ -138,7 +138,7 @@ mod tests {
 
         fs::create_dir_all(&folder).expect("a scratch folder");
 
-        let song = folder.join("echoes.flac");
+        let song = folder.join("slow water.flac");
         let link = folder.join("linked.flac");
 
         fs::write(&song, b"not a song").expect("a song");

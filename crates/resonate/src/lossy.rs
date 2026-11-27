@@ -203,8 +203,11 @@ mod tests {
         ALBUM, ARTIST, Discarded, TITLE, scanned, scratch, tagged_mp3, tagged_wave,
     };
 
-    const TAGS: [(&[u8; 4], &str); 3] =
-        [(TITLE, "Echoes"), (ARTIST, "Pink Floyd"), (ALBUM, "Meddle")];
+    const TAGS: [(&[u8; 4], &str); 3] = [
+        (TITLE, "Slow Water"),
+        (ARTIST, "Example Band"),
+        (ALBUM, "Low Tide"),
+    ];
 
     struct Collection {
         library: Library,
@@ -260,7 +263,7 @@ mod tests {
                 &Release {
                     id: Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid"),
                     group: None,
-                    title: "Meddle".to_owned(),
+                    title: "Low Tide".to_owned(),
                     credit: Vec::new(),
                     date: None,
                     country: None,
@@ -278,7 +281,7 @@ mod tests {
                         tracks: vec![ReleaseTrack {
                             position: 1,
                             number: "1".to_owned(),
-                            title: "Echoes".to_owned(),
+                            title: "Slow Water".to_owned(),
                             artist: None,
                             recording: None,
                             track: None,
@@ -296,10 +299,10 @@ mod tests {
     #[test]
     fn a_lossy_song_with_a_lossless_copy_held_plays_it_and_both_files_stay() {
         let held = collection(&[
-            ("lossy/echoes.mp3", tagged_mp3(&TAGS)),
-            ("lossless/echoes.wav", tagged_wave(&TAGS)),
+            ("lossy/slow water.mp3", tagged_mp3(&TAGS)),
+            ("lossless/slow water.wav", tagged_wave(&TAGS)),
         ]);
-        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3"]);
+        let playlist = playlist_of(&held, "Dark", &["lossy/slow water.mp3"]);
 
         let songs = held
             .library
@@ -313,12 +316,12 @@ mod tests {
 
         assert_eq!(settled.replacing.beside, 1, "{settled:?}");
         assert_eq!(settled.replacing.wanted, 0);
-        assert!(held.folder.join("lossy/echoes.mp3").exists());
-        assert!(held.folder.join("lossless/echoes.wav").exists());
+        assert!(held.folder.join("lossy/slow water.mp3").exists());
+        assert!(held.folder.join("lossless/slow water.wav").exists());
 
         let cuts = held.library.playlist_cuts(playlist.id).expect("a read");
 
-        assert_eq!(cuts, [whole(&held, "lossy/echoes.mp3")]);
+        assert_eq!(cuts, [whole(&held, "lossy/slow water.mp3")]);
         assert_eq!(
             told("Dark", &settled),
             "Dark: 1 song now plays the higher quality copy held beside it"
@@ -333,11 +336,11 @@ mod tests {
 
     #[test]
     fn a_lossy_song_with_a_release_and_no_copy_is_wanted_and_stays_where_it_is() {
-        let held = collection(&[("lossy/echoes.mp3", tagged_mp3(&TAGS))]);
+        let held = collection(&[("lossy/slow water.mp3", tagged_mp3(&TAGS))]);
 
-        the_release_names(&held, "lossy/echoes.mp3");
+        the_release_names(&held, "lossy/slow water.mp3");
 
-        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3"]);
+        let playlist = playlist_of(&held, "Dark", &["lossy/slow water.mp3"]);
         let songs = held
             .library
             .songs_to_better_in(playlist.id)
@@ -349,7 +352,7 @@ mod tests {
 
         assert_eq!(settled.replacing.wanted, 1, "{settled:?}");
         assert_eq!(settled.replacing.beside, 0);
-        assert!(held.folder.join("lossy/echoes.mp3").exists());
+        assert!(held.folder.join("lossy/slow water.mp3").exists());
         assert_eq!(held.library.wants().expect("a read").len(), 1);
         assert!(told("Dark", &settled).contains("`resonate poll`"));
 
@@ -364,8 +367,8 @@ mod tests {
 
     #[test]
     fn a_lossy_song_with_neither_is_left_as_it_is() {
-        let held = collection(&[("lossy/echoes.mp3", tagged_mp3(&TAGS))]);
-        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3"]);
+        let held = collection(&[("lossy/slow water.mp3", tagged_mp3(&TAGS))]);
+        let playlist = playlist_of(&held, "Dark", &["lossy/slow water.mp3"]);
 
         let songs = held
             .library
@@ -378,7 +381,7 @@ mod tests {
 
         assert_eq!(settled.replacing, Replacing::default());
         assert_eq!(settled.unreplaceable, 1);
-        assert!(held.folder.join("lossy/echoes.mp3").exists());
+        assert!(held.folder.join("lossy/slow water.mp3").exists());
         assert!(held.library.wants().expect("a read").is_empty());
         assert_eq!(
             told("Dark", &settled),
@@ -404,8 +407,8 @@ mod tests {
 
     #[test]
     fn a_song_matched_nowhere_a_service_holds_lossless_is_queued_where_a_music_folder_is_set() {
-        let held = collection(&[("lossy/echoes.mp3", tagged_mp3(&TAGS))]);
-        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3"]);
+        let held = collection(&[("lossy/slow water.mp3", tagged_mp3(&TAGS))]);
+        let playlist = playlist_of(&held, "Dark", &["lossy/slow water.mp3"]);
         let shop = Providers::none().and(Arc::new(HoldingItLossless(
             SourceId::new("shop").expect("a source name"),
         )));
@@ -470,13 +473,13 @@ mod tests {
             .expect("a read");
 
         assert_eq!(Fate::of(&again[0]), Fate::Waiting);
-        assert!(held.folder.join("lossy/echoes.mp3").exists());
+        assert!(held.folder.join("lossy/slow water.mp3").exists());
     }
 
     #[test]
     fn a_playlist_with_no_lossy_song_says_so_plainly() {
-        let held = collection(&[("lossless/echoes.wav", tagged_wave(&TAGS))]);
-        let playlist = playlist_of(&held, "Bright", &["lossless/echoes.wav"]);
+        let held = collection(&[("lossless/slow water.wav", tagged_wave(&TAGS))]);
+        let playlist = playlist_of(&held, "Bright", &["lossless/slow water.wav"]);
 
         let songs = held
             .library
@@ -496,8 +499,8 @@ mod tests {
 
     #[test]
     fn the_listing_tells_each_song_what_replacing_would_do() {
-        let held = collection(&[("lossy/echoes.mp3", tagged_mp3(&TAGS))]);
-        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3"]);
+        let held = collection(&[("lossy/slow water.mp3", tagged_mp3(&TAGS))]);
+        let playlist = playlist_of(&held, "Dark", &["lossy/slow water.mp3"]);
 
         let songs = held
             .library
@@ -511,8 +514,8 @@ mod tests {
             said.lines().nth(1).is_some_and(|row| row.starts_with('1')),
             "{said}"
         );
-        assert!(said.contains("Echoes"));
-        assert!(said.contains("Pink Floyd"));
+        assert!(said.contains("Slow Water"));
+        assert!(said.contains("Example Band"));
         assert!(said.contains("no higher quality copy held and no release to want"));
         assert!(said.ends_with("0 of 1 song can play a higher quality version now\n"));
     }
@@ -526,17 +529,21 @@ mod tests {
 
     fn two_with_copies() -> (Collection, Playlist) {
         let other = [
-            (TITLE, "Fearless"),
-            (ARTIST, "Pink Floyd"),
-            (ALBUM, "Meddle"),
+            (TITLE, "Harbour Lights"),
+            (ARTIST, "Example Band"),
+            (ALBUM, "Low Tide"),
         ];
         let held = collection(&[
-            ("lossy/echoes.mp3", tagged_mp3(&TAGS)),
-            ("lossless/echoes.wav", tagged_wave(&TAGS)),
-            ("lossy/fearless.mp3", tagged_mp3(&other)),
-            ("lossless/fearless.wav", tagged_wave(&other)),
+            ("lossy/slow water.mp3", tagged_mp3(&TAGS)),
+            ("lossless/slow water.wav", tagged_wave(&TAGS)),
+            ("lossy/harbour-lights.mp3", tagged_mp3(&other)),
+            ("lossless/harbour-lights.wav", tagged_wave(&other)),
         ]);
-        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3", "lossy/fearless.mp3"]);
+        let playlist = playlist_of(
+            &held,
+            "Dark",
+            &["lossy/slow water.mp3", "lossy/harbour-lights.mp3"],
+        );
         (held, playlist)
     }
 
@@ -546,8 +553,8 @@ mod tests {
 
         replace(&held.library, &playlist, &nonzero(&[2, 2])).expect("replaced");
 
-        assert!(held.folder.join("lossy/echoes.mp3").exists());
-        assert!(held.folder.join("lossy/fearless.mp3").exists());
+        assert!(held.folder.join("lossy/slow water.mp3").exists());
+        assert!(held.folder.join("lossy/harbour-lights.mp3").exists());
 
         let left = held
             .library
@@ -555,7 +562,7 @@ mod tests {
             .expect("a read");
 
         assert_eq!(left.len(), 1);
-        assert_eq!(left[0].track.title, "Echoes");
+        assert_eq!(left[0].track.title, "Slow Water");
     }
 
     #[test]
@@ -564,8 +571,8 @@ mod tests {
 
         replace(&held.library, &playlist, &[]).expect("replaced");
 
-        assert!(held.folder.join("lossy/echoes.mp3").exists());
-        assert!(held.folder.join("lossy/fearless.mp3").exists());
+        assert!(held.folder.join("lossy/slow water.mp3").exists());
+        assert!(held.folder.join("lossy/harbour-lights.mp3").exists());
         assert!(
             held.library
                 .songs_to_better_in(playlist.id)
@@ -587,8 +594,8 @@ mod tests {
             ),
             "{refused:?}"
         );
-        assert!(held.folder.join("lossy/echoes.mp3").exists());
-        assert!(held.folder.join("lossy/fearless.mp3").exists());
+        assert!(held.folder.join("lossy/slow water.mp3").exists());
+        assert!(held.folder.join("lossy/harbour-lights.mp3").exists());
         assert_eq!(
             held.library
                 .songs_to_better_in(playlist.id)

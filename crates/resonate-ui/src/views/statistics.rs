@@ -1541,7 +1541,7 @@ mod tests {
     };
 
     fn heard_once(folder: &Folder) -> (Arc<Library>, TrackId) {
-        for title in ["Echoes", "Money", "Time"] {
+        for title in ["Slow Water", "Money", "Time"] {
             folder.tone(&format!("{title}.wav"), 1);
         }
 
@@ -1722,7 +1722,7 @@ mod tests {
     fn a_catalog_nothing_was_heard_from_ranks_nothing(cx: &mut TestAppContext) {
         let folder = Folder::new();
 
-        folder.tone("Echoes.wav", 1);
+        folder.tone("Slow Water.wav", 1);
 
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
 
@@ -2003,7 +2003,7 @@ mod tests {
 
     #[test]
     fn a_ranked_row_names_who_made_it_where_it_knows_and_always_how_often() {
-        assert_eq!(by_line(Some("Pink Floyd"), 2), "Pink Floyd · 2 plays");
+        assert_eq!(by_line(Some("Example Band"), 2), "Example Band · 2 plays");
         assert_eq!(by_line(None, 1), "1 play");
     }
 

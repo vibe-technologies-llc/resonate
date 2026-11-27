@@ -1848,7 +1848,7 @@ mod tests {
     fn row(title: &str) -> RemoteRowShown {
         RemoteRowShown {
             title: title.to_owned(),
-            artist: "Pink Floyd".to_owned(),
+            artist: "Example Band".to_owned(),
             length: Some(Duration::from_secs(200)),
         }
     }
@@ -1866,7 +1866,7 @@ mod tests {
             queue_length: ROWS,
             first_row: 0,
             queue_revision: Some(DRAWN_REVISION),
-            rows: vec![row("Echoes"), row("Time"), row("Money")],
+            rows: vec![row("Slow Water"), row("Time"), row("Money")],
         }
     }
 

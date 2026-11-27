@@ -644,7 +644,7 @@ mod tests {
             id: TrackId::new(id).expect("a valid id"),
             location: MediaLocation::local(format!("/music/{id}.opus")),
             title: format!("Song {id}"),
-            artist: Some("Pink Floyd".to_owned()),
+            artist: Some("Example Band".to_owned()),
             artist_id: None,
             album_id: None,
             track_number: None,

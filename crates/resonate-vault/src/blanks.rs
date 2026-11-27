@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn a_segments_tags_and_attachments_become_void_of_the_same_length() {
         let info = [
-            ebml(TITLE, b"Echoes"),
+            ebml(TITLE, b"Slow Water"),
             ebml(0x002a_d7b1, &[0x0f, 0x42, 0x40]),
         ]
         .concat();
@@ -697,7 +697,7 @@ mod tests {
         assert_eq!(copied.len(), file.len());
         assert!(!copied.windows(5).any(|window| window == b"title"));
         assert!(!copied.windows(5).any(|window| window == b"cover"));
-        assert!(!copied.windows(6).any(|window| window == b"Echoes"));
+        assert!(!copied.windows(6).any(|window| window == b"Slow Water"));
         assert!(copied.windows(3).any(|window| window == [0x0f, 0x42, 0x40]));
         assert!(copied.ends_with(&ebml(0x1f43_b675, &[9; 32])));
 

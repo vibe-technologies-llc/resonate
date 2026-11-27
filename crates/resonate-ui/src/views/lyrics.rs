@@ -1242,7 +1242,7 @@ mod tests {
         assert!(crediting(Credits::default()).is_none());
         assert!(
             crediting(Credits {
-                album: Some("Meddle".to_owned()),
+                album: Some("Low Tide".to_owned()),
                 ..Credits::default()
             })
             .is_none()
@@ -1252,8 +1252,8 @@ mod tests {
     #[test]
     fn whoever_laid_the_sheet_down_is_what_the_row_draws_and_the_rest_is_behind_the_pointer() {
         let credit = crediting(Credits {
-            album: Some("Meddle".to_owned()),
-            words_by: Some("Roger Waters".to_owned()),
+            album: Some("Low Tide".to_owned()),
+            words_by: Some("Third Band".to_owned()),
             sheet_by: Some("a stranger".to_owned()),
             editor: Some("LRCGET".to_owned()),
             version: Some("0.5".to_owned()),
@@ -1263,20 +1263,20 @@ mod tests {
         assert_eq!(credit.shown, "by a stranger");
         assert_eq!(
             credit.whole,
-            "Words by Roger Waters. Sheet by a stranger. Laid down with LRCGET 0.5. From Meddle."
+            "Words by Third Band. Sheet by a stranger. Laid down with LRCGET 0.5. From Low Tide."
         );
     }
 
     #[test]
     fn the_author_of_the_words_stands_in_where_nobody_signed_the_sheet() {
         let credit = crediting(Credits {
-            words_by: Some("Roger Waters".to_owned()),
+            words_by: Some("Third Band".to_owned()),
             ..Credits::default()
         })
         .expect("a sheet that credits itself");
 
-        assert_eq!(credit.shown, "by Roger Waters");
-        assert_eq!(credit.whole, "Words by Roger Waters.");
+        assert_eq!(credit.shown, "by Third Band");
+        assert_eq!(credit.whole, "Words by Third Band.");
     }
 
     #[test]

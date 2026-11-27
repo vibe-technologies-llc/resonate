@@ -1382,7 +1382,7 @@ mod tests {
         harness
             .player
             .catalog
-            .keep_recognition(id, Some(&heard_as_echoes()), Agreement::Agrees)
+            .keep_recognition(id, Some(&heard_as_slow_water()), Agreement::Agrees)
             .expect("recognised");
 
         let before = study_figures(&harness, id);
@@ -1401,7 +1401,7 @@ mod tests {
         assert_eq!(before.0, Some(i64::from(JUDGED_UNDER)));
         assert_eq!(after, before);
         assert_eq!(heard.print.as_deref(), Some(a_print().encoded()));
-        assert_eq!(heard.heard_as.as_deref(), Some(ECHOES));
+        assert_eq!(heard.heard_as.as_deref(), Some(SLOW_WATER));
         assert_eq!(heard.agreement.as_deref(), Some("agrees"));
         assert!(heard.recognised);
         assert_eq!(shared_before.len(), 1);
@@ -1490,18 +1490,18 @@ mod tests {
             .expect("a study")
     }
 
-    const ECHOES: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
+    const SLOW_WATER: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
 
     fn a_print() -> Chromaprint {
         Chromaprint::new("AQADtEmSJEmSJEmS", Duration::from_secs(181)).expect("a print")
     }
 
-    fn heard_as_echoes() -> HeardAs {
+    fn heard_as_slow_water() -> HeardAs {
         HeardAs {
-            recording: Mbid::new(ECHOES).expect("an mbid"),
+            recording: Mbid::new(SLOW_WATER).expect("an mbid"),
             score: 96,
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
+            title: "Slow Water".to_owned(),
+            artist: Some("Example Band".to_owned()),
         }
     }
 
@@ -1626,10 +1626,10 @@ mod tests {
         study.print = Some(a_print());
         desktop.note_study(track, &study).expect("a printed study");
         desktop
-            .note_recognition(track, Some(&heard_as_echoes()), Agreement::Agrees)
+            .note_recognition(track, Some(&heard_as_slow_water()), Agreement::Agrees)
             .expect("a recognition");
-        named_as(&harness, agreeing, "Echoes", "Pink Floyd");
-        named_as(&harness, disagreeing, "Brain Damage", "Roger Waters");
+        named_as(&harness, agreeing, "Slow Water", "Example Band");
+        named_as(&harness, disagreeing, "Another Light", "Third Band");
         studied_on_the_phone(&harness, agreeing, None);
         studied_on_the_phone(&harness, disagreeing, None);
         studied_on_the_phone(&harness, tone, None);
@@ -1668,7 +1668,7 @@ mod tests {
         let untouched = heard_on_the_phone(&harness, tone);
 
         assert_eq!(agreed.print.as_deref(), Some(a_print().encoded()));
-        assert_eq!(agreed.heard_as.as_deref(), Some(ECHOES));
+        assert_eq!(agreed.heard_as.as_deref(), Some(SLOW_WATER));
         assert_eq!(agreed.agreement.as_deref(), Some("agrees"));
         assert!(agreed.recognised);
         assert_eq!(disagreed.print.as_deref(), Some(a_print().encoded()));
@@ -1688,7 +1688,7 @@ mod tests {
         let desktop = desktop_over(&harness);
         let [printed, recognised] = [0, 1].map(|nth| harness.songs[nth].id);
 
-        named_as(&harness, printed, "Echoes", "Pink Floyd");
+        named_as(&harness, printed, "Slow Water", "Example Band");
         studied_on_the_phone(&harness, printed, Some(a_print()));
 
         let file = whole_file_of(&harness, "a.wav");
@@ -1700,7 +1700,7 @@ mod tests {
         harness
             .player
             .catalog
-            .keep_recognition(recognised, Some(&heard_as_echoes()), Agreement::Agrees)
+            .keep_recognition(recognised, Some(&heard_as_slow_water()), Agreement::Agrees)
             .expect("a recognition");
 
         let wanted = desktop.prints_wanted(0, 10).expect("wanted");
@@ -1731,16 +1731,16 @@ mod tests {
         assert_eq!(
             given.recognition,
             Some(SharedRecognition::Heard(SharedHeard {
-                recording: Mbid::new(ECHOES).expect("an mbid"),
+                recording: Mbid::new(SLOW_WATER).expect("an mbid"),
                 score: 96,
-                title: "Echoes".to_owned(),
-                artist: Some("Pink Floyd".to_owned()),
+                title: "Slow Water".to_owned(),
+                artist: Some("Example Band".to_owned()),
             }))
         );
         assert_eq!(elsewhere, None);
         assert!(taken);
         assert_eq!(landed.print, Some(a_print()));
-        assert_eq!(landed.heard_as, Some(heard_as_echoes()));
+        assert_eq!(landed.heard_as, Some(heard_as_slow_water()));
         assert!(landed.recognised.is_some());
         assert!(desktop.prints_wanted(0, 10).expect("wanted").is_empty());
     }
@@ -1751,7 +1751,7 @@ mod tests {
         let documents = documents_over(&harness);
         let id = harness.songs[0].id;
 
-        named_as(&harness, id, "Echoes", "Pink Floyd");
+        named_as(&harness, id, "Slow Water", "Example Band");
         studied_on_the_phone(&harness, id, None);
 
         let file = whole_file_of(&harness, "a.wav");
@@ -1809,7 +1809,7 @@ mod tests {
         harness
             .player
             .catalog
-            .keep_recognition(id, Some(&heard_as_echoes()), Agreement::Agrees)
+            .keep_recognition(id, Some(&heard_as_slow_water()), Agreement::Agrees)
             .expect("a recognition");
 
         let file = whole_file_of(&harness, "a.wav");

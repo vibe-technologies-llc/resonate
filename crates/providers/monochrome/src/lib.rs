@@ -472,7 +472,7 @@ mod tests {
     }
 
     const SEARCHED: &str = include_str!("../tests/fixtures/search.json");
-    const ECHOES_ISRC: &str = "GBN9Y1100065";
+    const SLOW_WATER_ISRC: &str = "GBN9Y1100065";
 
     #[test]
     fn the_flag_a_listing_carries_decides_between_two_takes_named_alike() {
@@ -517,8 +517,8 @@ mod tests {
         let monochrome = Monochrome::at("http://music.local");
 
         assert_eq!(
-            monochrome.search_url("Echoes & more"),
-            "http://music.local/search/tracks?q=Echoes%20%26%20more&limit=25"
+            monochrome.search_url("Slow Water & more"),
+            "http://music.local/search/tracks?q=Slow%20Water%20%26%20more&limit=25"
         );
         assert_eq!(
             monochrome.track_url(&TrackId("154140652551016448".to_owned())),
@@ -540,7 +540,7 @@ mod tests {
     fn coded(code: &str) -> Identity {
         Identity {
             isrcs: vec![resonate_core::Isrc::new(code).expect("an isrc")],
-            ..Identity::named("Echoes")
+            ..Identity::named("Slow Water")
         }
     }
 
@@ -552,15 +552,15 @@ mod tests {
 
         assert_eq!(listings.len(), 3);
 
-        let echoes = Identity {
+        let slow_water = Identity {
             isrcs: vec![
                 resonate_core::Isrc::new("USSM12409299").expect("an isrc"),
-                resonate_core::Isrc::new(ECHOES_ISRC).expect("an isrc"),
+                resonate_core::Isrc::new(SLOW_WATER_ISRC).expect("an isrc"),
             ],
             ..coded("USSM12409299")
         };
         let named = Identity {
-            artist: Some("Pink Floyd".to_owned()),
+            artist: Some("Example Band".to_owned()),
             length: Some(Duration::from_millis(1_413_000)),
             ..coded("USSM12409299")
         };
@@ -570,7 +570,7 @@ mod tests {
         };
 
         assert_eq!(
-            the_one_asked_for(&echoes, &listings),
+            the_one_asked_for(&slow_water, &listings),
             Some((TrackId("154140652551016448".to_owned()), Taken::ByItsCode))
         );
         assert_eq!(the_one_asked_for(&coded("USSM12409299"), &listings), None);
@@ -586,7 +586,7 @@ mod tests {
         let withheld = Listing {
             track_id: Some("1".to_owned()),
             id: None,
-            isrc: Some(ECHOES_ISRC.to_owned()),
+            isrc: Some(SLOW_WATER_ISRC.to_owned()),
             playable: Some(false),
             title: None,
             artist_names: Vec::new(),
@@ -601,7 +601,7 @@ mod tests {
         };
 
         assert_eq!(
-            the_one_asked_for(&coded(ECHOES_ISRC), &[withheld, playable]),
+            the_one_asked_for(&coded(SLOW_WATER_ISRC), &[withheld, playable]),
             Some((TrackId("2".to_owned()), Taken::ByItsCode))
         );
     }
@@ -641,7 +641,7 @@ mod tests {
             .expect("a search answer");
 
         assert_eq!(
-            the_one_asked_for(&coded(ECHOES_ISRC), &read),
+            the_one_asked_for(&coded(SLOW_WATER_ISRC), &read),
             Some((TrackId("154140652551016448".to_owned()), Taken::ByItsCode))
         );
         assert_eq!(read.len(), 1);
@@ -651,7 +651,7 @@ mod tests {
     #[test]
     fn a_want_with_no_code_and_nothing_to_name_it_by_is_not_searched_for() {
         assert!(matches!(
-            Monochrome::at("http://127.0.0.1:9").find(&Identity::named("Echoes")),
+            Monochrome::at("http://127.0.0.1:9").find(&Identity::named("Slow Water")),
             Ok(Obtained::Nothing)
         ));
     }

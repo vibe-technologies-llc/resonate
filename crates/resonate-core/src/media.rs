@@ -393,29 +393,32 @@ mod tests {
 
     #[test]
     fn a_local_file_keeps_the_path_it_was_given() {
-        let location = MediaLocation::local("/music/Pink Floyd/Echoes.flac");
+        let location = MediaLocation::local("/music/Example Band/Slow Water.flac");
 
         assert!(location.is_local());
         assert_eq!(
             location.as_path(),
-            Some(Path::new("/music/Pink Floyd/Echoes.flac"))
+            Some(Path::new("/music/Example Band/Slow Water.flac"))
         );
         assert_eq!(location.extension(), Some("flac"));
-        assert_eq!(location.stem().as_deref(), Some("Echoes"));
-        assert_eq!(location.to_string(), "/music/Pink Floyd/Echoes.flac");
+        assert_eq!(location.stem().as_deref(), Some("Slow Water"));
+        assert_eq!(location.to_string(), "/music/Example Band/Slow Water.flac");
     }
 
     #[test]
     fn a_source_that_is_not_local_addresses_its_media_by_key() {
         let source = SourceId::new("subsonic").expect("a lowercase name");
-        let location = MediaLocation::new(source, "library/42/Echoes.flac");
+        let location = MediaLocation::new(source, "library/42/Slow Water.flac");
 
         assert!(!location.is_local());
         assert_eq!(location.as_path(), None);
-        assert_eq!(location.locator().as_key(), Some("library/42/Echoes.flac"));
+        assert_eq!(
+            location.locator().as_key(),
+            Some("library/42/Slow Water.flac")
+        );
         assert_eq!(location.extension(), Some("flac"));
-        assert_eq!(location.stem().as_deref(), Some("Echoes"));
-        assert_eq!(location.to_string(), "subsonic:library/42/Echoes.flac");
+        assert_eq!(location.stem().as_deref(), Some("Slow Water"));
+        assert_eq!(location.to_string(), "subsonic:library/42/Slow Water.flac");
     }
 
     #[test]
@@ -430,7 +433,12 @@ mod tests {
     #[test]
     fn a_key_named_by_a_leading_dot_is_split_the_way_a_path_of_that_name_is() {
         let source = SourceId::new("radio").expect("a lowercase name");
-        for name in [".hidden", "streams/.hidden", ".hidden.flac", "Echoes.flac"] {
+        for name in [
+            ".hidden",
+            "streams/.hidden",
+            ".hidden.flac",
+            "Slow Water.flac",
+        ] {
             let key = MediaLocation::new(source.clone(), name);
             let path = MediaLocation::local(name);
 
@@ -442,7 +450,7 @@ mod tests {
     #[test]
     fn a_local_file_round_trips_through_the_uri_a_desktop_hands_over() {
         for path in [
-            "/music/Pink Floyd/Echoes.flac",
+            "/music/Example Band/Slow Water.flac",
             "/music/100% Live/a+b.mp3",
             "/music/Sigur Rós/Ágætis byrjun.flac",
         ] {
@@ -469,7 +477,7 @@ mod tests {
 
     #[test]
     fn a_cut_of_a_file_round_trips_through_a_uri_that_names_its_frames() {
-        let file = MediaLocation::local("/music/Meddle #1.flac");
+        let file = MediaLocation::local("/music/Low Tide #1.flac");
         let closed = FrameSpan::between(Frames(588), Frames(44_100));
         let open = FrameSpan::starting(Frames(44_100));
 
@@ -485,7 +493,7 @@ mod tests {
 
         assert_eq!(
             file.to_uri_within(Some(closed)),
-            "file:///music/Meddle%20%231.flac#frames=588-44100"
+            "file:///music/Low%20Tide%20%231.flac#frames=588-44100"
         );
     }
 
@@ -522,7 +530,10 @@ mod tests {
         assert_eq!(MediaLocation::from_uri("file:///music/a%2.mp3"), None);
         assert_eq!(MediaLocation::from_uri("nothing"), None);
         assert_eq!(MediaLocation::from_uri("local:music/a.mp3"), None);
-        assert_eq!(MediaLocation::from_uri("/music/Pink Floyd/a:b.flac"), None);
+        assert_eq!(
+            MediaLocation::from_uri("/music/Example Band/a:b.flac"),
+            None
+        );
         assert_eq!(MediaLocation::from_uri("file:///music/a%00.mp3"), None);
         assert_eq!(
             MediaLocation::from_uri_within("file:///music/a%00b.mp3#frames=0-"),
@@ -563,14 +574,14 @@ mod tests {
 
     #[test]
     fn a_scheme_and_localhost_are_read_in_any_case() {
-        let echoes = Some(MediaLocation::local("/music/Echoes.flac"));
+        let slow_water = Some(MediaLocation::local("/music/Slow Water.flac"));
 
         for uri in [
-            "FILE:///music/Echoes.flac",
-            "File://LocalHost/music/Echoes.flac",
-            "file://LOCALHOST/music/Echoes.flac",
+            "FILE:///music/Slow%20Water.flac",
+            "File://LocalHost/music/Slow%20Water.flac",
+            "file://LOCALHOST/music/Slow%20Water.flac",
         ] {
-            assert_eq!(MediaLocation::from_uri(uri), echoes, "{uri}");
+            assert_eq!(MediaLocation::from_uri(uri), slow_water, "{uri}");
         }
 
         assert_eq!(
@@ -578,8 +589,8 @@ mod tests {
             MediaLocation::from_uri("subsonic:track/1")
         );
         assert_eq!(
-            MediaLocation::from_uri("FILE:///music/Échoes.flac"),
-            Some(MediaLocation::local("/music/Échoes.flac"))
+            MediaLocation::from_uri("FILE:///music/Slów%20Water.flac"),
+            Some(MediaLocation::local("/music/Slów Water.flac"))
         );
         assert_eq!(MediaLocation::from_uri("fil"), None);
     }
@@ -610,14 +621,14 @@ mod tests {
 
     #[test]
     fn a_file_uri_names_the_path_before_its_query_or_fragment() {
-        let echoes = Some(MediaLocation::local("/music/Echoes.flac"));
+        let slow_water = Some(MediaLocation::local("/music/Slow Water.flac"));
 
         for uri in [
-            "file:///music/Echoes.flac#t=10",
-            "file:///music/Echoes.flac?at=10",
-            "file:///music/Echoes.flac?at=10#t=10",
+            "file:///music/Slow%20Water.flac#t=10",
+            "file:///music/Slow%20Water.flac?at=10",
+            "file:///music/Slow%20Water.flac?at=10#t=10",
         ] {
-            assert_eq!(MediaLocation::from_uri(uri), echoes, "{uri}");
+            assert_eq!(MediaLocation::from_uri(uri), slow_water, "{uri}");
         }
 
         assert_eq!(

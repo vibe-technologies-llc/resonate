@@ -313,9 +313,9 @@ mod tests {
 
         assert_eq!(rows.len(), 4);
         assert_eq!(rows[0].video.as_str(), "9RfVp-GhKfs");
-        assert_eq!(rows[0].title, "Creep");
-        assert_eq!(rows[0].artist.as_deref(), Some("Radiohead"));
-        assert_eq!(rows[0].album.as_deref(), Some("Creep"));
+        assert_eq!(rows[0].title, "Lantern");
+        assert_eq!(rows[0].artist.as_deref(), Some("Tideline"));
+        assert_eq!(rows[0].album.as_deref(), Some("Lantern"));
         assert_eq!(rows[0].length, Some(Duration::from_secs(239)));
         assert!(rows[0].explicit);
         assert!(
@@ -335,7 +335,7 @@ mod tests {
             rows[1].artists(),
             ["Mimi", "Josy", "The Voice Kids - Germany"]
         );
-        assert_eq!(rows[0].artists(), ["Radiohead"]);
+        assert_eq!(rows[0].artists(), ["Tideline"]);
     }
 
     #[test]

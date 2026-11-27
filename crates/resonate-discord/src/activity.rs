@@ -227,9 +227,9 @@ mod tests {
 
     fn playing() -> Playing {
         Playing {
-            title: "Echoes".to_owned(),
-            artist: Some("Pink Floyd".to_owned()),
-            album: Some("Meddle".to_owned()),
+            title: "Slow Water".to_owned(),
+            artist: Some("Example Band".to_owned()),
+            album: Some("Low Tide".to_owned()),
             cover: Some(Cover::Release(Mbid::new(RELEASE).expect("an mbid"))),
             position: Duration::from_secs(60),
             duration: Some(Duration::from_secs(1_411)),
@@ -268,12 +268,12 @@ mod tests {
             shown,
             json!({
                 "type": 2,
-                "details": "Echoes",
-                "state": "Pink Floyd",
+                "details": "Slow Water",
+                "state": "Example Band",
                 "timestamps": { "start": 1_799_999_940_000_u64, "end": 1_800_001_351_000_u64 },
                 "assets": {
                     "large_image": format!("https://coverartarchive.org/release/{RELEASE}/front-500"),
-                    "large_text": "Meddle",
+                    "large_text": "Low Tide",
                     "small_image": "resonate",
                     "small_text": "Resonate",
                 },
@@ -285,8 +285,8 @@ mod tests {
     fn the_track_alone_leaves_the_album_out() {
         let shown = written(&presence(Shown::Track, Pictured::Cover), &playing());
 
-        assert_eq!(shown["details"], "Echoes");
-        assert_eq!(shown["state"], "Pink Floyd");
+        assert_eq!(shown["details"], "Slow Water");
+        assert_eq!(shown["state"], "Example Band");
         assert!(shown["assets"].get("large_text").is_none());
     }
 
@@ -315,7 +315,7 @@ mod tests {
         let shown = written(&presence(Shown::Album, Pictured::Cover), &uncovered);
 
         assert_eq!(shown["assets"]["large_image"], "resonate");
-        assert_eq!(shown["assets"]["large_text"], "Meddle");
+        assert_eq!(shown["assets"]["large_text"], "Low Tide");
         assert!(shown["assets"].get("small_image").is_none());
 
         let bare = Presence {
@@ -325,7 +325,7 @@ mod tests {
         let shown = written(&bare, &uncovered);
 
         assert!(shown.get("assets").is_none());
-        assert_eq!(shown["state"], "Pink Floyd — Meddle");
+        assert_eq!(shown["state"], "Example Band — Low Tide");
     }
 
     #[test]

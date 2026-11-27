@@ -1183,17 +1183,17 @@ mod tests {
 
     #[test]
     fn a_word_typed_without_its_apostrophe_or_mistyped_still_answers_a_found_song() {
-        let creep = songs_asked("creep").expect("words worth asking");
+        let lantern = songs_asked("lantern").expect("words worth asking");
         let found = found_among(
             vec![
-                on_releases(1, "Days", "Creep", 1),
-                on_releases(2, "Creep", "Radiohead", 130),
+                on_releases(1, "Days", "Lantern", 1),
+                on_releases(2, "Lantern", "Tideline", 130),
             ],
-            Some(&creep),
+            Some(&lantern),
             |_| false,
         );
 
-        assert_eq!(found[0].artist, "Radiohead");
+        assert_eq!(found[0].artist, "Tideline");
 
         let dont = songs_asked("dont stop me now").expect("words worth asking");
         let found = found_among(
@@ -1374,13 +1374,13 @@ mod tests {
             Some("example band".to_owned())
         );
         assert_eq!(
-            songs_asked("You F O by  Stela Cole"),
+            songs_asked("Hey A B by  Mira Vale"),
             Some(SongsAsked {
-                words: "you f o stela cole".to_owned(),
-                typed: "you f o by stela cole".to_owned(),
+                words: "hey a b mira vale".to_owned(),
+                typed: "hey a b by mira vale".to_owned(),
                 by: Some(ByArtist {
-                    title: "you f o".to_owned(),
-                    artist: "stela cole".to_owned(),
+                    title: "hey a b".to_owned(),
+                    artist: "mira vale".to_owned(),
                 }),
             }),
             "the word naming the artist is not asked for"
@@ -1396,35 +1396,35 @@ mod tests {
     fn songs_asked_for_by_an_artist_keep_the_nearest_artist_and_the_titles_that_match() {
         let you_f_o = matched(
             "11111111-1111-4111-8111-111111111111",
-            "You F O",
-            "Stela Cole",
+            "Hey A B",
+            "Mira Vale",
             Vec::new(),
         );
         let remixed = matched(
             "22222222-2222-4222-8222-222222222222",
-            "You F.O. (Remix)",
-            "Stela Cole",
+            "Hey A.B. (Remix)",
+            "Mira Vale",
             Vec::new(),
         );
         let another = matched(
             "33333333-3333-4333-8333-333333333333",
             "God Loves You",
-            "Stela Cole",
+            "Mira Vale",
             Vec::new(),
         );
         let near_name = matched(
             "44444444-4444-4444-8444-444444444444",
-            "You F O",
-            "Stella Cole",
+            "Hey A B",
+            "Mirra Vale",
             Vec::new(),
         );
 
         let answered = vec![another.clone(), remixed.clone(), near_name, you_f_o.clone()];
 
         for typed in [
-            "you fo by stela cole",
-            "You F.O. by Stela Cole",
-            "stela cole - you f o",
+            "hey ab by mira vale",
+            "Hey A.B. by Mira Vale",
+            "mira vale - hey a b",
         ] {
             let asked = songs_asked(typed).expect("words worth asking");
 
@@ -1435,7 +1435,7 @@ mod tests {
             );
         }
 
-        let unknown_title = songs_asked("purple rain by stela cole").expect("words worth asking");
+        let unknown_title = songs_asked("silver rain by mira vale").expect("words worth asking");
 
         assert_eq!(
             weighed_for(&unknown_title, answered.clone()),
@@ -1456,7 +1456,7 @@ mod tests {
             "a title holding by is not narrowed to whoever is called what follows it"
         );
 
-        let plain = songs_asked("you f o").expect("words worth asking");
+        let plain = songs_asked("hey a b").expect("words worth asking");
 
         assert_eq!(weighed_for(&plain, answered.clone()), answered);
     }
@@ -1493,7 +1493,7 @@ mod tests {
         assert_eq!(by_release, vec![answered[1].clone()]);
         assert_eq!(accented, vec![answered[1].clone()]);
         assert!(still_answering(&answered, "").is_empty());
-        assert!(still_answering(&answered, "radiohead").is_empty());
+        assert!(still_answering(&answered, "harbour").is_empty());
     }
 
     #[test]

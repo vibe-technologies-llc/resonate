@@ -111,7 +111,7 @@ pub fn title_words(text: &str) -> String {
 mod tests {
     use super::*;
 
-    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 
     const NAMES_FOLDED_BOTH_WAYS: [&str; 24] = [
         "Guns N' Roses",
@@ -161,14 +161,14 @@ mod tests {
 
     #[test]
     fn a_recording_with_an_mbid_is_keyed_by_it_alone() {
-        let mut first = song("Echoes", "Pink Floyd", "Meddle");
-        let mut second = song("echoes (live)", "Floyd", "Pompeii");
+        let mut first = song("Slow Water", "Example Band", "Low Tide");
+        let mut second = song("slow water (live)", "Band", "Harbour");
 
-        first.mbid = Some(Mbid::new(ECHOES).expect("an mbid"));
+        first.mbid = Some(Mbid::new(SLOW_WATER).expect("an mbid"));
         second.mbid = first.mbid.clone();
 
         assert_eq!(first.key(), second.key());
-        assert_eq!(first.key().as_str(), format!("mbid:{ECHOES}"));
+        assert_eq!(first.key().as_str(), format!("mbid:{SLOW_WATER}"));
     }
 
     #[test]
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn a_key_that_names_no_song_by_its_names_is_left_as_it_was_kept() {
-        let identified = format!("mbid:{ECHOES}");
+        let identified = format!("mbid:{SLOW_WATER}");
         let torn = format!("{NAMED_PREFIX}a{KEY_SEPARATOR}b");
         let overfull = format!("{NAMED_PREFIX}a{KEY_SEPARATOR}b{KEY_SEPARATOR}c{KEY_SEPARATOR}d");
 
@@ -237,10 +237,10 @@ mod tests {
 
     #[test]
     fn one_side_knowing_the_mbid_still_matches_by_names() {
-        let named = song("Echoes", "Pink Floyd", "Meddle");
+        let named = song("Slow Water", "Example Band", "Low Tide");
         let mut identified = named.clone();
 
-        identified.mbid = Some(Mbid::new(ECHOES).expect("an mbid"));
+        identified.mbid = Some(Mbid::new(SLOW_WATER).expect("an mbid"));
 
         assert!(named.names_the_same_song_as(&identified));
         assert_ne!(named.key(), identified.key());
@@ -248,21 +248,21 @@ mod tests {
 
     #[test]
     fn a_deletion_surely_names_only_the_recording_its_id_or_its_album_and_length_tell() {
-        let told = song("Echoes", "Pink Floyd", "Meddle");
+        let told = song("Slow Water", "Example Band", "Low Tide");
         let mut identified = told.clone();
         let mut conflicting = told.clone();
         let mut live = told.clone();
 
-        identified.mbid = Some(Mbid::new(ECHOES).expect("an mbid"));
+        identified.mbid = Some(Mbid::new(SLOW_WATER).expect("an mbid"));
         conflicting.mbid =
             Some(Mbid::new("0bd1c7a3-9f2e-4c6b-8a1d-5e7f3b2c4d6a").expect("an mbid"));
         live.length = Some(Duration::from_secs(1_380));
 
-        assert!(told.surely_names(&song("ECHOES", "pink floyd", " Meddle ")));
+        assert!(told.surely_names(&song("SLOW WATER", "example band", " Low Tide ")));
         assert!(told.surely_names(&identified));
         assert!(identified.surely_names(&told));
         assert!(!identified.surely_names(&conflicting));
-        assert!(!told.surely_names(&song("Echoes", "Pink Floyd", "Live at Pompeii")));
+        assert!(!told.surely_names(&song("Slow Water", "Example Band", "Live at Harbour")));
         assert!(!told.surely_names(&live));
     }
 
@@ -283,16 +283,16 @@ mod tests {
         let bare = Recording {
             album: String::new(),
             length: None,
-            ..song("Echoes", "Pink Floyd", "")
+            ..song("Slow Water", "Example Band", "")
         };
         let timed = Recording {
             album: String::new(),
-            ..song("Echoes", "Pink Floyd", "")
+            ..song("Slow Water", "Example Band", "")
         };
 
-        assert!(!bare.surely_names(&song("Echoes", "Pink Floyd", "")));
-        assert!(!bare.surely_names(&song("Echoes", "Pink Floyd", "Meddle")));
-        assert!(timed.surely_names(&song("Echoes", "Pink Floyd", "")));
-        assert!(!timed.surely_names(&song("Echoes", "Pink Floyd", "Meddle")));
+        assert!(!bare.surely_names(&song("Slow Water", "Example Band", "")));
+        assert!(!bare.surely_names(&song("Slow Water", "Example Band", "Low Tide")));
+        assert!(timed.surely_names(&song("Slow Water", "Example Band", "")));
+        assert!(!timed.surely_names(&song("Slow Water", "Example Band", "Low Tide")));
     }
 }

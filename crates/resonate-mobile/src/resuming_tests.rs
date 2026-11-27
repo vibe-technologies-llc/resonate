@@ -19,7 +19,7 @@ use crate::{
     features::SearchSong,
 };
 
-const ECHOES_ISRC: &str = "GBN9Y1100065";
+const SLOW_WATER_ISRC: &str = "GBN9Y1100065";
 const TRACK: &str = "154140652551016448";
 const OTHER_TRACK: &str = "154140652551016449";
 const SONG_BYTES: usize = 512 * 1024;
@@ -157,7 +157,7 @@ fn answer(stream: TcpStream, state: &Serving) {
 
     if request.target.starts_with("/search/tracks") {
         let listing = format!(
-            r#"{{"tracks":[{{"id":"{0}","trackId":"{0}","title":"Echoes","artistNames":["Pink Floyd"],"duration":1412451,"isrc":"{ECHOES_ISRC}","playable":true}}]}}"#,
+            r#"{{"tracks":[{{"id":"{0}","trackId":"{0}","title":"Slow Water","artistNames":["Example Band"],"duration":1412451,"isrc":"{SLOW_WATER_ISRC}","playable":true}}]}}"#,
             state.track
         );
         let head = format!(
@@ -262,13 +262,13 @@ impl Drop for Scratch {
     }
 }
 
-fn echoes() -> SearchSong {
+fn slow_water() -> SearchSong {
     SearchSong {
         recording: "8f2eb3e7-4ff2-4b14-8c0e-8b7c1e7c2b7d".to_owned(),
-        title: "Echoes".to_owned(),
-        artist: "Pink Floyd".to_owned(),
+        title: "Slow Water".to_owned(),
+        artist: "Example Band".to_owned(),
         duration_ms: Some(1_412_451),
-        isrcs: vec![ECHOES_ISRC.to_owned()],
+        isrcs: vec![SLOW_WATER_ISRC.to_owned()],
         ..SearchSong::default()
     }
 }
@@ -293,7 +293,7 @@ fn reaching() -> bool {
 }
 
 fn offered(downloads: &Downloads, server: &str) -> u64 {
-    let job = downloads.begin(echoes());
+    let job = downloads.begin(slow_water());
     let searched = downloads.find(
         &downloads.job(job).expect("the job"),
         vec![account(server)],
@@ -522,7 +522,7 @@ fn a_whole_that_changed_length_without_a_validator_is_asked_for_again_from_the_s
         etag: None,
     };
 
-    let job = downloads.begin(echoes());
+    let job = downloads.begin(slow_water());
     let searched = downloads.find(
         &downloads.job(job).expect("the job"),
         vec![account(&server)],

@@ -1390,12 +1390,12 @@ mod tests {
         let folder = crate::driven::Folder::new();
 
         folder.tagged(
-            "echoes.wav",
+            "slow water.wav",
             1,
             &[
-                (b"INAM", "Echoes"),
-                (b"IART", "Pink Floyd"),
-                (b"IPRD", "Meddle"),
+                (b"INAM", "Slow Water"),
+                (b"IART", "Example Band"),
+                (b"IPRD", "Low Tide"),
             ],
         );
 
@@ -1407,7 +1407,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("secondary-k");
         driven.settle();
-        driven.cx.simulate_input("@ pink floyd");
+        driven.cx.simulate_input("@ example band");
         driven.until(|root, cx| {
             let hits = &root.command_palette.read(cx).hits;
             !hits.loading && !hits.artists.is_empty()

@@ -1377,7 +1377,7 @@ mod tests {
     fn wanting(title: Option<&str>) -> Wanted {
         Wanted {
             title: title.map(ToOwned::to_owned),
-            ..Wanted::for_media(MediaLocation::local("/music/echoes.flac"))
+            ..Wanted::for_media(MediaLocation::local("/music/slow water.flac"))
         }
     }
 
@@ -1422,7 +1422,7 @@ mod tests {
             "a track was looked up twice on the same words"
         );
         assert!(
-            model.worth_looking_again(false, &wanting(Some("Echoes"))),
+            model.worth_looking_again(false, &wanting(Some("Slow Water"))),
             "a title the digest brought was never searched on"
         );
         assert!(

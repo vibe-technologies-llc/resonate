@@ -1350,13 +1350,13 @@ mod tests {
 
     use super::*;
 
-    fn echoes() -> Shown {
+    fn slow_water() -> Shown {
         shown(
             &TagSet {
-                title: Some("Echoes".to_owned()),
+                title: Some("Slow Water".to_owned()),
                 ..TagSet::default()
             },
-            &MediaLocation::local("/music/Pink Floyd/Echoes.flac"),
+            &MediaLocation::local("/music/Example Band/Slow Water.flac"),
             None,
         )
         .expect("a titled track is worth telling")
@@ -1382,23 +1382,23 @@ mod tests {
 
     #[test]
     fn a_track_is_told_once_and_only_while_it_is_sounding() {
-        let echoes = echoes();
+        let slow_water = slow_water();
 
         assert_eq!(
-            telling(Some(&echoes), None, PlaybackState::Playing, UNATTENDED),
+            telling(Some(&slow_water), None, PlaybackState::Playing, UNATTENDED),
             Telling::Raise
         );
         assert_eq!(
             telling(
-                Some(&echoes),
-                Some(&echoes),
+                Some(&slow_water),
+                Some(&slow_water),
                 PlaybackState::Playing,
                 UNATTENDED
             ),
             Telling::Hold
         );
         assert_eq!(
-            telling(Some(&echoes), None, PlaybackState::Paused, UNATTENDED),
+            telling(Some(&slow_water), None, PlaybackState::Paused, UNATTENDED),
             Telling::Hold
         );
         assert_eq!(
@@ -1409,16 +1409,16 @@ mod tests {
 
     #[test]
     fn a_track_the_window_is_already_showing_is_noted_rather_than_raised() {
-        let echoes = echoes();
+        let slow_water = slow_water();
 
         assert_eq!(
-            telling(Some(&echoes), None, PlaybackState::Playing, ATTENDED),
+            telling(Some(&slow_water), None, PlaybackState::Playing, ATTENDED),
             Telling::Note
         );
         assert_eq!(
             telling(
-                Some(&echoes),
-                Some(&echoes),
+                Some(&slow_water),
+                Some(&slow_water),
                 PlaybackState::Playing,
                 ATTENDED
             ),
@@ -1428,16 +1428,21 @@ mod tests {
 
     #[test]
     fn a_host_that_has_notifications_turned_off_notes_a_track_rather_than_raising_it() {
-        let echoes = echoes();
+        let slow_water = slow_water();
         let hushed = Telling::of(false, false);
 
         assert_eq!(
-            telling(Some(&echoes), None, PlaybackState::Playing, hushed),
+            telling(Some(&slow_water), None, PlaybackState::Playing, hushed),
             Telling::Note,
             "a track started with notifications off raised one anyway"
         );
         assert_eq!(
-            telling(Some(&echoes), Some(&echoes), PlaybackState::Playing, hushed),
+            telling(
+                Some(&slow_water),
+                Some(&slow_water),
+                PlaybackState::Playing,
+                hushed
+            ),
             Telling::Hold
         );
         assert_eq!(

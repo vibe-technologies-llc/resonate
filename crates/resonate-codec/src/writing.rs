@@ -4389,7 +4389,7 @@ mod tests {
 
         tags.write(
             &location,
-            just(&[edited(TagField::Performer, "Third Band; Nick Mason")]),
+            just(&[edited(TagField::Performer, "Third Band; Alex Drummer")]),
         )
         .expect("a written MP3");
 
@@ -4408,7 +4408,7 @@ mod tests {
             credits.key_value_pairs.as_ref(),
             [
                 (Cow::from("guitar"), Cow::from("Third Band")),
-                (Cow::from(""), Cow::from("Nick Mason")),
+                (Cow::from(""), Cow::from("Alex Drummer")),
             ]
         );
         assert_eq!(
@@ -4418,7 +4418,7 @@ mod tests {
                 .credits
                 .performer
                 .as_deref(),
-            Some("Third Band; Nick Mason")
+            Some("Third Band; Alex Drummer")
         );
 
         tags.write(

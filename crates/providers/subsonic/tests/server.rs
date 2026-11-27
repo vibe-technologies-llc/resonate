@@ -13,8 +13,8 @@ use resonate_providers::{
 };
 use resonate_subsonic::{Id, Named, Patience, PlaysInPlace as _, Server, Subsonic};
 
-const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
-const ECHOES_ISRC: &str = "GBN9Y1100089";
+const SLOW_WATER: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+const SLOW_WATER_ISRC: &str = "GBN9Y1100089";
 const AUDIO: &[u8] = b"fLaC and the rest of the file";
 const A_PAGE: usize = 40;
 const PAGES_AT_MOST: usize = 5;
@@ -278,7 +278,7 @@ fn within<T: Send + 'static>(limit: Duration, work: impl FnOnce() -> T + Send + 
 
 fn song(id: &str, recording: &str, isrc: &str) -> String {
     format!(
-        r#"{{"id":"{id}","title":"Echoes","suffix":"flac","musicBrainzId":"{recording}","isrc":"{isrc}"}}"#
+        r#"{{"id":"{id}","title":"Slow Water","suffix":"flac","musicBrainzId":"{recording}","isrc":"{isrc}"}}"#
     )
 }
 
@@ -295,11 +295,11 @@ fn tributes(count: usize) -> Vec<String> {
         .collect()
 }
 
-fn echoes() -> Identity {
+fn slow_water() -> Identity {
     Identity {
-        recording: Some(Mbid::new(ECHOES).expect("an mbid")),
-        artist: Some("Pink Floyd".to_owned()),
-        ..Identity::named("Echoes")
+        recording: Some(Mbid::new(SLOW_WATER).expect("an mbid")),
+        artist: Some("Example Band".to_owned()),
+        ..Identity::named("Slow Water")
     }
 }
 
@@ -326,12 +326,12 @@ fn streamed(obtained: Obtained) -> Option<(String, Vec<u8>)> {
 #[test]
 fn a_search_is_answered_without_the_download_being_asked_for() {
     let fake = Fake::serving(|asked, _| match asked.method.as_str() {
-        "search3" => found(&[song("floyd", ECHOES, "")]),
+        "search3" => found(&[song("band", SLOW_WATER, "")]),
         _ => Canned::audio(),
     });
 
     let Obtained::Found(Delivery::Stream { opening, .. }) =
-        fake.subsonic().find(&echoes()).expect("an answer")
+        fake.subsonic().find(&slow_water()).expect("an answer")
     else {
         panic!("nothing was offered");
     };
@@ -355,33 +355,33 @@ fn a_search_is_answered_without_the_download_being_asked_for() {
 fn a_song_is_searched_for_by_title_and_artist_both_ways_round_and_then_by_title_page_after_page() {
     let fake = Fake::serving(
         |asked, _| match (asked.method.as_str(), asked.query.as_deref()) {
-            ("search3", Some("Echoes Pink Floyd" | "Pink Floyd Echoes")) => found(&[]),
+            ("search3", Some("Slow Water Example Band" | "Example Band Slow Water")) => found(&[]),
             ("search3", _) if asked.offset == Some(0) => found(&tributes(A_PAGE)),
-            ("search3", _) => found(&[song("floyd", ECHOES, "")]),
+            ("search3", _) => found(&[song("band", SLOW_WATER, "")]),
             _ => Canned::audio(),
         },
     );
 
-    let delivered = streamed(fake.subsonic().find(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.subsonic().find(&slow_water()).expect("an answer"));
 
-    assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
+    assert_eq!(delivered, Some(("band".to_owned(), AUDIO.to_vec())));
     assert_eq!(
         fake.heard(),
         vec![
             (
                 "search3".to_owned(),
-                Some("Echoes Pink Floyd".to_owned()),
+                Some("Slow Water Example Band".to_owned()),
                 Some(0)
             ),
             (
                 "search3".to_owned(),
-                Some("Pink Floyd Echoes".to_owned()),
+                Some("Example Band Slow Water".to_owned()),
                 Some(0)
             ),
-            ("search3".to_owned(), Some("Echoes".to_owned()), Some(0)),
+            ("search3".to_owned(), Some("Slow Water".to_owned()), Some(0)),
             (
                 "search3".to_owned(),
-                Some("Echoes".to_owned()),
+                Some("Slow Water".to_owned()),
                 Some(A_PAGE)
             ),
             ("download".to_owned(), None, None),
@@ -393,7 +393,7 @@ fn a_song_is_searched_for_by_title_and_artist_both_ways_round_and_then_by_title_
 fn a_short_page_ends_the_search_and_nothing_found_is_nothing_delivered() {
     let fake = Fake::serving(|_, _| found(&tributes(3)));
 
-    let obtained = fake.subsonic().find(&echoes()).expect("an answer");
+    let obtained = fake.subsonic().find(&slow_water()).expect("an answer");
 
     assert!(matches!(obtained, Obtained::Nothing));
     assert_eq!(
@@ -407,7 +407,7 @@ fn a_short_page_ends_the_search_and_nothing_found_is_nothing_delivered() {
 fn an_error_document_answering_a_download_is_a_refusal_when_the_offer_is_opened() {
     let fake = Fake::serving(|asked, _| {
         match asked.method.as_str() {
-        "search3" => found(&[song("floyd", ECHOES, "")]),
+        "search3" => found(&[song("band", SLOW_WATER, "")]),
         _ => Canned::json(
             r#"{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"code":70,"message":"not found"}}}"#
                 .to_owned(),
@@ -416,7 +416,7 @@ fn an_error_document_answering_a_download_is_a_refusal_when_the_offer_is_opened(
     });
 
     let Obtained::Found(Delivery::Stream { opening, .. }) =
-        fake.subsonic().find(&echoes()).expect("an answer")
+        fake.subsonic().find(&slow_water()).expect("an answer")
     else {
         panic!("nothing was offered");
     };
@@ -434,30 +434,30 @@ fn an_error_document_answering_a_download_is_a_refusal_when_the_offer_is_opened(
 #[test]
 fn an_isrc_written_with_dashes_is_the_same_code() {
     let fake = Fake::serving(|asked, _| match asked.method.as_str() {
-        "search3" => found(&[song("floyd", "", "gb-n9y-11-00089")]),
+        "search3" => found(&[song("band", "", "gb-n9y-11-00089")]),
         _ => Canned::audio(),
     });
     let by_isrc = Identity {
-        isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
-        ..Identity::named("Echoes")
+        isrcs: vec![Isrc::new(SLOW_WATER_ISRC).expect("an isrc")],
+        ..Identity::named("Slow Water")
     };
 
     let delivered = streamed(fake.subsonic().find(&by_isrc).expect("an answer"));
 
-    assert_eq!(delivered.map(|(key, _)| key), Some("floyd".to_owned()));
+    assert_eq!(delivered.map(|(key, _)| key), Some("band".to_owned()));
 }
 
 #[test]
 fn a_server_asking_to_be_asked_later_is_asked_again_and_then_answers() {
     let fake = Fake::serving(|asked, nth| match (asked.method.as_str(), nth) {
         (_, 0) => Canned::unavailable(),
-        ("search3", _) => found(&[song("floyd", ECHOES, "")]),
+        ("search3", _) => found(&[song("band", SLOW_WATER, "")]),
         _ => Canned::audio(),
     });
 
-    let delivered = streamed(fake.subsonic().find(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.subsonic().find(&slow_water()).expect("an answer"));
 
-    assert_eq!(delivered.map(|(key, _)| key), Some("floyd".to_owned()));
+    assert_eq!(delivered.map(|(key, _)| key), Some("band".to_owned()));
     assert_eq!(fake.heard().len(), 3);
 }
 
@@ -466,7 +466,7 @@ fn a_server_that_stays_unavailable_is_a_refusal_after_a_few_tries() {
     let fake = Fake::serving(|_, _| Canned::unavailable());
 
     assert!(matches!(
-        fake.subsonic().find(&echoes()),
+        fake.subsonic().find(&slow_water()),
         Err(Error::Refused {
             op: ProviderOp::Search,
             status: 503,
@@ -480,14 +480,14 @@ fn a_server_that_stays_unavailable_is_a_refusal_after_a_few_tries() {
 fn a_retry_after_past_the_ceiling_is_waited_only_to_the_ceiling() {
     let fake = Fake::serving(|asked, nth| match (asked.method.as_str(), nth) {
         (_, 0) => Canned::unavailable_for(FAR_PAST_ANY_CEILING),
-        ("search3", _) => found(&[song("floyd", ECHOES, "")]),
+        ("search3", _) => found(&[song("band", SLOW_WATER, "")]),
         _ => Canned::audio(),
     });
     let subsonic = fake.ceilinged();
     let started = Instant::now();
 
     let found_again = within(GIVEN_UP_WELL_BEFORE, move || {
-        matches!(subsonic.find(&echoes()), Ok(Obtained::Found(_)))
+        matches!(subsonic.find(&slow_water()), Ok(Obtained::Found(_)))
     });
 
     assert!(found_again);
@@ -500,8 +500,8 @@ fn a_server_answering_a_full_page_for_ever_is_asked_for_the_most_pages_and_no_mo
     let fake = Fake::serving(|_, _| found(&tributes(A_PAGE)));
     let subsonic = fake.subsonic();
     let by_isrc = Identity {
-        isrcs: vec![Isrc::new(ECHOES_ISRC).expect("an isrc")],
-        ..Identity::named("Echoes")
+        isrcs: vec![Isrc::new(SLOW_WATER_ISRC).expect("an isrc")],
+        ..Identity::named("Slow Water")
     };
 
     let obtained =
@@ -522,10 +522,10 @@ fn a_server_answering_a_full_page_for_ever_is_asked_for_the_most_pages_and_no_mo
 #[test]
 fn an_answer_that_stalls_part_way_is_given_up_within_its_deadline() {
     let fake =
-        Fake::serving(|_, _| found(&[song("floyd", ECHOES, "")]).sent(Sent::StallingAfter(8)));
+        Fake::serving(|_, _| found(&[song("band", SLOW_WATER, "")]).sent(Sent::StallingAfter(8)));
     let started = Instant::now();
 
-    let refused = fake.impatient().find(&echoes());
+    let refused = fake.impatient().find(&slow_water());
 
     assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
     assert!(matches!(
@@ -540,13 +540,13 @@ fn an_answer_that_stalls_part_way_is_given_up_within_its_deadline() {
 #[test]
 fn a_download_that_stalls_part_way_is_broken_off_rather_than_held() {
     let fake = Fake::serving(|asked, _| match asked.method.as_str() {
-        "search3" => found(&[song("floyd", ECHOES, "")]),
+        "search3" => found(&[song("band", SLOW_WATER, "")]),
         _ => Canned::audio().sent(Sent::StallingAfter(AUDIO.len() / 2)),
     });
     let started = Instant::now();
 
     let Obtained::Found(Delivery::Stream { opening, .. }) =
-        fake.impatient().find(&echoes()).expect("an answer")
+        fake.impatient().find(&slow_water()).expect("an answer")
     else {
         panic!("no stream was delivered");
     };
@@ -564,12 +564,12 @@ fn a_download_that_stalls_part_way_is_broken_off_rather_than_held() {
 fn a_download_cut_off_part_way_is_asked_for_again_from_where_it_stopped() {
     let half = AUDIO.len() / 2;
     let fake = Fake::serving(move |asked, _| match (asked.method.as_str(), asked.from) {
-        ("search3", _) => found(&[song("floyd", ECHOES, "")]),
+        ("search3", _) => found(&[song("band", SLOW_WATER, "")]),
         (_, Some(from)) => Canned::audio_from(from),
         _ => Canned::audio().sent(Sent::CutAfter(half)),
     });
 
-    let delivered = streamed(fake.impatient().find(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.impatient().find(&slow_water()).expect("an answer"));
     let downloads: Vec<_> = fake
         .heard
         .lock()
@@ -578,7 +578,7 @@ fn a_download_cut_off_part_way_is_asked_for_again_from_where_it_stopped() {
         .map(|asked| asked.from)
         .collect();
 
-    assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
+    assert_eq!(delivered, Some(("band".to_owned(), AUDIO.to_vec())));
     assert_eq!(downloads, [None, Some(half)]);
 }
 
@@ -586,12 +586,12 @@ fn a_download_cut_off_part_way_is_asked_for_again_from_where_it_stopped() {
 fn a_song_that_does_not_read_is_passed_over_and_a_numeric_id_is_read() {
     let fake = Fake::serving(|asked, _| match asked.method.as_str() {
         "search3" => Canned::json(format!(
-            r#"{{"subsonic-response":{{"status":"ok","searchResult3":{{"song":[{{"id":["odd"]}},{{"id":42,"title":"Echoes","suffix":"flac","musicBrainzId":"{ECHOES}","isrc":[null,"{ECHOES_ISRC}"]}}]}}}}}}"#
+            r#"{{"subsonic-response":{{"status":"ok","searchResult3":{{"song":[{{"id":["odd"]}},{{"id":42,"title":"Slow Water","suffix":"flac","musicBrainzId":"{SLOW_WATER}","isrc":[null,"{SLOW_WATER_ISRC}"]}}]}}}}}}"#
         )),
         _ => Canned::audio(),
     });
 
-    let delivered = streamed(fake.subsonic().find(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.subsonic().find(&slow_water()).expect("an answer"));
 
     assert_eq!(delivered, Some(("42".to_owned(), AUDIO.to_vec())));
 }
@@ -599,7 +599,7 @@ fn a_song_that_does_not_read_is_passed_over_and_a_numeric_id_is_read() {
 #[test]
 fn a_download_that_keeps_coming_is_read_however_long_it_takes_in_all() {
     let fake = Fake::serving(|asked, _| match asked.method.as_str() {
-        "search3" => found(&[song("floyd", ECHOES, "")]),
+        "search3" => found(&[song("band", SLOW_WATER, "")]),
         _ => Canned::audio().sent(Sent::Dripping {
             bytes: 4,
             apart: IMPATIENT / 4,
@@ -607,10 +607,10 @@ fn a_download_that_keeps_coming_is_read_however_long_it_takes_in_all() {
     });
     let started = Instant::now();
 
-    let delivered = streamed(fake.impatient().find(&echoes()).expect("an answer"));
+    let delivered = streamed(fake.impatient().find(&slow_water()).expect("an answer"));
 
     assert!(started.elapsed() > IMPATIENT);
-    assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
+    assert_eq!(delivered, Some(("band".to_owned(), AUDIO.to_vec())));
 }
 
 fn ok(body: &str) -> Canned {
@@ -633,16 +633,16 @@ fn id(id: &str) -> Id {
 fn a_served_library(asked: &Asked) -> Canned {
     match (asked.method.as_str(), asked.id.as_deref()) {
         ("getArtists", _) => ok(
-            r#""artists":{"index":[{"name":"P","artist":[{"id":"ar-1","name":"Pink Floyd","albumCount":1},{"id":["odd"]}]}]}"#,
+            r#""artists":{"index":[{"name":"P","artist":[{"id":"ar-1","name":"Example Band","albumCount":1},{"id":["odd"]}]}]}"#,
         ),
         ("getArtist", Some("ar-1")) => ok(
-            r#""artist":{"id":"ar-1","name":"Pink Floyd","album":[{"id":"al-1","name":"Meddle","artist":"Pink Floyd","year":1971,"songCount":2}]}"#,
+            r#""artist":{"id":"ar-1","name":"Example Band","album":[{"id":"al-1","name":"Low Tide","artist":"Example Band","year":1971,"songCount":2}]}"#,
         ),
         ("getAlbum", Some("al-1")) => ok(
-            r#""album":{"id":"al-1","name":"Meddle","artist":"Pink Floyd","coverArt":"al-1","song":[{"id":"so-1","title":"One of These Days","track":1,"discNumber":1,"duration":357,"suffix":"flac"},{"id":6,"title":"Echoes","track":6,"duration":1412,"suffix":"flac","starred":"2024-05-01T10:00:00Z"}]}"#,
+            r#""album":{"id":"al-1","name":"Low Tide","artist":"Example Band","coverArt":"al-1","song":[{"id":"so-1","title":"Paper Boats","track":1,"discNumber":1,"duration":357,"suffix":"flac"},{"id":6,"title":"Slow Water","track":6,"duration":1412,"suffix":"flac","starred":"2024-05-01T10:00:00Z"}]}"#,
         ),
         ("getSong", Some("so-1")) => ok(
-            r#""song":{"id":"so-1","title":"One of These Days","album":"Meddle","suffix":"flac","coverArt":"mf-so-1"}"#,
+            r#""song":{"id":"so-1","title":"Paper Boats","album":"Low Tide","suffix":"flac","coverArt":"mf-so-1"}"#,
         ),
         ("star" | "unstar", Some("so-1" | "6")) => {
             Canned::json(r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#.to_owned())
@@ -655,7 +655,7 @@ fn a_served_library(asked: &Asked) -> Canned {
         },
         ("getCoverArt", _) => not_held(),
         ("search3", _) => ok(
-            r#""searchResult3":{"artist":[{"id":"ar-1","name":"Pink Floyd"}],"album":[{"id":"al-1","name":"Meddle"}],"song":[{"id":6,"title":"Echoes"}]}"#,
+            r#""searchResult3":{"artist":[{"id":"ar-1","name":"Example Band"}],"album":[{"id":"al-1","name":"Low Tide"}],"song":[{"id":6,"title":"Slow Water"}]}"#,
         ),
         _ => not_held(),
     }
@@ -669,20 +669,20 @@ fn a_servers_artists_albums_and_songs_are_browsed_by_their_ids() {
     let artists = subsonic.artists().expect("the artists");
     let albums = subsonic.artist(&artists[0].id).expect("an artist");
     let songs = subsonic.album(&albums.albums[0].id).expect("an album");
-    let found = subsonic.search("Meddle").expect("a search");
+    let found = subsonic.search("Low Tide").expect("a search");
 
     assert_eq!(
         artists.len(),
         1,
         "a listing that does not read is passed over"
     );
-    assert_eq!(artists[0].name, "Pink Floyd");
+    assert_eq!(artists[0].name, "Example Band");
     assert_eq!(artists[0].albums, Some(1));
-    assert_eq!(albums.artist.name, "Pink Floyd");
-    assert_eq!(albums.albums[0].name, "Meddle");
+    assert_eq!(albums.artist.name, "Example Band");
+    assert_eq!(albums.albums[0].name, "Low Tide");
     assert_eq!(albums.albums[0].year, Some(1971));
     assert_eq!(albums.albums[0].songs, Some(2));
-    assert_eq!(songs.album.name, "Meddle");
+    assert_eq!(songs.album.name, "Low Tide");
     assert_eq!(
         songs
             .songs
@@ -690,8 +690,8 @@ fn a_servers_artists_albums_and_songs_are_browsed_by_their_ids() {
             .map(|song| (song.id.as_str(), song.title.as_str(), song.track))
             .collect::<Vec<_>>(),
         [
-            ("so-1", "One of These Days", Some(1)),
-            ("6", "Echoes", Some(6))
+            ("so-1", "Paper Boats", Some(1)),
+            ("6", "Slow Water", Some(6))
         ]
     );
     assert_eq!(songs.songs[1].length, Some(Duration::from_secs(1412)));
@@ -950,14 +950,14 @@ fn a_stream_redirected_to_another_port_is_refused_and_that_port_is_never_asked()
 #[test]
 fn a_download_redirected_to_another_port_is_refused_when_opened_and_that_port_is_never_asked() {
     let elsewhere = Fake::serving(|_, _| Canned::audio());
-    let location = format!("{}/rest/download?id=floyd", elsewhere.url);
+    let location = format!("{}/rest/download?id=band", elsewhere.url);
     let fake = Fake::serving(move |asked, _| match asked.method.as_str() {
-        "search3" => found(&[song("floyd", ECHOES, "")]),
+        "search3" => found(&[song("band", SLOW_WATER, "")]),
         _ => Canned::redirecting_to(&location),
     });
 
     let Obtained::Found(Delivery::Stream { opening, .. }) =
-        fake.subsonic().find(&echoes()).expect("an answer")
+        fake.subsonic().find(&slow_water()).expect("an answer")
     else {
         panic!("nothing was offered");
     };
