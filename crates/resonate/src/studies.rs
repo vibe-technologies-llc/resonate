@@ -29,14 +29,20 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
 
     said!(
         "{} | {}",
-        words::studies::judged(
-            counted(Verdict::Fake),
-            counted(Verdict::Genuine),
-            counted(Verdict::Lossy),
-            every.len(),
-            counted(Verdict::Suspect),
-        ),
-        words::studies::named(misnamed, recognised, counted(Verdict::NotJudged)),
+        words::studies::Judged {
+            fake: counted(Verdict::Fake),
+            genuine: counted(Verdict::Genuine),
+            lossy: counted(Verdict::Lossy),
+            studied: every.len(),
+            suspect: counted(Verdict::Suspect)
+        }
+        .said(),
+        words::studies::Named {
+            misnamed,
+            recognised,
+            unjudged: counted(Verdict::NotJudged)
+        }
+        .said(),
     );
 
     let shown: Vec<StudiedTrack> = every
@@ -83,12 +89,13 @@ pub fn take(library: &Library, location: &MediaLocation, span: Option<FrameSpan>
 
     said!(
         "{}",
-        words::studies::taken(
-            table::on_one_line(taken.artist.as_deref().unwrap_or(NOTHING)),
-            taken.recording.to_string(),
-            taken.score.to_string(),
-            table::on_one_line(&taken.title),
-        )
+        words::studies::Taken {
+            artist: table::on_one_line(taken.artist.as_deref().unwrap_or(NOTHING)),
+            recording: taken.recording.to_string(),
+            score: taken.score.to_string(),
+            title: table::on_one_line(&taken.title)
+        }
+        .said()
     );
     Ok(())
 }

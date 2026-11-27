@@ -40,7 +40,11 @@ pub fn stem(location: &MediaLocation) -> String {
 }
 
 pub fn quality(spec: StreamSpec) -> String {
-    words::format::quality(depth(spec.format), spec.rate.to_string())
+    words::format::Quality {
+        depth: depth(spec.format),
+        rate: spec.rate.to_string(),
+    }
+    .said()
 }
 
 pub fn spanned(played: Duration) -> String {
@@ -64,7 +68,11 @@ pub fn heard_for(span: Duration) -> String {
     match seconds / AN_HOUR {
         0 if minutes == 0 => words::format::heard_seconds(seconds),
         0 => words::format::heard_minutes(minutes),
-        hours => words::format::heard_hours(hours, minutes % MINUTES_AN_HOUR),
+        hours => words::format::HeardHours {
+            hours,
+            minutes: minutes % MINUTES_AN_HOUR,
+        }
+        .said(),
     }
 }
 
@@ -75,9 +83,11 @@ pub fn applied(gain: AppliedGain) -> String {
         (None, false) => words::format::gain_none().to_owned(),
         (None, true) => words::format::gain_kept_under_full_scale(landed),
         (Some(_), false) => words::format::gain(landed),
-        (Some(requested), true) => {
-            words::format::gain_capped(landed, format!("{:+.2}", rounded(requested.get())))
+        (Some(requested), true) => words::format::GainCapped {
+            landed,
+            requested: format!("{:+.2}", rounded(requested.get())),
         }
+        .said(),
     }
 }
 

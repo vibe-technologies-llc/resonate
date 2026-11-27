@@ -73,7 +73,11 @@ impl Deck {
     }
 
     fn place_said(&self) -> String {
-        words::wrapped::slide_of(self.at + 1, self.slides.len())
+        words::wrapped::SlideOf {
+            at: self.at + 1,
+            count: self.slides.len(),
+        }
+        .said()
     }
 
     fn turned_by(&mut self, slides: isize) -> bool {

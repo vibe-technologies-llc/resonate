@@ -507,10 +507,13 @@ impl YearReview {
             &self.eyebrow(),
             words::wrapped::of_music(spelled_listening(self.listened)),
         )
-        .detailed(words::wrapped::across_the_days(
-            across,
-            words::wrapped::days(self.rhythm.days_heard),
-        ))
+        .detailed(
+            words::wrapped::AcrossTheDays {
+                across,
+                days: words::wrapped::days(self.rhythm.days_heard),
+            }
+            .said(),
+        )
     }
 
     fn top_of(
@@ -559,10 +562,11 @@ impl YearReview {
 
     fn days(&self) -> Option<Slide> {
         let busiest = self.rhythm.busiest_day?;
-        let on = words::wrapped::biggest_day_was(
-            spelled_date(busiest.date),
-            spelled_listening(busiest.listened),
-        );
+        let on = words::wrapped::BiggestDayWas {
+            date: spelled_date(busiest.date),
+            listened: spelled_listening(busiest.listened),
+        }
+        .said();
 
         Some(match self.rhythm.longest_streak {
             Some(streak) if streak.days > 1 => Slide::saying(
@@ -570,7 +574,13 @@ impl YearReview {
                 words::wrapped::your_streak(),
                 words::wrapped::in_a_row(words::wrapped::days(streak.days)),
             )
-            .detailed(words::wrapped::streak_from(on, spelled_date(streak.from))),
+            .detailed(
+                words::wrapped::StreakFrom {
+                    biggest: on,
+                    date: spelled_date(streak.from),
+                }
+                .said(),
+            ),
             _ => Slide::saying(
                 SlideKind::Days,
                 words::wrapped::your_biggest_day(),
@@ -631,7 +641,11 @@ impl YearReview {
                 first.title.clone(),
             )
             .detailed(match &first.by {
-                Some(by) => words::wrapped::by_on(by.as_str(), on),
+                Some(by) => words::wrapped::ByOn {
+                    by: by.as_str(),
+                    on,
+                }
+                .said(),
                 None => words::wrapped::only_on(on),
             }),
         )
@@ -649,7 +663,11 @@ impl YearReview {
 
 fn named_with_its_artist(ranked: &Ranked) -> String {
     match &ranked.by {
-        Some(by) => words::wrapped::named_by(by.as_str(), ranked.name.as_str()),
+        Some(by) => words::wrapped::NamedBy {
+            by: by.as_str(),
+            name: ranked.name.as_str(),
+        }
+        .said(),
         None => ranked.name.clone(),
     }
 }

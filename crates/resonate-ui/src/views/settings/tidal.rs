@@ -533,11 +533,14 @@ impl RootView {
                             .child(self.open_the_tidal_page(opened, cx))
                             .child(self.stop_signing_in(cx)),
                     )
-                    .child(note(words::settings_tidal::approve_the_code(
-                        authorizing.user_code.to_string(),
-                        authorizing.lasts.as_secs().div_ceil(60),
-                        authorizing.verify_at.to_string(),
-                    )))
+                    .child(note(
+                        words::settings_tidal::ApproveTheCode {
+                            code: authorizing.user_code.to_string(),
+                            minutes: authorizing.lasts.as_secs().div_ceil(60),
+                            page: authorizing.verify_at.to_string(),
+                        }
+                        .said(),
+                    ))
             }
         }
     }

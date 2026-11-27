@@ -232,14 +232,15 @@ impl Chart {
     }
 
     fn says(&self) -> String {
-        let readings = words::statistics::chart_says(
-            format::heard_for(self.average),
-            format::heard_for(self.tallest),
-        );
+        let readings = words::statistics::ChartSays {
+            average: format::heard_for(self.average),
+            peak: format::heard_for(self.tallest),
+        }
+        .said();
 
         match self.days_a_bar {
             0 | 1 => readings,
-            days => words::statistics::chart_says_folded(days, readings),
+            days => words::statistics::ChartSaysFolded { days, readings }.said(),
         }
     }
 
@@ -282,7 +283,11 @@ fn spanned(bar: Bar) -> String {
         return bar.first.named();
     }
 
-    words::statistics::span(bar.first.named(), bar.last.named())
+    words::statistics::Span {
+        from: bar.first.named(),
+        to: bar.last.named(),
+    }
+    .said()
 }
 
 fn said(bar: Bar) -> String {
@@ -290,7 +295,12 @@ fn said(bar: Bar) -> String {
         return words::statistics::bar_unplayed(spanned(bar));
     }
 
-    words::statistics::bar_played(bar.plays, format::heard_for(bar.listened), spanned(bar))
+    words::statistics::BarPlayed {
+        count: bar.plays,
+        listened: format::heard_for(bar.listened),
+        span: spanned(bar),
+    }
+    .said()
 }
 
 fn dated(date: CivilDate, this_year: i64) -> String {
@@ -309,7 +319,12 @@ fn the_pace_of(listened: Duration, days_heard: u32, days_spanned: usize) -> Stri
         return String::new();
     };
 
-    words::statistics::pace(format::heard_for(a_day), days_heard, days_spanned)
+    words::statistics::Pace {
+        daily: format::heard_for(a_day),
+        heard: days_heard,
+        spanned: days_spanned,
+    }
+    .said()
 }
 
 fn shares_of(spans: &[Duration]) -> Vec<f32> {
@@ -338,20 +353,28 @@ fn hour_said(hour: usize, listened: Duration) -> String {
 
     match listened.is_zero() {
         true => words::statistics::nothing_heard(hours),
-        false => words::statistics::heard(format::heard_for(listened), hours),
+        false => words::statistics::Heard {
+            listened: format::heard_for(listened),
+            when: hours,
+        }
+        .said(),
     }
 }
 
 fn weekday_said(named: &str, listened: Duration) -> String {
     match listened.is_zero() {
         true => words::statistics::nothing_heard(named),
-        false => words::statistics::heard(format::heard_for(listened), named),
+        false => words::statistics::Heard {
+            listened: format::heard_for(listened),
+            when: named,
+        }
+        .said(),
     }
 }
 
 fn by_line(by: Option<&str>, plays: u64) -> String {
     match by {
-        Some(by) => words::statistics::by_line(by, plays),
+        Some(by) => words::statistics::ByLine { by, count: plays }.said(),
         None => words::statistics::plays(plays),
     }
 }
@@ -510,10 +533,13 @@ impl RootView {
                             .min_w(px(theme::heading_name()))
                             .gap_1()
                             .child(kit::title(words::statistics::statistics()))
-                            .child(kit::subtitle(words::statistics::plays_across(
-                                across(window),
-                                counts.plays,
-                            ))),
+                            .child(kit::subtitle(
+                                words::statistics::PlaysAcross {
+                                    across: across(window),
+                                    count: counts.plays,
+                                }
+                                .said(),
+                            )),
                     )
                     .child(kit::actions().child(self.in_the_pane_ring(
                         kit::button(
@@ -899,7 +925,13 @@ fn the_headline(wide: bool, counts: Statistics, habits: &Habits, days_spanned: u
 
     let listened = div()
         .id("statistics-headline")
-        .read_plainly(&words::statistics::time_listened_said(&pace, &reading))
+        .read_plainly(
+            &words::statistics::TimeListenedSaid {
+                pace: &pace,
+                reading: &reading,
+            }
+            .said(),
+        )
         .flex()
         .flex_col()
         .flex_1()
@@ -1350,7 +1382,13 @@ fn genres_heard(genres: &[Ranked]) -> Div {
             div()
                 .id(("genre-heard", at))
                 .listed_as(|| {
-                    SharedString::from(words::statistics::genre_heard(&genre.name, &heard))
+                    SharedString::from(
+                        words::statistics::GenreHeard {
+                            genre: &genre.name,
+                            listened: &heard,
+                        }
+                        .said(),
+                    )
                 })
                 .placed(Placed { at, of })
                 .flex()

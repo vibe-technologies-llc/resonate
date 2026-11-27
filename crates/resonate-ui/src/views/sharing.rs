@@ -288,7 +288,7 @@ impl RootView {
             let more = seen.unheld.len().saturating_sub(UNHELD_NAMED_AT_MOST);
 
             let line = if more > 0 {
-                words::sharing::unheld_and_more(more, named)
+                words::sharing::UnheldAndMore { more, named }.said()
             } else {
                 words::sharing::unheld(named)
             };

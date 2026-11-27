@@ -64,7 +64,7 @@ fn missing_matching(
 }
 
 fn shown_of(title: &str, album: &str) -> String {
-    words::wanting::on(album, title)
+    words::wanting::On { album, title }.said()
 }
 
 pub fn want(library: &Library, title: &str, narrowing: Narrowing<'_>) -> Result<()> {
@@ -113,7 +113,11 @@ pub fn dismiss_release(library: &Library, title: &str, artist: Option<&str>) -> 
         library.dismiss_release(release.artist, &release.mbid)?;
         said!(
             "{}",
-            words::wanting::dismissed_by(&release.artist_name, &release.title)
+            words::wanting::DismissedBy {
+                artist: &release.artist_name,
+                title: &release.title
+            }
+            .said()
         );
     }
     said!("{}", words::wanting::releases_dismissed(found.len()));

@@ -375,7 +375,11 @@ fn timing_of(ahead: LyricsAhead) -> LyricTiming {
     LyricTiming {
         ahead_ms: ahead.millis(),
         moved: !ahead.is_zero(),
-        said: words::lyrics::seconds_ahead(format!("{:.1}", seconds.abs()), sign),
+        said: words::lyrics::SecondsAhead {
+            seconds: format!("{:.1}", seconds.abs()),
+            sign,
+        }
+        .said(),
     }
 }
 

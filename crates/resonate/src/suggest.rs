@@ -83,8 +83,18 @@ fn keep(library: &Library, suggested: &[Suggestion], name: &str) -> Result<()> {
     said!(
         "{}",
         match revised {
-            Some(name) => words::suggest::now_fills_itself(fills_from(found), held, name),
-            None => words::suggest::fills_itself(fills_from(found), held, &found.name),
+            Some(name) => words::suggest::NowFillsItself {
+                from: fills_from(found),
+                held,
+                name
+            }
+            .said(),
+            None => words::suggest::FillsItself {
+                from: fills_from(found),
+                held,
+                name: &found.name
+            }
+            .said(),
         }
     );
     Ok(())

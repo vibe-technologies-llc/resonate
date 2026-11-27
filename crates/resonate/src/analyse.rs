@@ -132,7 +132,11 @@ fn stream(analysis: &Analysis, span: Option<FrameSpan>) {
         );
         (
             words::analyse::cut(),
-            words::analyse::cut_from_to(end, clock(span.start(), examined.rate)),
+            words::analyse::CutFromTo {
+                end,
+                start: clock(span.start(), examined.rate),
+            }
+            .said(),
         )
     });
 
@@ -232,7 +236,11 @@ fn levels(analysis: &Analysis) {
         ),
         (
             words::analyse::clipped(),
-            words::analyse::clipped_samples(levels.clipped_runs, levels.clipped),
+            words::analyse::ClippedSamples {
+                runs: levels.clipped_runs,
+                samples: levels.clipped,
+            }
+            .said(),
         ),
         (words::analyse::dc_offset(), decibels_of(levels.dc)),
         (
@@ -378,7 +386,11 @@ fn waveform(envelope: &Envelope) {
     said!(
         "  {:>9}  {}",
         "",
-        words::analyse::waveform_legend(WAVEFORM_PEAK.to_string(), WAVEFORM_RMS.to_string())
+        words::analyse::WaveformLegend {
+            peak: WAVEFORM_PEAK.to_string(),
+            rms: WAVEFORM_RMS.to_string()
+        }
+        .said()
     );
 }
 

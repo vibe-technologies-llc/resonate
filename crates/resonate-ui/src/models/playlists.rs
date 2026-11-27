@@ -54,8 +54,17 @@ impl LibraryModel {
                 library.start_playlist(&name, &holding)?;
 
                 Ok(Some(match holding.len() {
-                    0 => words::models::started(name, put_it_back()),
-                    added => words::models::started_with(added, name, put_it_back()),
+                    0 => words::models::Started {
+                        name,
+                        undo: put_it_back(),
+                    }
+                    .said(),
+                    added => words::models::StartedWith {
+                        count: added,
+                        name,
+                        undo: put_it_back(),
+                    }
+                    .said(),
                 }))
             },
             cx,
@@ -69,7 +78,7 @@ impl LibraryModel {
                 let id = library.save_query(&name, &query)?;
                 let held = library.playlist(id)?.map_or(0, |found| found.entries);
 
-                Ok(Some(words::models::fills_itself(held, name)))
+                Ok(Some(words::models::FillsItself { held, name }.said()))
             },
             cx,
         );
@@ -89,9 +98,9 @@ impl LibraryModel {
 
                 let held = library.playlist(id)?.map_or(0, |found| found.entries);
 
-                Ok(Some(words::models::fills_itself_from_the_new_search(
-                    held, name,
-                )))
+                Ok(Some(
+                    words::models::FillsItselfFromTheNewSearch { held, name }.said(),
+                ))
             },
             cx,
         );
@@ -117,9 +126,13 @@ impl LibraryModel {
                 let name = library.playlist(id)?.map(|found| found.name);
                 let dropped = library.remove_playlist(id)?;
 
-                Ok(name
-                    .filter(|_| dropped)
-                    .map(|name| words::models::discarded(name, put_it_back())))
+                Ok(name.filter(|_| dropped).map(|name| {
+                    words::models::Discarded {
+                        name,
+                        undo: put_it_back(),
+                    }
+                    .said()
+                }))
             },
             cx,
         );
@@ -134,7 +147,13 @@ impl LibraryModel {
                     .playlist(copy)?
                     .map_or_else(|| unnamed_playlist(copy), |found| found.name);
 
-                Ok(Some(words::models::made(name, put_it_back())))
+                Ok(Some(
+                    words::models::Made {
+                        name,
+                        undo: put_it_back(),
+                    }
+                    .said(),
+                ))
             },
             cx,
         );
@@ -291,11 +310,14 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 let written = library.export_playlist(id, &path)?;
-                Ok(Some(words::models::wrote_rows(
-                    written.rows,
-                    written.format.name(),
-                    path.display().to_string(),
-                )))
+                Ok(Some(
+                    words::models::WroteRows {
+                        count: written.rows,
+                        format: written.format.name(),
+                        path: path.display().to_string(),
+                    }
+                    .said(),
+                ))
             },
             cx,
         );

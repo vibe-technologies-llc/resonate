@@ -112,8 +112,17 @@ pub struct Device {
 impl Device {
     pub fn shown(&self) -> String {
         match self.rig.as_deref() {
-            Some(rig) => words::catalogue::measured_on(&self.label, &self.measured_by, rig),
-            None => words::catalogue::measured(&self.label, &self.measured_by),
+            Some(rig) => words::catalogue::MeasuredOn {
+                device: &self.label,
+                measurer: &self.measured_by,
+                rig,
+            }
+            .said(),
+            None => words::catalogue::Measured {
+                device: &self.label,
+                measurer: &self.measured_by,
+            }
+            .said(),
         }
     }
 }

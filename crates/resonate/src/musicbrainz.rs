@@ -637,7 +637,12 @@ fn replicated_now(config: &Config) -> Result<()> {
     } else {
         said!(
             "{}",
-            words::musicbrainz::replicated(done.to.to_string(), done.changes, done.documents)
+            words::musicbrainz::Replicated {
+                changes: done.changes,
+                documents: done.documents,
+                to: done.to.to_string()
+            }
+            .said()
         );
     }
     Ok(())
@@ -705,11 +710,12 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
 
         said!(
             "{}",
-            words::musicbrainz::built(
-                format!("{:.1}", gigabytes(bytes_of(&built))),
-                began.elapsed().as_secs() / 60,
-                built.display().to_string(),
-            )
+            words::musicbrainz::Built {
+                gigabytes: format!("{:.1}", gigabytes(bytes_of(&built))),
+                minutes: began.elapsed().as_secs() / 60,
+                path: built.display().to_string()
+            }
+            .said()
         );
         if !config.is_on(Switch::MusicbrainzMirror) {
             said!("{}", words::musicbrainz::mirror_off());
@@ -745,7 +751,11 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
                 "{:>3}  {}  {}",
                 recording.score,
                 recording.recording,
-                words::musicbrainz::found(credited, &recording.title)
+                words::musicbrainz::Found {
+                    credited,
+                    title: &recording.title
+                }
+                .said()
             );
         }
         return Ok(());
@@ -759,9 +769,19 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
     said!(
         "{}",
         if config.is_on(Switch::MusicbrainzMirror) {
-            words::musicbrainz::held(dump, weighed, path)
+            words::musicbrainz::Held {
+                dump,
+                gigabytes: weighed,
+                path,
+            }
+            .said()
         } else {
-            words::musicbrainz::held_though_off(dump, weighed, path)
+            words::musicbrainz::HeldThoughOff {
+                dump,
+                gigabytes: weighed,
+                path,
+            }
+            .said()
         }
     );
     if let Some(amended) = mirror.amended_to() {
@@ -769,10 +789,11 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
 
         said!(
             "{}",
-            words::musicbrainz::amended(
-                amended.sequence.to_string(),
-                resonate_core::elapsed::since(applied, std::time::SystemTime::now())
-            )
+            words::musicbrainz::Amended {
+                ago: resonate_core::elapsed::since(applied, std::time::SystemTime::now()),
+                sequence: amended.sequence.to_string()
+            }
+            .said()
         );
     }
     if let Some(kept) = kept() {

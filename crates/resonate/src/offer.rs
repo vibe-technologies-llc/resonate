@@ -68,16 +68,21 @@ fn offer(
 
     said!(
         "{}",
-        words::offer::offering(server.port().to_string(), server.udn().as_str())
+        words::offer::Offering {
+            port: server.port().to_string(),
+            udn: server.udn().as_str()
+        }
+        .said()
     );
     said!(
         "{}",
-        words::offer::holds(
-            counts.albums,
-            counts.artists,
-            counts.playlists,
-            counts.songs
-        )
+        words::offer::Holds {
+            albums: counts.albums,
+            artists: counts.artists,
+            playlists: counts.playlists,
+            songs: counts.songs
+        }
+        .said()
     );
 
     let _ = stopped.recv();

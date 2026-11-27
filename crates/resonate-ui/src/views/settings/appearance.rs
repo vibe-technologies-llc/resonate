@@ -105,16 +105,16 @@ impl Choice for RegionChoice {
         let date = resonate_words::day_month_and_year(year, month, day);
 
         SharedString::from(match self {
-            Self::System => words::settings_appearance::figures_as_the_system_writes_them(
-                A_COUNT_THAT_GROUPS,
+            Self::System => words::settings_appearance::FiguresAsTheSystemWritesThem {
+                count: A_COUNT_THAT_GROUPS,
                 date,
-            ),
-            Self::Chosen(_) => {
-                words::settings_appearance::figures_whatever_region_the_system_names(
-                    A_COUNT_THAT_GROUPS,
-                    date,
-                )
             }
+            .said(),
+            Self::Chosen(_) => words::settings_appearance::FiguresWhateverRegionTheSystemNames {
+                count: A_COUNT_THAT_GROUPS,
+                date,
+            }
+            .said(),
         })
     }
 }

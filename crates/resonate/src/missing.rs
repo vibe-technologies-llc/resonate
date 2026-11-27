@@ -74,7 +74,11 @@ pub(crate) fn standing_of(want: &Want, now: SystemTime) -> String {
         .and_then(|at| at.duration_since(now).ok())
         .filter(|left| !left.is_zero());
     let waiting = |said: String| match due {
-        Some(left) => words::main::again_in(lasting_for(left), said),
+        Some(left) => words::main::AgainIn {
+            left: lasting_for(left),
+            standing: said,
+        }
+        .said(),
         None => words::main::due_again(said),
     };
 
@@ -82,7 +86,13 @@ pub(crate) fn standing_of(want: &Want, now: SystemTime) -> String {
         (true, _) => waiting(words::main::offered().to_owned()),
         (false, 0) if want.tried.is_none() => words::main::due().to_owned(),
         (false, 0) => waiting(words::main::unanswered().to_owned()),
-        (false, misses) => waiting(words::main::no_match(misses, TRIES_BEFORE_GIVING_UP)),
+        (false, misses) => waiting(
+            words::main::NoMatch {
+                misses,
+                tries: TRIES_BEFORE_GIVING_UP,
+            }
+            .said(),
+        ),
     }
 }
 
@@ -91,7 +101,7 @@ fn lasting_for(left: Duration) -> String {
     match (minutes / 60, minutes % 60) {
         (0, minutes) => words::main::lasting_minutes(minutes),
         (hours, 0) => words::main::lasting_hours(hours),
-        (hours, minutes) => words::main::lasting_hours_and_minutes(hours, minutes),
+        (hours, minutes) => words::main::LastingHoursAndMinutes { hours, minutes }.said(),
     }
 }
 
@@ -122,7 +132,14 @@ pub(crate) fn read_the_rest_of(
     let reference = online::reference_asked_for(config, Asking::ForTheListener)?;
     let read = library.read_the_rest_of(artist, reference.as_ref())?;
 
-    said!("{}", words::main::read_the_rest(named, read));
+    said!(
+        "{}",
+        words::main::ReadTheRest {
+            artist: named,
+            releases: read
+        }
+        .said()
+    );
     Ok(())
 }
 
@@ -134,7 +151,11 @@ fn dismissed_beside(dismissed: Missing) -> String {
 }
 
 pub(crate) fn brought_back(brought: Missing) -> String {
-    words::main::brought_back(brought.releases, brought.tracks)
+    words::main::BroughtBack {
+        releases: brought.releases,
+        tracks: brought.tracks,
+    }
+    .said()
 }
 
 pub(crate) fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
@@ -176,7 +197,12 @@ pub(crate) fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
 
     said!(
         "{}{}",
-        words::main::missing_across(discs_of.len(), releases_unheld, tracks_missing),
+        words::main::MissingAcross {
+            albums: discs_of.len(),
+            releases: releases_unheld,
+            tracks: tracks_missing
+        }
+        .said(),
         dismissed_beside(dismissed)
     );
 
@@ -202,7 +228,11 @@ pub(crate) fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
     {
         said!(
             "{}",
-            words::main::credits_unread(named, detail.releases_unread)
+            words::main::CreditsUnread {
+                artist: named,
+                groups: detail.releases_unread
+            }
+            .said()
         );
     }
     Ok(())
@@ -313,15 +343,16 @@ pub(crate) fn poll(
 
     said!(
         "{}",
-        words::main::polled(
-            stats.asked,
-            stats.kept,
-            stats.late,
-            stats.nothing,
-            stats.offered,
-            stats.refused,
-            stats.unkept,
-        )
+        words::main::Polled {
+            asked: stats.asked,
+            kept: stats.kept,
+            late: stats.late,
+            nothing: stats.nothing,
+            offered: stats.offered,
+            refused: stats.refused,
+            unkept: stats.unkept
+        }
+        .said()
     );
     if summary.cancelled {
         said!("{}", words::main::cancelled());

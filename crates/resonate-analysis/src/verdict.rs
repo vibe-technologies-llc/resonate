@@ -184,20 +184,28 @@ impl WallReading {
         let decibels = format!("{:.0}", cutoff.drop_db);
         let kilohertz = format!("{:.1}", kilohertz(cutoff.hz));
         match self {
-            Self::LossyEncode(guess) => {
-                words::verdict::wall_of_a_lossy_encode(decibels, guess.kbps(), kilohertz)
+            Self::LossyEncode(guess) => words::verdict::WallOfALossyEncode {
+                decibels,
+                kbps: guess.kbps(),
+                kilohertz,
             }
-            Self::HighBitrateEncode => {
-                words::verdict::wall_of_a_high_bitrate_encode(decibels, kilohertz)
-            }
-            Self::AntiAliasFilter => {
-                words::verdict::wall_of_an_anti_alias_filter(decibels, kilohertz)
-            }
-            Self::AntiAliasFilterOf(rate) => words::verdict::wall_of_the_rates_anti_alias_filter(
+            .said(),
+            Self::HighBitrateEncode => words::verdict::WallOfAHighBitrateEncode {
                 decibels,
                 kilohertz,
-                rate.kilohertz(),
-            ),
+            }
+            .said(),
+            Self::AntiAliasFilter => words::verdict::WallOfAnAntiAliasFilter {
+                decibels,
+                kilohertz,
+            }
+            .said(),
+            Self::AntiAliasFilterOf(rate) => words::verdict::WallOfTheRatesAntiAliasFilter {
+                decibels,
+                kilohertz,
+                rate: rate.kilohertz(),
+            }
+            .said(),
         }
     }
 }
@@ -253,18 +261,27 @@ impl Finding {
             Self::Rolloff { extent_hz } => {
                 words::verdict::rolloff(format!("{:.1}", kilohertz(*extent_hz)))
             }
-            Self::Upsampled { from_hz } => words::verdict::upsampled(
-                format!("{:.1}", kilohertz(*from_hz)),
-                (kilohertz(*from_hz) / 2.0).to_string(),
-            ),
+            Self::Upsampled { from_hz } => words::verdict::Upsampled {
+                kilohertz: format!("{:.1}", kilohertz(*from_hz)),
+                nyquist: (kilohertz(*from_hz) / 2.0).to_string(),
+            }
+            .said(),
             Self::Padded {
                 effective,
                 declared,
-            } => words::verdict::padded(*declared, *effective),
+            } => words::verdict::Padded {
+                declared: *declared,
+                effective: *effective,
+            }
+            .said(),
             Self::TooLittleHeard => words::verdict::too_little_heard().to_owned(),
             Self::FromDsd => words::verdict::from_dsd().to_owned(),
             Self::MonoAsStereo => words::verdict::mono_as_stereo().to_owned(),
-            Self::Clipped { samples, runs } => words::verdict::clipped(*runs, *samples),
+            Self::Clipped { samples, runs } => words::verdict::Clipped {
+                runs: *runs,
+                samples: *samples,
+            }
+            .said(),
             Self::DcOffset { level } => words::verdict::dc_offset(format!(
                 "{:.1}",
                 20.0 * level.max(f32::MIN_POSITIVE).log10()
@@ -273,32 +290,40 @@ impl Finding {
                 coding,
                 resampled_from: None,
                 lattice,
-            } => {
-                words::verdict::quantiser_steps(format!("{:.0}", lattice * 100.0), coding.as_str())
+            } => words::verdict::QuantiserSteps {
+                aligned: format!("{:.0}", lattice * 100.0),
+                coding: coding.as_str(),
             }
+            .said(),
             Self::QuantiserSteps {
                 coding,
                 resampled_from: Some(hz),
                 lattice,
-            } => words::verdict::quantiser_steps_resampled(
-                format!("{:.0}", lattice * 100.0),
-                coding.as_str(),
-                format!("{:.1}", kilohertz(*hz)),
-            ),
+            } => words::verdict::QuantiserStepsResampled {
+                aligned: format!("{:.0}", lattice * 100.0),
+                coding: coding.as_str(),
+                kilohertz: format!("{:.1}", kilohertz(*hz)),
+            }
+            .said(),
             Self::IntensityStereo {
                 coding,
                 resampled_from: None,
                 share,
-            } => words::verdict::intensity_stereo(coding.as_str(), format!("{:.0}", share * 100.0)),
+            } => words::verdict::IntensityStereo {
+                coding: coding.as_str(),
+                share: format!("{:.0}", share * 100.0),
+            }
+            .said(),
             Self::IntensityStereo {
                 coding,
                 resampled_from: Some(hz),
                 share,
-            } => words::verdict::intensity_stereo_resampled(
-                coding.as_str(),
-                format!("{:.1}", kilohertz(*hz)),
-                format!("{:.0}", share * 100.0),
-            ),
+            } => words::verdict::IntensityStereoResampled {
+                coding: coding.as_str(),
+                kilohertz: format!("{:.1}", kilohertz(*hz)),
+                share: format!("{:.0}", share * 100.0),
+            }
+            .said(),
         }
     }
 }

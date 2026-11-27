@@ -261,7 +261,11 @@ fn recording_said(from: &Listening, microphones: &[(String, String)]) -> String 
 fn tries_said(nth: u8) -> String {
     match nth {
         1 => words::listen::keep_it_playing().to_owned(),
-        _ => words::listen::trying_again(nth, TRIES_ON_A_MISS),
+        _ => words::listen::TryingAgain {
+            nth,
+            tries: TRIES_ON_A_MISS,
+        }
+        .said(),
     }
 }
 
@@ -1041,7 +1045,11 @@ fn listen_stage(
             let ending = ending_of(stage, from).unwrap_or(READY);
             (
                 ended(ending),
-                words::listen::ended(ending.headline(), ending.sentence()),
+                words::listen::Ended {
+                    headline: ending.headline(),
+                    sentence: ending.sentence(),
+                }
+                .said(),
                 ending.weight.urgency(),
             )
         }

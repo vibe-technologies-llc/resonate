@@ -49,7 +49,11 @@ fn exported(kept: &dyn KeptListens, file: &Path) -> Result<()> {
 
     said!(
         "{}",
-        words::history::exported(listens, file.display().to_string())
+        words::history::Exported {
+            count: listens,
+            file: file.display().to_string()
+        }
+        .said()
     );
     Ok(())
 }
@@ -142,12 +146,13 @@ fn brought_in(
 
     said!(
         "{}",
-        words::history::brought_in(
-            brought.credited,
-            brought.held_already,
-            service.name(),
-            brought.unmatched
-        )
+        words::history::BroughtIn {
+            credited: brought.credited,
+            held: brought.held_already,
+            service: service.name(),
+            unmatched: brought.unmatched
+        }
+        .said()
     );
     Ok(())
 }
@@ -157,12 +162,13 @@ fn brought_in_from_file(library: &Library, file: &Path) -> Result<()> {
 
     said!(
         "{}",
-        words::history::brought_in_from_file(
-            brought.credited,
-            file.display().to_string(),
-            brought.held_already,
-            brought.unmatched
-        )
+        words::history::BroughtInFromFile {
+            credited: brought.credited,
+            file: file.display().to_string(),
+            held: brought.held_already,
+            unmatched: brought.unmatched
+        }
+        .said()
     );
     Ok(())
 }
@@ -170,7 +176,12 @@ fn brought_in_from_file(library: &Library, file: &Path) -> Result<()> {
 fn said_so_far(brought: BroughtIn) {
     said!(
         "{}",
-        words::history::brought_so_far(brought.credited, brought.held_already, brought.unmatched)
+        words::history::BroughtSoFar {
+            credited: brought.credited,
+            held: brought.held_already,
+            unmatched: brought.unmatched
+        }
+        .said()
     );
 }
 
@@ -459,10 +470,34 @@ mod tests {
             resonate_words::speak(language);
 
             [
-                words::history::brought_in(1, 1, "Last.fm", 1),
-                words::history::brought_in_from_file(1, "listens.jsonl", 1, 1),
-                words::history::brought_in(2, 2, "Last.fm", 2),
-                words::history::brought_in_from_file(2, "listens.jsonl", 2, 2),
+                words::history::BroughtIn {
+                    credited: 1,
+                    held: 1,
+                    service: "Last.fm",
+                    unmatched: 1,
+                }
+                .said(),
+                words::history::BroughtInFromFile {
+                    credited: 1,
+                    file: "listens.jsonl",
+                    held: 1,
+                    unmatched: 1,
+                }
+                .said(),
+                words::history::BroughtIn {
+                    credited: 2,
+                    held: 2,
+                    service: "Last.fm",
+                    unmatched: 2,
+                }
+                .said(),
+                words::history::BroughtInFromFile {
+                    credited: 2,
+                    file: "listens.jsonl",
+                    held: 2,
+                    unmatched: 2,
+                }
+                .said(),
             ]
         };
 
@@ -493,34 +528,65 @@ mod tests {
         resonate_words::speak(resonate_words::Language::English);
 
         assert_eq!(
-            words::history::exported(1, "out.jsonl"),
+            words::history::Exported {
+                count: 1,
+                file: "out.jsonl"
+            }
+            .said(),
             "wrote one listen to out.jsonl"
         );
         assert_eq!(
-            words::history::exported(3, "out.jsonl"),
+            words::history::Exported {
+                count: 3,
+                file: "out.jsonl"
+            }
+            .said(),
             "wrote 3 listens to out.jsonl"
         );
         assert_eq!(
-            words::history::brought_so_far(5, 2, 1),
+            words::history::BroughtSoFar {
+                credited: 5,
+                held: 2,
+                unmatched: 1
+            }
+            .said(),
             "5 counted, 2 held already, 1 not held here"
         );
 
         resonate_words::speak(resonate_words::Language::French);
 
         assert_eq!(
-            words::history::exported(1, "out.jsonl"),
+            words::history::Exported {
+                count: 1,
+                file: "out.jsonl"
+            }
+            .said(),
             "une écoute écrite dans out.jsonl"
         );
         assert_eq!(
-            words::history::exported(3, "out.jsonl"),
+            words::history::Exported {
+                count: 3,
+                file: "out.jsonl"
+            }
+            .said(),
             "3 écoutes écrites dans out.jsonl"
         );
         assert_eq!(
-            words::history::brought_so_far(1, 1, 4),
+            words::history::BroughtSoFar {
+                credited: 1,
+                held: 1,
+                unmatched: 4
+            }
+            .said(),
             "1 comptée, 1 déjà connue, 4 sans morceau ici"
         );
         assert_eq!(
-            words::history::brought_so_far(5, 2, 1),
+            words::history::BroughtSoFar {
+                credited: 5,
+                held: 2,
+                unmatched: 1
+            }
+            .said(),
             "5 comptées, 2 déjà connues, 1 sans morceau ici"
         );
     }

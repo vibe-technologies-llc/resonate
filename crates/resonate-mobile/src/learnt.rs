@@ -171,7 +171,11 @@ fn heard_of(learning: &Learning) -> Vec<TrialHeard> {
         .iter()
         .map(|(trial, verdict)| TrialHeard {
             played: *verdict == TrialVerdict::Played,
-            said: words::renderers::heard(trial_named(*trial), verdict_named(*verdict)),
+            said: words::renderers::Heard {
+                trial: trial_named(*trial),
+                verdict: verdict_named(*verdict),
+            }
+            .said(),
         })
         .collect()
 }

@@ -395,20 +395,22 @@ fn filter(params: SincParams) -> SharedString {
     let taps = 2 * u32::from(params.half_taps) + 1;
 
     if params.converts_in_blocks() {
-        return words::settings_processing::filter_in_blocks(
-            format!("{:.3}", params.cutoff),
-            params.half_taps,
-        )
+        return words::settings_processing::FilterInBlocks {
+            cutoff: format!("{:.3}", params.cutoff),
+            half_taps: params.half_taps,
+        }
+        .said()
         .into();
     }
 
-    words::settings_processing::filter_in_phases(
-        format!("{:.1}", params.kaiser_beta),
-        format!("{:.3}", params.cutoff),
-        params.half_taps,
-        params.phases,
+    words::settings_processing::FilterInPhases {
+        beta: format!("{:.1}", params.kaiser_beta),
+        cutoff: format!("{:.3}", params.cutoff),
+        half_taps: params.half_taps,
+        phases: params.phases,
         taps,
-    )
+    }
+    .said()
     .into()
 }
 

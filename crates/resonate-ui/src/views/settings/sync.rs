@@ -845,10 +845,11 @@ impl RootView {
 
         let reading = spoken::listening().then(|| Reading {
             share: filled,
-            said: words::settings_sync::position_of_length(
-                elapsed::clock(length),
-                elapsed::clock(position),
-            )
+            said: words::settings_sync::PositionOfLength {
+                length: elapsed::clock(length),
+                position: elapsed::clock(position),
+            }
+            .said()
             .into(),
         });
 

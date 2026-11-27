@@ -160,9 +160,12 @@ impl Switcher {
             .position(|zone| zone.id == self.selected)
             .map_or(1, |at| at + 1);
         match self.name_of(self.selected) {
-            Some(name) if self.several() => {
-                words::zones::zone_saying(at, self.shown.len(), name.as_str())
+            Some(name) if self.several() => words::zones::ZoneSaying {
+                at,
+                count: self.shown.len(),
+                zone: name.as_str(),
             }
+            .said(),
             _ => words::zones::zones_saying().to_owned(),
         }
     }

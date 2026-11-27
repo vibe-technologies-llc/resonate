@@ -78,10 +78,16 @@ fn line_heard(line: &PartyLineSeen) -> SharedString {
     let by = line_said_by(line);
 
     SharedString::from(match &line.saying {
-        PartySaying::Words(words) => words::party::said_by(by.to_string(), words.clone()),
-        PartySaying::Reaction(reaction) => {
-            words::party::reacted_with(by.to_string(), reaction_named(*reaction))
+        PartySaying::Words(words) => words::party::SaidBy {
+            person: by.to_string(),
+            words: words.clone(),
         }
+        .said(),
+        PartySaying::Reaction(reaction) => words::party::ReactedWith {
+            person: by.to_string(),
+            reaction: reaction_named(*reaction),
+        }
+        .said(),
     })
 }
 

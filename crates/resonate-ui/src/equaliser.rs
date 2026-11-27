@@ -106,13 +106,14 @@ fn fitted_said(name: &ProfileName, aimed_at: &str, measured: &Measured) -> Strin
 }
 
 fn fit_said(name: &ProfileName, aimed_at: &str, fitted: &Fitted) -> String {
-    words::equaliser::fitted(
-        format!("{:.1}", fitted.off_by_db_after),
+    words::equaliser::Fitted {
+        after: format!("{:.1}", fitted.off_by_db_after),
         aimed_at,
-        fitted.profile.bands().len(),
-        format!("{:.1}", fitted.off_by_db_before),
-        name.as_str(),
-    )
+        bands: fitted.profile.bands().len(),
+        before: format!("{:.1}", fitted.off_by_db_before),
+        name: name.as_str(),
+    }
+    .said()
 }
 
 #[derive(Debug, Error)]
@@ -1036,9 +1037,17 @@ impl EqualiserModel {
                     this.reread(Curve::Kept(name.clone()));
 
                     let said = if kept.converted {
-                        words::equaliser::kept_graphic(kept.profile.bands().len(), name.as_str())
+                        words::equaliser::KeptGraphic {
+                            bands: kept.profile.bands().len(),
+                            name: name.as_str(),
+                        }
+                        .said()
                     } else {
-                        words::equaliser::kept_with_bands(kept.profile.bands().len(), name.as_str())
+                        words::equaliser::KeptWithBands {
+                            bands: kept.profile.bands().len(),
+                            name: name.as_str(),
+                        }
+                        .said()
                     };
 
                     this.notice = Some(Notice::Done(format!("{said}{}", caveats(&kept))));
@@ -1361,10 +1370,13 @@ impl EqualiserModel {
                 match fetched {
                     Ok(Some((name, profile))) => {
                         this.reload();
-                        this.notice = Some(Notice::Done(words::equaliser::kept_from_autoeq(
-                            profile.bands().len(),
-                            name.as_str(),
-                        )));
+                        this.notice = Some(Notice::Done(
+                            words::equaliser::KeptFromAutoeq {
+                                bands: profile.bands().len(),
+                                name: name.as_str(),
+                            }
+                            .said(),
+                        ));
                         this.replaced(&name);
                         this.step();
                     }

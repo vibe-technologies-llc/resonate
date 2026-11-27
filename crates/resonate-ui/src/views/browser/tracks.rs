@@ -600,7 +600,7 @@ fn disc_heading(disc: u32, media: &[HeldMedium]) -> Div {
         .find(|medium| medium.position == disc)
         .and_then(|medium| medium.title.clone().or_else(|| medium.format.clone()));
     let spelt = match named {
-        Some(named) => words::browser::disc_named(disc, named),
+        Some(named) => words::browser::DiscNamed { disc, named }.said(),
         None => words::browser::disc(disc),
     };
 

@@ -83,7 +83,7 @@ fn billed(player: &Player, track: TrackId) -> String {
     if let Some(digest) = player.digest().filter(|digest| digest.track == track) {
         let tags = &digest.info.tags;
         match (tags.title.as_deref(), tags.artist.as_deref()) {
-            (Some(title), Some(artist)) => return words::readout::billed(artist, title),
+            (Some(title), Some(artist)) => return words::readout::Billed { artist, title }.said(),
             (Some(title), None) => return title.to_owned(),
             _ => {}
         }

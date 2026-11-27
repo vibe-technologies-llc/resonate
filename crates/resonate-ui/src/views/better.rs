@@ -77,14 +77,25 @@ impl ServedVersion {
                 let codec =
                     served_codec(&self.song).map_or(words::better::lossless(), Codec::as_str);
                 match album {
-                    Some(album) => {
-                        words::better::download_from_served_on_album(album, codec, &self.service)
+                    Some(album) => words::better::DownloadFromServedOnAlbum {
+                        album,
+                        codec,
+                        service: &self.service,
                     }
-                    None => words::better::download_from_served(codec, &self.service),
+                    .said(),
+                    None => words::better::DownloadFromServed {
+                        codec,
+                        service: &self.service,
+                    }
+                    .said(),
                 }
             }
             Sought::Rated(_) => match album {
-                Some(album) => words::better::download_it_on_album(album, &self.service),
+                Some(album) => words::better::DownloadItOnAlbum {
+                    album,
+                    service: &self.service,
+                }
+                .said(),
                 None => words::better::download_it_from(&self.service),
             },
         }
@@ -100,9 +111,11 @@ impl ServedVersion {
 
 fn held_label(sought: Sought, copy: &Track, album: Option<&str>) -> String {
     match (sought, album) {
-        (Sought::Better, _) => {
-            words::better::play_held(copy.codec.as_str(), format::quality(copy.spec))
+        (Sought::Better, _) => words::better::PlayHeld {
+            codec: copy.codec.as_str(),
+            quality: format::quality(copy.spec),
         }
+        .said(),
         (Sought::Rated(_), Some(album)) => words::better::play_your_copy_from(album),
         (Sought::Rated(_), None) => words::better::play_your_copy(copy.codec.as_str()),
     }
@@ -164,14 +177,24 @@ pub(crate) fn nothing_said(
         (Sought::Better, Nothing::NowhereToAsk) => {
             words::better::none_held_and_nowhere_to_ask(title)
         }
-        (Sought::Better, Nothing::NoneOn) => words::better::none_found(&services, title),
-        (Sought::Rated(Rating::Explicit), Nothing::NoneOn) => {
-            words::better::no_explicit_found(&services, title)
+        (Sought::Better, Nothing::NoneOn) => words::better::NoneFound {
+            services: &services,
+            title,
         }
+        .said(),
+        (Sought::Rated(Rating::Explicit), Nothing::NoneOn) => words::better::NoExplicitFound {
+            services: &services,
+            title,
+        }
+        .said(),
         (Sought::Rated(Rating::Explicit), _) => {
             words::better::no_explicit_and_nowhere_to_ask(title)
         }
-        (Sought::Rated(_), Nothing::NoneOn) => words::better::no_clean_found(&services, title),
+        (Sought::Rated(_), Nothing::NoneOn) => words::better::NoCleanFound {
+            services: &services,
+            title,
+        }
+        .said(),
         (Sought::Rated(_), _) => words::better::no_clean_and_nowhere_to_ask(title),
     }
 }
@@ -318,7 +341,16 @@ impl RootView {
             match held.is_empty() {
                 true => self.report(Notice::Noted(nothing_said(sought, why, &title, &[])), cx),
                 false => {
-                    self.report(Notice::Done(words::better::found(held.len(), &title)), cx);
+                    self.report(
+                        Notice::Done(
+                            words::better::Found {
+                                count: held.len(),
+                                title: &title,
+                            }
+                            .said(),
+                        ),
+                        cx,
+                    );
                     self.open_a_menu(
                         versions_menu(at, sought, &track, &title, held, Vec::new()),
                         cx,
@@ -364,7 +396,16 @@ impl RootView {
                     }
                     return;
                 }
-                this.report(Notice::Done(words::better::found(found, &title)), cx);
+                this.report(
+                    Notice::Done(
+                        words::better::Found {
+                            count: found,
+                            title: &title,
+                        }
+                        .said(),
+                    ),
+                    cx,
+                );
                 this.open_a_menu(
                     versions_menu(at, sought, &track, &title, held, asked.served),
                     cx,

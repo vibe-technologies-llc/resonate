@@ -470,7 +470,12 @@ impl RootView {
             ),
         ] {
             let named = format!("{id}-{which}");
-            let saying = words::remote::control_on(&device.name, label, &song.zone.name);
+            let saying = words::remote::ControlOn {
+                device: &device.name,
+                label,
+                zone: &song.zone.name,
+            }
+            .said();
 
             let button = if key == RemoteKey::Toggle {
                 kit::lit_mark(SharedString::from(named.clone()), icon, saying)

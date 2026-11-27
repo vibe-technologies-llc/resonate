@@ -45,54 +45,82 @@ fn lines(
     let mut lines = vec![words::main::explain_source(source.to_string())];
 
     if let Packing::DopMarked(rate) = packing {
-        lines.push(words::main::explain_dsd(rate.hz(), rate.to_string()));
+        lines.push(
+            words::main::ExplainDsd {
+                hertz: rate.hz(),
+                rate: rate.to_string(),
+            }
+            .said(),
+        );
     }
-    lines.push(words::main::explain_sink(
-        &sink.description,
-        sink.name.as_str(),
-    ));
-    lines.push(words::main::explain_output(
-        crate::readout::output_mode(plan.mode),
-        plan.stream.to_string(),
-    ));
+    lines.push(
+        words::main::ExplainSink {
+            description: &sink.description,
+            name: sink.name.as_str(),
+        }
+        .said(),
+    );
+    lines.push(
+        words::main::ExplainOutput {
+            mode: crate::readout::output_mode(plan.mode),
+            stream: plan.stream.to_string(),
+        }
+        .said(),
+    );
     if let Some(framing) = sink.words_for(plan.stream.format)
         && framing != Words::Whole
     {
-        lines.push(words::main::explain_words(
-            framing.spelled(plan.stream.format),
-            Words::offered_for(plan.stream.format).spelled(plan.stream.format),
-        ));
+        lines.push(
+            words::main::ExplainWords {
+                named: framing.spelled(plan.stream.format),
+                offered: Words::offered_for(plan.stream.format).spelled(plan.stream.format),
+            }
+            .said(),
+        );
     }
     if let Some((from, to)) = plan.remix {
-        lines.push(words::main::explain_remix(from.to_string(), to.to_string()));
+        lines.push(
+            words::main::ExplainRemix {
+                from: from.to_string(),
+                to: to.to_string(),
+            }
+            .said(),
+        );
     }
     if let Some((from, to)) = plan.resample {
-        lines.push(words::main::explain_resample(
-            from.to_string(),
-            phase_words(config.filter_phase),
-            quality_words(config.quality),
-            to.to_string(),
-        ));
+        lines.push(
+            words::main::ExplainResample {
+                from: from.to_string(),
+                phase: phase_words(config.filter_phase),
+                quality: quality_words(config.quality),
+                to: to.to_string(),
+            }
+            .said(),
+        );
     }
     if let Some(profile) = plan.equalisation.as_ref() {
         lines.push(format!(
             "{}{}",
-            words::main::explain_eq(
-                profile.applied(plan.stream.rate),
-                format!("{:+.2}", profile.peak_db(plan.stream.rate)),
-                profile.preamp().to_string(),
-            ),
+            words::main::ExplainEq {
+                bands: profile.applied(plan.stream.rate),
+                peak: format!("{:+.2}", profile.peak_db(plan.stream.rate)),
+                preamp: profile.preamp().to_string()
+            }
+            .said(),
             above_nyquist(profile.passed_over(plan.stream.rate)),
         ));
     } else if config.equaliser.enabled {
         lines.push(words::main::explain_eq_unbound().to_owned());
     }
     if let Some(impulse) = plan.convolution.as_ref() {
-        lines.push(words::main::explain_room(
-            impulse.channels(),
-            impulse.rate().to_string(),
-            impulse.frames(),
-        ));
+        lines.push(
+            words::main::ExplainRoom {
+                channels: impulse.channels(),
+                rate: impulse.rate().to_string(),
+                taps: impulse.frames(),
+            }
+            .said(),
+        );
     }
     if let Some(restoring) = plan.restoration {
         let wall = restoring.wall.map_or_else(
@@ -102,11 +130,14 @@ fn lines(
             },
         );
 
-        lines.push(words::main::explain_restore(
-            restoring.restoration.as_str(),
-            tuning_words(restoring.tuning),
-            wall,
-        ));
+        lines.push(
+            words::main::ExplainRestore {
+                restoration: restoring.restoration.as_str(),
+                tuning: tuning_words(restoring.tuning),
+                wall,
+            }
+            .said(),
+        );
     }
     if let Some(crossfeed) = plan.crossfeed {
         lines.push(words::main::explain_crossfeed(crossfeed.as_str()));
@@ -115,10 +146,13 @@ fn lines(
         lines.push(words::main::explain_guard().to_owned());
     }
     if let Some(depth) = plan.dither_to {
-        lines.push(words::main::explain_dither(
-            depth.to_string(),
-            shaping_words(plan.shaping),
-        ));
+        lines.push(
+            words::main::ExplainDither {
+                depth: depth.to_string(),
+                shaping: shaping_words(plan.shaping),
+            }
+            .said(),
+        );
     }
     if let Packing::DopMarked(_) = packing {
         lines.push(words::main::explain_dop(dop_reading(

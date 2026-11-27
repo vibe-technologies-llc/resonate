@@ -1165,9 +1165,9 @@ fn kept(summary: &KeepSummary) -> Option<Notice> {
         (0, 0) => None,
         (landed, 0) => Some(Notice::Done(words::models::kept_songs(landed))),
         (0, missed) => Some(Notice::Trouble(words::models::songs_not_kept(missed))),
-        (landed, missed) => Some(Notice::Noted(words::models::kept_some_songs_not_others(
-            landed, missed,
-        ))),
+        (landed, missed) => Some(Notice::Noted(
+            words::models::KeptSomeSongsNotOthers { landed, missed }.said(),
+        )),
     }
 }
 
@@ -1185,8 +1185,19 @@ fn keep_refused(error: &resonate_library::Error) -> Notice {
 
 fn list_kept(name: &str, kept: KeptList, left_out: usize) -> String {
     match left_out {
-        0 => words::models::list_kept(kept.held, name, kept.queued),
-        unnamed => words::models::list_kept_leaving_out(kept.held, name, kept.queued, unnamed),
+        0 => words::models::ListKept {
+            held: kept.held,
+            name,
+            queued: kept.queued,
+        }
+        .said(),
+        unnamed => words::models::ListKeptLeavingOut {
+            held: kept.held,
+            name,
+            queued: kept.queued,
+            unnamed,
+        }
+        .said(),
     }
 }
 

@@ -314,8 +314,8 @@ fn read_back(analysis: &Analysis) -> String {
     let rate = examined.rate.kilohertz();
 
     match examined.declared_bits {
-        Some(bits) => words::analysis::read_back_with_depth(bits, codec, rate),
-        None => words::analysis::read_back(codec, rate),
+        Some(bits) => words::analysis::ReadBackWithDepth { bits, codec, rate }.said(),
+        None => words::analysis::ReadBack { codec, rate }.said(),
     }
 }
 
@@ -641,10 +641,11 @@ fn spectrogram_card(
 
 fn cutoff_said(judgement: &Judgement) -> String {
     let wall = match judgement.cutoff {
-        Some(cutoff) => words::analysis::falls_away(
-            format!("{:.0}", cutoff.drop_db.abs()),
-            format!("{:.1}", cutoff.hz as f32 / HZ_A_KILOHERTZ),
-        ),
+        Some(cutoff) => words::analysis::FallsAway {
+            drop: format!("{:.0}", cutoff.drop_db.abs()),
+            frequency: format!("{:.1}", cutoff.hz as f32 / HZ_A_KILOHERTZ),
+        }
+        .said(),
         None => words::analysis::no_cutoff().to_owned(),
     };
 
@@ -652,11 +653,12 @@ fn cutoff_said(judgement: &Judgement) -> String {
 }
 
 fn spectrogram_said(judgement: &Judgement, nyquist_hz: u32, heard: Duration) -> String {
-    words::analysis::spectrogram_said(
-        cutoff_said(judgement),
-        format!("{:.1}", nyquist_hz as f32 / HZ_A_KILOHERTZ),
-        format::spanned(heard),
-    )
+    words::analysis::SpectrogramSaid {
+        cutoff: cutoff_said(judgement),
+        frequency: format!("{:.1}", nyquist_hz as f32 / HZ_A_KILOHERTZ),
+        heard: format::spanned(heard),
+    }
+    .said()
 }
 
 fn spectrum_said(judgement: &Judgement, spectrum: &Spectrum) -> String {
@@ -691,7 +693,11 @@ fn spectrum_said(judgement: &Judgement, spectrum: &Spectrum) -> String {
 
     match averages.is_empty() {
         true => cutoff_said(judgement),
-        false => words::analysis::spectrum_said(cutoff_said(judgement), averages.join(", ")),
+        false => words::analysis::SpectrumSaid {
+            cutoff: cutoff_said(judgement),
+            levels: averages.join(", "),
+        }
+        .said(),
     }
 }
 
@@ -901,10 +907,13 @@ fn levels_card(analysis: &Analysis) -> Div {
         ),
         (
             words::analysis::clipped(),
-            Some(Cow::Owned(words::analysis::clipped_in_runs(
-                levels.clipped_runs,
-                levels.clipped,
-            ))),
+            Some(Cow::Owned(
+                words::analysis::ClippedInRuns {
+                    runs: levels.clipped_runs,
+                    samples: levels.clipped,
+                }
+                .said(),
+            )),
         ),
         (
             words::analysis::dc_offset(),
@@ -1026,7 +1035,11 @@ fn agreed(agreement: Agreement, top: Option<&HeardAs>) -> Div {
 
 fn billed(heard: &HeardAs) -> String {
     match heard.artist.as_deref() {
-        Some(artist) => words::analysis::billed(artist, &heard.title),
+        Some(artist) => words::analysis::Billed {
+            artist,
+            title: &heard.title,
+        }
+        .said(),
         None => heard.title.clone(),
     }
 }

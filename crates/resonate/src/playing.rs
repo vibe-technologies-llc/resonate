@@ -123,7 +123,11 @@ pub(crate) fn queue_onto_a_running_player(
 
     said!(
         "{}",
-        words::main::queued_onto(running.name().to_string(), queued)
+        words::main::QueuedOnto {
+            player: running.name().to_string(),
+            queued
+        }
+        .said()
     );
     Ok(())
 }
@@ -137,7 +141,11 @@ fn move_the_playback(running: &Running, to: ZoneAsked) -> Result<()> {
 
     said!(
         "{}",
-        words::main::moving_to(running.name().to_string(), target.to_string())
+        words::main::MovingTo {
+            player: running.name().to_string(),
+            zone: target.to_string()
+        }
+        .said()
     );
     Ok(())
 }
@@ -197,7 +205,11 @@ fn activate_the_playlist(running: &Running, name: &str) -> Result<()> {
 
     said!(
         "{}",
-        words::main::now_playing_playlist(running.name().to_string(), found.name.clone())
+        words::main::NowPlayingPlaylist {
+            player: running.name().to_string(),
+            playlist: found.name.clone()
+        }
+        .said()
     );
     Ok(())
 }
@@ -622,11 +634,12 @@ fn announce(event: Event, player: &Player) -> bool {
         }
         Event::OutputChanged(status) => said!(
             "{}",
-            words::main::output(
-                readout::output_mode(status.mode),
-                status.sink.to_string(),
-                status.negotiated.to_string(),
-            )
+            words::main::Output {
+                mode: readout::output_mode(status.mode),
+                sink: status.sink.to_string(),
+                stream: status.negotiated.to_string()
+            }
+            .said()
         ),
         Event::Underrun { missing } => told!("{}", words::main::underrun(missing.to_string())),
         Event::Failed { track, error } => {

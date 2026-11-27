@@ -150,14 +150,16 @@ impl RootView {
 
         let both = !tracks.is_empty() && !releases.is_empty();
         let summary = match shows {
-            MissingShows::Tracks => words::missing::tracks_missing_from_albums(
-                headings(&track_rows, |row| matches!(row, MissingRow::Album(_))),
-                counted.tracks,
-            ),
-            MissingShows::Releases => words::missing::releases_by_artists_not_held(
-                headings(&release_rows, |row| matches!(row, MissingRow::Artist(_))),
-                counted.releases,
-            ),
+            MissingShows::Tracks => words::missing::TracksMissingFromAlbums {
+                albums: headings(&track_rows, |row| matches!(row, MissingRow::Album(_))),
+                tracks: counted.tracks,
+            }
+            .said(),
+            MissingShows::Releases => words::missing::ReleasesByArtistsNotHeld {
+                artists: headings(&release_rows, |row| matches!(row, MissingRow::Artist(_))),
+                releases: counted.releases,
+            }
+            .said(),
         };
         let cut_short = match shows {
             MissingShows::Tracks => listed_short(tracks.len(), counted.tracks, shows),
@@ -645,8 +647,8 @@ fn disc_heading(disc: u32) -> Div {
 
 fn listed_short(listed: usize, counted: u64, shows: MissingShows) -> Option<String> {
     ((listed as u64) < counted).then(|| match shows {
-        MissingShows::Tracks => words::missing::tracks_listed_short(counted, listed),
-        MissingShows::Releases => words::missing::releases_listed_short(counted, listed),
+        MissingShows::Tracks => words::missing::TracksListedShort { counted, listed }.said(),
+        MissingShows::Releases => words::missing::ReleasesListedShort { counted, listed }.said(),
     })
 }
 

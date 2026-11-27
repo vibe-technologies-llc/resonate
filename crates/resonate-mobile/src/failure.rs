@@ -120,57 +120,76 @@ pub(crate) fn of_a_domain(refusal: &resonate_core::Error) -> String {
     use resonate_core::Error as Core;
 
     match *refusal {
-        Core::SampleRateOutOfRange(rate) => {
-            domain::sample_rate_out_of_range(SampleRate::MAX_HZ, SampleRate::MIN_HZ, rate)
+        Core::SampleRateOutOfRange(rate) => domain::SampleRateOutOfRange {
+            highest: SampleRate::MAX_HZ,
+            lowest: SampleRate::MIN_HZ,
+            rate,
         }
-        Core::ChannelCountOutOfRange(count) => {
-            domain::channel_count_out_of_range(count, ChannelCount::MAX.get())
+        .said(),
+        Core::ChannelCountOutOfRange(count) => domain::ChannelCountOutOfRange {
+            count,
+            most: ChannelCount::MAX.get(),
         }
+        .said(),
         Core::BitDepthNotRepresentable(bits) => domain::bit_depth_not_representable(bits),
         Core::DecibelsNotFinite(decibels) => domain::decibels_not_finite(decibels.to_string()),
-        Core::TrimOutOfRange(millibels) => {
-            domain::trim_out_of_range(millibels, Trim::WIDEST_MILLIBELS)
+        Core::TrimOutOfRange(millibels) => domain::TrimOutOfRange {
+            millibels,
+            most: Trim::WIDEST_MILLIBELS,
         }
+        .said(),
         Core::GainNotFinite(gain) => domain::gain_not_finite(gain.to_string()),
         Core::VolumeOutOfRange(volume) => domain::volume_out_of_range(volume.to_string()),
-        Core::BandFrequencyOutOfRange(centihertz) => domain::band_frequency_out_of_range(
-            hundredths(centihertz.into()),
-            hundredths(Frequency::HIGHEST_CENTIHERTZ.into()),
-            hundredths(Frequency::LOWEST_CENTIHERTZ.into()),
-        ),
-        Core::BandGainOutOfRange(milli) => domain::band_gain_out_of_range(
-            thousandths(milli.into()),
-            thousandths(BandGain::WIDEST_MILLI_DECIBELS.into()),
-        ),
-        Core::BandQOutOfRange(milli) => domain::band_q_out_of_range(
-            thousandths(Q::WIDEST_MILLI.into()),
-            thousandths(Q::NARROWEST_MILLI.into()),
-            thousandths(milli.into()),
-        ),
-        Core::PreampOutOfRange(milli) => domain::preamp_out_of_range(
-            thousandths(milli.into()),
-            thousandths(BandGain::WIDEST_MILLI_DECIBELS.into()),
-        ),
-        Core::SpeakerAngleOutOfRange(degrees) => domain::speaker_angle_out_of_range(
+        Core::BandFrequencyOutOfRange(centihertz) => domain::BandFrequencyOutOfRange {
+            hertz: hundredths(centihertz.into()),
+            highest: hundredths(Frequency::HIGHEST_CENTIHERTZ.into()),
+            lowest: hundredths(Frequency::LOWEST_CENTIHERTZ.into()),
+        }
+        .said(),
+        Core::BandGainOutOfRange(milli) => domain::BandGainOutOfRange {
+            decibels: thousandths(milli.into()),
+            most: thousandths(BandGain::WIDEST_MILLI_DECIBELS.into()),
+        }
+        .said(),
+        Core::BandQOutOfRange(milli) => domain::BandQOutOfRange {
+            least: thousandths(Q::WIDEST_MILLI.into()),
+            most: thousandths(Q::NARROWEST_MILLI.into()),
+            q: thousandths(milli.into()),
+        }
+        .said(),
+        Core::PreampOutOfRange(milli) => domain::PreampOutOfRange {
+            decibels: thousandths(milli.into()),
+            most: thousandths(BandGain::WIDEST_MILLI_DECIBELS.into()),
+        }
+        .said(),
+        Core::SpeakerAngleOutOfRange(degrees) => domain::SpeakerAngleOutOfRange {
             degrees,
-            SpeakerAngle::NARROWEST_DEGREES,
-            SpeakerAngle::WIDEST_DEGREES,
-        ),
-        Core::SpeakerElevationOutOfRange(degrees) => domain::speaker_elevation_out_of_range(
+            least: SpeakerAngle::NARROWEST_DEGREES,
+            most: SpeakerAngle::WIDEST_DEGREES,
+        }
+        .said(),
+        Core::SpeakerElevationOutOfRange(degrees) => domain::SpeakerElevationOutOfRange {
             degrees,
-            SpeakerElevation::HIGHEST_DEGREES,
-            SpeakerElevation::LOWEST_DEGREES,
-        ),
-        Core::HeadYawOutOfRange(degrees) => domain::head_yaw_out_of_range(
+            highest: SpeakerElevation::HIGHEST_DEGREES,
+            lowest: SpeakerElevation::LOWEST_DEGREES,
+        }
+        .said(),
+        Core::HeadYawOutOfRange(degrees) => domain::HeadYawOutOfRange {
             degrees,
-            HeadYaw::LEFTMOST_DEGREES,
-            HeadYaw::RIGHTMOST_DEGREES,
-        ),
-        Core::TooManyBands(found) => words::errors::too_many_bands(found, MAX_BANDS),
-        Core::AbxTrialsOutOfRange(trials) => words::errors::listening_test_trials(
-            TRIALS_AT_MOST,
-            u32::try_from(trials).unwrap_or(u32::MAX),
-        ),
+            leftmost: HeadYaw::LEFTMOST_DEGREES,
+            rightmost: HeadYaw::RIGHTMOST_DEGREES,
+        }
+        .said(),
+        Core::TooManyBands(found) => words::errors::TooManyBands {
+            found,
+            most: MAX_BANDS,
+        }
+        .said(),
+        Core::AbxTrialsOutOfRange(trials) => words::errors::ListeningTestTrials {
+            most: TRIALS_AT_MOST,
+            trials: u32::try_from(trials).unwrap_or(u32::MAX),
+        }
+        .said(),
         Core::AbxFinished => words::errors::listening_test_finished().to_owned(),
         Core::LevelsNotMatched { millibels } => words::errors::listening_test_levels(millibels),
         Core::ZeroId => domain::zero_id().to_owned(),
@@ -178,7 +197,12 @@ pub(crate) fn of_a_domain(refusal: &resonate_core::Error) -> String {
         Core::NotAnMbid => domain::not_an_mbid().to_owned(),
         Core::NotAnIsrc => domain::not_an_isrc().to_owned(),
         Core::NotAChromaprint => domain::not_a_chromaprint().to_owned(),
-        Core::YearNotHeld(year) => domain::year_not_held(FIRST_YEAR_HELD, LAST_YEAR_HELD, year),
+        Core::YearNotHeld(year) => domain::YearNotHeld {
+            first: FIRST_YEAR_HELD,
+            last: LAST_YEAR_HELD,
+            year,
+        }
+        .said(),
     }
 }
 
@@ -206,17 +230,29 @@ pub(crate) fn of_a_lookup(op: LookupOp, source: &Library) -> String {
         Library::Unreachable { .. } => said::lookup_unreachable(asked),
         Library::Offline { .. } => said::lookup_offline(asked),
         Library::Metered { .. } => said::lookup_metered(asked),
-        Library::Refused { status, .. } => said::lookup_refused(asked, *status),
+        Library::Refused { status, .. } => said::LookupRefused {
+            asked,
+            status: *status,
+        }
+        .said(),
         Library::Unreadable { .. } => said::lookup_unreadable(asked),
         Library::TooLarge { .. } => said::lookup_too_large(asked),
-        Library::RefusedInARow { refusals, .. } => said::lookup_refused_in_a_row(asked, *refusals),
+        Library::RefusedInARow { refusals, .. } => said::LookupRefusedInARow {
+            asked,
+            refusals: *refusals,
+        }
+        .said(),
         _ => said::lookup_failed(asked),
     }
 }
 
 pub(crate) fn of_the_history(source: &Library) -> String {
     match source {
-        Library::ListenLine { line, fault } => said::history_line(fault_named(*fault), *line),
+        Library::ListenLine { line, fault } => said::HistoryLine {
+            fault: fault_named(*fault),
+            line: *line,
+        }
+        .said(),
         Library::Store { .. } => said::history_unkept().to_owned(),
         other => of_a_lookup(LookupOp::History, other),
     }
@@ -237,19 +273,27 @@ pub(crate) fn of_a_measurement(file: MeasuredFile, source: &Eq) -> String {
 
     let file = file.to_string();
     match source {
-        Eq::MeasurementTooLarge { limit } => said::measurement_too_large(&file, limit / MIB),
-        Eq::NoMeasuredPoints => said::measurement_no_points(&file),
-        Eq::TooFewMeasuredPoints { found, least } => {
-            said::measurement_too_few_points(&file, *found, *least)
+        Eq::MeasurementTooLarge { limit } => said::MeasurementTooLarge {
+            file: &file,
+            mebibytes: limit / MIB,
         }
+        .said(),
+        Eq::NoMeasuredPoints => said::measurement_no_points(&file),
+        Eq::TooFewMeasuredPoints { found, least } => said::MeasurementTooFewPoints {
+            file: &file,
+            found: *found,
+            least: *least,
+        }
+        .said(),
         Eq::ResponseMissesTheMidBand {
             lowest_hertz,
             highest_hertz,
-        } => said::measurement_misses_the_mid_band(
-            &file,
-            format!("{highest_hertz:.0}"),
-            format!("{lowest_hertz:.0}"),
-        ),
+        } => said::MeasurementMissesTheMidBand {
+            file: &file,
+            highest: format!("{highest_hertz:.0}"),
+            lowest: format!("{lowest_hertz:.0}"),
+        }
+        .said(),
         Eq::NothingToCorrect { off_by_db } => {
             said::measurement_nothing_to_correct(format!("{off_by_db:.1}"))
         }
@@ -260,7 +304,11 @@ pub(crate) fn of_a_measurement(file: MeasuredFile, source: &Eq) -> String {
 pub(crate) fn of_a_sweep(source: &Dsp) -> String {
     match source {
         Dsp::SweepBand { rate, .. } => said::sweep_band(rate.to_string()),
-        Dsp::HeardTooShort { heard, played } => said::sweep_heard_too_short(*heard, *played),
+        Dsp::HeardTooShort { heard, played } => said::SweepHeardTooShort {
+            heard: *heard,
+            played: *played,
+        }
+        .said(),
         Dsp::HeardTooLong { .. } => said::sweep_heard_too_long().to_owned(),
         Dsp::NothingHeard => said::sweep_nothing_heard().to_owned(),
         Dsp::SweepLostInNoise { .. } => said::sweep_lost_in_noise().to_owned(),

@@ -66,7 +66,11 @@ pub fn sign_in(config: &Config, settings: &Path) -> Result<()> {
     config::store(settings, ConfigKey::LastfmSession, session.key)?;
     said!(
         "{}",
-        words::lastfm::signed_in(session.name, settings.display().to_string())
+        words::lastfm::SignedIn {
+            name: session.name,
+            settings: settings.display().to_string()
+        }
+        .said()
     );
     Ok(())
 }

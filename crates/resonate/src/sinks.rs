@@ -176,7 +176,11 @@ pub(crate) fn learn_what_it_plays(
     for (trial, verdict) in heard.learning.verdicts() {
         said!(
             "{}",
-            words::sinks::heard(trial_named(*trial), verdict_named(*verdict))
+            words::sinks::Heard {
+                trial: trial_named(*trial),
+                verdict: verdict_named(*verdict)
+            }
+            .said()
         );
     }
 
@@ -190,10 +194,11 @@ pub(crate) fn learn_what_it_plays(
     })?;
     said!(
         "{}",
-        words::sinks::kept(
-            learning.settings.display().to_string(),
-            heard.sink.description.as_str()
-        )
+        words::sinks::Kept {
+            device: heard.sink.description.as_str(),
+            path: learning.settings.display().to_string()
+        }
+        .said()
     );
     Ok(())
 }
@@ -325,7 +330,11 @@ fn comes_out_of(sink: &SinkInfo) -> String {
         HardwareVolume::Always => words::main::volume_always_on_the_device(plugged),
     };
     let level = match port.volume {
-        Some(gain) => words::main::heard_at(Volume::heard_at(gain).to_string(), volume),
+        Some(gain) => words::main::HeardAt {
+            level: Volume::heard_at(gain).to_string(),
+            port: volume,
+        }
+        .said(),
         None => volume,
     };
     if port.muted {

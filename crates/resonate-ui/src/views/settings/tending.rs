@@ -164,12 +164,13 @@ fn weighing_told(weighed: &VaultWeighing, pass: Pass) -> Told {
             .map_or(0, |reframed| reframed.repacked);
 
         return Told {
-            text: words::settings_tending::mended(
-                mended.covers_let_go,
-                mended.released.released,
+            text: words::settings_tending::Mended {
+                let_go: mended.covers_let_go,
+                released: mended.released.released,
                 repacked,
-                mended.released.stranded,
-            ),
+                stranded: mended.released.stranded,
+            }
+            .said(),
             acts: false,
         };
     }
@@ -189,33 +190,45 @@ fn weighing_told(weighed: &VaultWeighing, pass: Pass) -> Told {
 }
 
 fn checked_told(weighed: &VaultWeighing) -> String {
-    words::settings_tending::checked(
-        weighed.covers,
-        weighed.covers_held,
-        weighed.covers_moved.len(),
-        weighed.objects_held,
-        weighed.objects_moved.len(),
-        weighed.objects,
-        weighed.unreached.len(),
-    )
+    words::settings_tending::Checked {
+        covers: weighed.covers,
+        covers_held: weighed.covers_held,
+        covers_moved: weighed.covers_moved.len(),
+        held: weighed.objects_held,
+        moved: weighed.objects_moved.len(),
+        objects: weighed.objects,
+        unreached: weighed.unreached.len(),
+    }
+    .said()
 }
 
 fn weighing_progress_told(stats: VaultWeighingStats) -> Option<String> {
     (stats.to_weigh > 0).then(|| {
-        words::settings_tending::checked_so_far(stats.to_weigh, stats.weighed.min(stats.to_weigh))
+        words::settings_tending::CheckedSoFar {
+            total: stats.to_weigh,
+            weighed: stats.weighed.min(stats.to_weigh),
+        }
+        .said()
     })
 }
 
 fn pruning_told(pruned: Pruned, pass: Pass) -> Told {
     let text = if pass.applies() {
-        words::settings_tending::pruned(pruned.covers, pruned.left, pruned.objects, pruned.staged)
+        words::settings_tending::Pruned {
+            covers: pruned.covers,
+            left: pruned.left,
+            objects: pruned.objects,
+            staged: pruned.staged,
+        }
+        .said()
     } else {
-        words::settings_tending::would_prune(
-            pruned.covers,
-            pruned.left,
-            pruned.objects,
-            pruned.staged,
-        )
+        words::settings_tending::WouldPrune {
+            covers: pruned.covers,
+            left: pruned.left,
+            objects: pruned.objects,
+            staged: pruned.staged,
+        }
+        .said()
     };
     Told {
         text,
@@ -225,9 +238,17 @@ fn pruning_told(pruned: Pruned, pass: Pass) -> Told {
 
 fn releasing_told(released: Released, pass: Pass) -> Told {
     let text = if pass.applies() {
-        words::settings_tending::released(released.released, released.stranded)
+        words::settings_tending::Released {
+            released: released.released,
+            stranded: released.stranded,
+        }
+        .said()
     } else {
-        words::settings_tending::would_release(released.released, released.stranded)
+        words::settings_tending::WouldRelease {
+            released: released.released,
+            stranded: released.stranded,
+        }
+        .said()
     };
     Told {
         text,
@@ -241,23 +262,25 @@ fn compacting_told(compacted: Compacted, pass: Pass) -> Told {
     let was = format::bytes(compacted.was);
 
     let text = if pass.applies() {
-        words::settings_tending::compacted(
-            compacted.covers,
-            compacted.kept,
-            compacted.left,
+        words::settings_tending::Compacted {
+            covers: compacted.covers,
+            failed: compacted.left,
+            kept: compacted.kept,
             now,
             saved,
             was,
-        )
+        }
+        .said()
     } else {
-        words::settings_tending::would_compact(
-            compacted.covers,
-            compacted.kept,
-            compacted.left,
+        words::settings_tending::WouldCompact {
+            covers: compacted.covers,
+            failed: compacted.left,
+            kept: compacted.kept,
             now,
             saved,
             was,
-        )
+        }
+        .said()
     };
     Told {
         text,
@@ -744,10 +767,20 @@ mod tests {
         assert_eq!(weighing_progress_told(begun), None);
         assert_eq!(
             weighing_progress_told(under_way),
-            Some(words::settings_tending::checked_so_far(12, 5))
+            Some(
+                words::settings_tending::CheckedSoFar {
+                    total: 12,
+                    weighed: 5
+                }
+                .said()
+            )
         );
         assert_eq!(
-            words::settings_tending::checked_so_far(12, 5),
+            words::settings_tending::CheckedSoFar {
+                total: 12,
+                weighed: 5
+            }
+            .said(),
             "Checked 5 of 12"
         );
     }

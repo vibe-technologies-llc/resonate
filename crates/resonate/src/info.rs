@@ -250,10 +250,11 @@ fn applied_gain(gain: AppliedGain) -> String {
         (None, false) => words::info::none().to_owned(),
         (None, true) => words::info::under_full_scale(format!("{landed:+.2}")),
         (Some(_), false) => words::info::decibels(format!("{landed:+.2}")),
-        (Some(requested), true) => words::info::capped_from(
-            format!("{landed:+.2}"),
-            format!("{:+.2}", rounded(requested.get())),
-        ),
+        (Some(requested), true) => words::info::CappedFrom {
+            gain: format!("{landed:+.2}"),
+            requested: format!("{:+.2}", rounded(requested.get())),
+        }
+        .said(),
     }
 }
 
@@ -316,11 +317,19 @@ fn bitrate(profile: &StreamProfile) {
         (words::info::packets(), profile.packets.to_string()),
         (
             words::info::packet_bytes(),
-            words::info::smallest_and_largest(profile.largest_packet, profile.smallest_packet),
+            words::info::SmallestAndLargest {
+                largest: profile.largest_packet,
+                smallest: profile.smallest_packet,
+            }
+            .said(),
         ),
         (
             words::info::window(),
-            words::info::window_points(profile.series.len(), format!("{WINDOW:.0}")),
+            words::info::WindowPoints {
+                points: profile.series.len(),
+                seconds: format!("{WINDOW:.0}"),
+            }
+            .said(),
         ),
     ]);
 
@@ -415,10 +424,11 @@ fn decibels(gain: Decibels) -> String {
 }
 
 fn peak(value: f32) -> String {
-    words::info::peak(
-        format!("{:+.2}", 20.0 * value.max(f32::MIN_POSITIVE).log10()),
-        format!("{value:.6}"),
-    )
+    words::info::Peak {
+        level: format!("{:+.2}", 20.0 * value.max(f32::MIN_POSITIVE).log10()),
+        value: format!("{value:.6}"),
+    }
+    .said()
 }
 
 pub fn bytes_text(bytes: u64) -> String {

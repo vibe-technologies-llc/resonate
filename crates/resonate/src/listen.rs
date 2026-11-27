@@ -57,7 +57,14 @@ pub fn run(
         Listening::Microphone(Some(name)) => table::on_one_line(&name.to_string()),
     };
 
-    told!("{}", words::listen::listening(heard_from, length.as_secs()));
+    told!(
+        "{}",
+        words::listen::Listening {
+            heard: heard_from,
+            seconds: length.as_secs()
+        }
+        .said()
+    );
 
     let clip = listener.record(&from, length, &Hearing::new())?;
     let recognition = recognisers.recognise(&clip)?;

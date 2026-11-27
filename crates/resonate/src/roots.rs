@@ -33,7 +33,11 @@ pub(crate) fn forget(library: &Library, named: &[PathBuf]) -> Result<()> {
             Forgotten::Gone(tracks) => {
                 said!(
                     "{}",
-                    words::main::forgot_gone(argument.display().to_string(), tracks)
+                    words::main::ForgotGone {
+                        folder: argument.display().to_string(),
+                        tracks
+                    }
+                    .said()
                 );
             }
             Forgotten::Nothing => said!(

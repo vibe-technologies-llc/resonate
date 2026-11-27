@@ -369,8 +369,16 @@ fn line_said(line: &PartyLine, mine: bool) -> String {
     };
 
     match &line.chat {
-        PartyChat::Words(words) => words::party::said_by(person, words.clone()),
-        PartyChat::Reaction(reaction) => words::party::said_by(person, reaction_drawn(*reaction)),
+        PartyChat::Words(words) => words::party::SaidBy {
+            person,
+            words: words.clone(),
+        }
+        .said(),
+        PartyChat::Reaction(reaction) => words::party::SaidBy {
+            person,
+            words: reaction_drawn(*reaction),
+        }
+        .said(),
     }
 }
 

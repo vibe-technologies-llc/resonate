@@ -379,12 +379,15 @@ fn headed_by_run<K: PartialEq>(
 }
 
 pub(super) fn read_in(imported: Imported) -> String {
-    let mut said = vec![words::models::read_in(
-        imported.added,
-        imported.encoding.name(),
-        imported.format.name(),
-        &imported.name,
-    )];
+    let mut said = vec![
+        words::models::ReadIn {
+            added: imported.added,
+            encoding: imported.encoding.name(),
+            format: imported.format.name(),
+            name: &imported.name,
+        }
+        .said(),
+    ];
 
     if imported.already > 0 {
         said.push(words::models::already_in_it(imported.already));

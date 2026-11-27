@@ -1045,7 +1045,11 @@ fn said_ahead(ahead: LyricsAhead) -> String {
         sooner if sooner > 0 => "−",
         _ => "+",
     };
-    words::lyrics_pane::seconds_ahead(format!("{:.1}", seconds.abs()), sign)
+    words::lyrics_pane::SecondsAhead {
+        seconds: format!("{:.1}", seconds.abs()),
+        sign,
+    }
+    .said()
 }
 
 #[cfg(test)]

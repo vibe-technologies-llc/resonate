@@ -179,10 +179,19 @@ pub(crate) fn told_of(summary: &TakeInSummary, into: &Path) -> Notice {
         let copied = format::bytes(stats.bytes);
 
         return Notice::Done(match stats.held {
-            0 => words::dropping::copied_into(copied, stats.copied, folder),
-            held => {
-                words::dropping::copied_into_beside_some_there(copied, stats.copied, folder, held)
+            0 => words::dropping::CopiedInto {
+                bytes: copied,
+                count: stats.copied,
+                folder,
             }
+            .said(),
+            held => words::dropping::CopiedIntoBesideSomeThere {
+                bytes: copied,
+                count: stats.copied,
+                folder,
+                held,
+            }
+            .said(),
         });
     }
     if stats.held > 0 && stats.passed == 0 {
@@ -549,9 +558,13 @@ impl RootView {
                 SharedString::from(words::dropping::drop_to_add(taken)),
                 match skipped {
                     0 => SharedString::new_static(ready_says),
-                    _ => {
-                        SharedString::from(words::dropping::ready_and_left_out(skipped, ready_says))
-                    }
+                    _ => SharedString::from(
+                        words::dropping::ReadyAndLeftOut {
+                            count: skipped,
+                            ready: ready_says,
+                        }
+                        .said(),
+                    ),
                 },
             ),
             Verdict::NoFolder => (
@@ -661,12 +674,15 @@ impl RootView {
         let says = if stopping {
             SharedString::new_static(words::dropping::stopping())
         } else {
-            SharedString::from(words::dropping::copying(
-                format::bytes(stats.bytes),
-                stats.found,
-                reached,
-                format::bytes(stats.bytes_found),
-            ))
+            SharedString::from(
+                words::dropping::Copying {
+                    copied: format::bytes(stats.bytes),
+                    found: stats.found,
+                    reached,
+                    whole: format::bytes(stats.bytes_found),
+                }
+                .said(),
+            )
         };
         let into = name_of(&taking.into);
 

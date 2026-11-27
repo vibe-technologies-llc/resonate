@@ -260,7 +260,7 @@ pub(super) fn brought_back(brought: Missing) -> String {
     match parts.as_slice() {
         [] => words::models::nothing_was_dismissed().to_owned(),
         [only] => words::models::brought_back(only),
-        [one, other, ..] => words::models::brought_back(words::models::both(one, other)),
+        [one, other, ..] => words::models::brought_back(words::models::Both { one, other }.said()),
     }
 }
 
@@ -472,9 +472,14 @@ pub(super) fn refreshed_where_due(
 pub(super) fn link_told(name: &str, added: usize, removed: usize, wanted: usize) -> String {
     let told = match (added, removed) {
         (0, 0) => words::models::as_its_link_has_it(name),
-        (added, 0) => words::models::added_songs_to(added, name),
-        (0, removed) => words::models::took_songs_out_as_its_link_did(name, removed),
-        (added, removed) => words::models::added_and_took_out(added, name, removed),
+        (added, 0) => words::models::AddedSongsTo { added, name }.said(),
+        (0, removed) => words::models::TookSongsOutAsItsLinkDid { name, removed }.said(),
+        (added, removed) => words::models::AddedAndTookOut {
+            added,
+            name,
+            removed,
+        }
+        .said(),
     };
     match wanted {
         0 => told,
@@ -493,7 +498,12 @@ pub(super) fn put_into(
 
     Ok(match added {
         0 => words::models::nothing_went_into(name),
-        added => words::models::put_tracks_in(added, name, put_it_back()),
+        added => words::models::PutTracksIn {
+            count: added,
+            name,
+            undo: put_it_back(),
+        }
+        .said(),
     })
 }
 

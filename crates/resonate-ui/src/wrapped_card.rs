@@ -56,10 +56,11 @@ pub(crate) fn drawn(review: &YearReview, colours: &CardColours) -> String {
     let foot = review
         .formats
         .map(|formats| {
-            words::wrapped_card::formats(
-                spelled_share(formats.high_resolution_permille),
-                spelled_share(formats.lossless_permille),
-            )
+            words::wrapped_card::Formats {
+                finer: spelled_share(formats.high_resolution_permille),
+                lossless: spelled_share(formats.lossless_permille),
+            }
+            .said()
         })
         .unwrap_or_default();
 
@@ -68,11 +69,14 @@ pub(crate) fn drawn(review: &YearReview, colours: &CardColours) -> String {
         eyebrow: escaped(&format!("{REVIEW_NAME} {}", review.year)),
         listened: escaped(&spelled_listening(review.listened)),
         of_music: escaped(words::wrapped_card::of_music()),
-        across: escaped(&words::wrapped_card::across(
-            review.albums,
-            review.artists,
-            review.songs,
-        )),
+        across: escaped(
+            &words::wrapped_card::Across {
+                albums: review.albums,
+                artists: review.artists,
+                songs: review.songs,
+            }
+            .said(),
+        ),
         rows,
         foot: escaped(&foot),
     };

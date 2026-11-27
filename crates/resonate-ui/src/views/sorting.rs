@@ -289,7 +289,11 @@ impl RootView {
                 .named_as(
                     Role::RadioGroup,
                     words::sorting::orders_label(),
-                    &words::sorting::orders_hint(key!(order_above), key!(order_below)),
+                    &words::sorting::OrdersHint {
+                        order_above: key!(order_above),
+                        order_below: key!(order_below),
+                    }
+                    .said(),
                 )
                 .flex()
                 .flex_col()
@@ -312,10 +316,11 @@ impl RootView {
                 .named_as(
                     Role::RadioGroup,
                     words::sorting::readings_label(),
-                    &words::sorting::readings_hint(
-                        key!(read_the_first_way),
-                        key!(read_the_other_way),
-                    ),
+                    &words::sorting::ReadingsHint {
+                        read_the_first_way: key!(read_the_first_way),
+                        read_the_other_way: key!(read_the_other_way),
+                    }
+                    .said(),
                 )
                 .w_full(),
             |readings, direction| {

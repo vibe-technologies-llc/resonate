@@ -68,7 +68,11 @@ fn listed(name: &str, songs: &[Replaceable]) -> String {
     format!(
         "{}{}\n",
         table_of(songs).render(),
-        words::lossy::can_be_replaced(replaceable, songs.len())
+        words::lossy::CanBeReplaced {
+            replaceable,
+            songs: songs.len()
+        }
+        .said()
     )
 }
 
@@ -174,7 +178,11 @@ fn told(name: &str, settled: &Settled) -> String {
 
     match parts.is_empty() {
         true => words::lossy::nothing_changed(name),
-        false => words::lossy::in_playlist(name, parts.join(" · ")),
+        false => words::lossy::InPlaylist {
+            name,
+            parts: parts.join(" · "),
+        }
+        .said(),
     }
 }
 

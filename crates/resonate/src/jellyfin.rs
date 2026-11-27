@@ -59,7 +59,11 @@ pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()>
     keep(settings, &signed)?;
     said!(
         "{}",
-        words::jellyfin::signed_in(signed.name.as_str(), settings.display().to_string())
+        words::jellyfin::SignedIn {
+            name: signed.name.as_str(),
+            settings: settings.display().to_string()
+        }
+        .said()
     );
     Ok(())
 }

@@ -38,10 +38,19 @@ const STRIP_AT_MOST: usize = 24;
 const ARTIST_AT_THE_TOP: f32 = 72.0;
 
 fn profile_told(name: &str, service: &str, kept: usize, wanted: usize) -> String {
-    let told = words::search::keeping_in_step(kept, name, service);
+    let told = words::search::KeepingInStep {
+        count: kept,
+        name,
+        service,
+    }
+    .said();
     match wanted {
         0 => told,
-        wanted => words::search::downloading_songs(wanted, told),
+        wanted => words::search::DownloadingSongs {
+            count: wanted,
+            told,
+        }
+        .said(),
     }
 }
 
@@ -56,17 +65,27 @@ fn playlist_told(
             started: true,
             added,
             ..
-        }) => words::search::made_of(added, name),
+        }) => words::search::MadeOf { count: added, name }.said(),
         Some(FilledFromTheLink { added: 0, .. }) => words::search::already_holds_every_song(name),
-        Some(FilledFromTheLink { added, .. }) => words::search::added_to(added, name),
+        Some(FilledFromTheLink { added, .. }) => {
+            words::search::AddedTo { count: added, name }.said()
+        }
         None => words::search::nothing_held_yet(name),
     };
 
     if wanted > 0 {
-        told = words::search::downloading_more(wanted, told);
+        told = words::search::DownloadingMore {
+            count: wanted,
+            told,
+        }
+        .said();
     }
     if unnamed > 0 {
-        told = words::search::unnamed(unnamed, told);
+        told = words::search::Unnamed {
+            count: unnamed,
+            told,
+        }
+        .said();
     }
     told
 }
@@ -733,7 +752,13 @@ impl RootView {
                         .update(cx, |library, cx| library.reload_playlists(cx));
                     self.set_pane(Pane::Playlists, cx);
                     toast::tell(
-                        Notice::Done(words::search::moved_to_resonate(kept, moved.name.as_str())),
+                        Notice::Done(
+                            words::search::MovedToResonate {
+                                count: kept,
+                                name: moved.name.as_str(),
+                            }
+                            .said(),
+                        ),
                         cx,
                     );
                 }
@@ -766,9 +791,13 @@ impl RootView {
         let reads = library.search().reads();
         let naming = self.naming.filter(|naming| naming.is_a_search());
 
-        let meant = library
-            .meant()
-            .map(|meant| words::search::read_as(meant.artist.as_str(), meant.title.as_str()));
+        let meant = library.meant().map(|meant| {
+            words::search::ReadAs {
+                artist: meant.artist.as_str(),
+                title: meant.title.as_str(),
+            }
+            .said()
+        });
         let summary = match matched.beyond() {
             Some(beyond) => format!("{} · {beyond}", matched.in_the_library()),
             None => matched.in_the_library(),

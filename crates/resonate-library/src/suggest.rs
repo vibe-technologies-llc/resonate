@@ -744,7 +744,11 @@ fn a_genre_of_a_decade(decade: i32, name: &str) -> Candidate {
     ]);
 
     Candidate::new(
-        words::suggest::genre_of_a_decade(words::suggest::the_decade(decade), billed_as(name)),
+        words::suggest::GenreOfADecade {
+            decade: words::suggest::the_decade(decade),
+            genre: billed_as(name),
+        }
+        .said(),
         Reason::GenreOfADecade(decade),
         written(text, SortOrder::Plays, SortOrder::Plays.reads()),
     )
@@ -1455,7 +1459,11 @@ mod tests {
         assert_eq!(words::suggest::decade_named(1970), "The seventies");
         assert_eq!(words::suggest::decade_named(2010), "The 2010s");
         assert_eq!(
-            words::suggest::genre_of_a_decade(words::suggest::the_decade(1980), "Synth-Pop"),
+            words::suggest::GenreOfADecade {
+                decade: words::suggest::the_decade(1980),
+                genre: "Synth-Pop"
+            }
+            .said(),
             "Synth-Pop of the eighties"
         );
     }

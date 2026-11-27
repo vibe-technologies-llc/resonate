@@ -41,7 +41,14 @@ pub(crate) fn song(title: &str, artist: Option<&str>) -> SharedString {
 }
 
 pub(crate) fn artist(name: &str, albums: usize, tracks: usize) -> SharedString {
-    SharedString::from(words::spoken::artist(albums, name, tracks))
+    SharedString::from(
+        words::spoken::Artist {
+            albums,
+            name,
+            tracks,
+        }
+        .said(),
+    )
 }
 
 pub(crate) fn joined<'a>(parts: impl IntoIterator<Item = &'a str>) -> SharedString {

@@ -130,7 +130,14 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
 
     if let Some(into) = wanted.rename.as_deref() {
         library.rename_playlist(found.id, into)?;
-        said!("{}", words::main::renamed(into, &found.name));
+        said!(
+            "{}",
+            words::main::Renamed {
+                into,
+                name: &found.name
+            }
+            .said()
+        );
         return Ok(());
     }
     if wanted.discard {
@@ -163,12 +170,13 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
 
         said!(
             "{}",
-            words::main::exported(
-                written.format.name(),
-                &found.name,
-                target.display().to_string(),
-                written.rows,
-            )
+            words::main::Exported {
+                format: written.format.name(),
+                name: &found.name,
+                path: target.display().to_string(),
+                rows: written.rows
+            }
+            .said()
         );
         return Ok(());
     }
@@ -252,7 +260,16 @@ fn copy_into(
         .playlist(into)?
         .map_or(copied as u32, |playlist| playlist.entries);
 
-    said!("{}", words::main::copied(copied, held, &found.name, target));
+    said!(
+        "{}",
+        words::main::Copied {
+            copied,
+            held,
+            name: &found.name,
+            target
+        }
+        .said()
+    );
     Ok(())
 }
 
@@ -287,8 +304,18 @@ pub(crate) fn save_query(
     said!(
         "{}",
         match revised {
-            Some(revised) => words::main::query_revised(held, matched, revised),
-            None => words::main::query_saved(held, matched, name),
+            Some(revised) => words::main::QueryRevised {
+                held,
+                matching: matched,
+                name: revised
+            }
+            .said(),
+            None => words::main::QuerySaved {
+                held,
+                matching: matched,
+                name
+            }
+            .said(),
         }
     );
     if let Some(reads) = understood(query.text.as_deref()) {
@@ -352,7 +379,7 @@ pub(crate) fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result
         .playlist(id)?
         .map_or(added as u32, |playlist| playlist.entries);
 
-    said!("{}", words::main::added(added, held, name));
+    said!("{}", words::main::Added { added, held, name }.said());
     Ok(())
 }
 
@@ -387,13 +414,14 @@ pub(crate) fn import(
 
         said!(
             "{}{}{}{}{}",
-            words::main::imported(
-                read.added,
-                read.encoding.name(),
-                read.format.name(),
+            words::main::Imported {
+                added: read.added,
+                encoding: read.encoding.name(),
+                format: read.format.name(),
                 held,
-                &read.name,
-            ),
+                name: &read.name
+            }
+            .said(),
             already_held(read.already),
             passed_over(read.elsewhere),
             not_on_disk(read.missing),
@@ -406,29 +434,29 @@ pub(crate) fn import(
 pub(crate) fn reordered(moved: usize, name: &str) -> String {
     match moved {
         0 => words::main::already_in_order(name),
-        moved => words::main::reordered(moved, name),
+        moved => words::main::Reordered { moved, name }.said(),
     }
 }
 
 fn now_kept(moved: usize, name: &str, kept: Kept) -> String {
     let order = kept_order(kept);
     match moved {
-        0 => words::main::kept_already(name, order),
-        moved => words::main::now_kept(moved, name, order),
+        0 => words::main::KeptAlready { name, order }.said(),
+        moved => words::main::NowKept { moved, name, order }.said(),
     }
 }
 
 fn tidied(dropped: usize, name: &str) -> String {
     match dropped {
         0 => words::main::all_there(name),
-        dropped => words::main::tidied(dropped, name),
+        dropped => words::main::Tidied { dropped, name }.said(),
     }
 }
 
 pub(crate) fn folded(dropped: usize, name: &str) -> String {
     match dropped {
         0 => words::main::none_doubled(name),
-        dropped => words::main::folded_doubles(dropped, name),
+        dropped => words::main::FoldedDoubles { dropped, name }.said(),
     }
 }
 
@@ -449,14 +477,23 @@ pub(crate) fn discarded(found: &Playlist) -> String {
 
     match found.entries {
         0 => words::main::discarded_empty(name),
-        held => words::main::discarded(held, name),
+        held => words::main::Discarded { held, name }.said(),
     }
 }
 
 pub(crate) fn taken_out(dropped: usize, name: &str, text: &str) -> String {
     match dropped {
-        0 => words::main::none_match(name, format!("{text:?}")),
-        dropped => words::main::took_out(dropped, name, format!("{text:?}")),
+        0 => words::main::NoneMatch {
+            name,
+            text: format!("{text:?}"),
+        }
+        .said(),
+        dropped => words::main::TookOut {
+            dropped,
+            name,
+            text: format!("{text:?}"),
+        }
+        .said(),
     }
 }
 

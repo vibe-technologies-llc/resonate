@@ -301,7 +301,11 @@ fn source(info: &MediaInfo) -> Div {
         .bits_per_coded_sample
         .map(words::inspector::coded_depth_bits);
     let reading = match info.packing {
-        Packing::DopMarked(dsd) => words::inspector::dop_carried(dsd.to_string(), rate.to_string()),
+        Packing::DopMarked(dsd) => words::inspector::DopCarried {
+            dsd: dsd.to_string(),
+            rate: rate.to_string(),
+        }
+        .said(),
         Packing::Samples => rate.to_string(),
     };
 
@@ -325,10 +329,11 @@ fn source(info: &MediaInfo) -> Div {
             (
                 words::inspector::encoder_delay(),
                 (info.encoder_delay > 0 || info.encoder_padding > 0).then(|| {
-                    words::inspector::encoder_delay_frames(
-                        info.encoder_delay.to_string(),
-                        info.encoder_padding.to_string(),
-                    )
+                    words::inspector::EncoderDelayFrames {
+                        delay: info.encoder_delay.to_string(),
+                        padding: info.encoder_padding.to_string(),
+                    }
+                    .said()
                 }),
             ),
             (words::inspector::seekable(), Some(yes_no(info.is_seekable))),
@@ -473,10 +478,16 @@ fn bitrate(
             ),
             (
                 words::inspector::profiled(),
-                Some(words::inspector::profiled_of(
-                    format::clock(digest.decoded.saturating_sub(digest.profiled_from), rate),
-                    format::clock(digest.decoded, rate),
-                )),
+                Some(
+                    words::inspector::ProfiledOf {
+                        done: format::clock(
+                            digest.decoded.saturating_sub(digest.profiled_from),
+                            rate,
+                        ),
+                        whole: format::clock(digest.decoded, rate),
+                    }
+                    .said(),
+                ),
             ),
         ],
     )
@@ -564,11 +575,12 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
             div()
                 .id("bitrate-graph")
                 .pictured_as(words::inspector::bitrate_over_time(), || {
-                    words::inspector::bitrate_over_time_said(
-                        kbps(BitRate::new(floor).unwrap_or_default()),
-                        kbps(BitRate::new(top).unwrap_or_default()),
-                        format!("{WINDOW:.0}"),
-                    )
+                    words::inspector::BitrateOverTimeSaid {
+                        floor: kbps(BitRate::new(floor).unwrap_or_default()),
+                        top: kbps(BitRate::new(top).unwrap_or_default()),
+                        window: format!("{WINDOW:.0}"),
+                    }
+                    .said()
                 })
                 .h(px(GRAPH_HEIGHT))
                 .w_full()
@@ -580,13 +592,16 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
                 .flex()
                 .justify_between()
                 .child(kit::figure(format::clock(digest.profiled_from, rate)))
-                .child(kit::figure(words::inspector::bitrate_over_windows(
-                    kbps_between(
-                        BitRate::new(floor).unwrap_or_default(),
-                        BitRate::new(top).unwrap_or_default(),
-                    ),
-                    format!("{WINDOW:.0}"),
-                )))
+                .child(kit::figure(
+                    words::inspector::BitrateOverWindows {
+                        range: kbps_between(
+                            BitRate::new(floor).unwrap_or_default(),
+                            BitRate::new(top).unwrap_or_default(),
+                        ),
+                        window: format!("{WINDOW:.0}"),
+                    }
+                    .said(),
+                ))
                 .child(kit::figure(format::clock(digest.decoded, rate))),
         )
 }
@@ -682,7 +697,9 @@ fn tags<'a>(set: &'a TagSet, carried: Option<usize>) -> Div {
     use words::inspector as said;
 
     let numbered = |value: Option<u32>, total: Option<u32>| match (value, total) {
-        (Some(value), Some(total)) => Some(Cow::Owned(words::inspector::numbered(total, value))),
+        (Some(value), Some(total)) => Some(Cow::Owned(
+            words::inspector::Numbered { total, value }.said(),
+        )),
         (Some(value), None) => Some(Cow::Owned(value.to_string())),
         _ => None,
     };
@@ -908,10 +925,11 @@ fn kbps(rate: BitRate) -> String {
 }
 
 fn kbps_between(low: BitRate, high: BitRate) -> String {
-    words::inspector::kbps_between(
-        format!("{:.0}", high.kilobits()),
-        format!("{:.0}", low.kilobits()),
-    )
+    words::inspector::KbpsBetween {
+        high: format!("{:.0}", high.kilobits()),
+        low: format!("{:.0}", low.kilobits()),
+    }
+    .said()
 }
 
 fn decibels(gain: Decibels) -> String {

@@ -860,7 +860,14 @@ pub(crate) fn run(
             removing.name.as_str()
         };
 
-        said!("{}", words::together::removed(name, called));
+        said!(
+            "{}",
+            words::together::Removed {
+                name,
+                person: called
+            }
+            .said()
+        );
         told_invites(&listed_as(&library, shared, name)?);
     } else if let Some(name) = &args.reset {
         let list = listed_as(&library, shared, name)?;

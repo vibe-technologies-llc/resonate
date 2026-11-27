@@ -101,7 +101,7 @@ pub(super) fn shelf(
 ) -> Div {
     let drawn = cells.len();
     let eyebrow = if held > drawn {
-        words::browser::shown(drawn, named)
+        words::browser::Shown { drawn, named }.said()
     } else {
         named
     };

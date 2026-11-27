@@ -146,7 +146,11 @@ fn group_row(group: &IdenticalSong) -> Div {
 
     kit::named(
         named(&group.kept),
-        words::settings_identical::copies_of_it(group.copies.len(), names.join(", ")),
+        words::settings_identical::CopiesOfIt {
+            count: group.copies.len(),
+            names: names.join(", "),
+        }
+        .said(),
     )
 }
 
@@ -164,7 +168,12 @@ fn told(found: &Identified) -> String {
         return words::settings_identical::none_held_twice().to_owned();
     }
 
-    words::settings_identical::would_fold(folding, found.songs.len(), found.copies.differing.len())
+    words::settings_identical::WouldFold {
+        copies: folding,
+        differing: found.copies.differing.len(),
+        songs: found.songs.len(),
+    }
+    .said()
 }
 
 #[cfg(test)]

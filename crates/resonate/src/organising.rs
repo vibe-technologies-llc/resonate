@@ -138,14 +138,17 @@ fn organised(summary: &OrganiseSummary, roots: &[PathBuf], apply: bool) -> Strin
         )
     };
 
-    told.push_str(&words::main::organised(
-        stats.collided,
-        stats.failed,
-        folders,
-        moved,
-        stats.unchanged,
-        stats.unidentified,
-    ));
+    told.push_str(
+        &words::main::Organised {
+            collided: stats.collided,
+            failed: stats.failed,
+            folders,
+            moved,
+            unchanged: stats.unchanged,
+            unidentified: stats.unidentified,
+        }
+        .said(),
+    );
     told.push('\n');
     if !apply {
         told.push_str(words::main::nothing_moved());
@@ -165,11 +168,19 @@ fn left_standing(refused: &Refused, roots: &[PathBuf]) -> String {
     match &refused.refusal {
         Refusal::Collided { with }
         | Refusal::SharesASheet { sheet: with }
-        | Refusal::NamedFromAbove { sheet: with } => {
-            words::main::refused_with(standing, why, under_its_root(with, roots))
+        | Refusal::NamedFromAbove { sheet: with } => words::main::RefusedWith {
+            standing,
+            why,
+            with: under_its_root(with, roots),
         }
-        Refusal::Unmoved { kind } => words::main::refused_kind(kind.to_string(), standing, why),
-        _ => words::main::refused(standing, why),
+        .said(),
+        Refusal::Unmoved { kind } => words::main::RefusedKind {
+            kind: kind.to_string(),
+            standing,
+            why,
+        }
+        .said(),
+        _ => words::main::Refused { standing, why }.said(),
     }
 }
 

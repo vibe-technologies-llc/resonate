@@ -1164,9 +1164,11 @@ impl Deleting {
             return words::root::songs_moved_to_the_trash(self.tracks.len());
         }
         match &self.artist {
-            Some(artist) => {
-                words::root::song_by_moved_to_the_trash(artist.as_str(), self.title.as_str())
+            Some(artist) => words::root::SongByMovedToTheTrash {
+                artist: artist.as_str(),
+                title: self.title.as_str(),
             }
+            .said(),
             None => words::root::song_moved_to_the_trash(self.title.as_str()),
         }
     }

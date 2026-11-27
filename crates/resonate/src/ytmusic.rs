@@ -151,10 +151,19 @@ fn queue_the_playlist(music: &YtMusic, list: &Id, ordered: bool, library: &Libra
 }
 
 fn list_kept(name: &str, kept: KeptList, left_out: usize) -> String {
-    let held = words::ytmusic::list_kept(kept.held, name, kept.queued);
+    let held = words::ytmusic::ListKept {
+        held: kept.held,
+        name,
+        queued: kept.queued,
+    }
+    .said();
     match left_out {
         0 => held,
-        left_out => words::ytmusic::left_out(held, left_out),
+        left_out => words::ytmusic::LeftOut {
+            held,
+            untitled: left_out,
+        }
+        .said(),
     }
 }
 
@@ -187,7 +196,12 @@ fn walked_until_told(library: &Library, music: Arc<YtMusic>) -> Result<()> {
 
     said!(
         "{}",
-        words::ytmusic::walked(summary.gone, summary.landed, summary.unkept)
+        words::ytmusic::Walked {
+            gone: summary.gone,
+            landed: summary.landed,
+            unkept: summary.unkept
+        }
+        .said()
     );
     if stopping.load(Ordering::Relaxed) {
         return Err(Error::KeepCancelled);

@@ -53,7 +53,13 @@ fn sink_spoken(routed: &[String], formats: &[String]) -> String {
 fn routes_to(sinks: &[SinkInfo]) -> String {
     sinks.iter().find(|sink| sink.is_default).map_or_else(
         || words::settings_output::routed(sound_system!()),
-        |sink| words::settings_output::routed_now(&sink.description, sound_system!()),
+        |sink| {
+            words::settings_output::RoutedNow {
+                sink: &sink.description,
+                system: sound_system!(),
+            }
+            .said()
+        },
     )
 }
 
@@ -728,7 +734,11 @@ impl RootView {
         let saying = if spoken::listening() {
             let said = sink_spoken(&routed, &formats);
             match held_by.as_ref() {
-                Some(zone) => words::settings_output::said_and_held_by(&said, zone.as_str()),
+                Some(zone) => words::settings_output::SaidAndHeldBy {
+                    said: &said,
+                    zone: zone.as_str(),
+                }
+                .said(),
                 None => said,
             }
         } else {
@@ -1151,7 +1161,11 @@ fn heard_said(heard: &Result<Learning, Unlearnt>) -> String {
             .verdicts()
             .iter()
             .map(|(trial, verdict)| {
-                words::settings_output::heard(trial_named(*trial), verdict_named(*verdict))
+                words::settings_output::Heard {
+                    trial: trial_named(*trial),
+                    verdict: verdict_named(*verdict),
+                }
+                .said()
             })
             .collect::<Vec<_>>()
             .join(OR),

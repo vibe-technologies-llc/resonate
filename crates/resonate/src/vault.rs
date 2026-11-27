@@ -46,9 +46,17 @@ fn release(library: &Library, args: &VaultArgs) -> Result<()> {
     said!(
         "{}",
         if args.apply {
-            words::vault::released(released.released, released.stranded)
+            words::vault::Released {
+                released: released.released,
+                stranded: released.stranded,
+            }
+            .said()
         } else {
-            words::vault::would_release(released.released, released.stranded)
+            words::vault::WouldRelease {
+                released: released.released,
+                stranded: released.stranded,
+            }
+            .said()
         }
     );
     if !args.apply && released.released > 0 {
@@ -73,23 +81,25 @@ fn compact(library: &Library, apply: bool) -> Result<()> {
     said!(
         "{}",
         if apply {
-            words::vault::compacted(
-                compacted.covers,
-                compacted.kept,
-                compacted.left,
+            words::vault::Compacted {
+                covers: compacted.covers,
+                kept: compacted.kept,
+                left: compacted.left,
                 now,
                 saved,
                 was,
-            )
+            }
+            .said()
         } else {
-            words::vault::would_compact(
-                compacted.covers,
-                compacted.kept,
-                compacted.left,
+            words::vault::WouldCompact {
+                covers: compacted.covers,
+                kept: compacted.kept,
+                left: compacted.left,
                 now,
                 saved,
                 was,
-            )
+            }
+            .said()
         }
     );
     if !apply && compacted.covers > 0 {
@@ -145,17 +155,21 @@ fn standing(library: &Library, vault: &Arc<Vault>) -> Result<()> {
 
     said!(
         "{}",
-        words::vault::holdings(
-            held.covers,
-            bytes_text(bytes),
-            held.objects,
-            bytes_text(held.cover_bytes),
-            bytes_text(was.saturating_sub(bytes)),
-            bytes_text(was),
-        )
+        words::vault::Holdings {
+            covers: held.covers,
+            held: bytes_text(bytes),
+            objects: held.objects,
+            pictures: bytes_text(held.cover_bytes),
+            saved: bytes_text(was.saturating_sub(bytes)),
+            sources: bytes_text(was)
+        }
+        .said()
     );
     if unvalidated > 0 || loose > 0 {
-        said!("{}", words::vault::unvalidated(loose, unvalidated));
+        said!(
+            "{}",
+            words::vault::Unvalidated { loose, unvalidated }.said()
+        );
     }
     Ok(())
 }
@@ -249,23 +263,29 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
     }
 
     for passed in &plan.passed {
-        told.push_str(&words::vault::passed_over(
-            named(&passed.from),
-            passed.why.as_str(),
-        ));
+        told.push_str(
+            &words::vault::PassedOver {
+                file: named(&passed.from),
+                why: passed.why.as_str(),
+            }
+            .said(),
+        );
         told.push('\n');
     }
 
     if apply {
-        told.push_str(&words::vault::imported(
-            stats.covers,
-            stats.deduped,
-            bytes_text(stats.bytes),
-            stats.vaulted,
-            stats.passed,
-            bytes_text(stats.saved()),
-            bytes_text(stats.was_bytes),
-        ));
+        told.push_str(
+            &words::vault::Imported {
+                covers: stats.covers,
+                deduped: stats.deduped,
+                held: bytes_text(stats.bytes),
+                kept: stats.vaulted,
+                passed: stats.passed,
+                saved: bytes_text(stats.saved()),
+                sources: bytes_text(stats.was_bytes),
+            }
+            .said(),
+        );
         told.push('\n');
         if stats.covers_passed > 0 {
             told.push_str(&words::vault::covers_not_kept(stats.covers_passed));
@@ -274,7 +294,13 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
     } else {
         let renewing = plan.wanted.iter().filter(|wanted| wanted.renewing).count();
 
-        told.push_str(&words::vault::would_keep(renewing, stats.walked));
+        told.push_str(
+            &words::vault::WouldKeep {
+                renewing,
+                walked: stats.walked,
+            }
+            .said(),
+        );
         told.push('\n');
         told.push_str(words::vault::nothing_written());
         told.push('\n');
@@ -299,23 +325,25 @@ fn verify(library: &Library, mending: bool) -> Result<()> {
     for unreached in &weighed.unreached {
         said!(
             "{}",
-            words::vault::not_weighed(
-                unreached.error.to_string(),
-                unreached.path.display().to_string()
-            )
+            words::vault::NotWeighed {
+                error: unreached.error.to_string(),
+                path: unreached.path.display().to_string()
+            }
+            .said()
         );
     }
     said!(
         "{}",
-        words::vault::weighed(
-            weighed.covers,
-            weighed.covers_held,
-            weighed.covers_moved.len(),
-            weighed.objects_held,
-            weighed.objects_moved.len(),
-            weighed.unreached.len(),
-            weighed.objects,
-        )
+        words::vault::Weighed {
+            covers: weighed.covers,
+            covers_held: weighed.covers_held,
+            covers_moved: weighed.covers_moved.len(),
+            held: weighed.objects_held,
+            moved: weighed.objects_moved.len(),
+            unreached: weighed.unreached.len(),
+            weighed: weighed.objects
+        }
+        .said()
     );
 
     finished(PassKind::Weigh, weighed.cancelled)?;
@@ -328,11 +356,12 @@ fn verify(library: &Library, mending: bool) -> Result<()> {
     if let Some(mended) = weighed.mended {
         said!(
             "{}",
-            words::vault::mended(
-                mended.covers_let_go,
-                mended.released.released,
-                mended.released.stranded
-            )
+            words::vault::Mended {
+                let_go: mended.covers_let_go,
+                released: mended.released.released,
+                stranded: mended.released.stranded
+            }
+            .said()
         );
         return match unreached {
             0 => Ok(()),
@@ -369,7 +398,11 @@ fn told_reframing(weighed: &VaultWeighing, mending: bool) {
     }
     said!(
         "{}",
-        words::vault::repacked(reframed.repacked, weighed.unframed.len())
+        words::vault::Repacked {
+            repacked: reframed.repacked,
+            unframed: weighed.unframed.len()
+        }
+        .said()
     );
 }
 
@@ -383,9 +416,21 @@ fn prune(library: &Library, args: &VaultArgs) -> Result<()> {
     said!(
         "{}",
         if args.apply {
-            words::vault::pruned(pruned.covers, pruned.left, pruned.objects, pruned.staged)
+            words::vault::Pruned {
+                covers: pruned.covers,
+                left: pruned.left,
+                objects: pruned.objects,
+                staged: pruned.staged,
+            }
+            .said()
         } else {
-            words::vault::would_prune(pruned.covers, pruned.left, pruned.objects, pruned.staged)
+            words::vault::WouldPrune {
+                covers: pruned.covers,
+                left: pruned.left,
+                objects: pruned.objects,
+                staged: pruned.staged,
+            }
+            .said()
         }
     );
     if !args.apply && pruned.objects + pruned.covers + pruned.staged > 0 {

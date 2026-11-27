@@ -26,10 +26,22 @@ catalogs speak English and French. English supplies the message signatures and t
 - **`resonate-words-build` writes the functions a crate says its words through.** A crate with
   words holds `words/<tag>/<area>.ftl` and a `build.rs` calling `resonate_words_build::write()`;
   `mod words { include!(concat!(env!("OUT_DIR"), "/words.rs")); }` takes in a module per area and a
-  `pub(crate) fn` per message: `words::format::just_now() -> &'static str`,
-  `words::format::days_ago(count) -> String`, a parameter per variable the English message uses
-  (through referenced messages too), each `impl Into<Arg>` (numbers, `&str`, `String`, `Cow`). An id
-  is kebab-case and becomes snake_case; a keyword is raised (`r#type`).
+  `pub(crate) fn` per message of at most one variable: `words::format::just_now() -> &'static str`,
+  `words::format::days_ago(count) -> String`, the variable the English message uses (through
+  referenced messages too) as an `impl Into<Arg>` (numbers, `&str`, `String`, `Cow`). An id is
+  kebab-case and becomes snake_case; a keyword is raised (`r#type`).
+- **A message of two or more variables is a struct named by its fields, never a function of
+  positional parameters**: `brought-in` is `words::history::BroughtIn { credited, held, service,
+  unmatched }.said()`, a `pub(crate)` field per variable, each its own generic type bounded by
+  `Into<Arg>` on `said`. Parameters in a fixed order let a call pass its values in the order the
+  sentence says them and still compile wherever the types agree (every parameter took any `Arg`), so
+  a field named at the call is the only spelling that cannot be swapped: a value is bound to the
+  variable it names, a missing or extra name fails to compile, and the order written is free. A
+  struct, rather than a macro taking `name = value` or a test matching argument names, keeps a swap a
+  compile error, leaves the zero- and one-variable calls (most of them) as they are, keeps
+  `dead_code` (a struct never built, or never `said`, is warned) and reads like any Rust literal
+  with field-init shorthand. The struct is the id in CamelCase, and two ids of one area that would
+  name one struct (`brought-in`, `brought_in`) are refused (`Clashing`).
 - **The build refuses what would rot**: a parse error, a comment (the no-comment rule holds in
   `.ftl`; every other source is walked by the test `rust-style.md` names), a message with attributes or no value, an id named twice, an area or language folder
   missing from English or not in it, and a second language's message missing, extra or taking other

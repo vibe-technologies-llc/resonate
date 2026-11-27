@@ -614,7 +614,7 @@ fn name_of(connection: &Connection, id: PlaylistId) -> Result<String> {
 fn a_free_copy_of(connection: &Connection, name: &str) -> Result<PlaylistName> {
     let mut asked = 1_usize;
     loop {
-        let wanted = words::playlist::copy_named(name, asked);
+        let wanted = words::playlist::CopyNamed { name, nth: asked }.said();
         let taken = connection
             .query_row(
                 "SELECT 1 FROM playlists WHERE folded = ?1",

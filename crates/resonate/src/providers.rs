@@ -823,10 +823,11 @@ pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
 
     said!(
         "{}",
-        crate::words::providers::open_to_sign_in(
-            authorizing.verify_at.to_string(),
-            authorizing.user_code.to_string(),
-        )
+        crate::words::providers::OpenToSignIn {
+            address: authorizing.verify_at.to_string(),
+            code: authorizing.user_code.to_string()
+        }
+        .said()
     );
 
     let cancelled = Arc::new(AtomicBool::new(false));

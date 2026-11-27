@@ -1245,13 +1245,23 @@ impl RootView {
         let muted = self.is_muted(cx);
 
         let hint = match (muted, wheeled) {
-            (true, _) => words::transport::unmute_hint(key!(louder), key!(mute)),
-            (false, true) => {
-                words::transport::volume_hint_wheeled(key!(louder), key!(mute), key!(quieter))
+            (true, _) => words::transport::UnmuteHint {
+                louder: key!(louder),
+                mute: key!(mute),
             }
-            (false, false) => {
-                words::transport::volume_hint(key!(louder), key!(mute), key!(quieter))
+            .said(),
+            (false, true) => words::transport::VolumeHintWheeled {
+                louder: key!(louder),
+                mute: key!(mute),
+                quieter: key!(quieter),
             }
+            .said(),
+            (false, false) => words::transport::VolumeHint {
+                louder: key!(louder),
+                mute: key!(mute),
+                quieter: key!(quieter),
+            }
+            .said(),
         };
 
         div()
@@ -1544,7 +1554,7 @@ fn volume_reading(level: f32, muted: bool) -> SharedString {
 
 fn spoken_position(elapsed: &str, length: Option<String>) -> SharedString {
     match length {
-        Some(length) => SharedString::from(words::transport::position(elapsed, length)),
+        Some(length) => SharedString::from(words::transport::Position { elapsed, length }.said()),
         None => SharedString::from(elapsed.to_owned()),
     }
 }

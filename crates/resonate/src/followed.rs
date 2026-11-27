@@ -68,8 +68,16 @@ fn profile_followed(
     said!(
         "{}{}{}{}",
         match upkeep {
-            Upkeep::InStep => words::followed::followed_on(&followed.name, link.service()),
-            Upkeep::Once => words::followed::moved_once_on(&followed.name, link.service()),
+            Upkeep::InStep => words::followed::FollowedOn {
+                name: &followed.name,
+                service: link.service()
+            }
+            .said(),
+            Upkeep::Once => words::followed::MovedOnceOn {
+                name: &followed.name,
+                service: link.service()
+            }
+            .said(),
         },
         counted_beside(followed.let_go, words::followed::let_go),
         counted_beside(followed.gone, words::followed::deleted_there),
@@ -87,9 +95,19 @@ fn counted_beside(count: usize, said: fn(usize) -> String) -> String {
 
 fn whence(read: &FromTheLink, service: &str, upkeep: Upkeep) -> String {
     if read.started {
-        words::followed::started_from(kept_as(upkeep), &read.name, service)
+        words::followed::StartedFrom {
+            kept: kept_as(upkeep),
+            name: &read.name,
+            service,
+        }
+        .said()
     } else {
-        words::followed::read_from(kept_as(upkeep), &read.name, service)
+        words::followed::ReadFrom {
+            kept: kept_as(upkeep),
+            name: &read.name,
+            service,
+        }
+        .said()
     }
 }
 
@@ -141,11 +159,12 @@ fn refreshed_every_kept(
         if let Err(error) = profile_followed(library, reference, &profile, Upkeep::InStep) {
             told!(
                 "{}",
-                words::followed::profile_not_read_again(
-                    profile.page(),
-                    profile.service(),
-                    with_its_causes(&error),
-                )
+                words::followed::ProfileNotReadAgain {
+                    error: with_its_causes(&error),
+                    page: profile.page(),
+                    service: profile.service()
+                }
+                .said()
             );
             failed += 1;
         }
@@ -156,11 +175,12 @@ fn refreshed_every_kept(
         {
             told!(
                 "{}",
-                words::followed::playlist_not_read_again(
-                    named(library, playlist),
-                    source.link.service(),
-                    with_its_causes(&error),
-                )
+                words::followed::PlaylistNotReadAgain {
+                    error: with_its_causes(&error),
+                    name: named(library, playlist),
+                    service: source.link.service()
+                }
+                .said()
             );
             failed += 1;
         }
@@ -212,12 +232,27 @@ pub fn set_upkeep(library: &Library, playlist: &Playlist, upkeep: Upkeep) -> Res
     match (changed, upkeep) {
         (false, _) => said!(
             "{}",
-            words::followed::was_already(kept_as(upkeep), &playlist.name)
+            words::followed::WasAlready {
+                kept: kept_as(upkeep),
+                name: &playlist.name
+            }
+            .said()
         ),
-        (true, Upkeep::InStep) => said!("{}", words::followed::in_step_now(link, &playlist.name)),
+        (true, Upkeep::InStep) => said!(
+            "{}",
+            words::followed::InStepNow {
+                link,
+                name: &playlist.name
+            }
+            .said()
+        ),
         (true, Upkeep::Once) => said!(
             "{}",
-            words::followed::left_as_it_stands(link, &playlist.name)
+            words::followed::LeftAsItStands {
+                link,
+                name: &playlist.name
+            }
+            .said()
         ),
     }
     Ok(())
@@ -234,13 +269,14 @@ pub fn forget_link(library: &Library, playlist: &Playlist) -> Result<()> {
 pub fn came_from(source: Option<&PlaylistSource>) -> String {
     match source {
         None => String::new(),
-        Some(source) => words::followed::came_from(
-            source.link.service(),
-            match source.upkeep {
+        Some(source) => words::followed::CameFrom {
+            service: source.link.service(),
+            upkeep: match source.upkeep {
                 Upkeep::Once => words::followed::once(),
                 Upkeep::InStep => words::followed::in_step(),
             },
-        ),
+        }
+        .said(),
     }
 }
 
@@ -253,12 +289,13 @@ fn refreshed(
     let Some(read) = library.refresh_playlist(reference, playlist)? else {
         said!(
             "{}",
-            words::followed::names_no_playlist(
-                library
+            words::followed::NamesNoPlaylist {
+                name: library
                     .playlist(playlist)?
                     .map_or_else(|| playlist.to_string(), |held| held.name),
-                source.link.service(),
-            )
+                service: source.link.service()
+            }
+            .said()
         );
         return Ok(());
     };
@@ -266,11 +303,12 @@ fn refreshed(
 
     said!(
         "{}{}",
-        words::followed::read_again(
-            rows_moved(&read).trim_start_matches(", "),
-            &read.name,
-            source.link.service(),
-        ),
+        words::followed::ReadAgain {
+            moved: rows_moved(&read).trim_start_matches(", "),
+            name: &read.name,
+            service: source.link.service()
+        }
+        .said(),
         beyond_the_library(wanted, read.found.len(), read.unnamed)
     );
     Ok(())
@@ -301,7 +339,10 @@ fn rows_moved(read: &FromTheLink) -> String {
         (0, 0) => format!(", {}", words::followed::nothing_to_add()),
         (added, 0) => format!(", {}", words::followed::added(added)),
         (0, removed) => format!(", {}", words::followed::took_out(removed)),
-        (added, removed) => format!(", {}", words::followed::added_and_took_out(added, removed)),
+        (added, removed) => format!(
+            ", {}",
+            words::followed::AddedAndTookOut { added, removed }.said()
+        ),
     }
 }
 

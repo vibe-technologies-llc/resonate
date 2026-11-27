@@ -1350,7 +1350,7 @@ pub(crate) fn asked(
                 .map_err(Error::Sync)?;
 
             if missing.is_empty() {
-                said!("{}", words::sync::lacks_nothing(from, playlist));
+                said!("{}", words::sync::LacksNothing { from, playlist }.said());
                 return Ok(None);
             }
 
@@ -1360,11 +1360,12 @@ pub(crate) fn asked(
 
             said!(
                 "{}",
-                words::sync::came_from(
+                words::sync::CameFrom {
                     from,
-                    count_of(&outcomes, FetchOutcome::Arrived),
-                    missing.len()
-                )
+                    landed: count_of(&outcomes, FetchOutcome::Arrived),
+                    missing: missing.len()
+                }
+                .said()
             );
             for line in unarrived_lines(&outcomes, from) {
                 said!("{line}");
@@ -1537,7 +1538,11 @@ fn billed(row: &RemoteRow) -> String {
     if row.artist.is_empty() {
         row.title.clone()
     } else {
-        words::sync::billed(&row.artist, &row.title)
+        words::sync::Billed {
+            artist: &row.artist,
+            title: &row.title,
+        }
+        .said()
     }
 }
 
@@ -1665,7 +1670,13 @@ fn unarrived_lines(outcomes: &[FetchOutcome], from: &str) -> Vec<String> {
     [
         (held > 0).then(|| words::sync::fetch_already_held(held)),
         (claimed > 0).then(|| words::sync::fetch_claimed(claimed)),
-        (unreachable > 0).then(|| words::sync::fetch_unreachable(from, unreachable)),
+        (unreachable > 0).then(|| {
+            words::sync::FetchUnreachable {
+                count: unreachable,
+                from,
+            }
+            .said()
+        }),
         (failed > 0).then(|| words::sync::fetch_failed(failed)),
         (unanswered > 0).then(|| words::sync::fetch_unanswered(unanswered)),
     ]

@@ -741,15 +741,16 @@ fn broken_down(failed: Failures) -> String {
 }
 
 fn counted(stats: ScanStats) -> String {
-    let said = words::settings_library::scan_counted(
-        stats.added,
-        stats.discovered,
-        stats.failed.total(),
-        stats.moved,
-        stats.processed,
-        stats.removed,
-        stats.updated,
-    );
+    let said = words::settings_library::ScanCounted {
+        added: stats.added,
+        discovered: stats.discovered,
+        failed: stats.failed.total(),
+        moved: stats.moved,
+        read: stats.processed,
+        removed: stats.removed,
+        updated: stats.updated,
+    }
+    .said();
 
     said + &broken_down(stats.failed)
 }
@@ -1451,14 +1452,20 @@ fn fields_of(write: &Written) -> String {
 
 fn so_far(stats: RetagStats, writing: bool) -> String {
     if writing {
-        words::settings_library::retag_written_so_far(
-            stats.passed_over,
-            stats.unchanged,
-            stats.walked,
-            stats.written,
-        )
+        words::settings_library::RetagWrittenSoFar {
+            passed_over: stats.passed_over,
+            unchanged: stats.unchanged,
+            walked: stats.walked,
+            written: stats.written,
+        }
+        .said()
     } else {
-        words::settings_library::retag_so_far(stats.passed_over, stats.unchanged, stats.walked)
+        words::settings_library::RetagSoFar {
+            passed_over: stats.passed_over,
+            unchanged: stats.unchanged,
+            walked: stats.walked,
+        }
+        .said()
     }
 }
 
@@ -1486,47 +1493,51 @@ fn written(summary: &RetagSummary) -> String {
         .filter(|write| write.popularity.is_some())
         .count();
 
-    let told = words::settings_library::retag_previewed(
+    let told = words::settings_library::RetagPreviewed {
         fields,
-        stats.passed_over,
+        passed_over: stats.passed_over,
         pictures,
         ratings,
-        stats.unchanged,
-        retagging.writes.len(),
-    );
+        unchanged: stats.unchanged,
+        writes: retagging.writes.len(),
+    }
+    .said();
 
     stopped_early(told, summary.cancelled)
 }
 
 fn going(stats: OrganiseStats, moving: bool) -> String {
     if moving {
-        words::settings_library::organise_moved_so_far(
-            stats.collided,
-            stats.failed,
-            stats.moved,
-            stats.unchanged,
-            stats.unidentified,
-        )
+        words::settings_library::OrganiseMovedSoFar {
+            collided: stats.collided,
+            failed: stats.failed,
+            moved: stats.moved,
+            unchanged: stats.unchanged,
+            unidentified: stats.unidentified,
+        }
+        .said()
     } else {
-        words::settings_library::organise_so_far(
-            stats.collided,
-            stats.failed,
-            stats.unchanged,
-            stats.unidentified,
-        )
+        words::settings_library::OrganiseSoFar {
+            collided: stats.collided,
+            failed: stats.failed,
+            unchanged: stats.unchanged,
+            unidentified: stats.unidentified,
+        }
+        .said()
     }
 }
 
 fn filed(summary: &OrganiseSummary) -> String {
     let stats = summary.stats;
-    let told = words::settings_library::organise_previewed(
-        stats.collided,
-        stats.failed,
-        summary.plan.folders.len(),
-        summary.plan.files_moving(),
-        stats.unchanged,
-        stats.unidentified,
-    );
+    let told = words::settings_library::OrganisePreviewed {
+        collided: stats.collided,
+        failed: stats.failed,
+        folders: summary.plan.folders.len(),
+        moving: summary.plan.files_moving(),
+        unchanged: stats.unchanged,
+        unidentified: stats.unidentified,
+    }
+    .said();
 
     stopped_early(told, summary.cancelled)
 }
@@ -2082,14 +2093,15 @@ fn unusable_as_the_vault(
 }
 
 fn asked_of_the_inbox(stats: PollStats) -> String {
-    words::settings_library::inbox_asked(
-        stats.asked,
-        stats.kept,
-        stats.late,
-        stats.nothing,
-        stats.refused,
-        stats.unkept,
-    )
+    words::settings_library::InboxAsked {
+        asked: stats.asked,
+        kept: stats.kept,
+        late: stats.late,
+        nothing: stats.nothing,
+        refused: stats.refused,
+        unkept: stats.unkept,
+    }
+    .said()
 }
 
 fn unplanned(planned: Planned, first: &'static str) -> &'static str {

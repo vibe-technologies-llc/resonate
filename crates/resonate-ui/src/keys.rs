@@ -318,15 +318,27 @@ fn key_as_apple_marks_it(key: &str) -> Cow<'static, str> {
 }
 
 pub(crate) fn keyed(what: &str, ways: &[&str]) -> String {
-    words::keys::keyed(ways_said(ways), what)
+    words::keys::Keyed {
+        ways: ways_said(ways),
+        what,
+    }
+    .said()
 }
 
 fn ways_said(ways: &[&str]) -> String {
     match ways {
         [] => String::new(),
         [only] => (*only).to_owned(),
-        [one, other] => words::keys::either(*one, *other),
-        [first, rest @ ..] => words::keys::among(*first, ways_said(rest)),
+        [one, other] => words::keys::Either {
+            one: *one,
+            other: *other,
+        }
+        .said(),
+        [first, rest @ ..] => words::keys::Among {
+            first: *first,
+            rest: ways_said(rest),
+        }
+        .said(),
     }
 }
 

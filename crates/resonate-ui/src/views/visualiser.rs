@@ -66,7 +66,11 @@ fn tilt_clause(tilt: SpectrumTilt) -> String {
 }
 
 fn reads_hint(spectral: Spectral) -> String {
-    words::visualiser::reads_hint(tilt_clause(spectral.tilt), band_width(spectral.bands))
+    words::visualiser::ReadsHint {
+        tilt: tilt_clause(spectral.tilt),
+        width: band_width(spectral.bands),
+    }
+    .said()
 }
 
 fn spectrum_hint(spectral: Spectral) -> String {
@@ -206,14 +210,23 @@ impl Visualiser {
     fn readback(&self) -> SharedString {
         let rate = self.spectrum.rate().kilohertz();
         match self.showing {
-            Showing::Spectrum => words::visualiser::points_read(self.spectrum.points(), rate),
-            Showing::Scope => words::visualiser::span_read(SCOPE_SPAN.as_millis() as u64, rate),
-            Showing::Stereo => words::visualiser::span_read(
-                Frames(self.spectrum.points() as u64)
+            Showing::Spectrum => words::visualiser::PointsRead {
+                points: self.spectrum.points(),
+                rate,
+            }
+            .said(),
+            Showing::Scope => words::visualiser::SpanRead {
+                millis: SCOPE_SPAN.as_millis() as u64,
+                rate,
+            }
+            .said(),
+            Showing::Stereo => words::visualiser::SpanRead {
+                millis: Frames(self.spectrum.points() as u64)
                     .to_duration(self.spectrum.rate())
                     .as_millis() as u64,
                 rate,
-            ),
+            }
+            .said(),
         }
         .into()
     }
@@ -530,7 +543,11 @@ fn traced(trace: Option<(Levels, Levels)>) -> Canvas<()> {
 
 fn stereo_readings(metered: Metered) -> Div {
     let level = |channel: &str, meter: Meter| {
-        words::visualiser::true_peak(channel, format!("{:.1}", meter.peak_db))
+        words::visualiser::TruePeak {
+            channel,
+            peak: format!("{:.1}", meter.peak_db),
+        }
+        .said()
     };
     let correlation = metered.correlation.map_or_else(
         || words::visualiser::correlation_unknown().to_owned(),

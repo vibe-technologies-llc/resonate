@@ -59,7 +59,11 @@ impl RootView {
         }
         kit::rows()
             .child(kit::stacked_row(
-                words::settings_filters::included_of(AUDIO_EXTENSIONS.len(), selected),
+                words::settings_filters::IncludedOf {
+                    offered: AUDIO_EXTENSIONS.len(),
+                    selected,
+                }
+                .said(),
                 words::settings_filters::choose_the_formats_to_include_in(),
                 choices,
             ))
@@ -104,7 +108,7 @@ impl RootView {
         let counted = hidden.counted;
 
         let mut listed = kit::rows().child(note(if shown < counted {
-            words::settings_filters::songs_hidden_and_listed(counted, shown)
+            words::settings_filters::SongsHiddenAndListed { counted, shown }.said()
         } else {
             words::settings_filters::songs_hidden(counted)
         }));

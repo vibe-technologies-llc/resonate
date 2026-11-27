@@ -2171,7 +2171,11 @@ fn kind_of(playlist: &Playlist) -> Option<(&'static str, u32)> {
 fn history_of(playlist: &Playlist, now: SystemTime) -> SharedString {
     let made = format::since(playlist.created, now);
     SharedString::from(match playlist.played {
-        Some(played) => words::playlists::made_and_last_played(made, format::since(played, now)),
+        Some(played) => words::playlists::MadeAndLastPlayed {
+            made,
+            played: format::since(played, now),
+        }
+        .said(),
         None => words::playlists::made_and_never_played(made),
     })
 }
@@ -2179,10 +2183,13 @@ fn history_of(playlist: &Playlist, now: SystemTime) -> SharedString {
 fn about_a_cell(playlist: &Playlist, now: SystemTime) -> SharedString {
     let tracks = words::playlists::tracks(playlist.entries);
     match playlist.played {
-        Some(played) => SharedString::from(words::playlists::tracks_played(
-            format::since(played, now),
-            tracks,
-        )),
+        Some(played) => SharedString::from(
+            words::playlists::TracksPlayed {
+                played: format::since(played, now),
+                tracks,
+            }
+            .said(),
+        ),
         None => match playlist.duration {
             Some(length) => SharedString::from(format!("{tracks} · {}", format::spanned(length))),
             None => SharedString::from(tracks),
@@ -2349,7 +2356,11 @@ fn synced_entries(menu: Menu, id: PlaylistId, this: &RootView, cx: &App) -> Menu
 
     for device in synced.fetched_from {
         let fetching = Arc::clone(&syncing);
-        let label = words::playlists::fetch_missing(device.as_str(), synced.missing);
+        let label = words::playlists::FetchMissing {
+            device: device.as_str(),
+            missing: synced.missing,
+        }
+        .said();
 
         menu = menu.does(Icon::Download, label, move |this, _, cx| {
             let fetching = Arc::clone(&fetching);
@@ -2438,12 +2449,15 @@ fn puts_back(undoable: &Undoable) -> SharedString {
         Edit::Refreshed => words::playlists::undo_refreshed(name),
     };
 
-    SharedString::from(words::playlists::puts_back(
-        undoable.behind,
-        doing,
-        key!(undo),
-        made_by(undoable.made_by),
-    ))
+    SharedString::from(
+        words::playlists::PutsBack {
+            behind: undoable.behind,
+            doing,
+            keys: key!(undo),
+            made_by: made_by(undoable.made_by),
+        }
+        .said(),
+    )
 }
 
 fn does_again(redoable: &Undoable) -> SharedString {
@@ -2461,12 +2475,15 @@ fn does_again(redoable: &Undoable) -> SharedString {
         Edit::Refreshed => words::playlists::redo_refreshed(name),
     };
 
-    SharedString::from(words::playlists::does_again(
-        redoable.behind,
-        doing,
-        key!(redo),
-        made_by(redoable.made_by),
-    ))
+    SharedString::from(
+        words::playlists::DoesAgain {
+            behind: redoable.behind,
+            doing,
+            keys: key!(redo),
+            made_by: made_by(redoable.made_by),
+        }
+        .said(),
+    )
 }
 
 fn made_by(maker: Maker) -> &'static str {
@@ -2484,7 +2501,13 @@ fn capped(rows: Option<usize>) -> SharedString {
 }
 
 fn shown_of(shown: usize, playlist: &Playlist) -> SharedString {
-    SharedString::from(words::playlists::shown_of(playlist.entries, shown))
+    SharedString::from(
+        words::playlists::ShownOf {
+            count: playlist.entries,
+            shown,
+        }
+        .said(),
+    )
 }
 
 fn picked(root: &RootView, playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {

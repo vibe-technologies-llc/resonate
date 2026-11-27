@@ -66,14 +66,15 @@ fn summarised(counts: Statistics, window: Window) -> String {
         return words::stats::nothing_played_across(across);
     }
 
-    words::stats::summary(
+    words::stats::Summary {
         across,
-        counts.albums,
-        counts.artists,
-        heard_for(counts.listened),
-        counts.plays,
-        counts.tracks,
-    )
+        albums: counts.albums,
+        artists: counts.artists,
+        listened: heard_for(counts.listened),
+        plays: counts.plays,
+        tracks: counts.tracks,
+    }
+    .said()
 }
 
 fn across(window: Window) -> &'static str {
@@ -92,7 +93,11 @@ fn heard_for(span: Duration) -> String {
     match seconds / SECONDS_AN_HOUR {
         0 if minutes == 0 => words::stats::seconds(seconds),
         0 => words::stats::minutes(minutes),
-        hours => words::stats::hours_and_minutes(hours, minutes % MINUTES_AN_HOUR),
+        hours => words::stats::HoursAndMinutes {
+            hours,
+            minutes: minutes % MINUTES_AN_HOUR,
+        }
+        .said(),
     }
 }
 

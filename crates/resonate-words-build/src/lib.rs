@@ -21,6 +21,7 @@ const WORDS: &str = "words";
 const ENGLISH: &str = "en";
 const ENDING: &str = "ftl";
 const WRITTEN_TO: &str = "words.rs";
+const KIND: &str = "Said";
 const UNRAISABLE: [&str; 4] = ["self", "Self", "super", "crate"];
 const KEYWORDS: [&str; 51] = [
     "as", "async", "await", "break", "const", "continue", "dyn", "else", "enum", "extern", "false",
@@ -81,6 +82,12 @@ pub enum Error {
         id: String,
         found: Vec<String>,
         english: Vec<String>,
+    },
+    #[error("the area {area} holds {id} and {other}, which would name one sentence in Rust")]
+    Clashing {
+        area: String,
+        id: String,
+        other: String,
     },
     #[error("{language} lacks the area {area}, which the English holds")]
     AreaMissing { language: PathBuf, area: String },
@@ -454,6 +461,74 @@ fn spelled(path: &Path) -> Result<String> {
         })
 }
 
+fn function_of(message: &Message, index: usize) -> String {
+    let parameters: Vec<String> = message
+        .takes
+        .iter()
+        .map(|variable| format!("{}: impl Into<::resonate_words::Arg<'a>>", raised(variable)))
+        .collect();
+    let arguments: Vec<String> = message
+        .takes
+        .iter()
+        .map(|variable| format!("({variable:?}, {}.into())", raised(variable)))
+        .collect();
+
+    format!(
+        "\n    pub(crate) fn {}<'a>({}) -> String {{\n        AREA.formatted({index}, [{}])\n    }}\n",
+        raised(&message.id),
+        parameters.join(", "),
+        arguments.join(", ")
+    )
+}
+
+fn sentence_of(named: &str, message: &Message, index: usize) -> String {
+    let kinds: Vec<String> = (0..message.takes.len())
+        .map(|place| format!("{KIND}{place}"))
+        .collect();
+    let fields: Vec<String> = message
+        .takes
+        .iter()
+        .zip(&kinds)
+        .map(|(variable, kind)| format!("        pub(crate) {}: {kind},\n", raised(variable)))
+        .collect();
+    let bounds: Vec<String> = kinds
+        .iter()
+        .map(|kind| format!("            {kind}: Into<::resonate_words::Arg<'a>>,\n"))
+        .collect();
+    let arguments: Vec<String> = message
+        .takes
+        .iter()
+        .map(|variable| format!("({variable:?}, self.{}.into())", raised(variable)))
+        .collect();
+    let kinds = kinds.join(", ");
+
+    format!(
+        "\n    pub(crate) struct {named}<{kinds}> {{\n{}    }}\n\n    impl<{kinds}> \
+         {named}<{kinds}> {{\n        pub(crate) fn said<'a>(self) -> String\n        where\n{}        \
+         {{\n            AREA.formatted({index}, [{}])\n        }}\n    }}\n",
+        fields.concat(),
+        bounds.concat(),
+        arguments.join(", ")
+    )
+}
+
+fn type_name(id: &str) -> String {
+    let mut named = String::with_capacity(id.len());
+    let mut raise = true;
+
+    for letter in id.chars() {
+        match letter {
+            '-' | '_' => raise = true,
+            letter if raise => {
+                named.extend(letter.to_uppercase());
+                raise = false;
+            }
+            letter => named.push(letter),
+        }
+    }
+    named
+}
+
 fn module_of(area: &str, messages: &[Message], kept_in: &[(String, PathBuf)]) -> Result<String> {
     let ids: Vec<String> = messages
         .iter()
@@ -475,33 +550,26 @@ fn module_of(area: &str, messages: &[Message], kept_in: &[(String, PathBuf)]) ->
         sources.join(", ")
     );
 
-    for (index, message) in messages.iter().enumerate() {
-        let name = raised(&message.id);
-        match message.takes.is_empty() {
-            true => written.push_str(&format!(
-                "\n    pub(crate) fn {name}() -> &'static str {{\n        AREA.plain({index})\n    \
-                 }}\n"
-            )),
-            false => {
-                let parameters: Vec<String> = message
-                    .takes
-                    .iter()
-                    .map(|variable| {
-                        format!("{}: impl Into<::resonate_words::Arg<'a>>", raised(variable))
-                    })
-                    .collect();
-                let arguments: Vec<String> = message
-                    .takes
-                    .iter()
-                    .map(|variable| format!("({variable:?}, {}.into())", raised(variable)))
-                    .collect();
+    let mut named_by: BTreeMap<String, &str> = BTreeMap::new();
 
-                written.push_str(&format!(
-                    "\n    pub(crate) fn {name}<'a>({}) -> String {{\n        AREA.formatted({index}, \
-                     [{}])\n    }}\n",
-                    parameters.join(", "),
-                    arguments.join(", ")
-                ));
+    for (index, message) in messages.iter().enumerate() {
+        match message.takes.len() {
+            0 => written.push_str(&format!(
+                "\n    pub(crate) fn {}() -> &'static str {{\n        AREA.plain({index})\n    }}\n",
+                raised(&message.id)
+            )),
+            1 => written.push_str(&function_of(message, index)),
+            _ => {
+                let named = type_name(&message.id);
+
+                if let Some(other) = named_by.insert(named.clone(), &message.id) {
+                    return Err(Error::Clashing {
+                        area: area.to_owned(),
+                        id: message.id.clone(),
+                        other: other.to_owned(),
+                    });
+                }
+                written.push_str(&sentence_of(&named, message, index));
             }
         }
     }
@@ -561,8 +629,48 @@ mod tests {
         assert!(written.contains("pub(crate) mod queue {"));
         assert!(written.contains("pub(crate) fn just_now() -> &'static str"));
         assert!(written.contains("pub(crate) fn took_out<'a>(count: impl Into<"));
+        assert!(written.contains("pub(crate) struct Named<"));
+    }
+
+    #[test]
+    fn a_message_of_many_variables_takes_them_by_name_and_never_by_place() {
+        let words = Folder::new("by-name").holding(
+            "en",
+            "history",
+            "brought-in = Brought in { $file } from { $service } at { $type }
+",
+        );
+
+        let written = generated(&words.0).expect("the words generate");
+
+        assert!(written.contains("pub(crate) struct BroughtIn<Said0, Said1, Said2> {"));
+        assert!(written.contains("pub(crate) file: Said0,"));
+        assert!(written.contains("pub(crate) service: Said1,"));
+        assert!(written.contains("pub(crate) r#type: Said2,"));
+        assert!(written.contains("impl<Said0, Said1, Said2> BroughtIn<Said0, Said1, Said2> {"));
+        assert!(written.contains("pub(crate) fn said<'a>(self) -> String"));
+        assert!(written.contains("Said1: Into<::resonate_words::Arg<'a>>,"));
         assert!(written.contains(
-            "pub(crate) fn named<'a>(count: impl Into<::resonate_words::Arg<'a>>, place: impl Into<"
+            "[(\"file\", self.file.into()), (\"service\", self.service.into()), (\"type\", \
+             self.r#type.into())]"
+        ));
+        assert!(!written.contains("fn brought_in"));
+    }
+
+    #[test]
+    fn two_messages_naming_one_sentence_in_rust_are_refused() {
+        let words = Folder::new("clashing").holding(
+            "en",
+            "history",
+            "brought-in = { $file } from { $service }
+brought_in = { $file } at { $service }
+",
+        );
+
+        assert!(matches!(
+            generated(&words.0),
+            Err(Error::Clashing { area, id, other })
+                if area == "history" && id == "brought_in" && other == "brought-in"
         ));
     }
 

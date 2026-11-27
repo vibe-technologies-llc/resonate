@@ -372,25 +372,29 @@ impl RootView {
                     ))
                 })
                 .when_some(unheld, |row, (unheld, unread)| {
-                    row.child(self.in_the_pane_ring(
-                        kit::button(
-                            "unheld-releases",
-                            Some(Icon::Missing),
-                            match unread {
-                                0 => words::browser::releases_not_held(unheld),
-                                unread => {
-                                    words::browser::releases_not_held_more_unread(unheld, unread)
-                                }
+                    row.child(
+                        self.in_the_pane_ring(
+                            kit::button(
+                                "unheld-releases",
+                                Some(Icon::Missing),
+                                match unread {
+                                    0 => words::browser::releases_not_held(unheld),
+                                    unread => words::browser::ReleasesNotHeldMoreUnread {
+                                        count: unheld,
+                                        unread,
+                                    }
+                                    .said(),
+                                },
+                                words::browser::unheld_hint(),
+                                Tone::Ghost,
+                            ),
+                            |this, _, cx| {
+                                this.show_what_is_missing(MissingShows::Releases, cx);
+                                this.set_pane(Pane::Missing, cx);
                             },
-                            words::browser::unheld_hint(),
-                            Tone::Ghost,
+                            cx,
                         ),
-                        |this, _, cx| {
-                            this.show_what_is_missing(MissingShows::Releases, cx);
-                            this.set_pane(Pane::Missing, cx);
-                        },
-                        cx,
-                    ))
+                    )
                     .when(unread > 0 && reads_further, |row| {
                         row.child(self.in_the_pane_ring(
                             kit::button(

@@ -1239,7 +1239,11 @@ impl RootView {
                         ("continue-from", at),
                         Some(Icon::Play),
                         words::queue::continue_from(handed.device.as_str()),
-                        words::queue::continue_from_hint(handed.device.as_str(), handed.songs),
+                        words::queue::ContinueFromHint {
+                            device: handed.device.as_str(),
+                            songs: handed.songs,
+                        }
+                        .said(),
                         Tone::Ghost,
                     ),
                     move |this, _, cx| this.continue_from(&id, &device, cx),

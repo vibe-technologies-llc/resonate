@@ -52,11 +52,23 @@ fn deliver(settings: &Path, group: Option<Reloadable>) {
 }
 
 fn taken_by_running(players: &[String]) -> Option<String> {
-    (!players.is_empty()).then(|| words::reloading::taken_up(players.len(), players.join(", ")))
+    (!players.is_empty()).then(|| {
+        words::reloading::TakenUp {
+            count: players.len(),
+            players: players.join(", "),
+        }
+        .said()
+    })
 }
 
 fn kept_by_running(players: &[String]) -> Option<String> {
-    (!players.is_empty()).then(|| words::reloading::kept(players.len(), players.join(", ")))
+    (!players.is_empty()).then(|| {
+        words::reloading::Kept {
+            count: players.len(),
+            players: players.join(", "),
+        }
+        .said()
+    })
 }
 
 #[cfg(test)]

@@ -21,28 +21,36 @@ use crate::{
 };
 
 pub(crate) fn moving_hint() -> String {
-    let reaching = words::reorder::moving_reaching(
-        key!(reach_above),
-        key!(reach_below),
-        key!(widen_above),
-        key!(widen_below),
-    );
-    let further = words::reorder::moving_further(
-        key!(reach_everything),
-        key!(reach_first),
-        key!(reach_last),
-        key!(reach_page_above),
-        key!(reach_page_below),
-    );
-    let acting = words::reorder::moving_acting(
-        key!(drop_reached),
-        key!(lower_row),
-        key!(open_menu),
-        key!(play_reached),
-        key!(raise_row),
-    );
+    let reaching = words::reorder::MovingReaching {
+        reach_above: key!(reach_above),
+        reach_below: key!(reach_below),
+        widen_above: key!(widen_above),
+        widen_below: key!(widen_below),
+    }
+    .said();
+    let further = words::reorder::MovingFurther {
+        reach_everything: key!(reach_everything),
+        reach_first: key!(reach_first),
+        reach_last: key!(reach_last),
+        reach_page_above: key!(reach_page_above),
+        reach_page_below: key!(reach_page_below),
+    }
+    .said();
+    let acting = words::reorder::MovingActing {
+        drop_reached: key!(drop_reached),
+        lower_row: key!(lower_row),
+        open_menu: key!(open_menu),
+        play_reached: key!(play_reached),
+        raise_row: key!(raise_row),
+    }
+    .said();
 
-    words::reorder::moving_hint(acting, further, reaching)
+    words::reorder::MovingHint {
+        acting,
+        further,
+        reaching,
+    }
+    .said()
 }
 
 const DRAGGING_EDGE: f32 = 36.0;
@@ -513,7 +521,12 @@ impl AlbumRun {
 fn titled_with_more(first: Option<&str>, held: usize) -> SharedString {
     match (first, held) {
         (Some(title), 0 | 1) => title.to_owned().into(),
-        (Some(title), held) => words::reorder::titled_and_more(held - 1, title).into(),
+        (Some(title), held) => words::reorder::TitledAndMore {
+            more: held - 1,
+            title,
+        }
+        .said()
+        .into(),
         (None, _) => SharedString::default(),
     }
 }

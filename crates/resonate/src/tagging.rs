@@ -91,28 +91,48 @@ pub(crate) fn lyrics_beside(
         let path = from_here(&local_path(file));
         let named = path.display().to_string();
         let told = match sheeted(library, &path, standing, apply)? {
-            Sheeted::Beside(Beside::Written(sheet)) if apply => {
-                words::beside::written(named, sheet.display().to_string())
+            Sheeted::Beside(Beside::Written(sheet)) if apply => words::beside::Written {
+                file: named,
+                sheet: sheet.display().to_string(),
             }
+            .said(),
             Sheeted::Beside(Beside::Written(sheet)) => {
                 planned += 1;
-                words::beside::would_write(named, sheet.display().to_string())
+                words::beside::WouldWrite {
+                    file: named,
+                    sheet: sheet.display().to_string(),
+                }
+                .said()
             }
-            Sheeted::Beside(Beside::AlreadySaid(sheet)) => {
-                words::beside::already_said(named, sheet.display().to_string())
+            Sheeted::Beside(Beside::AlreadySaid(sheet)) => words::beside::AlreadySaid {
+                file: named,
+                sheet: sheet.display().to_string(),
             }
+            .said(),
             Sheeted::NotInTheCatalog => words::beside::not_in_the_catalog(named),
             Sheeted::NotAFileOfItsOwn => words::beside::not_a_file_of_its_own(named),
             Sheeted::NothingKept => words::beside::nothing_kept(named),
             Sheeted::Refused(resonate_lyrics::Error::SidecarStands { path }) => {
-                words::beside::stands(named, path.display().to_string())
+                words::beside::Stands {
+                    file: named,
+                    sheet: path.display().to_string(),
+                }
+                .said()
             }
             Sheeted::Refused(resonate_lyrics::Error::SidecarOutranked { path }) => {
-                words::beside::outranked(named, path.display().to_string())
+                words::beside::Outranked {
+                    file: named,
+                    sheet: path.display().to_string(),
+                }
+                .said()
             }
             Sheeted::Refused(error) => {
                 failed += 1;
-                words::beside::unwritten(named, error.to_string())
+                words::beside::Unwritten {
+                    error: error.to_string(),
+                    file: named,
+                }
+                .said()
             }
         };
 
@@ -166,10 +186,11 @@ pub(crate) fn dedupe(library: &Library, apply: bool) -> Result<()> {
     for copy in &copies.identical {
         said!(
             "{}",
-            words::main::copies(
-                copy.copy.display().to_string(),
-                copy.kept.display().to_string()
-            )
+            words::main::Copies {
+                copy: copy.copy.display().to_string(),
+                kept: copy.kept.display().to_string()
+            }
+            .said()
         );
     }
     for differing in &copies.differing {
@@ -289,9 +310,11 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
             for edit in &write.edits {
                 let field = match edit.scope {
                     SheetScope::Disc => edit.field.to_string(),
-                    SheetScope::Track(number) => {
-                        words::main::sheet_track(edit.field.to_string(), format!("{number:02}"))
+                    SheetScope::Track(number) => words::main::SheetTrack {
+                        field: edit.field.to_string(),
+                        number: format!("{number:02}"),
                     }
+                    .said(),
                 };
 
                 table.push(vec![
@@ -316,35 +339,45 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
 
     let stats = &summary.stats;
     let written = if apply {
-        words::main::written(stats.fields, stats.pictures, stats.ratings, stats.written)
+        words::main::Written {
+            fields: stats.fields,
+            pictures: stats.pictures,
+            ratings: stats.ratings,
+            written: stats.written,
+        }
+        .said()
     } else {
-        words::main::would_write(
-            retagging
+        words::main::WouldWrite {
+            fields: retagging
                 .writes
                 .iter()
                 .map(|write| write.edits.len() + write.taken.len())
                 .chain(retagging.sheets.iter().map(|write| write.edits.len()))
                 .sum::<usize>(),
-            retagging
+            pictures: retagging
                 .writes
                 .iter()
                 .filter(|write| write.picture.is_some())
                 .count(),
-            retagging
+            ratings: retagging
                 .writes
                 .iter()
                 .filter(|write| write.popularity.is_some())
                 .count(),
-            retagging.writes.len() + retagging.sheets.len(),
-        )
+            written: retagging.writes.len() + retagging.sheets.len(),
+        }
+        .said()
     };
 
-    told.push_str(&words::main::tagged(
-        stats.passed_over,
-        stats.unchanged,
-        stats.walked,
-        written,
-    ));
+    told.push_str(
+        &words::main::Tagged {
+            passed: stats.passed_over,
+            unchanged: stats.unchanged,
+            walked: stats.walked,
+            written,
+        }
+        .said(),
+    );
     told.push('\n');
     if !apply {
         told.push_str(words::main::nothing_written());

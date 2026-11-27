@@ -166,7 +166,11 @@ pub(super) fn vaulted(summary: &ImportSummary) -> Notice {
     let stats = summary.stats;
     let mut told = match stats.vaulted {
         0 => words::models::the_vault_already_holds_every_track_it().to_owned(),
-        vaulted => words::models::kept_in_the_vault(vaulted, format::bytes(stats.saved())),
+        vaulted => words::models::KeptInTheVault {
+            count: vaulted,
+            saved: format::bytes(stats.saved()),
+        }
+        .said(),
     };
 
     if summary.cancelled {
@@ -184,18 +188,27 @@ pub(super) fn deletion_told(
         (Ok(deleted), 1) if deleted.kept > 0 => {
             Notice::Trouble(words::models::could_not_delete_the_song(title))
         }
-        (Ok(deleted), 1) if !deleted.sidecars_kept.is_empty() => {
-            Notice::Trouble(words::models::deleted_the_song_leaving_files_beside(
+        (Ok(deleted), 1) if !deleted.sidecars_kept.is_empty() => Notice::Trouble(
+            words::models::DeletedTheSongLeavingFilesBeside {
                 title,
-                deleted.sidecars_kept.len(),
-            ))
-        }
+                left: deleted.sidecars_kept.len(),
+            }
+            .said(),
+        ),
         (Ok(_), 1) => Notice::Done(words::models::deleted_the_song(title)),
         (Ok(deleted), asked) if deleted.kept > 0 => Notice::Trouble(
-            words::models::could_not_delete_some_songs(asked, deleted.kept),
+            words::models::CouldNotDeleteSomeSongs {
+                asked,
+                kept: deleted.kept,
+            }
+            .said(),
         ),
         (Ok(deleted), asked) if !deleted.sidecars_kept.is_empty() => Notice::Trouble(
-            words::models::deleted_songs_leaving_files_beside(asked, deleted.sidecars_kept.len()),
+            words::models::DeletedSongsLeavingFilesBeside {
+                count: asked,
+                left: deleted.sidecars_kept.len(),
+            }
+            .said(),
         ),
         (Ok(_), asked) => Notice::Done(words::models::deleted_songs(asked)),
         (Err(error), asked) => {
@@ -215,14 +228,19 @@ pub(super) fn deletion_told(
 pub(super) fn folding_told(folded: resonate_library::Result<Deleted>) -> Notice {
     match folded {
         Ok(deleted) if deleted.kept > 0 => Notice::Trouble(
-            words::models::folded_identical_songs_some_kept(deleted.files, deleted.kept),
+            words::models::FoldedIdenticalSongsSomeKept {
+                files: deleted.files,
+                kept: deleted.kept,
+            }
+            .said(),
         ),
-        Ok(deleted) if !deleted.changed_since_found.is_empty() => {
-            Notice::Trouble(words::models::folded_identical_songs_some_changed(
-                deleted.files,
-                deleted.changed_since_found.len(),
-            ))
-        }
+        Ok(deleted) if !deleted.changed_since_found.is_empty() => Notice::Trouble(
+            words::models::FoldedIdenticalSongsSomeChanged {
+                files: deleted.files,
+                changed: deleted.changed_since_found.len(),
+            }
+            .said(),
+        ),
         Ok(deleted) => Notice::Done(words::models::folded_identical_songs(deleted.files)),
         Err(error) => {
             tracing::error!(%error, "identical songs could not be folded");
@@ -286,10 +304,13 @@ pub(super) fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<N
         return None;
     }
 
-    let mut parts = vec![words::models::albums_and_artists_answered(
-        stats.releases,
-        stats.artists,
-    )];
+    let mut parts = vec![
+        words::models::AlbumsAndArtistsAnswered {
+            albums: stats.releases,
+            artists: stats.artists,
+        }
+        .said(),
+    ];
 
     if stats.lyrics > 0 {
         parts.push(words::models::lyrics_for_tracks(stats.lyrics));
@@ -305,11 +326,19 @@ pub(super) fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<N
     }
 
     Some(match summary.stopped_by {
-        Some(Stopped::Unreached(op)) => {
-            Notice::Trouble(words::models::musicbrainz_unreached(said, op.asked_for()))
-        }
+        Some(Stopped::Unreached(op)) => Notice::Trouble(
+            words::models::MusicbrainzUnreached {
+                said,
+                what: op.asked_for(),
+            }
+            .said(),
+        ),
         Some(Stopped::RefusedInARow(op)) => Notice::Trouble(
-            words::models::musicbrainz_refused_in_a_row(said, op.asked_for()),
+            words::models::MusicbrainzRefusedInARow {
+                said,
+                what: op.asked_for(),
+            }
+            .said(),
         ),
         Some(Stopped::Offline) => Notice::Noted(words::models::lookup_held_offline(said)),
         Some(Stopped::Metered) => Notice::Noted(words::models::lookup_held_metered(said)),
@@ -388,7 +417,9 @@ pub(super) fn sharing_told(read: Vec<resonate_library::Result<Option<Shared>>>) 
     let notice = match (asked, links.len()) {
         (1, _) => Notice::Done(said.unwrap_or_default()),
         (asked, held) if held == asked => Notice::Done(words::models::links_on_the_clipboard(held)),
-        (asked, held) => Notice::Done(words::models::some_links_on_the_clipboard(asked, held)),
+        (asked, held) => {
+            Notice::Done(words::models::SomeLinksOnTheClipboard { asked, held }.said())
+        }
     };
 
     Sharing {
@@ -399,7 +430,11 @@ pub(super) fn sharing_told(read: Vec<resonate_library::Result<Option<Shared>>>) 
 
 pub(super) fn on_the_clipboard(shared: &Shared) -> String {
     match shared.artist.as_deref() {
-        Some(artist) => words::models::song_by_on_the_clipboard(artist, &shared.title),
+        Some(artist) => words::models::SongByOnTheClipboard {
+            artist,
+            title: &shared.title,
+        }
+        .said(),
         None => words::models::song_on_the_clipboard(&shared.title),
     }
 }

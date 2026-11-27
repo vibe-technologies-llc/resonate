@@ -66,9 +66,13 @@ impl RootView {
         if let Some(stats) = library.stats() {
             return Some(match stats.discovered {
                 0 => SharedString::new_static(words::announcing::scanning()),
-                found => {
-                    SharedString::from(words::announcing::scanning_counted(found, stats.processed))
-                }
+                found => SharedString::from(
+                    words::announcing::ScanningCounted {
+                        found,
+                        processed: stats.processed,
+                    }
+                    .said(),
+                ),
             });
         }
         if library.shows_the_lookup() {

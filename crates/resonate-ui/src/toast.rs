@@ -347,7 +347,7 @@ pub(crate) fn drawn(
 
 pub(crate) fn could_not(doing: &str, error: &resonate_library::Error) -> Notice {
     Notice::Trouble(match standing_in_the_way(error) {
-        Some(why) => words::toast::could_not_because(doing, why),
+        Some(why) => words::toast::CouldNotBecause { doing, why }.said(),
         None => words::toast::could_not(doing),
     })
 }
@@ -407,7 +407,7 @@ pub(crate) fn eq_could_not(doing: &str, error: &resonate_eq::Error) -> Notice {
         _ => None,
     };
     Notice::Trouble(match why {
-        Some(why) => words::toast::could_not_because(doing, why),
+        Some(why) => words::toast::CouldNotBecause { doing, why }.said(),
         None => words::toast::could_not(doing),
     })
 }

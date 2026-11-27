@@ -63,7 +63,11 @@ fn step_standing(taken: MirrorStep, step: MirrorStep, done: Option<(u64, u64)>) 
             let share = read as f64 / of as f64;
 
             let said = if taken.counts_bytes() {
-                words::settings_online::mirror_step_bytes(gigabytes(of), gigabytes(read))
+                words::settings_online::MirrorStepBytes {
+                    of: gigabytes(of),
+                    read: gigabytes(read),
+                }
+                .said()
             } else {
                 words::settings_online::mirror_step_share((share * WHOLE_PERCENT).floor() as u64)
             };
@@ -102,19 +106,24 @@ fn mirror_said(told: &MirrorTold) -> String {
             dump,
             bytes,
             amended_at: None,
-        } => words::settings_online::mirror_held(
-            dump.to_string(),
-            resonate_words::decimal(*bytes as f64 / BYTES_IN_A_GIGABYTE, 1),
-        ),
+        } => words::settings_online::MirrorHeld {
+            dump: dump.to_string(),
+            held: resonate_words::decimal(*bytes as f64 / BYTES_IN_A_GIGABYTE, 1),
+        }
+        .said(),
         MirrorTold::Held {
             dump,
             bytes,
             amended_at: Some(at),
-        } => words::settings_online::mirror_held_and_followed(
-            dump.to_string(),
-            resonate_words::decimal(*bytes as f64 / BYTES_IN_A_GIGABYTE, 1),
-            resonate_core::elapsed::since(UNIX_EPOCH + Duration::from_secs(*at), SystemTime::now()),
-        ),
+        } => words::settings_online::MirrorHeldAndFollowed {
+            ago: resonate_core::elapsed::since(
+                UNIX_EPOCH + Duration::from_secs(*at),
+                SystemTime::now(),
+            ),
+            dump: dump.to_string(),
+            held: resonate_words::decimal(*bytes as f64 / BYTES_IN_A_GIGABYTE, 1),
+        }
+        .said(),
         MirrorTold::Stopped => words::settings_online::mirror_stopped().to_owned(),
         MirrorTold::Failed(why) => words::settings_online::mirror_failed(why.to_string()),
     }

@@ -178,7 +178,11 @@ fn bound_as(settings: &Path, sink: Option<&NodeName>, binding: &Binding) -> Resu
 
     said!(
         "{}",
-        words::equaliser::bound(spoken_binding(binding), spoken_of(sink))
+        words::equaliser::Bound {
+            binding: spoken_binding(binding),
+            sink: spoken_of(sink)
+        }
+        .said()
     );
     Ok(())
 }
@@ -209,11 +213,12 @@ fn import(
         store.keep_own_read(sink.map(NodeName::as_str), &kept)?;
         said!(
             "{}",
-            words::equaliser::shaped_from(
-                kept.profile.bands().len(),
-                from.display().to_string(),
-                spoken_own(sink),
-            )
+            words::equaliser::ShapedFrom {
+                bands: kept.profile.bands().len(),
+                from: from.display().to_string(),
+                own: spoken_own(sink)
+            }
+            .said()
         );
         passed_over(&kept);
         return bound_as(settings, sink, &Binding::Own);
@@ -232,16 +237,21 @@ fn import(
     if kept.converted {
         said!(
             "{}",
-            words::equaliser::kept_graphic(
-                kept.profile.bands().len(),
-                name.to_string(),
-                DRAWN_AT.to_string(),
-            )
+            words::equaliser::KeptGraphic {
+                bands: kept.profile.bands().len(),
+                name: name.to_string(),
+                rate: DRAWN_AT.to_string()
+            }
+            .said()
         );
     } else {
         said!(
             "{}",
-            words::equaliser::kept(kept.profile.bands().len(), name.to_string())
+            words::equaliser::Kept {
+                bands: kept.profile.bands().len(),
+                name: name.to_string()
+            }
+            .said()
         );
     }
     passed_over(&kept);
@@ -277,7 +287,11 @@ fn fit_measurement(
         &Fit {
             fitted: &fitted,
             target,
-            origin: words::equaliser::the_layout_file(from.display().to_string(), layout.label()),
+            origin: words::equaliser::TheLayoutFile {
+                file: from.display().to_string(),
+                layout: layout.label(),
+            }
+            .said(),
             passed_over,
             name,
         },
@@ -315,18 +329,24 @@ fn keep_fitted(
     } = kept;
     let bands = fitted.profile.bands().len();
 
-    let told = words::equaliser::fitted_toward(
-        format!("{:.1}", fitted.off_by_db_after),
+    let told = words::equaliser::FittedToward {
+        after: format!("{:.1}", fitted.off_by_db_after),
         bands,
-        format!("{:.1}", fitted.off_by_db_before),
-        *target,
-    );
+        before: format!("{:.1}", fitted.off_by_db_before),
+        target: *target,
+    }
+    .said();
 
     if wanted.own {
         store.keep_own(sink.map(NodeName::as_str), &fitted.profile)?;
         said!(
             "{}",
-            words::equaliser::shaped_from_told(origin, spoken_own(sink), &told)
+            words::equaliser::ShapedFromTold {
+                origin,
+                own: spoken_own(sink),
+                told: &told
+            }
+            .said()
         );
         measurement_passed_over(*passed_over);
         return bound_as(settings, sink, &Binding::Own);
@@ -338,7 +358,12 @@ fn keep_fitted(
     replaced_if(held, name);
     said!(
         "{}",
-        words::equaliser::kept_from_told(name.to_string(), origin, &told)
+        words::equaliser::KeptFromTold {
+            name: name.to_string(),
+            origin,
+            told: &told
+        }
+        .said()
     );
     measurement_passed_over(*passed_over);
 
@@ -380,11 +405,12 @@ fn measure(
 
     told!(
         "{}",
-        words::equaliser::playing_a_sweep(
-            heard_from,
-            (measuring::SWEEP_FOR + measuring::HEARD_AFTER_THE_SWEEP).as_secs(),
-            through.map_or(words::equaliser::the_default_output(), NodeName::as_str),
-        )
+        words::equaliser::PlayingASweep {
+            heard: heard_from,
+            seconds: (measuring::SWEEP_FOR + measuring::HEARD_AFTER_THE_SWEEP).as_secs(),
+            through: through.map_or(words::equaliser::the_default_output(), NodeName::as_str)
+        }
+        .said()
     );
 
     let heard: Response =
@@ -468,7 +494,11 @@ fn fetch_every(store: &Store, config: &Config, wanted: &EqArgs, text: &str) -> R
                 replaced_if(held, &name);
                 said!(
                     "{}",
-                    words::equaliser::kept(profile.bands().len(), name.to_string())
+                    words::equaliser::Kept {
+                        bands: profile.bands().len(),
+                        name: name.to_string()
+                    }
+                    .said()
                 );
                 kept += 1;
             }
@@ -480,7 +510,14 @@ fn fetch_every(store: &Store, config: &Config, wanted: &EqArgs, text: &str) -> R
         }
     }
 
-    said!("{}", words::equaliser::kept_corrections(ids.len(), kept));
+    said!(
+        "{}",
+        words::equaliser::KeptCorrections {
+            asked: ids.len(),
+            kept
+        }
+        .said()
+    );
     Ok(())
 }
 
@@ -563,7 +600,11 @@ fn export(
     store.export(&profile, Some(&standing_in), to)?;
     said!(
         "{}",
-        words::equaliser::wrote(to.display().to_string(), spoken)
+        words::equaliser::Wrote {
+            path: to.display().to_string(),
+            spoken
+        }
+        .said()
     );
     Ok(())
 }
@@ -770,12 +811,23 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
         }
     };
 
-    said!("\n{}", words::equaliser::for_sink(spoken_of(sink), spoken));
+    said!(
+        "\n{}",
+        words::equaliser::ForSink {
+            sink: spoken_of(sink),
+            spoken
+        }
+        .said()
+    );
     said!("{}", words::equaliser::preamp(profile.preamp().to_string()));
     if let Some(target) = profile.target() {
         said!(
             "{}",
-            words::equaliser::fitted_to_graphic(target.points().len(), DRAWN_AT.to_string())
+            words::equaliser::FittedToGraphic {
+                points: target.points().len(),
+                rate: DRAWN_AT.to_string()
+            }
+            .said()
         );
     }
     if profile.bands().is_empty() {
@@ -869,8 +921,13 @@ fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
 
 fn measurer_missed(asked_for: Option<&str>, chosen: &str) -> Option<String> {
     let asked_for = asked_for?;
-    (asked_for.trim().to_lowercase() != chosen.trim().to_lowercase())
-        .then(|| words::equaliser::measurer_missed(asked_for, chosen))
+    (asked_for.trim().to_lowercase() != chosen.trim().to_lowercase()).then(|| {
+        words::equaliser::MeasurerMissed {
+            asked: asked_for,
+            chosen,
+        }
+        .said()
+    })
 }
 
 fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
@@ -881,7 +938,11 @@ fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
 
     said!(
         "{}",
-        words::equaliser::sink(&sink.description, sink.name.as_str())
+        words::equaliser::Sink {
+            description: &sink.description,
+            name: sink.name.as_str()
+        }
+        .said()
     );
 
     let measurer = measurer_of(config, wanted, Some(&sink.name));
@@ -898,7 +959,11 @@ fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
             }
             said!(
                 "{}",
-                words::equaliser::fetch_it(device.id.as_str(), sink.name.as_str())
+                words::equaliser::FetchIt {
+                    device: device.id.as_str(),
+                    sink: sink.name.as_str()
+                }
+                .said()
             );
         }
         None => {
@@ -927,7 +992,12 @@ fn fetch(
         store.keep_own(sink.map(NodeName::as_str), &profile)?;
         said!(
             "{}",
-            words::equaliser::shaped_from(profile.bands().len(), id.to_string(), spoken_own(sink))
+            words::equaliser::ShapedFrom {
+                bands: profile.bands().len(),
+                from: id.to_string(),
+                own: spoken_own(sink)
+            }
+            .said()
         );
         return bound_as(settings, sink, &Binding::Own);
     }
@@ -942,7 +1012,11 @@ fn fetch(
     replaced_if(held, &name);
     said!(
         "{}",
-        words::equaliser::kept(profile.bands().len(), name.to_string())
+        words::equaliser::Kept {
+            bands: profile.bands().len(),
+            name: name.to_string()
+        }
+        .said()
     );
 
     if wanted.r#for.is_some() {

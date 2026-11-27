@@ -143,7 +143,7 @@ fn albums_named(library: &Library, name: &str, by: Option<&str>) -> Result<Vec<C
 
 fn shown_with(title: &str, artist: Option<&str>) -> String {
     match artist {
-        Some(artist) => words::favourites::by(artist, title),
+        Some(artist) => words::favourites::By { artist, title }.said(),
         None => title.to_owned(),
     }
 }

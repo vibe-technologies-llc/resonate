@@ -1330,7 +1330,11 @@ fn variant_labels(variants: &Variants) -> Vec<String> {
             let shared = kinds.iter().filter(|other| *other == kind).count() > 1;
             match (at, where_it_is(copy).filter(|_| shared)) {
                 (0, _) => words::menu::the_songs_own_version(kind.as_str()),
-                (_, Some(place)) => words::menu::the_version_in(kind.as_str(), place),
+                (_, Some(place)) => words::menu::TheVersionIn {
+                    kind: kind.as_str(),
+                    place,
+                }
+                .said(),
                 (_, None) => words::menu::the_version(kind.as_str()),
             }
         })
@@ -1348,7 +1352,11 @@ fn copy_labels(own: &Track, copies: &[Track]) -> Vec<String> {
             let shared =
                 *kind == own_kind || kinds.iter().filter(|other| *other == kind).count() > 1;
             match where_it_is(copy).filter(|_| shared) {
-                Some(place) => words::menu::play_the_copy_in(kind.as_str(), place),
+                Some(place) => words::menu::PlayTheCopyIn {
+                    kind: kind.as_str(),
+                    place,
+                }
+                .said(),
                 None => words::menu::play_the_copy(kind.as_str()),
             }
         })

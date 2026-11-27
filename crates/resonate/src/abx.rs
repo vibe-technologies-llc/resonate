@@ -199,24 +199,31 @@ impl Test {
     }
 
     fn trial(&self) -> String {
-        words::abx::trial(self.session.score().answered + 1, self.session.planned())
+        words::abx::Trial {
+            number: self.session.score().answered + 1,
+            planned: self.session.planned(),
+        }
+        .said()
     }
 
     fn opening(&self) -> String {
         match &self.subject {
-            Subject::Equaliser { arms, .. } => {
-                words::abx::levels_matched(format!("{:.3}", arms.residual_db()), self.trial())
+            Subject::Equaliser { arms, .. } => words::abx::LevelsMatched {
+                residual: format!("{:.3}", arms.residual_db()),
+                trial: self.trial(),
             }
+            .said(),
             Subject::Setting { contest, .. } if contest.is_flat_in_level() => {
                 words::abx::one_level_played(self.trial())
             }
             Subject::Setting { lowered, .. } if lowered.by.is_none() => {
                 words::abx::one_level_measured(self.trial())
             }
-            Subject::Setting { lowered, .. } => words::abx::louder_lowered(
-                format!("{:.2}", f64::from(lowered.by.millibels()) / 100.0),
-                self.trial(),
-            ),
+            Subject::Setting { lowered, .. } => words::abx::LouderLowered {
+                by: format!("{:.2}", f64::from(lowered.by.millibels()) / 100.0),
+                trial: self.trial(),
+            }
+            .said(),
         }
     }
 
@@ -242,10 +249,13 @@ impl Test {
         let mut lines = vec![scored(score)];
 
         if !self.is_finished() {
-            lines.push(words::abx::stopped_after(
-                score.answered,
-                self.session.planned(),
-            ));
+            lines.push(
+                words::abx::StoppedAfter {
+                    answered: score.answered,
+                    planned: self.session.planned(),
+                }
+                .said(),
+            );
             return lines;
         }
         lines.push(
@@ -269,12 +279,13 @@ fn help() {
 }
 
 fn scored(score: Score) -> String {
-    words::abx::scored(
-        score.answered,
-        format!("{:.4}", score.p_value()),
-        format!("{:.1}", score.p_value() * 100.0),
-        score.right,
-    )
+    words::abx::Scored {
+        answered: score.answered,
+        p: format!("{:.4}", score.p_value()),
+        percent: format!("{:.1}", score.p_value() * 100.0),
+        right: score.right,
+    }
+    .said()
 }
 
 fn clock_seed() -> u64 {

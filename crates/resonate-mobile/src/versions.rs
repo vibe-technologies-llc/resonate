@@ -118,14 +118,22 @@ fn nothing_said(search: VersionSearch, why: Nothing, title: &str, services: &[St
         (VersionSearch::Better, Nothing::NowhereToAsk) => {
             words::versions::none_held_and_nowhere_to_ask(title)
         }
-        (VersionSearch::Better, Nothing::NoneOn) => words::versions::none_found(title, &services),
-        (VersionSearch::Explicit, Nothing::NoneOn) => {
-            words::versions::no_explicit_found(title, &services)
+        (VersionSearch::Better, Nothing::NoneOn) => words::versions::NoneFound {
+            title,
+            services: &services,
         }
+        .said(),
+        (VersionSearch::Explicit, Nothing::NoneOn) => words::versions::NoExplicitFound {
+            title,
+            services: &services,
+        }
+        .said(),
         (VersionSearch::Explicit, _) => words::versions::no_explicit_and_nowhere_to_ask(title),
-        (VersionSearch::Clean, Nothing::NoneOn) => {
-            words::versions::no_clean_found(title, &services)
+        (VersionSearch::Clean, Nothing::NoneOn) => words::versions::NoCleanFound {
+            title,
+            services: &services,
         }
+        .said(),
         (VersionSearch::Clean, _) => words::versions::no_clean_and_nowhere_to_ask(title),
     }
 }
@@ -204,7 +212,7 @@ fn quality_said(track: &Track) -> String {
     let bits = track.bits.unwrap_or(u32::from(BITS_WHERE_NONE_ARE_KNOWN));
     let rate = SampleRate::new(track.rate)
         .map_or_else(|_| track.rate.to_string(), |rate| rate.to_string());
-    words::versions::quality(bits, rate)
+    words::versions::Quality { bits, rate }.said()
 }
 
 fn album_of(track: &Track) -> Option<&str> {
@@ -213,9 +221,11 @@ fn album_of(track: &Track) -> Option<&str> {
 
 pub(crate) fn held_label(search: VersionSearch, copy: &Track) -> String {
     match (search, album_of(copy)) {
-        (VersionSearch::Better, _) => {
-            words::versions::play_held(copy.codec.as_str(), quality_said(copy))
+        (VersionSearch::Better, _) => words::versions::PlayHeld {
+            codec: copy.codec.as_str(),
+            quality: quality_said(copy),
         }
+        .said(),
         (_, Some(album)) => words::versions::play_your_copy_from(album),
         (_, None) => words::versions::play_your_copy(copy.codec.as_str()),
     }
@@ -231,12 +241,17 @@ fn served_label(search: VersionSearch, service: &str, song: &Song) -> String {
                 .and_then(resonate_library::codec_named)
                 .map_or(words::versions::lossless(), |codec| codec.as_str());
             match album {
-                Some(album) => words::versions::download_served_on_album(album, codec, service),
-                None => words::versions::download_served(codec, service),
+                Some(album) => words::versions::DownloadServedOnAlbum {
+                    album,
+                    codec,
+                    service,
+                }
+                .said(),
+                None => words::versions::DownloadServed { codec, service }.said(),
             }
         }
         VersionSearch::Clean | VersionSearch::Explicit => match album {
-            Some(album) => words::versions::download_it_from_album(album, service),
+            Some(album) => words::versions::DownloadItFromAlbum { album, service }.said(),
             None => words::versions::download_it_from(service),
         },
     }
@@ -247,14 +262,17 @@ fn variant_label(original: &Track, variant: &Track) -> String {
     let quality = quality_said(variant);
 
     if variant.id == original.id {
-        return words::versions::variant_original(codec, quality);
+        return words::versions::VariantOriginal { codec, quality }.said();
     }
 
     let named = match album_of(variant) {
-        Some(album) if album_of(original) != Some(album) => {
-            words::versions::variant_on_album(album, codec, quality)
+        Some(album) if album_of(original) != Some(album) => words::versions::VariantOnAlbum {
+            album,
+            codec,
+            quality,
         }
-        _ => words::versions::variant(codec, quality),
+        .said(),
+        _ => words::versions::Variant { codec, quality }.said(),
     };
     match rating_of(variant) {
         rating if rating == rating_of(original) => named,
@@ -456,7 +474,11 @@ impl MobilePlayer {
         if let Some(why) = nothing_to_ask {
             let said = match held.is_empty() {
                 true => nothing_said(search, why, &title, &[]),
-                false => words::versions::found(held.len(), &title),
+                false => words::versions::Found {
+                    count: held.len(),
+                    title: &title,
+                }
+                .said(),
             };
 
             return Ok(FoundVersions {
@@ -483,7 +505,13 @@ impl MobilePlayer {
                 (!answered.is_empty())
                     .then(|| nothing_said(search, Nothing::NoneOn, &title, &answered))
             }
-            found => Some(words::versions::found(found, &title)),
+            found => Some(
+                words::versions::Found {
+                    count: found,
+                    title: &title,
+                }
+                .said(),
+            ),
         };
         Ok(FoundVersions {
             versions,
@@ -1047,6 +1075,39 @@ mod tests {
         assert_eq!(
             resonate_providers::stream_extension(Some("not a format"), None).as_str(),
             "flac"
+        );
+    }
+
+    #[test]
+    fn nothing_found_names_the_song_and_then_the_services_asked() {
+        let services = ["TIDAL".to_owned(), "Subsonic".to_owned()];
+
+        assert_eq!(
+            nothing_said(
+                VersionSearch::Better,
+                Nothing::NoneOn,
+                "Paper Lanterns",
+                &services
+            ),
+            "No higher quality version of Paper Lanterns in your library or on TIDAL, Subsonic"
+        );
+        assert_eq!(
+            nothing_said(
+                VersionSearch::Clean,
+                Nothing::NoneOn,
+                "Paper Lanterns",
+                &services[..1]
+            ),
+            "No Clean version of Paper Lanterns in your library or on TIDAL"
+        );
+        assert_eq!(
+            nothing_said(
+                VersionSearch::Explicit,
+                Nothing::NoneOn,
+                "Paper Lanterns",
+                &services[1..]
+            ),
+            "No Explicit version of Paper Lanterns in your library or on Subsonic"
         );
     }
 }

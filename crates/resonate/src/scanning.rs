@@ -32,14 +32,15 @@ pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Res
 
     said!(
         "{}{}",
-        words::main::scanned(
-            stats.added,
-            stats.discovered,
-            stats.failed.total(),
-            stats.moved,
-            stats.removed,
-            stats.updated,
-        ),
+        words::main::Scanned {
+            added: stats.added,
+            discovered: stats.discovered,
+            failed: stats.failed.total(),
+            moved: stats.moved,
+            removed: stats.removed,
+            updated: stats.updated
+        }
+        .said(),
         broken_down(stats.failed)
     );
     if summary.cancelled {

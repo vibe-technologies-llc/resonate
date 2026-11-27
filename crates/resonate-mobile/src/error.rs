@@ -139,7 +139,7 @@ pub enum Error {
     Decode(#[from] resonate_codec::Error),
     #[error("{}", crate::failure::of_a_domain(.0))]
     Domain(#[from] resonate_core::Error),
-    #[error("{}", words::errors::store(op.to_string(), source.to_string()))]
+    #[error("{}", words::errors::Store { op: op.to_string(), source: source.to_string() }.said())]
     Store {
         op: StoreOp,
         #[source]
@@ -153,12 +153,12 @@ pub enum Error {
     Unreachable { provider: MusicProvider },
     #[error("{}", words::errors::provider_away(provider.to_string()))]
     ProviderAway { provider: MusicProvider },
-    #[error("{}", words::errors::provider_refused(provider.to_string(), *status))]
+    #[error("{}", words::errors::ProviderRefused { provider: provider.to_string(), status: *status }.said())]
     ProviderRefused {
         provider: MusicProvider,
         status: u16,
     },
-    #[error("{}", words::errors::account_refused(*code, provider.to_string()))]
+    #[error("{}", words::errors::AccountRefused { code: *code, provider: provider.to_string() }.said())]
     AccountRefused { provider: MusicProvider, code: u16 },
     #[error("{}", words::errors::provider_untrusted(provider.to_string()))]
     ProviderUntrusted { provider: MusicProvider },
@@ -340,21 +340,21 @@ pub enum Error {
     CatalogVersion { found: u32 },
     #[error("{}", words::errors::unknown_track())]
     UnknownTrack,
-    #[error("{}", words::errors::too_many_bands(*found, MAX_BANDS))]
+    #[error("{}", words::errors::TooManyBands { found: *found, most: MAX_BANDS }.said())]
     TooManyBands { found: u32 },
-    #[error("{}", words::errors::band_frequency(band + 1, hertz.to_string(), (HIGHEST_HZ / 1000.0).to_string(), LOWEST_HZ.to_string()))]
+    #[error("{}", words::errors::BandFrequency { band: band + 1, hertz: hertz.to_string(), highest: (HIGHEST_HZ / 1000.0).to_string(), lowest: LOWEST_HZ.to_string() }.said())]
     BandFrequency { band: u32, hertz: f32 },
-    #[error("{}", words::errors::band_gain(band + 1, decibels.to_string(), GAIN_AT_MOST_DB.to_string()))]
+    #[error("{}", words::errors::BandGain { band: band + 1, decibels: decibels.to_string(), most: GAIN_AT_MOST_DB.to_string() }.said())]
     BandGain { band: u32, decibels: f32 },
-    #[error("{}", words::errors::band_q(band + 1, Q_AT_LEAST.to_string(), Q_AT_MOST.to_string(), q.to_string()))]
+    #[error("{}", words::errors::BandQ { band: band + 1, least: Q_AT_LEAST.to_string(), most: Q_AT_MOST.to_string(), q: q.to_string() }.said())]
     BandQ { band: u32, q: f32 },
     #[error("{}", words::errors::band_channels(band + 1))]
     BandChannels { band: u32 },
-    #[error("{}", words::errors::preamp_range(decibels.to_string(), PREAMP_AT_MOST_DB.to_string()))]
+    #[error("{}", words::errors::PreampRange { decibels: decibels.to_string(), most: PREAMP_AT_MOST_DB.to_string() }.said())]
     PreampRange { decibels: f32 },
-    #[error("{}", words::errors::profile_too_loud(BOOST_AT_MOST_DB.to_string(), format!("{peak_db:.1}")))]
+    #[error("{}", words::errors::ProfileTooLoud { most: BOOST_AT_MOST_DB.to_string(), peak: format!("{peak_db:.1}") }.said())]
     ProfileTooLoud { peak_db: f64 },
-    #[error("{}", words::errors::listening_test_trials(TRIALS_AT_MOST, *trials))]
+    #[error("{}", words::errors::ListeningTestTrials { most: TRIALS_AT_MOST, trials: *trials }.said())]
     ListeningTestTrials { trials: u32 },
     #[error("{}", words::errors::listening_test_nothing_to_test())]
     ListeningTestNothingToTest,
@@ -374,7 +374,7 @@ pub enum Error {
     FirstZoneStays,
     #[error("{}", words::errors::unknown_queue_row(*queue_id))]
     UnknownQueueRow { queue_id: u64 },
-    #[error("{}", words::errors::queue_row_out_of_range(*row, *rows))]
+    #[error("{}", words::errors::QueueRowOutOfRange { row: *row, rows: *rows }.said())]
     QueueRowOutOfRange { row: u32, rows: u64 },
     #[error("{}", words::errors::sync(op.to_string()))]
     Sync {

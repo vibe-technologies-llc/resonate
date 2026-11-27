@@ -389,14 +389,17 @@ impl RootView {
                     kit::figure(format!("{}", row + 1))
                         .when(chosen, |figure| figure.text_color(rgb(theme::accent()))),
                 )
-                .names(words::settings_equaliser::band_keys_hint(
-                    key!(band_higher),
-                    key!(band_louder),
-                    key!(band_lower),
-                    key!(band_narrower),
-                    key!(band_quieter),
-                    key!(band_wider),
-                )),
+                .names(
+                    words::settings_equaliser::BandKeysHint {
+                        higher: key!(band_higher),
+                        louder: key!(band_louder),
+                        lower: key!(band_lower),
+                        narrower: key!(band_narrower),
+                        quieter: key!(band_quieter),
+                        wider: key!(band_wider),
+                    }
+                    .said(),
+                ),
             move |this, _, cx| this.choose_a_band(row, cx),
             cx,
         )
@@ -1272,7 +1275,11 @@ fn heard_through_menu(
 }
 
 fn curve_said(bands: &[Band], widest: f32) -> String {
-    let drawn = words::settings_equaliser::curve_drawn(bands.len(), format!("{widest:.0}"));
+    let drawn = words::settings_equaliser::CurveDrawn {
+        count: bands.len(),
+        widest: format!("{widest:.0}"),
+    }
+    .said();
 
     if bands.is_empty() {
         return drawn;
@@ -1302,7 +1309,13 @@ fn band_said(band: Band) -> String {
         false => words::settings_equaliser::off(),
     };
 
-    words::settings_equaliser::band_said(at, gain, band.kind.label().to_lowercase(), off)
+    words::settings_equaliser::BandSaid {
+        at,
+        gain,
+        kind: band.kind.label().to_lowercase(),
+        off,
+    }
+    .said()
 }
 
 fn trimmed(number: f64) -> String {

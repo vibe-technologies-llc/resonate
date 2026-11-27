@@ -866,7 +866,7 @@ fn said_of(suggestion: &Suggestion) -> SharedString {
 fn measured_shown(suggestion: &Suggestion, shown: usize) -> String {
     let whole = measured(suggestion);
     match (shown as u64) < suggestion.rows && shown > 0 {
-        true => words::suggestions::first_shown(shown, whole),
+        true => words::suggestions::FirstShown { shown, whole }.said(),
         false => whole,
     }
 }

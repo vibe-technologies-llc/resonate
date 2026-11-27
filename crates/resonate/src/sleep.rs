@@ -72,7 +72,11 @@ pub fn set(spoken: &str, player: Option<&str>, zone: Option<&str>) -> Result<()>
 
     said!(
         "{}",
-        words::sleep::reads_as(running.name().to_string(), reads_as(&running)?)
+        words::sleep::ReadsAs {
+            player: running.name().to_string(),
+            reading: reads_as(&running)?
+        }
+        .said()
     );
     Ok(())
 }
@@ -99,10 +103,16 @@ fn counting_down(left: Duration) -> String {
     let seconds = left.as_secs();
 
     match (seconds / SECONDS_AN_HOUR, seconds % SECONDS_AN_HOUR) {
-        (0, rest) => {
-            words::sleep::minutes_and_seconds(rest / SECONDS_A_MINUTE, rest % SECONDS_A_MINUTE)
+        (0, rest) => words::sleep::MinutesAndSeconds {
+            minutes: rest / SECONDS_A_MINUTE,
+            seconds: rest % SECONDS_A_MINUTE,
         }
-        (hours, rest) => words::sleep::hours_and_minutes(hours, rest / SECONDS_A_MINUTE),
+        .said(),
+        (hours, rest) => words::sleep::HoursAndMinutes {
+            hours,
+            minutes: rest / SECONDS_A_MINUTE,
+        }
+        .said(),
     }
 }
 

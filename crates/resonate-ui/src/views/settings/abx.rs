@@ -327,10 +327,11 @@ impl ListeningTest {
             Subject::Setting { lowered, .. } if lowered.by.is_none() => {
                 words::settings_abx::measured_through_both_the_two_play().to_owned()
             }
-            Subject::Setting { lowered, .. } => words::settings_abx::lowered_to_match(
-                arm_named(lowered.arm),
-                format!("{:.2}", f64::from(lowered.by.millibels().abs()) / 100.0),
-            ),
+            Subject::Setting { lowered, .. } => words::settings_abx::LoweredToMatch {
+                arm: arm_named(lowered.arm),
+                by: format!("{:.2}", f64::from(lowered.by.millibels().abs()) / 100.0),
+            }
+            .said(),
         }
     }
 
@@ -338,24 +339,33 @@ impl ListeningTest {
         let score = self.session.score();
 
         if score.answered == 0 {
-            return words::settings_abx::trial_of(self.session.planned(), 1);
+            return words::settings_abx::TrialOf {
+                planned: self.session.planned(),
+                trial: 1,
+            }
+            .said();
         }
 
         let trial = if self.session.is_finished() {
             words::settings_abx::finished().to_owned()
         } else {
-            words::settings_abx::trial_of(self.session.planned(), score.answered + 1)
+            words::settings_abx::TrialOf {
+                planned: self.session.planned(),
+                trial: score.answered + 1,
+            }
+            .said()
         };
         format!("{trial} — {}", scored(score))
     }
 }
 
 fn scored(score: Score) -> String {
-    words::settings_abx::scored(
-        score.answered,
-        format!("{:.1}", score.p_value() * 100.0),
-        score.right,
-    )
+    words::settings_abx::Scored {
+        answered: score.answered,
+        chance: format!("{:.1}", score.p_value() * 100.0),
+        right: score.right,
+    }
+    .said()
 }
 
 fn verdicts_in_a_line(session: &Session) -> String {
