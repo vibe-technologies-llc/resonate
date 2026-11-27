@@ -1395,8 +1395,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn only_a_regular_file_is_served_a_fifo_or_a_link_in_a_tracks_place_is_not() {
-        use rustix::fs::{CWD, FileType, Mode, mknodat};
-
         let root = scratch("served-regular");
 
         fs::write(root.join("a.wav"), silent_wave(1)).expect("a song");
@@ -1415,15 +1413,7 @@ mod tests {
 
         let (plain, fifo, link) = (track_at("a.wav"), track_at("b.wav"), track_at("c.wav"));
 
-        fs::remove_file(root.join("b.wav")).expect("the song goes");
-        mknodat(
-            CWD,
-            root.join("b.wav"),
-            FileType::Fifo,
-            Mode::RUSR | Mode::WUSR,
-            0,
-        )
-        .expect("a fifo");
+        fifo_at(&root.join("b.wav"));
 
         fs::remove_file(root.join("c.wav")).expect("the song goes");
         std::os::unix::fs::symlink(root.join("a.wav"), root.join("c.wav")).expect("a link");
@@ -1766,10 +1756,14 @@ mod tests {
 
     #[cfg(unix)]
     fn fifo_at(path: &Path) {
-        use rustix::fs::{CWD, FileType, Mode, mknodat};
-
         fs::remove_file(path).expect("the file goes");
-        mknodat(CWD, path, FileType::Fifo, Mode::RUSR | Mode::WUSR, 0).expect("a fifo");
+
+        let made = std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .expect("mkfifo runs");
+
+        assert!(made.success(), "a fifo");
     }
 
     #[cfg(unix)]
