@@ -252,7 +252,7 @@ Linux sound server or GUI libraries are needed.
   doing and no tool's (a user who writes through a read-only mode, no second filesystem, no user
   namespace) stays a skip. A suite behind an opt-in gate (`RESONATE_ONLINE_TESTS`,
   `RESONATE_DRAG_TESTS`) skips only while the gate is closed: past it, a missing tool fails.
-  The `headless` job sets the switches for what `ARCH_PACKAGES` installs and a hosted daemon needs
+  The `headless` job sets the switches for what `ARCH_PACKAGES` installs (and the portal's tools, which its own step adds) and a hosted daemon needs
   (the bus, portal, terminal, hosted PipeWire, ffmpeg and encoder switches) and the `workspace` job sets
   `RESONATE_TERMINAL_TESTS`; the rest name something CI has no way to provide (a running
   daemon, a sandbox the container's seccomp allows, multicast, a sound device) and are set by hand where it exists.

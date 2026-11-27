@@ -21,7 +21,7 @@ env:
   ARCH_PACKAGES: >-
     base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
     fontconfig freetype2 ttf-dejavu vulkan-headers vulkan-icd-loader ffmpeg flac wavpack mac lame dbus
-    webkit2gtk-4.1 cargo-nextest chromaprint xdg-desktop-portal bubblewrap xdg-dbus-proxy
+    webkit2gtk-4.1 cargo-nextest chromaprint
 
 jobs:
   clippy:
@@ -49,6 +49,8 @@ jobs:
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - name: Install what the portal tests host
+        run: pacman -S --noconfirm --needed xdg-desktop-portal bubblewrap xdg-dbus-proxy
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
