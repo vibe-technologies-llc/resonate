@@ -34,7 +34,7 @@ const WHOLE_SHARE: u64 = 1_000;
 
 const DECEMBER: i64 = 12;
 
-pub const FIRST_YEAR_HELD: i64 = -9_998;
+pub const FIRST_YEAR_HELD: i64 = if cfg!(windows) { 1_601 } else { -9_998 };
 
 pub const LAST_YEAR_HELD: i64 = 9_998;
 
@@ -714,10 +714,16 @@ impl Calendar {
             .ok_or(Error::YearNotHeld(year))
         };
 
-        Ok((
+        let (from, to) = (
             self.midnight_of(day(year)?),
             self.midnight_of(day(year + 1)?),
-        ))
+        );
+
+        if from < to {
+            Ok((from, to))
+        } else {
+            Err(Error::YearNotHeld(year))
+        }
     }
 }
 
@@ -940,8 +946,22 @@ mod tests {
             assert!(from < to, "{year}");
         }
 
-        assert_eq!(years_held_between(i64::MIN, i64::MAX), -9_998..=9_998);
+        assert_eq!(
+            years_held_between(i64::MIN, i64::MAX),
+            FIRST_YEAR_HELD..=LAST_YEAR_HELD
+        );
         assert_eq!(years_held_between(2020, 2024), 2020..=2024);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_first_year_whose_local_midnight_no_timestamp_holds_has_no_bounds() {
+        let east = Calendar::fixed(TWO_HOURS_EAST).expect("a fixed offset is a zone");
+
+        assert_eq!(
+            east.year_bounds(FIRST_YEAR_HELD),
+            Err(Error::YearNotHeld(FIRST_YEAR_HELD))
+        );
     }
 
     #[test]
