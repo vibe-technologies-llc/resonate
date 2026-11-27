@@ -21,7 +21,7 @@ env:
   ARCH_PACKAGES: >-
     base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
     fontconfig freetype2 ttf-dejavu vulkan-headers vulkan-icd-loader ffmpeg flac wavpack mac lame dbus
-    webkit2gtk-4.1 cargo-nextest chromaprint
+    webkit2gtk-4.1 cargo-nextest chromaprint xdg-desktop-portal bubblewrap xdg-dbus-proxy
 
 jobs:
   clippy:
@@ -59,6 +59,7 @@ jobs:
       - run: dbus-run-session -- cargo nextest run --locked --profile ci --workspace --exclude resonate-ui --no-default-features
         env:
           RESONATE_MPRIS_BUS_TESTS: required
+          RESONATE_MPRIS_PORTAL_TESTS: required
           RESONATE_TERMINAL_TESTS: required
           RESONATE_PIPEWIRE_HOSTED_TESTS: required
           RESONATE_LISTEN_HOSTED_TESTS: required

@@ -2,6 +2,7 @@
 
 use std::{
     env, fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
@@ -11,6 +12,7 @@ use std::{
 use resonate_mpris::{Trashing, trash_through_the_portal};
 
 const REQUIRED_BY: &str = "RESONATE_MPRIS_PORTAL_TESTS";
+const SANDBOX_REQUIRED_BY: &str = "RESONATE_MPRIS_SANDBOX_TESTS";
 const ON_A_BUS_OF_ITS_OWN: &str = "RESONATE_PORTAL_ON_A_BUS_OF_ITS_OWN";
 const TRASH_THIS_FILE: &str = "RESONATE_TRASH_THIS_FILE_FROM_A_SANDBOX";
 const APP_ID: &str = "org.resonate.Resonate";
@@ -24,6 +26,7 @@ const PORTALS: [&str; 3] = [
 const PATIENCE: Duration = Duration::from_secs(20);
 const POLL_EVERY: Duration = Duration::from_millis(100);
 const SONG: &str = "echoes.flac";
+const TRASH_MODE_THE_PORTAL_REFUSES: u32 = 0o755;
 
 const A_BUS_WITH_NOTHING_TO_ACTIVATE: &str = r#"<!DOCTYPE busconfig PUBLIC
  "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
@@ -189,6 +192,50 @@ fn a_file_is_taken_to_the_trash_by_a_portal_hosted_on_a_bus_of_its_own() {
     );
 }
 
+fn make_a_trash_the_portal_refuses(trash: &Path) {
+    for folder in [trash.join("files"), trash.join("info")] {
+        fs::create_dir_all(&folder).expect("a trash folder");
+        fs::set_permissions(
+            &folder,
+            fs::Permissions::from_mode(TRASH_MODE_THE_PORTAL_REFUSES),
+        )
+        .expect("a trash folder the portal will not use");
+    }
+}
+
+#[test]
+fn a_trash_the_portal_refuses_is_a_refusal_naming_the_file_and_leaves_it_where_it_was() {
+    let Some(binary) = the_portal_installed() else {
+        passed_over!("no xdg-desktop-portal to host");
+        return;
+    };
+    let tree = Tree::new();
+
+    if !on_a_bus_of_its_own(&tree) {
+        return;
+    }
+
+    let data = tree.data();
+    let trash = data.join("Trash");
+
+    make_a_trash_the_portal_refuses(&trash);
+
+    let file = tree.root.join(SONG);
+
+    fs::write(&file, b"not a song").expect("a file to trash");
+
+    let _portal = hosted(binary, &data, None);
+
+    let trashed = trashed_when_it_answers(&file);
+
+    assert!(
+        matches!(&trashed, Err(Trashing::Refused { path }) if *path == file),
+        "{trashed:?}"
+    );
+    assert!(file.exists(), "the file left though the portal refused it");
+    assert!(trashed_names(&trash.join("files")).is_empty());
+}
+
 fn flatpak_info(tree: &Tree) -> String {
     format!(
         "[Application]\nname={APP_ID}\nruntime=runtime/org.freedesktop.Platform/x86_64/24.08\n\n[Instance]\ninstance-id={INSTANCE_ID}\ninstance-path={}\n",
@@ -259,6 +306,17 @@ fn can_sandbox(info: &Path) -> bool {
             .is_ok_and(|status| status.success())
 }
 
+fn passed_over_without_a_sandbox() {
+    let why = "no bwrap and xdg-dbus-proxy to build a sandbox with";
+
+    assert!(
+        env::var(SANDBOX_REQUIRED_BY).as_deref() != Ok("required"),
+        "{why}, and {SANDBOX_REQUIRED_BY} asks for it"
+    );
+
+    eprintln!("skipped: {why}");
+}
+
 fn wait_for(path: &Path) {
     let deadline = Instant::now() + PATIENCE;
     while !path.exists() {
@@ -283,7 +341,7 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
 
     fs::write(&info, flatpak_info(&tree)).expect("a flatpak-info");
     if !can_sandbox(&info) {
-        passed_over!("no bwrap and xdg-dbus-proxy to build a sandbox with");
+        passed_over_without_a_sandbox();
         return;
     }
     if !on_a_bus_of_its_own(&tree) {

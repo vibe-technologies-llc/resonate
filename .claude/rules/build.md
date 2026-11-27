@@ -238,7 +238,7 @@ Linux sound server or GUI libraries are needed.
   `suite.rs`; a single-file crate holds it itself), which panics when the file's `REQUIRED_BY`
   switch is `required`, as `RESONATE_COREAUDIO_TESTS` and `RESONATE_SYNC_NEARBY_TESTS` already did.
   The switches: `RESONATE_MPRIS_BUS_TESTS` (a session bus, and `dbus-run-session` for the tests that
-  host their own), `RESONATE_MPRIS_PORTAL_TESTS` (`trash::`'s portal, `bwrap`, `xdg-dbus-proxy`),
+  host their own), `RESONATE_MPRIS_PORTAL_TESTS` (`trash::`'s portal), `RESONATE_MPRIS_SANDBOX_TESTS` (`trash::`'s sandbox: `bwrap`, `xdg-dbus-proxy` and a kernel that lets them unshare),
   `RESONATE_TERMINAL_TESTS` (`setsid`, a pseudo-terminal, `/dev/full`), `RESONATE_CONSOLE_TESTS` (Windows:
   ConPTY and an audio endpoint), `RESONATE_PIPEWIRE_STREAM_TESTS` (a running PipeWire daemon with a
   sink), `RESONATE_PIPEWIRE_HOSTED_TESTS` and `RESONATE_LISTEN_HOSTED_TESTS` (`pipewire`, `pw-cli`,
@@ -253,9 +253,9 @@ Linux sound server or GUI libraries are needed.
   namespace) stays a skip. A suite behind an opt-in gate (`RESONATE_ONLINE_TESTS`,
   `RESONATE_DRAG_TESTS`) skips only while the gate is closed: past it, a missing tool fails.
   The `headless` job sets the switches for what `ARCH_PACKAGES` installs and a hosted daemon needs
-  (the bus, terminal, hosted PipeWire, ffmpeg and encoder switches) and the `workspace` job sets
+  (the bus, portal, terminal, hosted PipeWire, ffmpeg and encoder switches) and the `workspace` job sets
   `RESONATE_TERMINAL_TESTS`; the rest name something CI has no way to provide (a running
-  daemon, a portal, `bwrap`, multicast, a sound device) and are set by hand where it exists.
+  daemon, a sandbox the container's seccomp allows, multicast, a sound device) and are set by hand where it exists.
   A lib or bin target holding no test sets `test = false` (`resonate-driven`, the server's and the
   sign-in window's binaries, `resonate-bindgen`), so no empty harness is linked.
 

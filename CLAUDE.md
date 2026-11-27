@@ -304,8 +304,8 @@ Invariants the layering protects (the rules files have the rest):
   pseudo-terminal; `RESONATE_TERMINAL_TESTS`, CI) and, on Windows, `resonate`'s `console::` (ConPTY, an
   audio endpoint `sinks` lists; `RESONATE_CONSOLE_TESTS`); `resonate`'s `dragging::`
   (`RESONATE_DRAG_TESTS`, the opt-in gate, past which a missing hosted KWin, GTK 4 in python3 or
-  `spectacle` fails); `resonate-mpris`'s `trash::` (`xdg-desktop-portal`, and `bwrap` with
-  `xdg-dbus-proxy` for the sandboxed case; `RESONATE_MPRIS_PORTAL_TESTS`); `resonate-server`'s `shared::`
+  `spectacle` fails); `resonate-mpris`'s `trash::` (`xdg-desktop-portal`, `RESONATE_MPRIS_PORTAL_TESTS`, CI; `bwrap` with
+  `xdg-dbus-proxy` for the sandboxed case, `RESONATE_MPRIS_SANDBOX_TESTS`); `resonate-server`'s `shared::`
   page tests (`node`, and a headless `firefox` driven over Marionette for the pages' policy).
   `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers on
   loopback (`-ytmusic` a fake `yt-dlp` too, on Unix).

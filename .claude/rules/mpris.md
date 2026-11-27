@@ -238,9 +238,13 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   (`a_link_is_never_handed_to_the_portal_and_a_file_is`).
   `tests/trash.rs` hosts the real `xdg-desktop-portal` binary on a bus of its own
   (`dbus-run-session`, a bus with nothing to activate, `XDG_DATA_HOME` in the test's folder) and
-  trashes a file through it, skipping where no portal is installed. The portal trashes with GIO's own
-  code, which answers `Refused` (result 0, the only trace being its debug log) where the trash
-  folder is not mode 0700 (*Directory already exists with bad permissions*); the descriptor kind
+  trashes a file through it, skipping where no portal is installed (`RESONATE_MPRIS_PORTAL_TESTS`,
+  which CI sets). The portal trashes with GIO's own
+  code, which answers `Refused` (result 0, the only trace being its debug log) where the trash's
+  `files` folder is not mode 0700 (*Directory already exists with bad
+  permissions*); `a_trash_the_portal_refuses_is_a_refusal_naming_the_file_and_leaves_it_where_it_was`
+  makes `files` and `info` 0755 and asserts `Trashing::Refused` naming the file, the file still where it was
+  and nothing in the trash (the `Trash` folder itself at 0755 is taken as it is); the descriptor kind
   (`O_PATH`, read-write, read-only) makes no difference, and a run against a desktop's own portal
   says nothing of the code until that folder is 0700. **A sandboxed caller is proved by a sandbox
   built to Flatpak's pattern** (`a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id`):
@@ -250,7 +254,9 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   process, which is the proxy's), the portal given a runtime directory of its own holding
   `.flatpak/<instance>/bwrapinfo.json` as `bwrap --info-fd` writes it, and the test binary run inside
   to trash a file on a bound folder, the descriptor crossing the proxy. It skips without `bwrap`,
-  `xdg-dbus-proxy` or a portal, or where the kernel refuses an unprivileged sandbox. It is not
+  `xdg-dbus-proxy` or a portal, or where the kernel refuses an unprivileged sandbox, and only
+  `RESONATE_MPRIS_SANDBOX_TESTS` makes that skip a failure: CI's container may refuse the
+  namespaces, so CI leaves it unset. It is not
   Flatpak itself: no `flatpak run`, no document portal, no permissions of a real manifest.
 - **A notification is keyed on what it *says*.** The cover lands a moment after the track starts:
   the second telling replaces the first under the server's `replaces_id`; teardown closes it and
