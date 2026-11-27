@@ -77,12 +77,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   (`ledger`, `wire.rs`, `tests/nearby.rs`), `resonate-online/tests/live.rs` and
   `fuzz/seeds/lrc/sheet.lrc` still write a real song's line, title and artist inline. Write invented
   ones of the same shape. Done when no test or seed quotes a real song.
-- [M · 0.18.1] Fuzz the lyric readers at the sizes their costs appear. **Medium, builder.** `lrc`,
-  `ttml` and `lyricsfile` check only for a panic (`fuzz/fuzz_targets/lrc.rs:5-7`), their seeds are
-  under 500 bytes and the documented run leaves `-max_len` at libFuzzer's 4 KiB, where neither the
-  quadratic LRC scan nor deep TTML nesting can appear. Document `-max_len=262144`, add a dictionary
-  of stamps and elements, and assert words within the input's length. Done when the target finds the
-  TTML depth overflow before its fix.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
@@ -133,15 +127,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   and `packaging.rs`'s systemd skip still print a skip and pass with no `RESONATE_*_TESTS=required`
   switch, as every other suite needing the outside world now has (`build.md`). Add one each and set
   it where CI provides the tool. Done when a required run without `node` fails.
-- [S · 0.18.1] Walk a folder's songs in name order. **Low, builder.** The scan sorts a folder's cue
-  sheets but sends its audio files in `read_dir` order (`crates/resonate-library/src/scan.rs`), so
-  the order a walk reaches songs, and what a `ScanObserver` hears, differs between filesystems and
-  platforms. Sort them as the sheets are. Done when a test reaches a folder's songs in name order.
-- [S · 0.18.1] Fail the layering job on a misspelled banned dependency. **Low, builder.** `check`
-  greps the captured tree for each name it refuses (`.github/workflows/ci.yml`, the `layering` job),
-  so `refuse resonate-core nosuchdep` passes: a typo or a renamed crate in a refusal enforces
-  nothing. Hold each refused name to a package `cargo metadata` knows. Done when a refusal naming no
-  package fails the job.
 - [S · 0.18.1] Catch a catalog call that passes its values in the sentence's order. **Low,
   builder.** `resonate-words-build` writes each message's function with its parameters in
   alphabetical order, so a call passing them in the order the sentence says them still compiles

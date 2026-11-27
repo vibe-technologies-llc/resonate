@@ -25,11 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Equaliser
-- [S · 0.18.1] The phones' equaliser editor lets bands stack past the lift the preamp takes back.
-  **Low, builder.** Each band and the preamp are held to 24 dB, but their sum is not, and play now
-  holds such a profile by switching its last bands off (`held_to_the_lift`, `eq.md`), so a phone can
-  show bands that are silently off. Refuse the edit as the desktop editor does. Done when a phone's
-  edit past the bound is refused, in a test.
 
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
