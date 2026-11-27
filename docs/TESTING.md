@@ -136,6 +136,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.18.1] Give the server's page tests and the packaging unit's systemd check a required
+  switch. **Low, builder.** `resonate-server`'s `shared::` page tests (`node`, a headless `firefox`)
+  and `packaging.rs`'s systemd skip still print a skip and pass with no `RESONATE_*_TESTS=required`
+  switch, as every other suite needing the outside world now has (`build.md`). Add one each and set
+  it where CI provides the tool. Done when a required run without `node` fails.
 - [S · 0.18.1] Walk a folder's songs in name order. **Low, builder.** The scan sorts a folder's cue
   sheets but sends its audio files in `read_dir` order (`crates/resonate-library/src/scan.rs`), so
   the order a walk reaches songs, and what a `ScanObserver` hears, differs between filesystems and
@@ -145,17 +150,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   so `refuse resonate-core nosuchdep` passes: a typo or a renamed crate in a refusal enforces
   nothing. Hold each refused name to a package `cargo metadata` knows. Done when a refusal naming no
   package fails the job.
-- [M · 0.18.1] Make a skipped test fail where its requirement is meant to be present. **Medium,
-  builder.** The session-bus, pseudo-terminal, portal, live service, PipeWire stream, capture, Cast
-  multicast and reference-tool suites all print a skip and pass
-  (`crates/resonate-mpris/tests/bus.rs:586`, `crates/resonate/tests/terminal.rs:197-210`,
-  `crates/resonate-online/tests/live.rs:32-43`, `crates/resonate-pipewire/tests/stream.rs:48-69`,
-  `crates/resonate-dsp/tests/restoration.rs:236-262`,
-  `crates/resonate-analysis/tests/references.rs`), with no `RESONATE_*_TESTS=required` switch as
-  `coreaudio` and `nearby::` have, and the child-run helpers name their test by a typed string, so a
-  rename runs nothing and passes. Add the switch to each, set it where CI provides the requirement,
-  and take the child's name from `module_path!()` and fail on zero tests run. Done when CI without a
-  session bus fails the bus suite.
 - [M · 0.18.1] Test the portal's trash where it can fail. **Medium, builder.** Both portal tests
   skip without `xdg-desktop-portal`, `bwrap` and `xdg-dbus-proxy`, none of which CI installs
   (`crates/resonate-mpris/tests/trash.rs:85-89`, `:152-157`, `.github/workflows/ci.yml:19-22`), and
