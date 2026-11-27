@@ -226,6 +226,29 @@ mod tests {
         assert_eq!(found.copies.differing.len(), 1);
     }
 
+    #[test]
+    fn the_plan_counts_the_copies_then_the_songs_then_the_numbered_files_that_differ() {
+        let folder = Folder::new();
+
+        folder.tone("Song.wav", 1);
+        folder.tone("Song (1).wav", 1);
+        folder.tone("Song (2).wav", 1);
+        folder.tone("Song2.wav", 1);
+        folder.tone("Other.wav", 2);
+        folder.tone("Other (1).wav", 3);
+        folder.tone("Third.wav", 4);
+        folder.tone("Third (1).wav", 5);
+
+        let library = scanned(&folder);
+
+        let found = Identified::of(library.identical_copies().expect("the copies are found"));
+
+        assert_eq!(
+            told(&found),
+            "would fold 3 copies into 1 song \u{b7} 2 numbered files differ and stay \u{b7} nothing has been folded"
+        );
+    }
+
     #[gpui::test]
     fn identical_songs_are_found_listed_and_folded_only_once_found_and_pressed_twice(
         cx: &mut TestAppContext,

@@ -692,3 +692,36 @@ impl RootView {
         self.store(&Setting::Switched(Switch::FetchLyrics, lyrics), cx);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SECONDS_IN_AN_HOUR: u64 = 3_600;
+
+    #[test]
+    fn a_copy_followed_says_its_export_its_size_and_when_its_changes_were_last_followed() {
+        let three_hours_ago = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("the clock reads after the epoch")
+            .as_secs()
+            - 3 * SECONDS_IN_AN_HOUR;
+
+        assert_eq!(
+            mirror_said(&MirrorTold::Held {
+                dump: "20260301-001001".to_owned(),
+                bytes: 4_200_000_000,
+                amended_at: Some(three_hours_ago),
+            }),
+            "The export of 20260301-001001 is held, 4.2 GB on disc, and MusicBrainz's changes were last followed 3 hours ago."
+        );
+        assert_eq!(
+            mirror_said(&MirrorTold::Held {
+                dump: "20260301-001001".to_owned(),
+                bytes: 4_200_000_000,
+                amended_at: None,
+            }),
+            "The export of 20260301-001001 is held, 4.2 GB on disc."
+        );
+    }
+}

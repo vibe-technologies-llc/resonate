@@ -915,6 +915,71 @@ fn the_toast_says_what_plays_a_higher_quality_version_what_was_wanted_and_what_w
 }
 
 #[test]
+fn a_deletion_leaving_files_beside_names_the_song_and_then_the_files_left() {
+    let deleted = resonate_library::Deleted {
+        files: 5,
+        sidecars_kept: vec!["a.lrc".into(), "b.jpg".into(), "c.cue".into()],
+        ..resonate_library::Deleted::default()
+    };
+
+    assert_eq!(
+        super::told::deletion_told(Ok(deleted.clone()), "Lantern", 1),
+        Notice::Trouble(
+            "Deleted \u{201c}Lantern\u{201d} \u{2014} 3 files beside it couldn't be removed"
+                .to_owned()
+        )
+    );
+    assert_eq!(
+        super::told::deletion_told(Ok(deleted), "Lantern", 7),
+        Notice::Trouble(
+            "Deleted 7 songs \u{2014} 3 files beside them couldn't be removed".to_owned()
+        )
+    );
+}
+
+#[test]
+fn a_deletion_that_kept_files_says_how_many_songs_of_those_asked() {
+    let deleted = resonate_library::Deleted {
+        kept: 2,
+        ..resonate_library::Deleted::default()
+    };
+
+    assert_eq!(
+        super::told::deletion_told(Ok(deleted), "Lantern", 7),
+        Notice::Trouble(
+            "Couldn't delete 2 songs of 7 songs \u{2014} their files couldn't be removed"
+                .to_owned()
+        )
+    );
+}
+
+#[test]
+fn a_fold_that_left_copies_says_how_many_were_folded_and_how_many_were_left() {
+    let kept = resonate_library::Deleted {
+        files: 6,
+        kept: 2,
+        ..resonate_library::Deleted::default()
+    };
+    let changed = resonate_library::Deleted {
+        files: 6,
+        changed_since_found: vec!["a.flac".into(), "b.flac".into(), "c.flac".into()],
+        ..resonate_library::Deleted::default()
+    };
+
+    assert_eq!(
+        super::told::folding_told(Ok(kept)),
+        Notice::Trouble("Folded 6 identical songs \u{2014} 2 files couldn't be removed".to_owned())
+    );
+    assert_eq!(
+        super::told::folding_told(Ok(changed)),
+        Notice::Trouble(
+            "Folded 6 identical songs \u{2014} 3 copies changed since they were found, so they were left"
+                .to_owned()
+        )
+    );
+}
+
+#[test]
 fn only_a_playlist_edit_is_told_as_one_when_it_fails() {
     let not_playlists = [
         Change::Want,

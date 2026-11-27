@@ -157,15 +157,7 @@ fn refreshed_every_kept(
             continue;
         }
         if let Err(error) = profile_followed(library, reference, &profile, Upkeep::InStep) {
-            told!(
-                "{}",
-                words::followed::ProfileNotReadAgain {
-                    error: with_its_causes(&error),
-                    page: profile.page(),
-                    service: profile.service()
-                }
-                .said()
-            );
+            told!("{}", profile_unread(&profile, &error));
             failed += 1;
         }
     }
@@ -175,12 +167,7 @@ fn refreshed_every_kept(
         {
             told!(
                 "{}",
-                words::followed::PlaylistNotReadAgain {
-                    error: with_its_causes(&error),
-                    name: named(library, playlist),
-                    service: source.link.service()
-                }
-                .said()
+                playlist_unread(&named(library, playlist), &source.link, &error)
             );
             failed += 1;
         }
@@ -189,6 +176,24 @@ fn refreshed_every_kept(
         0 => Ok(()),
         failed => Err(Error::FollowedUnread { failed }),
     }
+}
+
+fn profile_unread(profile: &ProfileLink, error: &Error) -> String {
+    words::followed::ProfileNotReadAgain {
+        error: with_its_causes(error),
+        page: profile.page(),
+        service: profile.service(),
+    }
+    .said()
+}
+
+fn playlist_unread(name: &str, link: &PlaylistLink, error: &Error) -> String {
+    words::followed::PlaylistNotReadAgain {
+        error: with_its_causes(error),
+        name,
+        service: link.service(),
+    }
+    .said()
 }
 
 fn named(library: &Library, playlist: PlaylistId) -> String {
@@ -541,6 +546,26 @@ mod tests {
         fn artist_at(&self, _: &str) -> resonate_library::Result<Option<Mbid>> {
             Ok(None)
         }
+    }
+
+    #[test]
+    fn a_profile_left_unread_names_its_page_then_its_service_and_then_the_error() {
+        let error = Error::FollowedUnread { failed: 4 };
+
+        assert_eq!(
+            profile_unread(&DELETED, &error),
+            "https://www.deezer.com/profile/1: could not be read again from Deezer: 4 of the profiles and playlists followed could not be read again"
+        );
+    }
+
+    #[test]
+    fn a_playlist_left_unread_names_itself_then_its_service_and_then_the_error() {
+        let error = Error::FollowedUnread { failed: 4 };
+
+        assert_eq!(
+            playlist_unread("Mixtape", &PlaylistLink::Tidal("abc".into()), &error),
+            "Mixtape: could not be read again from TIDAL: 4 of the profiles and playlists followed could not be read again"
+        );
     }
 
     #[test]

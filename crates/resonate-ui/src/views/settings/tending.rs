@@ -601,6 +601,34 @@ mod tests {
     }
 
     #[test]
+    fn a_compaction_counts_the_covers_the_jpegs_it_kept_and_the_failures_each_in_its_place() {
+        let compacted = Compacted {
+            covers: 5,
+            was: 3 * 1024 * 1024,
+            now: 1024 * 1024,
+            kept: 2,
+            left: 1,
+        };
+        let sizes = format!(
+            "were {} \u{b7} now {} \u{b7} saved {}",
+            format::bytes(3 * 1024 * 1024),
+            format::bytes(1024 * 1024),
+            format::bytes(2 * 1024 * 1024),
+        );
+
+        assert_eq!(
+            compacting_told(compacted, Pass::Preview).text,
+            format!(
+                "would swap covers 5 \u{b7} {sizes} \u{b7} left as JPEGs 2 \u{b7} failed 1 \u{b7} nothing has been swapped"
+            )
+        );
+        assert_eq!(
+            compacting_told(compacted, Pass::Apply).text,
+            format!("swapped covers 5 \u{b7} {sizes} \u{b7} left as JPEGs 2 \u{b7} failed 1")
+        );
+    }
+
+    #[test]
     fn every_action_of_the_vault_has_an_id_of_its_own() {
         let mut ids: Vec<_> = Tend::ALL
             .into_iter()

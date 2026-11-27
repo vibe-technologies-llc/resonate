@@ -21,8 +21,8 @@ use resonate_library::{RecordingAsked, Reference, Wording};
 #[cfg(feature = "sync")]
 use resonate_musicbrainz::Consultation;
 use resonate_musicbrainz::{
-    Archives, Asked as Lookup, Building, Heard, KEPT_FILE, Keeping, Kept, Layered, Mirror,
-    Mirrored, Peers, Phase, Replicated, built_from,
+    AmendedTo, Archives, Asked as Lookup, Building, Heard, KEPT_FILE, Keeping, Kept, Layered,
+    Mirror, Mirrored, Peers, Phase, Replicated, built_from,
     download::{self, CORE_ARCHIVE, DERIVED_ARCHIVE},
     held_for_building, mirror_in, removed_beside_the_mirror, replicated, settled,
 };
@@ -635,17 +635,28 @@ fn replicated_now(config: &Config) -> Result<()> {
             words::musicbrainz::already_replicated(done.to.to_string())
         );
     } else {
-        said!(
-            "{}",
-            words::musicbrainz::Replicated {
-                changes: done.changes,
-                documents: done.documents,
-                to: done.to.to_string()
-            }
-            .said()
-        );
+        said!("{}", replicated_said(&done));
     }
     Ok(())
+}
+
+fn replicated_said(done: &Replicated) -> String {
+    words::musicbrainz::Replicated {
+        changes: done.changes,
+        documents: done.documents,
+        to: done.to.to_string(),
+    }
+    .said()
+}
+
+fn amended_said(amended: &AmendedTo, now: std::time::SystemTime) -> String {
+    let applied = std::time::UNIX_EPOCH + Duration::from_secs(amended.at);
+
+    words::musicbrainz::Amended {
+        ago: resonate_core::elapsed::since(applied, now),
+        sequence: amended.sequence.to_string(),
+    }
+    .said()
 }
 
 pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
@@ -785,16 +796,7 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
         }
     );
     if let Some(amended) = mirror.amended_to() {
-        let applied = std::time::UNIX_EPOCH + Duration::from_secs(amended.at);
-
-        said!(
-            "{}",
-            words::musicbrainz::Amended {
-                ago: resonate_core::elapsed::since(applied, std::time::SystemTime::now()),
-                sequence: amended.sequence.to_string()
-            }
-            .said()
-        );
+        said!("{}", amended_said(amended, std::time::SystemTime::now()));
     }
     if let Some(kept) = kept() {
         said!(
@@ -1092,6 +1094,36 @@ mod tests {
             read_from: Some(file.to_path_buf()),
             ..Config::default()
         }
+    }
+
+    #[test]
+    fn a_replication_says_its_packet_then_its_changes_and_then_its_entries() {
+        let done = Replicated {
+            from: 9_000,
+            to: 12_345,
+            changes: 7,
+            documents: 3,
+        };
+
+        assert_eq!(
+            replicated_said(&done),
+            "The copy of MusicBrainz follows the changes up to packet 12345 (7 changes, 3 entries rewritten)."
+        );
+    }
+
+    #[test]
+    fn an_amended_copy_says_its_packet_and_how_long_ago_it_was_applied() {
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(40 * 365 * 24 * 60 * 60);
+        let amended = AmendedTo {
+            dump: "20260301-001001".to_owned(),
+            sequence: 4_821,
+            at: 40 * 365 * 24 * 60 * 60 - 5 * 60 * 60,
+        };
+
+        assert_eq!(
+            amended_said(&amended, now),
+            "It follows MusicBrainz's changes up to packet 4821, applied 5 hours ago."
+        );
     }
 
     #[test]

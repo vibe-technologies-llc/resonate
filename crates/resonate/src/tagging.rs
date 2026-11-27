@@ -74,6 +74,14 @@ fn retagged(library: &Library, options: RetagOptions) -> Result<()> {
     none_failed(PassKind::Retag, if apply { failed as u64 } else { 0 })
 }
 
+fn unwritten_said(file: String, error: &resonate_lyrics::Error) -> String {
+    words::beside::Unwritten {
+        error: error.to_string(),
+        file,
+    }
+    .said()
+}
+
 pub(crate) fn lyrics_beside(
     library: &Library,
     files: &[PathBuf],
@@ -128,11 +136,7 @@ pub(crate) fn lyrics_beside(
             }
             Sheeted::Refused(error) => {
                 failed += 1;
-                words::beside::Unwritten {
-                    error: error.to_string(),
-                    file: named,
-                }
-                .said()
+                unwritten_said(named, &error)
             }
         };
 
@@ -475,6 +479,18 @@ mod tests {
         assert_eq!(after, "[00:02.00]their own");
         assert!(matches!(replaced, Sheeted::Beside(Beside::Written(_))));
         assert_eq!(fs::read_to_string(&sheet).expect("the sheet"), KEPT);
+    }
+
+    #[test]
+    fn a_sheet_that_could_not_be_written_names_the_file_and_then_the_error() {
+        let error = resonate_lyrics::Error::SidecarUnnamed {
+            track: PathBuf::from("/music/.."),
+        };
+
+        assert_eq!(
+            unwritten_said("/music/song.flac".to_owned(), &error),
+            "/music/song.flac: its lyrics could not be written (/music/.. has no name a lyric sheet beside it could be named after)"
+        );
     }
 
     #[test]

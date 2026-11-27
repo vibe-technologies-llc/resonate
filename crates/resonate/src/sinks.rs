@@ -194,13 +194,17 @@ pub(crate) fn learn_what_it_plays(
     })?;
     said!(
         "{}",
-        words::sinks::Kept {
-            device: heard.sink.description.as_str(),
-            path: learning.settings.display().to_string()
-        }
-        .said()
+        learnt_kept(heard.sink.description.as_str(), learning.settings)
     );
     Ok(())
+}
+
+fn learnt_kept(device: &str, settings: &Path) -> String {
+    words::sinks::Kept {
+        device,
+        path: settings.display().to_string(),
+    }
+    .said()
 }
 
 fn trial_named(trial: Trial) -> &'static str {
@@ -341,5 +345,18 @@ fn comes_out_of(sink: &SinkInfo) -> String {
         words::main::muted(level)
     } else {
         level
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_learnt_sink_says_where_it_was_kept_and_then_which_device_is_offered_it() {
+        assert_eq!(
+            learnt_kept("Living Room", Path::new("/home/listener/config.toml")),
+            "Kept in /home/listener/config.toml; Living Room is offered what it played from now on"
+        );
     }
 }

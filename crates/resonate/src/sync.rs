@@ -1358,15 +1358,7 @@ pub(crate) fn asked(
                 sync.ask_to_fetch(batch, device.id).outcomes()
             });
 
-            said!(
-                "{}",
-                words::sync::CameFrom {
-                    from,
-                    landed: count_of(&outcomes, FetchOutcome::Arrived),
-                    missing: missing.len()
-                }
-                .said()
-            );
+            said!("{}", came_from_said(from, &outcomes, missing.len()));
             for line in unarrived_lines(&outcomes, from) {
                 said!("{line}");
             }
@@ -1657,6 +1649,16 @@ fn count_of(outcomes: &[FetchOutcome], wanted: FetchOutcome) -> usize {
         .iter()
         .filter(|outcome| **outcome == wanted)
         .count()
+}
+
+#[cfg(feature = "sync")]
+fn came_from_said(from: &str, outcomes: &[FetchOutcome], missing: usize) -> String {
+    words::sync::CameFrom {
+        from,
+        landed: count_of(outcomes, FetchOutcome::Arrived),
+        missing,
+    }
+    .said()
 }
 
 #[cfg(feature = "sync")]
@@ -2211,6 +2213,26 @@ mod tests {
         assert!(told[3].contains("failed to arrive"));
         assert!(told[4].contains("no answer in time"));
         assert!(unarrived_lines(&[FetchOutcome::Arrived], "Desk").is_empty());
+    }
+
+    #[test]
+    fn a_fetch_says_how_many_of_the_missing_songs_came_from_which_device() {
+        let outcomes = [
+            FetchOutcome::Arrived,
+            FetchOutcome::Arrived,
+            FetchOutcome::Arrived,
+            FetchOutcome::Unreachable,
+            FetchOutcome::Unreachable,
+        ];
+
+        assert_eq!(
+            came_from_said("Desk", &outcomes, 5),
+            "3 of 5 songs came from Desk"
+        );
+        assert_eq!(
+            unarrived_lines(&outcomes, "Desk"),
+            ["Desk could not be reached for 2 songs"]
+        );
     }
 
     fn key() -> SyncKey {
