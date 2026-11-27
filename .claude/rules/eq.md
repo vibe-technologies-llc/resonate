@@ -133,7 +133,13 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   f32 bytes at the sink's integer stride. `Engine::fill`/`flush` branch on the plan.
 - **The preamp is a scalar before the bands.** Nothing else guards a boost: clip prevention
   attenuates, never limits (`audio.md`). *Fit* sets it from `peak_db`, which weighs every band's
-  centre beside the drawn sweep (a Q 40 boost between two points is not missed); a peak past the
+  centre (a Q 40 boost between two points is not missed) beside a sweep from 20 Hz to the stream's
+  Nyquist (`Profile::weighed_hertz`), not the drawn 20 Hz to 20 kHz: a hi-res source carries
+  content and ultrasonic noise above 20 kHz, so a shelf there is fitted for what it lifts
+  (`a_shelf_above_hearing_at_a_hi_res_rate_is_fitted_under_full_scale`). Under 20 Hz is left out on
+  purpose: AutoEq declares its preamps from 20 Hz up, nearly every profile carries a low shelf whose
+  sub-20 Hz lift would cost it headroom, and music carries next to nothing there
+  (`the_preamp_a_measurement_declares_is_the_peak_this_design_computes`). A peak past the
   deepest preamp fits the deepest. `Preamp::holding_under_full_scale(peak_db)` is the one rule from a
   peak to a preamp (nothing at or under 0 dB, the deepest past it), shared by the model and the
   measured fit below. **It glides**: `set_equalisation` moves `Preamping` over
@@ -154,7 +160,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   pair counts); `Applied::impulse_responses` filters each correction channel's first taps through
   the profile's biquads (`Profile::filtered`, of which `impulse_responses` is the unit-impulse case),
   which is the composed response, exact for the frames it holds; `Applied::peak_db` and
-  `fitted_preamp` are the model's sine over that product. **The volume stage is left out, by
+  `fitted_preamp` are the model's sine over that product, at the profile's own `weighed_hertz`
+  (`the_modelled_fit_through_a_correction_weighs_a_shelf_above_hearing_to_nyquist`). **The volume stage is left out, by
   reason**: `Volume` is 0 to 1 and its gain its cube (`Volume::to_gain`), so the slider can only
   attenuate, and it sits after the equaliser, where a boost is meant to be attenuated by it
   (*Where it runs*); a ReplayGain boost is per track, from tags the fit does not read, and is capped
@@ -1104,15 +1111,44 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   counted the same way, since the reader cannot know which branch is in force
   (`a_conditional_and_an_include_are_counted_and_the_filters_inside_are_left_out`). **A profile is
   imported only if what it lifts stays within `BOOST_AT_MOST_DB`** (24 dB, core's, the bound the
-  phones hold a band and the preamp to): `Store::read_in` weighs the preamp and `peak_db` and refuses
+  phones hold a band and the preamp to): `Store::read_in` weighs `Profile::loudest_lift_db` (the
+  preamp plus `peak_db`, at `FITTED_AT`) of the file as written (`apo::read`) and refuses
   with `Error::PeakTooHigh` rather than cut, since a cut preamp could not reach below the deepest for
-  stacked boosts (`a_file_of_stacked_boosts_is_refused_rather_than_imported_past_the_bound`); the phones' `parse_eq_profile` weighs the same `loudest_lift_db` and refuses with `ProfileTooLoud`, said through the mobile catalog (`stacked_boosts_past_the_bound_are_refused_with_the_catalogs_words`). **A
+  stacked boosts (`a_file_of_stacked_boosts_is_refused_rather_than_imported_past_the_bound`); the phones' `parse_eq_profile` weighs the same lift and refuses with `ProfileTooLoud`, said through the mobile catalog (`stacked_boosts_past_the_bound_are_refused_with_the_catalogs_words`). **A
   file correcting several devices is read as the first it names** (`Device: all` or none reaches;
   lines under another device are never summed in:
   `a_file_correcting_two_devices_is_read_as_the_first_of_them`). `read_number` is exported so the
   pane's cells agree. **What a read gave up is said, CLI and window alike**: `Reading`/`Kept` carry
   `passed_over` (the total, `unread_values` and `conditionals` among it), `approximated` (a non-second-order rolloff word) and `clamped` (a value held to what
   this build holds).
+- **Nothing is kept, read or played lifting past `BOOST_AT_MOST_DB`; a file already kept past it
+  loads held to it, never refused.** `Profile::lifts_within_the_bound` is the test.
+  `Profile::take_back_the_lift` lowers the preamp to the bound and answers false, untouched, where
+  even the deepest preamp leaves it past (bands peaking over 64 dB); `Profile::held_to_the_lift`
+  takes it back, switching the bands still in play off from the last until it can (a band switched
+  off stays in the profile and is written switched off, so nothing the listener wrote is lost)
+  (`a_lift_past_the_bound_is_taken_back_by_lowering_the_preamp_alone`,
+  `stacked_boosts_the_deepest_preamp_cannot_take_back_are_refused_and_held_by_switching_the_last_off`).
+  Where each holds: `apo::read_profile` holds what it reads at `FITTED_AT`, so `Store::read`,
+  `Store::own` and AutoEq's corrections load a file of stacked boosts held
+  (`a_profile_read_past_the_bound_is_held_to_it_and_written_back_as_held`,
+  `a_profile_kept_past_the_bound_still_loads_held_to_it`,
+  `a_correction_fetched_past_the_bound_is_read_held_to_it`) and the file is written held at its
+  next keep, its other lines in place
+  (`a_profile_kept_over_one_past_the_bound_writes_the_held_one_in_its_lines`); `Store::keep`,
+  `keep_own` and `export` write the held profile
+  (`a_profile_past_the_bound_is_kept_held_to_it`); `apo::read` alone gives the file as written,
+  for the two refusals above. The desktop editor refuses a band edit past the bound (a drag, a
+  nudge, a typed cell, a band added, retyped, switched on or dropped) into the notice *fit the
+  preamp to make room*, and a preamp raised past it stops at it
+  (`an_edit_lifting_past_the_bound_is_refused_and_a_preamp_raised_past_it_stops_at_it`): the
+  curve's handles are drawn lifted by the preamp, so a preamp lowered under a drag would chase the
+  pointer. `Profile::at_rate` holds the profile at the rate it plays at, so the engine, the
+  measured fit and a listening test meet the bound at play whatever built the profile (a phone's
+  curve, whose bands are each held to 24 dB but may stack, and a band only a hi-res stream reaches
+  included)
+  (`a_profile_played_at_a_rate_lifts_no_further_than_the_bound`,
+  `a_profile_lifting_past_the_bound_is_played_held_to_it`).
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** Its 127 points are fitted
   onto the 31 ISO third-octave centres at `Q::THIRD_OCTAVE`, iterating the bank's response against
   the target `FITTING_PASSES` (12) times (neighbours sum and overshoot), each band held to
@@ -1522,8 +1558,8 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `corrected_by` it, the one input of both phone fits.
 - ***Fit the preamp* is the desktop's fit, then the queue's**: `MobilePlayer::fitted_preamp(curve,
   rate)` is `Applied::fitted_preamp` (`Profile::fitted_preamp` where no correction is applied, so
-  `peak_db`, the bands' loudest point before the preamp, centres weighed beside the sweep; with one,
-  the same sweep and centres over the product of the responses) at the stream rate (48 kHz where
+  `peak_db`, the bands' loudest point before the preamp, centres weighed beside the sweep to
+  Nyquist; with one, the same sweep and centres over the product of the responses) at the stream rate (48 kHz where
   none is given), held to the phone's `PREAMP_AT_MOST_DB`; a curve that only cuts fits 0 dB. Both
   phones offer it beside the preamp slider and keep no peak arithmetic of their own;
   `fitted_preamp_to_the_queue` follows it (above)

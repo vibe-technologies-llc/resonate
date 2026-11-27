@@ -58,3 +58,4 @@ no-autoeq-measurement = AutoEq n’a pas de mesure pour ce dispositif
 frequency-refused = une bande se situe entre 1 Hz et 40 kHz
 gain-refused = Le gain d’un groupe se situe entre -40 et +40 dB
 q-refused = a Q se situe entre 0,10 et 40,00
+lift-refused = la courbe relèverait le son au-delà de { $most } dB ; ajustez le préampli pour faire de la place

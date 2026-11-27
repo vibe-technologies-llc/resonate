@@ -17,6 +17,8 @@ const MILLI_PER_UNIT: f64 = 1_000.0;
 pub const RESPONSE_FROM_HZ: f64 = 20.0;
 pub const RESPONSE_TO_HZ: f64 = 20_000.0;
 
+const WEIGHED_POINTS: usize = 512;
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frequency(u32);
 
@@ -857,6 +859,14 @@ impl Profile {
     }
 
     pub fn at_rate(self: &Arc<Self>, rate: SampleRate) -> Arc<Self> {
+        let fitted = self.fitted_at(rate);
+        match fitted.held_to_the_lift(rate) {
+            Some(held) => Arc::new(held),
+            None => fitted,
+        }
+    }
+
+    fn fitted_at(self: &Arc<Self>, rate: SampleRate) -> Arc<Self> {
         let Some(curve) = self.curve.as_ref() else {
             return Arc::clone(self);
         };
@@ -1019,19 +1029,84 @@ impl Profile {
             .collect()
     }
 
-    pub fn peak_db(&self, rate: SampleRate) -> f64 {
-        let heard = self.heard_apart(rate);
-        let centres: Vec<f64> = self
+    pub fn weighed_hertz(&self, rate: SampleRate) -> Vec<f64> {
+        let centres = self
             .bands()
             .iter()
             .filter(|band| band.applies_at(rate))
-            .map(|band| band.frequency.hertz())
-            .collect();
-        sweep(RESPONSE_POINTS)
-            .chain(centres)
+            .map(|band| band.frequency.hertz());
+        sweep_to_nyquist(rate).chain(centres).collect()
+    }
+
+    pub fn peak_db(&self, rate: SampleRate) -> f64 {
+        let heard = self.heard_apart(rate);
+        self.weighed_hertz(rate)
+            .into_iter()
             .fold(f64::NEG_INFINITY, |highest, hertz| {
                 highest.max(loudest_db(&heard, hertz, rate))
             })
+    }
+
+    pub fn loudest_lift_db(&self, rate: SampleRate) -> f64 {
+        self.preamp.decibels() + self.peak_db(rate)
+    }
+
+    pub fn lifts_within_the_bound(&self, rate: SampleRate) -> bool {
+        self.loudest_lift_db(rate) <= lift_at_most_db()
+    }
+
+    pub fn take_back_the_lift(&mut self, rate: SampleRate) -> bool {
+        let peak_db = self.peak_db(rate);
+        let lifts_within = |preamp: Preamp| preamp.decibels() + peak_db <= lift_at_most_db();
+
+        if lifts_within(self.preamp) {
+            return true;
+        }
+
+        let deepest = -f64::from(BandGain::WIDEST_MILLI_DECIBELS);
+        let mut milli_decibels = ((lift_at_most_db() - peak_db) * MILLI_DECIBELS_PER_DECIBEL)
+            .floor()
+            .max(deepest - 1.0) as i32;
+
+        while let Ok(preamp) = Preamp::from_milli_decibels(milli_decibels) {
+            if lifts_within(preamp) {
+                self.preamp = preamp;
+                return true;
+            }
+            milli_decibels -= 1;
+        }
+        false
+    }
+
+    pub fn held_to_the_lift(&self, rate: SampleRate) -> Option<Self> {
+        if self.lifts_within_the_bound(rate) {
+            return None;
+        }
+
+        let mut held = self.clone();
+        let mut switched_off = 0;
+
+        while !held.take_back_the_lift(rate) {
+            let Some(last) = held
+                .bands
+                .iter_mut()
+                .rev()
+                .find(|band| band.applies_at(rate))
+            else {
+                break;
+            };
+
+            last.on = false;
+            held.curve = None;
+            switched_off += 1;
+        }
+        tracing::debug!(
+            lift_db = self.loudest_lift_db(rate),
+            preamp = %held.preamp,
+            switched_off,
+            "a profile lifting past the bound is held to it"
+        );
+        Some(held)
     }
 
     fn points_across(&self, from_hz: f64, to_hz: f64, rate: SampleRate) -> Vec<f64> {
@@ -1355,6 +1430,16 @@ fn third_octave_bank(centres: &[Frequency], gains: &[f64]) -> Profile {
     Profile::new(Preamp::NONE, bands).unwrap_or_default()
 }
 
+fn lift_at_most_db() -> f64 {
+    f64::from(BOOST_AT_MOST_DB)
+}
+
+fn sweep_to_nyquist(rate: SampleRate) -> impl Iterator<Item = f64> {
+    let last = (WEIGHED_POINTS - 1) as f64;
+    let ratio = f64::from(rate.hz()) / 2.0 / RESPONSE_FROM_HZ;
+    (0..WEIGHED_POINTS).map(move |point| RESPONSE_FROM_HZ * ratio.powf(point as f64 / last))
+}
+
 pub fn sweep(points: usize) -> impl Iterator<Item = f64> {
     let last = points.saturating_sub(1).max(1) as f64;
     let decades = (RESPONSE_TO_HZ / RESPONSE_FROM_HZ).log10();
@@ -1453,6 +1538,121 @@ mod tests {
             profile.fitted_preamp(rate).milli_decibels(),
             -BandGain::WIDEST_MILLI_DECIBELS
         );
+    }
+
+    fn loudest_of(impulses: &[Vec<f64>], preamp: Preamp) -> f64 {
+        impulses
+            .iter()
+            .flatten()
+            .fold(0.0_f64, |loudest, sample| loudest.max(sample.abs()))
+            * preamp.amplitude()
+    }
+
+    #[test]
+    fn a_shelf_above_hearing_at_a_hi_res_rate_is_fitted_under_full_scale() {
+        let rate = SampleRate::HZ_192000;
+        let shelf = Profile::new(
+            Preamp::NONE,
+            vec![Band::new(
+                BandKind::HighShelf,
+                Frequency::from_hertz(20_000.0).expect("in range"),
+                BandGain::from_decibels(24.0).expect("in range"),
+                Q::BUTTERWORTH,
+            )],
+        )
+        .expect("one band");
+
+        let fitted = shelf.fitted_preamp(rate);
+        let impulses = shelf.impulse_responses(4_096, rate);
+        let heard_to_twenty_kilohertz = shelf.magnitude_db(RESPONSE_TO_HZ, rate);
+
+        assert!(
+            heard_to_twenty_kilohertz < 20.0,
+            "{heard_to_twenty_kilohertz}"
+        );
+        assert!(fitted.decibels() < -23.9, "{fitted}");
+        assert!(
+            loudest_of(&impulses, fitted) <= 1.0,
+            "{}",
+            loudest_of(&impulses, fitted)
+        );
+        assert!(
+            loudest_of(
+                &impulses,
+                Preamp::holding_under_full_scale(heard_to_twenty_kilohertz)
+            ) > 1.0
+        );
+    }
+
+    fn boosts_at_one_centre(preamp_db: f64, count: usize) -> Profile {
+        let boost = band(BandKind::Peaking, 1_000.0, 40.0, 1.0);
+        Profile::new(
+            Preamp::from_decibels(preamp_db).expect("in range"),
+            vec![boost; count],
+        )
+        .expect("a profile")
+    }
+
+    #[test]
+    fn a_lift_past_the_bound_is_taken_back_by_lowering_the_preamp_alone() {
+        let rate = SampleRate::HZ_48000;
+        let mut lifted = boosts_at_one_centre(0.0, 1);
+
+        let peak = lifted.peak_db(rate);
+
+        assert!(lifted.take_back_the_lift(rate));
+        assert!(lifted.lifts_within_the_bound(rate));
+        assert!(
+            (lifted.preamp().decibels() - (f64::from(BOOST_AT_MOST_DB) - peak)).abs() < 0.002,
+            "{}",
+            lifted.preamp()
+        );
+        assert_eq!(lifted.bands(), boosts_at_one_centre(0.0, 1).bands());
+
+        let mut within = boosts_at_one_centre(-30.0, 1);
+
+        assert!(within.take_back_the_lift(rate));
+        assert_eq!(within, boosts_at_one_centre(-30.0, 1));
+        assert_eq!(within.held_to_the_lift(rate), None);
+    }
+
+    #[test]
+    fn stacked_boosts_the_deepest_preamp_cannot_take_back_are_refused_and_held_by_switching_the_last_off()
+     {
+        let rate = SampleRate::HZ_48000;
+        let stacked = boosts_at_one_centre(0.0, MAX_BANDS);
+        let mut taken = stacked.clone();
+
+        let held = stacked
+            .held_to_the_lift(rate)
+            .expect("a profile past the bound");
+        let switched_on: Vec<bool> = held.bands().iter().map(|band| band.on).collect();
+
+        assert!(!taken.take_back_the_lift(rate));
+        assert_eq!(taken, stacked);
+        assert!(held.lifts_within_the_bound(rate));
+        assert!(switched_on[0]);
+        assert!(switched_on[1..].iter().all(|on| !on));
+        assert_eq!(held.held_to_the_lift(rate), None);
+    }
+
+    #[test]
+    fn a_profile_played_at_a_rate_lifts_no_further_than_the_bound() {
+        let within = Arc::new(boosts_at_one_centre(-20.0, 1));
+        let stacked = Arc::new(boosts_at_one_centre(-40.0, MAX_BANDS));
+
+        for rate in RATES {
+            let played = stacked.at_rate(rate);
+            let heard = loudest_of(&played.impulse_responses(4_096, rate), played.preamp());
+
+            assert!(Arc::ptr_eq(&within.at_rate(rate), &within));
+            assert!(played.lifts_within_the_bound(rate));
+            assert!(played.bands().iter().any(|band| band.on));
+            assert!(
+                heard <= 10.0_f64.powf(f64::from(BOOST_AT_MOST_DB) / 20.0),
+                "{heard}"
+            );
+        }
     }
 
     #[test]

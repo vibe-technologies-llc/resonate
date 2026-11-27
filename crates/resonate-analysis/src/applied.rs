@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use resonate_core::{
     SampleRate,
-    eq::{Preamp, Profile, RESPONSE_POINTS, sweep},
+    eq::{Preamp, Profile},
 };
 use resonate_dsp::Impulse;
 
@@ -109,13 +109,7 @@ impl Applied {
             return Ok(self.profile.peak_db(rate));
         }
 
-        let centres = self
-            .profile
-            .bands()
-            .iter()
-            .filter(|band| band.applies_at(rate))
-            .map(|band| band.frequency.hertz());
-        let hertz: Vec<f64> = sweep(RESPONSE_POINTS).chain(centres).collect();
+        let hertz = self.profile.weighed_hertz(rate);
         let loudest = self
             .heard_at(&hertz, rate)?
             .iter()
@@ -258,5 +252,31 @@ mod tests {
 
         assert!(deeper < plain - 4.0, "{deeper} against {plain}");
         assert!(shallower > plain + 4.0, "{shallower} against {plain}");
+    }
+
+    #[test]
+    fn the_modelled_fit_through_a_correction_weighs_a_shelf_above_hearing_to_nyquist() {
+        let rate = SampleRate::HZ_192000;
+        let shelf = Band::new(
+            BandKind::HighShelf,
+            Frequency::from_hertz(20_000.0).expect("in range"),
+            BandGain::from_decibels(24.0).expect("in range"),
+            Q::BUTTERWORTH,
+        );
+        let profile = Arc::new(Profile::new(Preamp::NONE, vec![shelf]).expect("a profile"));
+        let unity = Some(Arc::new(
+            Impulse::new(rate, vec![vec![1.0]]).expect("an impulse"),
+        ));
+
+        let alone = Applied::from(Arc::clone(&profile));
+        let corrected = alone.clone().corrected_by(unity);
+
+        let fitted = corrected.fitted_preamp(rate).expect("a fit").decibels();
+
+        assert!(fitted < -23.9, "{fitted}");
+        assert!(
+            (fitted - alone.fitted_preamp(rate).expect("a fit").decibels()).abs() < 0.01,
+            "{fitted}"
+        );
     }
 }

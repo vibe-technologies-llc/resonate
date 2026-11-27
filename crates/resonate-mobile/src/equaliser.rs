@@ -480,7 +480,7 @@ pub fn equaliser_text(curve: EqualiserCurve) -> Result<String> {
 #[uniffi::export]
 pub fn parse_eq_profile(bytes: Vec<u8>, name: String) -> Result<EqualiserImport> {
     let reading = resonate_eq::reading(&resonate_core::text::decoded(&bytes).0)?;
-    let peak_db = resonate_eq::loudest_lift_db(&reading.profile);
+    let peak_db = reading.profile.loudest_lift_db(FITTED_AT);
 
     if peak_db > f64::from(BOOST_AT_MOST_DB) {
         return Err(Error::ProfileTooLoud { peak_db });

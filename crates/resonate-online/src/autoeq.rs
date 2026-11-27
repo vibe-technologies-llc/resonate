@@ -238,6 +238,7 @@ mod tests {
         thread::{self, JoinHandle},
     };
 
+    use resonate_core::eq::{BOOST_AT_MOST_DB, FITTED_AT, MAX_BANDS};
     use resonate_eq::{Corrected, search, suggest};
 
     use super::*;
@@ -508,5 +509,28 @@ mod tests {
                 .map(|asked| &asked.user_agent)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn a_correction_fetched_past_the_bound_is_read_held_to_it() {
+        let device = DeviceId::new("oratory1990/over-ear/Stacked").expect("a path");
+        let stacked: &'static str = (1..=MAX_BANDS)
+            .map(|at| format!("Filter {at}: ON PK Fc 1000 Hz Gain 40 dB Q 1\n"))
+            .collect::<String>()
+            .leak();
+
+        let (base, served) = serving(
+            vec![(parametric_path(&device).expect("a path"), Some(stacked))],
+            1,
+        );
+
+        let fetched = over_loopback(base).profile(&device);
+
+        served.join().expect("the server");
+
+        let profile = fetched.expect("it reads").expect("a correction");
+
+        assert!(profile.loudest_lift_db(FITTED_AT) <= f64::from(BOOST_AT_MOST_DB));
+        assert_eq!(profile.bands().iter().filter(|band| band.on).count(), 1);
     }
 }

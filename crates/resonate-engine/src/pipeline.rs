@@ -710,7 +710,7 @@ mod tests {
     use resonate_audio::{HardwareVolume, Plugged, SinkFormats, SinkId, SinkPort, Words};
     use resonate_core::{
         ChannelLayout, Decibels, SampleFormat,
-        eq::{Band, BandGain, BandKind, Frequency, Preamp, Q, Target, TargetPoint},
+        eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Q, Target, TargetPoint},
     };
 
     use super::*;
@@ -2438,6 +2438,39 @@ mod tests {
         };
 
         assert!(plan(&other, &with_fallback).equalisation.is_some());
+    }
+
+    #[test]
+    fn a_profile_lifting_past_the_bound_is_played_held_to_it() {
+        let source = spec(SampleRate::HZ_96000, SampleFormat::S24);
+        let sink = sink(&[SampleRate::HZ_96000], &[SampleFormat::S24]);
+        let boost = Band::new(
+            BandKind::Peaking,
+            Frequency::from_hertz(1_000.0).expect("in range"),
+            BandGain::from_decibels(40.0).expect("in range"),
+            Q::from_units(1.0).expect("in range"),
+        );
+        let stacked =
+            Arc::new(Profile::new(Preamp::NONE, vec![boost; MAX_BANDS]).expect("every band"));
+        let config = EngineConfig {
+            equaliser: Arc::new(switched_on(Equalisation {
+                fallback: Some(Arc::clone(&stacked)),
+                ..Equalisation::default()
+            })),
+            ..EngineConfig::default()
+        };
+
+        let plan = plan_output(
+            Decoded::samples(source),
+            &sink,
+            &config,
+            AppliedGain::default(),
+        );
+        let played = plan.equalisation.expect("the equaliser is in force");
+
+        assert!(!stacked.lifts_within_the_bound(SampleRate::HZ_96000));
+        assert!(played.lifts_within_the_bound(SampleRate::HZ_96000));
+        assert!(played.bands().iter().any(|band| band.on));
     }
 
     #[test]

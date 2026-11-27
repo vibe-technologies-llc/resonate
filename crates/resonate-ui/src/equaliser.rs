@@ -3,7 +3,10 @@ use std::{cell::Cell as Kept, collections::BTreeMap, path::PathBuf, sync::Arc, t
 use gpui::{Context, Task};
 use resonate_core::{
     SampleRate,
-    eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Profile, Q, Traced, TracedOn},
+    eq::{
+        BOOST_AT_MOST_DB, Band, BandGain, BandKind, FITTED_AT, Frequency, MAX_BANDS, Preamp,
+        Profile, Q, Traced, TracedOn,
+    },
 };
 use resonate_engine::{Equalisation, NodeName};
 use resonate_eq::{
@@ -780,30 +783,69 @@ impl EqualiserModel {
             return false;
         }
 
-        self.put(editing.row, band, cx);
+        if !self.put(editing.row, band, cx) {
+            return false;
+        }
         self.editing = None;
         true
     }
 
-    fn put(&mut self, row: usize, band: Band, cx: &mut Context<Self>) {
-        if let Some((_, profile)) = self.shown.as_mut()
-            && let Some(slot) = profile.band_mut(row)
-        {
-            *slot = band.normalised();
+    fn reshaped(&mut self, shape: impl FnOnce(&mut Profile) -> bool) -> bool {
+        let Some((_, profile)) = self.shown.as_mut() else {
+            return false;
+        };
+        let mut reshaped = profile.clone();
+
+        if !shape(&mut reshaped) {
+            return false;
         }
+        if !reshaped.lifts_within_the_bound(FITTED_AT) {
+            tracing::debug!(
+                lift_db = reshaped.loudest_lift_db(FITTED_AT),
+                "an edit would lift past the bound"
+            );
+            self.notice = Some(Notice::Trouble(words::equaliser::lift_refused(format!(
+                "{BOOST_AT_MOST_DB:.0}"
+            ))));
+            return false;
+        }
+        *profile = reshaped;
+        true
+    }
+
+    fn put(&mut self, row: usize, band: Band, cx: &mut Context<Self>) -> bool {
+        let put = self.reshaped(|profile| match profile.band_mut(row) {
+            Some(slot) => {
+                *slot = band.normalised();
+                true
+            }
+            None => false,
+        });
+
         self.settle(cx);
+        put
     }
 
     pub fn add_at(&mut self, placed: Placed, cx: &mut Context<Self>) -> Option<usize> {
-        let (_, profile) = self.shown.as_mut()?;
+        let mut full = false;
 
-        if let Err(error) = profile.push(a_band_at(placed)) {
-            tracing::debug!(%error, "a band was pressed onto a full curve");
+        let added = self.reshaped(|profile| match profile.push(a_band_at(placed)) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::debug!(%error, "a band was pressed onto a full curve");
+                full = true;
+                false
+            }
+        });
+
+        if full {
             self.notice = Some(Notice::Trouble(words::equaliser::bands_at_most(MAX_BANDS)));
+        }
+        if !added {
             return None;
         }
 
-        let row = profile.bands().len().checked_sub(1)?;
+        let row = self.shown()?.bands().len().checked_sub(1)?;
 
         self.editing = None;
         self.shaping = None;
@@ -821,8 +863,7 @@ impl EqualiserModel {
         if landed == band {
             return false;
         }
-        self.put(row, landed, cx);
-        true
+        self.put(row, landed, cx)
     }
 
     pub fn nudge(&mut self, row: usize, nudge: Nudge, cx: &mut Context<Self>) -> bool {
@@ -835,8 +876,7 @@ impl EqualiserModel {
             return false;
         }
         self.chosen = Some(row);
-        self.put(row, next, cx);
-        true
+        self.put(row, next, cx)
     }
 
     pub fn turn_the_q(&mut self, row: usize, notches: f64, cx: &mut Context<Self>) -> bool {
@@ -849,8 +889,7 @@ impl EqualiserModel {
             return false;
         }
         self.chosen = Some(row);
-        self.put(row, Band { q, ..band }, cx);
-        true
+        self.put(row, Band { q, ..band }, cx)
     }
 
     pub fn retype(&mut self, row: usize, kind: BandKind, cx: &mut Context<Self>) {
@@ -858,7 +897,7 @@ impl EqualiserModel {
             return;
         };
 
-        self.put(
+        let _ = self.put(
             row,
             Band {
                 on: band.on,
@@ -867,6 +906,7 @@ impl EqualiserModel {
             },
             cx,
         );
+
         self.shaping = None;
     }
 
@@ -875,7 +915,7 @@ impl EqualiserModel {
             return;
         };
 
-        self.put(
+        let _ = self.put(
             row,
             Band {
                 on: !band.on,
@@ -901,9 +941,7 @@ impl EqualiserModel {
     }
 
     pub fn drop_a_band(&mut self, row: usize, cx: &mut Context<Self>) {
-        if let Some((_, profile)) = self.shown.as_mut()
-            && profile.remove(row)
-        {
+        if self.reshaped(|profile| profile.remove(row)) {
             self.chosen = chosen_after_dropping(self.chosen, row);
         }
         self.editing = None;
@@ -912,11 +950,11 @@ impl EqualiserModel {
     }
 
     pub fn fit_the_preamp(&mut self, rate: SampleRate, cx: &mut Context<Self>) {
-        if let Some((_, profile)) = self.shown.as_mut() {
-            let fitted = profile.fitted_preamp(rate);
+        let _ = self.reshaped(|profile| {
+            profile.set_preamp(profile.fitted_preamp(rate));
+            profile.take_back_the_lift(FITTED_AT)
+        });
 
-            profile.set_preamp(fitted);
-        }
         self.settle(cx);
     }
 
@@ -926,22 +964,23 @@ impl EqualiserModel {
         fitted: Preamp,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some((_, profile)) = self.shown.as_mut() else {
-            return false;
-        };
+        let fitted = self.reshaped(|profile| {
+            profile.set_preamp(fitted);
+            profile.bands() == measured.bands() && profile.take_back_the_lift(FITTED_AT)
+        });
 
-        if profile.bands() != measured.bands() {
-            return false;
+        if fitted {
+            self.settle(cx);
         }
-        profile.set_preamp(fitted);
-        self.settle(cx);
-        true
+        fitted
     }
 
     pub fn set_preamp(&mut self, preamp: Preamp, cx: &mut Context<Self>) {
-        if let Some((_, profile)) = self.shown.as_mut() {
+        let _ = self.reshaped(|profile| {
             profile.set_preamp(preamp);
-        }
+            profile.take_back_the_lift(FITTED_AT)
+        });
+
         self.settle(cx);
     }
 
@@ -1583,6 +1622,95 @@ mod tests {
 
         assert!(taken);
         assert_eq!(bands, vec![notch]);
+    }
+
+    #[gpui::test]
+    fn an_edit_lifting_past_the_bound_is_refused_and_a_preamp_raised_past_it_stops_at_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-lifted-{}",
+            std::process::id()
+        ));
+        let store = Store::at(folder.clone());
+        let name = named("Lifted");
+        let dac = NodeName::new("alsa_output.dac");
+        let gain = Editing {
+            row: 0,
+            cell: Cell::Gain,
+        };
+        let lifted = Band {
+            gain: BandGain::from_decibels(20.0).expect("a gain"),
+            ..a_band()
+        };
+
+        store
+            .keep(
+                &name,
+                &Profile::new(Preamp::NONE, vec![lifted]).expect("a profile"),
+            )
+            .expect("the profile is kept");
+
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.clone(),
+                Arc::new(Corrected::uncorrected()),
+                Bindings {
+                    enabled: true,
+                    fallback: None,
+                    by_sink: vec![(dac.clone(), Binding::Profile(name.clone()))],
+                },
+            )
+        });
+
+        let (past, added, refused) = model.update(cx, |model, cx| {
+            model.show(Some(&dac));
+
+            let past = model.take(gain, "30", cx);
+            let added = model.add_at(
+                Placed {
+                    frequency: a_band().frequency,
+                    gain: BandGain::from_decibels(10.0).expect("a gain"),
+                },
+                cx,
+            );
+            (past, added, model.take_notice())
+        });
+        let still = model.read_with(cx, |model, _| model.shown().cloned());
+
+        let (fitted_then_lifted, raised) = model.update(cx, |model, cx| {
+            model.fit_the_preamp(SampleRate::HZ_48000, cx);
+
+            let lifted = model.take(gain, "30", cx);
+
+            model.set_preamp(Preamp::from_decibels(30.0).expect("a preamp"), cx);
+            (lifted, model.shown().cloned())
+        });
+
+        cx.executor().advance_clock(PROFILE_SETTLES * 2);
+        cx.run_until_parked();
+
+        let kept = store
+            .read(&name)
+            .expect("the profile reads")
+            .expect("the profile is there");
+        let _ = std::fs::remove_dir_all(&folder);
+
+        let still = still.expect("a profile shown");
+        let raised = raised.expect("a profile shown");
+
+        assert!(!past);
+        assert_eq!(added, None);
+        assert!(matches!(refused, Some(Notice::Trouble(_))));
+        assert_eq!(still.bands(), [lifted]);
+        assert_eq!(still.preamp(), Preamp::NONE);
+
+        assert!(fitted_then_lifted);
+        assert!(raised.lifts_within_the_bound(FITTED_AT));
+        assert!(raised.preamp().decibels() > -6.1 && raised.preamp().decibels() < -5.9);
+        assert!(kept.lifts_within_the_bound(FITTED_AT));
     }
 
     #[gpui::test]
@@ -2466,8 +2594,8 @@ mod tests {
         let store = Store::at(folder.clone());
         let name = named("Treble");
         let treble = Band::new(
-            BandKind::HighShelf,
-            Frequency::from_hertz(16_000.0).expect("a frequency"),
+            BandKind::Peaking,
+            Frequency::from_hertz(30_000.0).expect("a frequency"),
             BandGain::from_decibels(6.0).expect("a gain"),
             Q::BUTTERWORTH,
         );
@@ -2508,7 +2636,7 @@ mod tests {
         assert!((at_96 - profile.peak_db(SampleRate::HZ_96000)).abs() < 1e-9);
         assert!(
             (at_48 - at_96).abs() > 0.1,
-            "a 16 kHz shelf peaks alike at 48 and 96 kHz, so the rate is not weighed"
+            "a band past 48 kHz's Nyquist peaks alike at 48 and 96 kHz, so the rate is not weighed"
         );
         assert_eq!(fitted, Some(profile.fitted_preamp(SampleRate::HZ_96000)));
         assert_ne!(fitted, Some(profile.fitted_preamp(SampleRate::HZ_48000)));

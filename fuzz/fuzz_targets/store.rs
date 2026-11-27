@@ -7,8 +7,8 @@ use std::{
 };
 
 use libfuzzer_sys::fuzz_target;
-use resonate_core::eq::BOOST_AT_MOST_DB;
-use resonate_eq::{Error, Store, loudest_lift_db};
+use resonate_core::eq::{BOOST_AT_MOST_DB, FITTED_AT};
+use resonate_eq::{Error, Store};
 
 mod stage;
 
@@ -20,7 +20,7 @@ fn read_back(path: &Path, bytes: &[u8]) {
     match Store::read_in(path) {
         Ok(kept) => {
             assert_eq!(kept.bytes, bytes);
-            assert!(loudest_lift_db(&kept.profile) <= f64::from(BOOST_AT_MOST_DB));
+            assert!(kept.profile.loudest_lift_db(FITTED_AT) <= f64::from(BOOST_AT_MOST_DB));
             assert!(!kept.profile.is_transparent() || kept.profile.target().is_some());
 
             stage::holds_under_full_scale(&kept.profile);

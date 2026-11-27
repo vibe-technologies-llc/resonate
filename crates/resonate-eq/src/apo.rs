@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use resonate_core::eq::{
-    Band, BandGain, BandKind, ChannelSet, Frequency, MAX_BANDS, Preamp, Profile, Q,
+    Band, BandGain, BandKind, ChannelSet, FITTED_AT, Frequency, MAX_BANDS, Preamp, Profile, Q,
 };
 
 use crate::{EqOp, Error, Result, graphic};
@@ -665,7 +665,11 @@ fn walk(text: &str) -> Result<Walked> {
 }
 
 pub fn read_profile(text: &str) -> Result<Profile> {
-    Ok(read(text)?.profile)
+    Ok(held_to_the_lift(read(text)?.profile))
+}
+
+pub(crate) fn held_to_the_lift(profile: Profile) -> Profile {
+    profile.held_to_the_lift(FITTED_AT).unwrap_or(profile)
 }
 
 pub(crate) fn spelled_hertz(frequency: Frequency) -> String {
@@ -974,7 +978,7 @@ pub fn write_profile(profile: &Profile) -> String {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::SampleRate;
+    use resonate_core::{SampleRate, eq::BOOST_AT_MOST_DB};
 
     use super::*;
 
@@ -1044,12 +1048,30 @@ mod tests {
                         )
                         .expect("one band");
 
-                        let read = read_profile(&write(&profile)).expect("what we wrote");
+                        let read = read(&write(&profile)).expect("what we wrote").profile;
 
                         assert_eq!(read, profile, "{kind} at {hertz} Hz, {gain} dB, Q {q}");
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn a_profile_read_past_the_bound_is_held_to_it_and_written_back_as_held() {
+        let stacked: String = (1..=MAX_BANDS)
+            .map(|at| format!("Filter {at}: ON PK Fc 1000 Hz Gain 40 dB Q 1\n"))
+            .collect();
+        let resonant = "Preamp: 30 dB\nFilter 1: ON LP Fc 1000 Hz Q 40\n";
+
+        for text in [stacked.as_str(), resonant] {
+            let as_written = read(text).expect("a readable profile").profile;
+            let held = read_profile(text).expect("a readable profile");
+
+            assert!(as_written.loudest_lift_db(FITTED_AT) > f64::from(BOOST_AT_MOST_DB));
+            assert!(held.loudest_lift_db(FITTED_AT) <= f64::from(BOOST_AT_MOST_DB));
+            assert_eq!(held.bands().len(), as_written.bands().len());
+            assert_eq!(read_profile(&write(&held)).ok(), Some(held));
         }
     }
 
@@ -1548,7 +1570,7 @@ mod tests {
         for at in 0..MAX_BANDS + 3 {
             let _ = writeln!(
                 long,
-                "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
+                "Filter {}: ON PK Fc {} Hz Gain 0.5 dB Q 1",
                 at + 1,
                 100 + at
             );
@@ -1574,7 +1596,7 @@ mod tests {
         for at in 0..MAX_BANDS + 1 {
             let _ = writeln!(
                 long,
-                "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
+                "Filter {}: ON PK Fc {} Hz Gain 0.5 dB Q 1",
                 at + 1,
                 100 + at
             );
@@ -1597,7 +1619,7 @@ mod tests {
         for at in 0..MAX_BANDS + 1 {
             let _ = writeln!(
                 long,
-                "Filter {}: ON PK Fc {} Hz Gain 1 dB Q 1",
+                "Filter {}: ON PK Fc {} Hz Gain 0.5 dB Q 1",
                 at + 1,
                 100 + at
             );

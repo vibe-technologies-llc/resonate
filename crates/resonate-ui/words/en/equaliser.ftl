@@ -58,3 +58,4 @@ no-autoeq-measurement = AutoEq has no measurement for that device
 frequency-refused = a band sits between 1 Hz and 40 kHz
 gain-refused = a band's gain sits between -40 and +40 dB
 q-refused = a Q sits between 0.10 and 40.00
+lift-refused = the curve would lift the sound past { $most } dB; fit the preamp to make room

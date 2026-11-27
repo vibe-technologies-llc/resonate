@@ -261,6 +261,7 @@ impl Store {
     }
 
     fn rendered(over: Option<&Path>, profile: &Profile) -> Vec<u8> {
+        let profile = &apo::held_to_the_lift(profile.clone());
         let standing = over
             .and_then(|path| Self::bytes_of(path).ok().flatten())
             .map(Standing::of);
@@ -412,7 +413,7 @@ impl Store {
             });
         }
 
-        let peak_db = loudest_lift_db(&reading.profile);
+        let peak_db = reading.profile.loudest_lift_db(FITTED_AT);
 
         if peak_db > f64::from(BOOST_AT_MOST_DB) {
             return Err(Error::PeakTooHigh {
@@ -501,10 +502,6 @@ impl Store {
         let staged = staging_name_for(to);
         Self::written_and_synced(&staged, to, &rendered).map_err(Self::failed(to, StoreOp::Write))
     }
-}
-
-pub fn loudest_lift_db(profile: &Profile) -> f64 {
-    profile.preamp().decibels() + profile.peak_db(FITTED_AT)
 }
 
 fn staging_name_for(path: &Path) -> PathBuf {
@@ -958,6 +955,117 @@ mod tests {
         assert!(peak_db > limit_db);
         assert_eq!(limit_db, f64::from(BOOST_AT_MOST_DB));
         assert!(scratch.store.names().expect("it walks").is_empty());
+    }
+
+    fn stacked_boosts() -> String {
+        let bells = (1..=MAX_BANDS)
+            .map(|at| format!("Filter {at}: ON PK Fc 1000 Hz Gain 40 dB Q 1\n"))
+            .collect::<String>();
+        format!("Preamp: 0 dB\n{bells}")
+    }
+
+    fn lifts_within_the_bound(profile: &Profile) -> bool {
+        profile.loudest_lift_db(FITTED_AT) <= f64::from(BOOST_AT_MOST_DB)
+    }
+
+    fn written_in(path: &Path) -> Profile {
+        apo::read(&fs::read_to_string(path).expect("it reads back"))
+            .expect("it parses")
+            .profile
+    }
+
+    #[test]
+    fn a_profile_kept_past_the_bound_still_loads_held_to_it() {
+        let scratch = Scratch::new();
+        let name = named("stacked");
+        let device = "alsa_output.usb";
+
+        let kept_at = scratch.store.path_of(&name);
+        let own_at = scratch.store.own_path(Some(device)).expect("a stem");
+
+        fs::create_dir_all(own_at.parent().expect("a folder")).expect("a writable folder");
+        fs::write(&kept_at, stacked_boosts()).expect("a writable file");
+        fs::write(&own_at, stacked_boosts()).expect("a writable file");
+
+        let read = scratch
+            .store
+            .read(&name)
+            .expect("it reads")
+            .expect("it is kept");
+        let own = scratch.store.own(Some(device)).expect("it reads");
+
+        assert!(!lifts_within_the_bound(&written_in(&kept_at)));
+
+        for held in [&read, &own] {
+            assert!(lifts_within_the_bound(held));
+            assert_eq!(held.bands().len(), MAX_BANDS);
+            assert_eq!(held.bands().iter().filter(|band| band.on).count(), 1);
+        }
+
+        assert_eq!(read, own);
+    }
+
+    #[test]
+    fn a_profile_past_the_bound_is_kept_held_to_it() {
+        let scratch = Scratch::new();
+        let name = named("stacked");
+        let device = "alsa_output.usb";
+        let lifted = Profile::new(
+            Preamp::from_decibels(20.0).expect("in range"),
+            profile().bands().to_vec(),
+        )
+        .expect("one band");
+        let stacked = apo::read(&stacked_boosts()).expect("it parses").profile;
+
+        let kept_at = scratch.store.keep(&name, &stacked).expect("it keeps");
+        let own_at = scratch
+            .store
+            .keep_own(Some(device), &lifted)
+            .expect("it keeps");
+        let exported_to = scratch.store.folder().join("exported.txt");
+
+        scratch
+            .store
+            .export(&stacked, None, &exported_to)
+            .expect("it exports");
+
+        assert!(!lifts_within_the_bound(&stacked));
+        assert!(!lifts_within_the_bound(&lifted));
+
+        for path in [&kept_at, &own_at, &exported_to] {
+            assert!(
+                lifts_within_the_bound(&written_in(path)),
+                "{}",
+                path.display()
+            );
+        }
+
+        assert_eq!(written_in(&own_at).bands(), lifted.bands());
+        assert!(written_in(&own_at).preamp() < lifted.preamp());
+    }
+
+    #[test]
+    fn a_profile_kept_over_one_past_the_bound_writes_the_held_one_in_its_lines() {
+        let scratch = Scratch::new();
+        let name = named("stacked");
+
+        let path = scratch.store.path_of(&name);
+
+        fs::create_dir_all(scratch.store.folder()).expect("a writable folder");
+        fs::write(&path, format!("# stacked\n{}", stacked_boosts())).expect("a writable file");
+
+        let held = scratch
+            .store
+            .read(&name)
+            .expect("it reads")
+            .expect("it is kept");
+
+        scratch.store.keep(&name, &held).expect("it keeps");
+
+        let text = fs::read_to_string(&path).expect("it reads back");
+
+        assert!(text.starts_with("# stacked\n"), "{text}");
+        assert_eq!(written_in(&path), held);
     }
 
     #[test]
