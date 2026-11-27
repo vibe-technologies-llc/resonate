@@ -44,6 +44,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
     case sleepTimer
     case folders
     case enrichment
+    case storage
     case online
     case explore
     case providers
@@ -68,7 +69,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .equaliser, .headphoneCorrection, .microphoneMeasurement, .roomCorrection, .listeningTest, .otherOutputs,
             .processing, .output, .playback, .sleepTimer:
             .sound
-        case .folders, .enrichment: .library
+        case .folders, .enrichment, .storage: .library
         case .online, .explore, .providers, .server, .scrobbling, .spotify: .online
         case .sync, .syncSongs, .syncConnection, .syncControl: .devices
         case .accent, .background: .appearance
@@ -98,6 +99,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .sleepTimer: .sleepTimer
         case .folders: .page(.folders)
         case .enrichment: .page(.enrichment)
+        case .storage: .page(.storage)
         case .online: .online
         case .explore: .explore
         case .providers: .page(.providers)
@@ -131,6 +133,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .sleepTimer: said("settings.sleep-timer.title")
         case .folders: said("settings.folders.title")
         case .enrichment: said("settings.enrichment.title")
+        case .storage: said("settings.storage.title")
         case .online: said("settings.online.title")
         case .explore: said("explore.setting")
         case .providers: said("settings.providers.title")
@@ -164,6 +167,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .sleepTimer: said("settings.sleep-timer.summary")
         case .folders: said("settings.folders.summary")
         case .enrichment: said("settings.enrichment.summary")
+        case .storage: said("settings.storage.summary")
         case .online: said("settings.online.summary")
         case .explore: said("explore.setting.detail")
         case .providers: said("settings.providers.summary")
@@ -197,6 +201,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .sleepTimer: "moon"
         case .folders: "folder"
         case .enrichment: "photo.on.rectangle.angled"
+        case .storage: "internaldrive"
         case .online: "globe"
         case .explore: "safari"
         case .providers: "arrow.down.circle"
@@ -333,6 +338,15 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
                 said("settings.enrichment.inner.musicbrainz"),
                 said("settings.enrichment.inner.portraits"),
                 said("settings.enrichment.inner.lyrics"),
+            ]
+        case .storage:
+            [
+                said("settings.storage.inner.largest-songs"),
+                said("settings.storage.inner.free-up-space"),
+                said("settings.storage.inner.file-size"),
+                said("settings.storage.inner.re-compress"),
+                said("settings.storage.inner.sample-rate"),
+                said("settings.storage.inner.delete-from-every-device"),
             ]
         case .online:
             [

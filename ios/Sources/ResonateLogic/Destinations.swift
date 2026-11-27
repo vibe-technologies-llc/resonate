@@ -33,6 +33,7 @@ public enum Destination: Hashable, Codable, Sendable {
     case appearance
     case background
     case identicalSongs
+    case storage
     case served(ServedPlace)
     case party
     case headphoneCorrection
@@ -71,7 +72,7 @@ public enum Destination: Hashable, Codable, Sendable {
         switch self {
         case .sound, .processing, .playback, .output, .scrobbling, .spotify, .providers, .sync, .server, .folders, .appearance,
             .background, .headphoneCorrection, .microphoneMeasurement, .roomCorrection, .listeningTest, .otherOutputs,
-            .enrichment, .searchHistory, .notices, .syncSongs, .syncConnection, .syncControl, .syncDevice:
+            .enrichment, .storage, .searchHistory, .notices, .syncSongs, .syncConnection, .syncControl, .syncDevice:
             true
         default: false
         }

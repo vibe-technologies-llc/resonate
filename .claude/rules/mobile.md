@@ -378,8 +378,8 @@ size*; Rust never writes a document, so a copy is staged where the front end can
   keeps its id and its studies are forgotten by the stamp's triggers.
   **`forget_recompress_stage(stage_path)`** lets a stage go unused
   (`a_song_recompressed_is_staged_written_over_its_document_and_indexed_anew`,
-  `a_song_that_is_no_flac_is_kept_and_says_why_and_a_stage_forgotten_is_gone`). Neither phone
-  draws it yet.
+  `a_song_that_is_no_flac_is_kept_and_says_why_and_a_stage_forgotten_is_gone`). iOS draws it
+  (`ios.md`'s *Manage storage*); Android does not yet.
 
 ## Logging
 

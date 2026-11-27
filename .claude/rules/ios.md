@@ -1380,6 +1380,35 @@ every route change (a pair of headphones at the same rate included), not from th
   download (`DownloadQueue`) and the songs a sync landing made, through `plan_organise` with `only`,
   `Folders.file` and `documents_moved`, its notice an unasked one (`noticeUnasked`) unless a move
   failed (`android.md`'s *A folder is organised*).
+- **Manage storage is a page of Settings' Library group** (`Storage.swift`, `StorageView`,
+  `SettingsPlace.storage`, `Destination.storage`; `mobile.md`'s *Re-compressing a song and the songs
+  by size*): every song largest first, a page of `largest_songs` at a time on `Work.onScreen`, the
+  next asked as the row at the foot appears (`StoragePages`: the songs read, the `SizedSongAfter` the
+  next page begins after, and whether a short page ended them), each row its cover, title and
+  `StorageRows.line` (artist, `ByteCountFormatter`'s size, format). A row's trailing swipe and menu
+  hold *Delete song* and, while sync is on, *Delete from every device*, both through
+  `Navigation.deleting` and `DeleteSongsConfirmation`, as a song's menu does; rows that leave the
+  catalog leave the list at the next catalog read (`StoragePages.retain`). Its leading swipe and
+  menu hold *Re-compress* for a FLAC (`StorageRows.recompressible`, the `Track`'s codec) whose folder
+  is writable (`songDeletable`). **The ceiling is a picker at the top** (`RecompressTo`: lossless as
+  it is, at most 96 kHz 24-bit, at most 48 kHz 24-bit, CD), kept as `recompress-to` in
+  `library-features`; one that lowers the resolution asks before a song is re-compressed, since what
+  it held above is lost. *Re-compress every FLAC* (confirmed) walks every page for the FLACs whose
+  folders are writable and re-compresses them largest first, with progress, what was saved and
+  *Stop after this song*, then one notice (`RecompressTally.told`: re-compressed and saved, kept,
+  could not be, the first reason where any failed). The run is `Recompressing`, held by `Library`,
+  so it goes on when the page is left (Settings' row shows its progress), under a background task
+  whose expiry stops it after the song under way. **Each song waits for the scans and holds them**
+  (`Library.betweenScans`, a job on the scans' own chain that answers its value, so a scan asked
+  meanwhile runs between two songs, never during one): `recompress_song` on `Work.aside`; a
+  `KeptOriginal` is told by its `said`; a stage is copied beside the document and put in its place
+  under an `NSFileCoordinator` writing for replacing (`Folders.replace`, `replaceItemAt` inside the
+  folder's security scope, so the original stands until the copy is whole and a failure removes
+  the copy), the modification time read back for `song_recompressed` on `Work.inLibrary`, and a
+  write or a re-index refused calls `forget_recompress_stage` and is told as the song's failure
+  (`RecompressFailure.unwritten`). A song re-compressed moves to its new size in the list
+  (`StoragePages.resized`, or waits for its page where it now sorts past those read), and the
+  catalog is read again once the run ends (`StorageTests`).
 
 ## Appearance
 
@@ -2138,7 +2167,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 
 - **The Settings tab is a stack of pages, one row each** (`SettingsView`, `SettingsViews.swift`),
   Android's groups and words (`android.md`): a search field, then *Sound* (Equaliser, Sound
-  processing, Audio output, Sleep timer), *Library* (Music folders, Artwork and details), *Online &
+  processing, Audio output, Sleep timer), *Library* (Music folders, Artwork and details, Manage storage), *Online &
   services* (Online features, a switch; Download sources; Server while serving; Scrobbling;
   Spotify), *Devices* (Device sync), *Appearance* (Accent colour, Background) and *App* (Search
   history, Notices, the version, *Erase all data* last). Every row is a `ToolRow` (the symbol in a

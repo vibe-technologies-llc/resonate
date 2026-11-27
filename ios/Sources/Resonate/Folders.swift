@@ -112,6 +112,7 @@ final class Folders: Documents, @unchecked Sendable {
     private static let sidecarExtension = "lrc"
     private static let sidecarLimit = 1024 * 1024
     private static let coverLimit = 8 * 1024 * 1024
+    private static let replacingPrefix = "resonate-replacing-"
 
     private let lock = NSLock()
     private let bookmarks: URL
@@ -409,6 +410,30 @@ final class Folders: Documents, @unchecked Sendable {
         let gone = removed(uri, unreachableIsGone: false)
         if gone { written(uri) }
         return gone
+    }
+
+    func replace(_ uri: String, withCopyOf stage: URL) throws -> FileStamp {
+        let document = try resolved(uri)
+        defer { document.close() }
+        let files = FileManager.default
+        var coordinated: NSError?
+        var outcome: Result<FileStamp, any Swift.Error> = .failure(FolderFailure.refused(document.url.lastPathComponent))
+
+        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: document.url, options: .forReplacing, error: &coordinated) { url in
+            let beside = url.deletingLastPathComponent().appendingPathComponent(".\(Self.replacingPrefix)\(UUID().uuidString)")
+            outcome = Result {
+                do {
+                    try files.copyItem(at: stage, to: beside)
+                    let replaced = try files.replaceItemAt(url, withItemAt: beside) ?? url
+                    return FileStamp(try? URL(fileURLWithPath: replaced.path).resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]))
+                } catch {
+                    try? files.removeItem(at: beside)
+                    throw error
+                }
+            }
+        }
+        if let coordinated { throw coordinated }
+        return try outcome.get()
     }
 
     func provenApart(_ one: String, _ other: String) -> Bool {

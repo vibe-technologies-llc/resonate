@@ -1874,5 +1874,69 @@
 			<string>%lld selected</string>
 		</dict>
 	</dict>
+	<key>storage.listed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@songs@ · %@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld song</string>
+			<key>other</key>
+			<string>%lld songs</string>
+		</dict>
+	</dict>
+	<key>storage.told.shrunk</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@songs@ re-compressed, %@ saved</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld song</string>
+			<key>other</key>
+			<string>%lld songs</string>
+		</dict>
+	</dict>
+	<key>storage.told.kept</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld song kept as it was</string>
+			<key>other</key>
+			<string>%lld songs kept as they were</string>
+		</dict>
+	</dict>
+	<key>storage.told.failed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld song could not be re-compressed</string>
+			<key>other</key>
+			<string>%lld songs could not be re-compressed</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

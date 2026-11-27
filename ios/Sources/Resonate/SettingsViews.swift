@@ -148,6 +148,10 @@ private struct SettingsStatusRow: View {
             let enrichment = features.enrichment
             guard enrichment.automatic else { return said("settings.enrichment.asked") }
             return said(enrichment.unmeteredOnly ? "settings.enrichment.automatic-wifi" : "settings.enrichment.automatic")
+        case .storage:
+            let run = library.recompressing
+            guard run.running, run.total > 0 else { return place.summary }
+            return said("storage.run.progress", min(run.tally.done + 1, run.total), run.total)
         case .providers:
             return providersDetail(features.downloadAccounts)
         case .scrobbling:

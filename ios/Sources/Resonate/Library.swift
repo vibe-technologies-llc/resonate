@@ -173,6 +173,7 @@ final class Library {
 
     let folders: Folders
     let clock = PlayClock()
+    let recompressing = Recompressing()
     @ObservationIgnored private var keptAllTracks: [Track] = []
     @ObservationIgnored private var keptTracks: [Track] = []
     @ObservationIgnored private var keptArtworkTracks: [UInt64: Track] = [:]
@@ -1934,6 +1935,20 @@ final class Library {
             await previous?.value
             guard !Task.isCancelled else { return }
             await job()
+        }
+    }
+
+    func betweenScans<Value: Sendable>(_ job: @escaping @MainActor () async -> Value) async -> Value? {
+        await withCheckedContinuation { continuation in
+            let previous = scanTask
+            scanTask = Task {
+                await previous?.value
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: await job())
+            }
         }
     }
 

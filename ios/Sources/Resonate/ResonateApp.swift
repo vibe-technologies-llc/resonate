@@ -610,6 +610,7 @@ struct DestinationView: View {
         case .appearance: AppearanceView()
         case .background: BackgroundView()
         case .identicalSongs: IdenticalSongsView()
+        case .storage: StorageView()
         case .served(let place): ServedPlaceView(place: place)
         case .party: PartyView()
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }

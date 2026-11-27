@@ -125,10 +125,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   depth are kept as they were (`KeptOriginal::TagAfterTheAudio`, `HeadUnread`,
   `TiedToTheSamples`), where the trailing tags could be carried after the new audio and the cue
   sheet's offsets rescaled to the new rate
-- [S · 0.18.0] The window and both phones offer no re-compression and no list of the files by
-  size yet: the library's `recompress`, `recompress_all` and `largest_files` and the phones'
-  `recompress_song` and `largest_songs` are there, the terminal's `recompress` and `storage`
-  alone reach them
+- [S · 0.18.0] The window and Android offer no re-compression and no list of the files by size
+  yet: the library's `recompress`, `recompress_all` and `largest_files` and the phones'
+  `recompress_song` and `largest_songs` are there, the terminal's `recompress` and `storage` and
+  iOS's *Manage storage* alone reach them
 - [M · blocked: lofty] `.caf` and the DSD containers have no writer (lofty 0.25.5 has no such file
   type); `.oga` alone could be mapped to Vorbis by hand; `.mka` is written by hand (`library.md`) and
   has no way to take a picture back out
