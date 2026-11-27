@@ -190,7 +190,8 @@ object MusicDocuments {
 
     fun delete(context: Context, uri: Uri) {
         if (uri.authority == MediaStore.AUTHORITY) {
-            val removed = context.contentResolver.delete(uri, null, null)
+            val item = Uri.parse(TagFiles.writeUri(uri.toString()))
+            val removed = context.contentResolver.delete(item, null, null)
             check(MediaStoreRemoval.settled(removed) { rowPresence(context, uri) }) {
                 context.getString(R.string.deletion_song_not_removed)
             }

@@ -193,6 +193,20 @@ enum class Setting(
         R.string.settings_wanted_detail,
         listOf(R.string.settings_inner_wanted, R.string.settings_inner_missing_songs),
     ),
+    STORAGE(
+        SettingsGroup.LIBRARY,
+        R.string.settings_storage_title,
+        R.string.settings_storage_detail,
+        listOf(
+            R.string.settings_inner_largest_songs,
+            R.string.settings_inner_song_sizes,
+            R.string.settings_inner_free_up_space,
+            R.string.settings_inner_recompress_flac,
+            R.string.settings_inner_recompress_to,
+            R.string.settings_inner_delete_on_every_device,
+        ),
+        names = listOf("FLAC"),
+    ),
     ONLINE(
         SettingsGroup.ONLINE,
         R.string.settings_online_title,

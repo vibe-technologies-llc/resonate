@@ -2439,4 +2439,74 @@
     <string name="explore_downloaded">Queued %1$s for download</string>
     <string name="explore_mix_queue">Mix in suggestions</string>
     <string name="explore_playlist_gone">This explore playlist is no longer available.</string>
+    <string name="settings_storage_title">Manage storage</string>
+    <string name="settings_storage_detail">The largest songs first, to delete or re-compress</string>
+    <string name="settings_inner_largest_songs">Largest songs</string>
+    <string name="settings_inner_song_sizes">Song sizes</string>
+    <string name="settings_inner_free_up_space">Free up space</string>
+    <string name="settings_inner_recompress_flac">Re-compress FLAC files</string>
+    <string name="settings_inner_recompress_to">Re-compress to</string>
+    <string name="settings_inner_delete_on_every_device">Delete from every device</string>
+    <string name="storage_failed">The songs could not be listed</string>
+    <string name="storage_try_again">Try again</string>
+    <string name="storage_empty">No songs yet</string>
+    <string name="storage_empty_detail">Songs you add are listed here by size, the largest first.</string>
+    <string name="storage_largest_first">Largest first</string>
+    <string name="storage_song_line">%1$s · %2$s · %3$s</string>
+    <string name="storage_song_line_unnamed">%1$s · %2$s</string>
+    <string name="storage_recompress">Re-compress</string>
+    <string name="storage_delete">Delete from this phone</string>
+    <string name="storage_delete_everywhere">Delete from every device</string>
+    <string name="storage_recompress_to">Re-compress to</string>
+    <string name="storage_recompress_every">Re-compress every FLAC</string>
+    <plurals name="storage_recompress_every_detail">
+        <item quantity="one">%1$d FLAC file, written again smaller where it can be and kept as it was where it cannot</item>
+        <item quantity="other">%1$d FLAC files, each written again smaller where it can be and kept as it was where it cannot</item>
+    </plurals>
+    <plurals name="storage_recompress_every_title">
+        <item quantity="one">Re-compress %1$d FLAC file?</item>
+        <item quantity="other">Re-compress %1$d FLAC files?</item>
+    </plurals>
+    <string name="storage_recompress_every_text">Each file is written again (%1$s), the largest first, and its copy is checked before it takes the original\'s place. A file that would not get smaller, or whose copy does not read back as it went in, is kept as it was.</string>
+    <string name="storage_recompress_finding">Finding the FLAC files…</string>
+    <string name="storage_recompressing">Re-compressing %1$d of %2$d</string>
+    <string name="storage_recompress_stop">Stop</string>
+    <string name="recompress_to_kept">Lossless only</string>
+    <string name="recompress_to_kept_detail">Keeps every sample rate and depth as it is</string>
+    <string name="recompress_to_studio">96 kHz, 24-bit</string>
+    <string name="recompress_to_studio_detail">Lowers anything above studio quality</string>
+    <string name="recompress_to_high">48 kHz, 24-bit</string>
+    <string name="recompress_to_high_detail">Lowers anything above it</string>
+    <string name="recompress_to_cd">CD: 44.1 kHz, 16-bit</string>
+    <string name="recompress_to_cd_detail">Lowers anything above CD quality</string>
+    <string name="recompress_none">No FLAC files to re-compress</string>
+    <string name="recompress_shrunk_one">%1$s is now %2$s, %3$s smaller</string>
+    <string name="recompress_kept_one">%1$s: %2$s</string>
+    <string name="recompress_failed_one">%1$s could not be re-compressed: %2$s</string>
+    <string name="recompress_reason_unknown">the file could not be read or written</string>
+    <string name="recompress_put_back_one">%1$s could not be written over, so the original was put back</string>
+    <string name="recompress_kept_aside_one">%1$s could not be written over and the original could not be put back; it is kept in the app\'s storage as %2$s</string>
+    <string name="recompress_not_allowed_one">Writing to %1$s was not allowed</string>
+    <string name="recompress_told_stopped_at_once">Stopped before any file was re-compressed</string>
+    <string name="recompress_told_stopped">Stopped after %1$d of %2$d: %3$s</string>
+    <plurals name="recompress_told_shrunk">
+        <item quantity="one">%1$d file re-compressed, %2$s saved</item>
+        <item quantity="other">%1$d files re-compressed, %2$s saved</item>
+    </plurals>
+    <plurals name="recompress_told_kept">
+        <item quantity="one">%1$d kept as it was</item>
+        <item quantity="other">%1$d kept as they were</item>
+    </plurals>
+    <plurals name="recompress_told_failed">
+        <item quantity="one">%1$d could not be written</item>
+        <item quantity="other">%1$d could not be written</item>
+    </plurals>
+    <plurals name="recompress_told_not_allowed">
+        <item quantity="one">%1$d was not allowed to be written</item>
+        <item quantity="other">%1$d were not allowed to be written</item>
+    </plurals>
+    <plurals name="recompress_told_kept_aside">
+        <item quantity="one">the original that could not be put back is kept in the app\'s storage as %1$s</item>
+        <item quantity="other">the originals that could not be put back are kept in the app\'s storage as %1$s</item>
+    </plurals>
 </resources>

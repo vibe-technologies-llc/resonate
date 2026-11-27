@@ -477,7 +477,7 @@ arriving on a first scan never squeeze its buttons.
 
 **Settings is a page of navigation rows in six groups, the phones' shared root** (`SettingsScreen`,
 `SettingsCatalog.kt`): a search field, then *Sound* (Equaliser, Sound processing, Audio output, Playback),
-*Library* (Music folders, Library tools, Listening statistics, Made for you, Saved for later), *Online &
+*Library* (Music folders, Library tools, Listening statistics, Made for you, Saved for later, Manage storage), *Online &
 services* (Online features, the root's one switch; Download sources; Server, only while serving;
 Scrobbling; Spotify), *Devices* (Device sync), *Appearance* (Appearance) and *App* (Playback
 notifications, with *Allow* while refused; Check for updates, Android's alone so far; and the version, a
@@ -1091,7 +1091,7 @@ truncates) and, for the ones that throw, asks `Host.confirmWrite` once for the b
 (`MediaStore.createWriteRequest`, as `confirmDelete` asks `createDeleteRequest`); a request over a
 Files URI is refused as not a media item, so the probe, the request and the `"wt"` descriptor all
 use the same row's audio URI (`TagFiles.writeUri`); songs the listener
-refuses are not sent to the boundary and are told as *Writing to N songs was not allowed*, and a
+refuses are not sent to the boundary (`WriteConsent`, which re-compression shares) and are told as *Writing to N songs was not allowed*, and a
 SAF tree's documents need no such step. The rewriting callback is not part of `Documents`, so iOS's implementation of that
 interface is untouched: `rewrite_documents_with(rewriting)` is a separate exported method Android
 calls once after the player opens (`DocumentRewrites`: `openFileDescriptor(uri, "wt")`, detached;
@@ -1182,8 +1182,45 @@ chooses the copy kept, *Delete copies*, confirmed) remove each file (`MusicDocum
 forgotten or folded; *Delete copies* asks `confirm_identical_copy` before each removal
 (`SongDeletion.foldCopies`) and tells a copy refused as *N copies were kept; they could no longer be
 confirmed as copies of the song kept* (`DeletionSentences.stayed`); a file the app does not own in MediaStore (a `SecurityException`) is collected and
-asked of the listener once with `MediaStore.createDeleteRequest` (`Host.confirmDelete`), and one that
+asked of the listener once with `MediaStore.createDeleteRequest` (`Host.confirmDelete`; the request and the delete name the row's audio URI, `TagFiles.writeUri`, since a Files URI is refused as not a media item and its delete removed nothing), and one that
 stays is told as *N files could not be deleted* (`DeletionSentences`, `SongDeletionTest`). **A MediaStore delete that removed no row is settled only by a query that finds none**: `MediaStoreRemoval.settled` asks `RowPresence` (`MediaStoreRemoval.presence`: a row is `Standing`, none is `Absent`, a null cursor or a `SecurityException` is `Unknown`), and only `Absent` lets the deletion stand, so an unreadable answer is a file kept and reported, never forgotten (`MediaStoreRemovalTest`).
+
+**Manage storage lists the songs largest first and re-compresses a FLAC in place** (`StorageScreen`,
+`StorageViewModel`, `Recompressing.kt`; `mobile.md`'s *Re-compressing a song and the songs by size*).
+It is Settings › Library › *Manage storage* (`Setting.STORAGE`, found by *storage*, *space*, *size*,
+*largest*, *compress* and *FLAC*; `Screen.Storage`) and a row of Library tools. The list is
+`largest_songs` a page of `SizedPages.PAGE` (100) at a time from the last row's `SizedSongAfter`,
+asked again as the last row is drawn, each song once by id (`SizedPages.appended`); every
+`catalogChanges` reads it again from the top for as many rows as are shown, at most once every
+`REREAD_AT_MOST_EVERY_MS` (2 s), so a deletion, a re-compression or a scan reorders it
+(`StoragePagesTest`). A row is the song with its size (`Formatter.formatShortFileSize`), codec and
+artist; a tap opens the song sheet and its menu holds *Re-compress* (a FLAC, `Recompressible.isFlac`,
+whose folder is writable, `songDeletable`), *Delete from this phone* and, while sync is on
+(`syncsWithOtherDevices`), *Delete from every device*, both through the one `DeleteSongsDialog` and
+`SongDeletion`. **The ceiling is one choice** (`RecompressTo`: *Lossless only*, *96 kHz, 24-bit*, *48 kHz,
+24-bit*, *CD: 44.1 kHz, 16-bit*, the boundary's `RecompressCeiling` in order), kept as `recompress-to`
+in `library-features` (`kept`, `studio`, `high`, `cd`; *Lossless only* until chosen). *Re-compress
+every FLAC* counts the catalog's re-compressible songs, asks first, then walks `largest_songs` for
+them, largest first, with a progress row and *Stop*. `Recompressing` (one per process, on
+`LibraryFeatures`' scope, so leaving the page does not end a run; one run at a time) asks consent once
+for the MediaStore rows the app may not write (`WriteConsent`, the probe and `createWriteRequest` tag
+editing uses), then for each song, holding `LibraryRepository.afterScans` so no scan reads a document
+mid-write: `recompress_song` on the IO dispatcher; a `KeptOriginal`'s `said` is the reason told;
+**a stage is written over the document only once the original is set aside** (`StageWriting`, over
+the `WrittenDocuments` seam, `ResolvedDocuments` on the phone): the document is copied whole into
+`files/recompress-aside` (refused, nothing is touched), the stage is copied over it through a `"wt"`
+stream (`TagFiles.writeUri` for a MediaStore row, the file itself for a copy in `files/opened`) and
+synced, its modified time read back (SAF's `COLUMN_LAST_MODIFIED`, MediaStore's `DATE_MODIFIED` in
+seconds made milliseconds, the file's own), and `song_recompressed` called with it; a write cut short,
+or a `song_recompressed` that refuses (a length that is not the stage's), copies the original back
+from aside, and a stage not taken is let go by `forget_recompress_stage`. Only an original
+that could not be put back stays in `files/recompress-aside`, named in the notice, as does one a
+process killed mid-write leaves; nothing sweeps that folder, since what is there may be the only copy.
+*Stop* is heard between songs and after a song's stage is made, never mid-write (that part runs
+`NonCancellable`). The notice (`RecompressSentences.told`) says what one song became or why it was
+kept, and for several counts the files re-compressed with the bytes saved, those kept, those that
+could not be written or were not allowed, and how far a stopped run came; any failure is the banner's
+failure (`RecompressingTest`).
 
 **Find higher quality versions** is an entry of a plain playlist's menu (not a saved search's, nor
 where the playlist may not be edited) opening `HigherVersionsSheet` (*Higher quality versions of

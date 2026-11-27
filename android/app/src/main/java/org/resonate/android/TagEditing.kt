@@ -180,6 +180,32 @@ object TagFiles {
         } ?: uri
 }
 
+object WriteConsent {
+    suspend fun allowed(
+        context: Context,
+        uris: List<String>,
+        consent: suspend (List<Uri>) -> Boolean,
+    ): List<String> {
+        val needing =
+            withContext(Dispatchers.IO) {
+                uris.filter { needsConsent(context, Uri.parse(TagFiles.writeUri(it))) }
+            }
+        if (needing.isEmpty()) return uris
+        if (consent(needing.map { Uri.parse(TagFiles.writeUri(it)) })) return uris
+        return uris - needing.toSet()
+    }
+
+    private fun needsConsent(context: Context, uri: Uri): Boolean {
+        if (uri.authority != MediaStore.AUTHORITY) return false
+        return try {
+            context.contentResolver.openFileDescriptor(uri, "rw")?.close()
+            false
+        } catch (refused: Exception) {
+            true
+        }
+    }
+}
+
 class DocumentRewrites(private val context: Context) : DocumentRewriting {
     override fun rewriteDocument(uri: String): Int =
         try {
@@ -300,25 +326,7 @@ class TagEditing(
     private suspend fun allowedToWrite(
         uris: List<String>,
         consent: suspend (List<Uri>) -> Boolean,
-    ): List<String> {
-        val needing =
-            withContext(Dispatchers.IO) {
-                uris.filter { needsConsent(Uri.parse(TagFiles.writeUri(it))) }
-            }
-        if (needing.isEmpty()) return uris
-        if (consent(needing.map { Uri.parse(TagFiles.writeUri(it)) })) return uris
-        return uris - needing.toSet()
-    }
-
-    private fun needsConsent(uri: Uri): Boolean {
-        if (uri.authority != MediaStore.AUTHORITY) return false
-        return try {
-            context.contentResolver.openFileDescriptor(uri, "rw")?.close()
-            false
-        } catch (refused: Exception) {
-            true
-        }
-    }
+    ): List<String> = WriteConsent.allowed(context, uris, consent)
 
     private fun files(uris: List<String>): List<SongFile> {
         val opened = File(context.filesDir, OpenedNames.FOLDER)

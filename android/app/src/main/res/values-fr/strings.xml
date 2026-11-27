@@ -2438,4 +2438,74 @@
     <string name="explore_downloaded">Demande %1$s pour téléchargement</string>
     <string name="explore_mix_queue">Mélanger les suggestions</string>
     <string name="explore_playlist_gone">Cette playlist d’exploration n’est plus disponible.</string>
+    <string name="settings_storage_title">Gérer le stockage</string>
+    <string name="settings_storage_detail">Les chansons les plus lourdes d\'abord, à supprimer ou recompresser</string>
+    <string name="settings_inner_largest_songs">Chansons les plus lourdes</string>
+    <string name="settings_inner_song_sizes">Taille des chansons</string>
+    <string name="settings_inner_free_up_space">Libérer de l\'espace</string>
+    <string name="settings_inner_recompress_flac">Recompresser les fichiers FLAC</string>
+    <string name="settings_inner_recompress_to">Recompresser en</string>
+    <string name="settings_inner_delete_on_every_device">Supprimer de tous les appareils</string>
+    <string name="storage_failed">Les chansons n\'ont pas pu être listées</string>
+    <string name="storage_try_again">Réessayer</string>
+    <string name="storage_empty">Aucune chanson pour l\'instant</string>
+    <string name="storage_empty_detail">Les chansons ajoutées sont listées ici par taille, les plus lourdes d\'abord.</string>
+    <string name="storage_largest_first">Les plus lourdes d\'abord</string>
+    <string name="storage_song_line">%1$s · %2$s · %3$s</string>
+    <string name="storage_song_line_unnamed">%1$s · %2$s</string>
+    <string name="storage_recompress">Recompresser</string>
+    <string name="storage_delete">Supprimer de ce téléphone</string>
+    <string name="storage_delete_everywhere">Supprimer de tous les appareils</string>
+    <string name="storage_recompress_to">Recompresser en</string>
+    <string name="storage_recompress_every">Recompresser tous les FLAC</string>
+    <plurals name="storage_recompress_every_detail">
+        <item quantity="one">%1$d fichier FLAC, réécrit plus petit là où c\'est possible et gardé tel quel sinon</item>
+        <item quantity="other">%1$d fichiers FLAC, chacun réécrit plus petit là où c\'est possible et gardé tel quel sinon</item>
+    </plurals>
+    <plurals name="storage_recompress_every_title">
+        <item quantity="one">Recompresser %1$d fichier FLAC ?</item>
+        <item quantity="other">Recompresser %1$d fichiers FLAC ?</item>
+    </plurals>
+    <string name="storage_recompress_every_text">Chaque fichier est réécrit (%1$s), les plus lourds d\'abord, et sa copie est vérifiée avant de prendre la place de l\'original. Un fichier qui ne deviendrait pas plus petit, ou dont la copie ne se relit pas telle qu\'elle a été écrite, est gardé tel quel.</string>
+    <string name="storage_recompress_finding">Recherche des fichiers FLAC…</string>
+    <string name="storage_recompressing">Recompression %1$d sur %2$d</string>
+    <string name="storage_recompress_stop">Arrêter</string>
+    <string name="recompress_to_kept">Sans perte uniquement</string>
+    <string name="recompress_to_kept_detail">Garde chaque fréquence et profondeur telles quelles</string>
+    <string name="recompress_to_studio">96 kHz, 24 bits</string>
+    <string name="recompress_to_studio_detail">Abaisse ce qui dépasse la qualité studio</string>
+    <string name="recompress_to_high">48 kHz, 24 bits</string>
+    <string name="recompress_to_high_detail">Abaisse ce qui la dépasse</string>
+    <string name="recompress_to_cd">CD : 44,1 kHz, 16 bits</string>
+    <string name="recompress_to_cd_detail">Abaisse ce qui dépasse la qualité CD</string>
+    <string name="recompress_none">Aucun fichier FLAC à recompresser</string>
+    <string name="recompress_shrunk_one">%1$s fait maintenant %2$s, %3$s de moins</string>
+    <string name="recompress_kept_one">%1$s : %2$s</string>
+    <string name="recompress_failed_one">%1$s n\'a pas pu être recompressé : %2$s</string>
+    <string name="recompress_reason_unknown">le fichier n\'a pas pu être lu ou écrit</string>
+    <string name="recompress_put_back_one">%1$s n\'a pas pu être réécrit, l\'original a donc été remis</string>
+    <string name="recompress_kept_aside_one">%1$s n\'a pas pu être réécrit et l\'original n\'a pas pu être remis ; il est gardé dans le stockage de l\'appli sous %2$s</string>
+    <string name="recompress_not_allowed_one">L\'écriture de %1$s n\'a pas été autorisée</string>
+    <string name="recompress_told_stopped_at_once">Arrêté avant qu\'aucun fichier ne soit recompressé</string>
+    <string name="recompress_told_stopped">Arrêté après %1$d sur %2$d : %3$s</string>
+    <plurals name="recompress_told_shrunk">
+        <item quantity="one">%1$d fichier recompressé, %2$s gagnés</item>
+        <item quantity="other">%1$d fichiers recompressés, %2$s gagnés</item>
+    </plurals>
+    <plurals name="recompress_told_kept">
+        <item quantity="one">%1$d gardé tel quel</item>
+        <item quantity="other">%1$d gardés tels quels</item>
+    </plurals>
+    <plurals name="recompress_told_failed">
+        <item quantity="one">%1$d n\'a pas pu être écrit</item>
+        <item quantity="other">%1$d n\'ont pas pu être écrits</item>
+    </plurals>
+    <plurals name="recompress_told_not_allowed">
+        <item quantity="one">%1$d n\'a pas été autorisé à l\'écriture</item>
+        <item quantity="other">%1$d n\'ont pas été autorisés à l\'écriture</item>
+    </plurals>
+    <plurals name="recompress_told_kept_aside">
+        <item quantity="one">l\'original qui n\'a pas pu être remis est gardé dans le stockage de l\'appli sous %1$s</item>
+        <item quantity="other">les originaux qui n\'ont pas pu être remis sont gardés dans le stockage de l\'appli sous %1$s</item>
+    </plurals>
 </resources>

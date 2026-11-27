@@ -220,6 +220,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val listening = Listening(library, scope, { online.value }, { auddToken.value })
     val releases = ReleaseWatch(library, settings, scope, derivedScope) { foreground }
     val tags = TagEditing(context, library, scope) { songDeletable(it) }
+    val recompressing =
+        Recompressing(context, library, scope, settings, { songDeletable(it) }) { rereadSongs(it) }
     val downloading: StateFlow<Boolean> =
         downloads.jobs
             .map { jobs -> jobs.any { !it.state.settled } }

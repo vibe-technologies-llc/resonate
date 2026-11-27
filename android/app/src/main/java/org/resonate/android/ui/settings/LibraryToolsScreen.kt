@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SignalCellularAlt
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
@@ -305,6 +306,15 @@ fun LibraryToolsScreen() {
                     supporting = stringResource(R.string.tools_identical_detail),
                     onClick = { navigator.open(Screen.IdenticalSongs) },
                     modifier = Modifier.testTag("identical-songs"),
+                )
+            }
+            item(key = "storage") {
+                SettingRow(
+                    title = stringResource(R.string.settings_storage_title),
+                    icon = Icons.Rounded.Storage,
+                    supporting = stringResource(R.string.settings_storage_detail),
+                    onClick = { navigator.open(Screen.Storage) },
+                    modifier = Modifier.testTag("manage-storage"),
                 )
             }
             if (tagsUndoable) {

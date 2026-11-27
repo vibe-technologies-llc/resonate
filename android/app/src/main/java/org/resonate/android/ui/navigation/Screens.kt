@@ -78,6 +78,8 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Wanted : Screen
 
+    @Serializable data object Storage : Screen
+
     @Serializable data object Providers : Screen
 
     @Serializable data class ProviderAccount(val id: Long, val provider: String) : Screen

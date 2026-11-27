@@ -112,7 +112,8 @@ class SongDeletion(
             }
         }
         if (asking.isNotEmpty()) {
-            if (consent(asking.map { Uri.parse(it.uri) })) gone += asking else kept += asking.size
+            if (consent(asking.map { Uri.parse(TagFiles.writeUri(it.uri)) })) gone += asking
+            else kept += asking.size
         }
         return FilesRemoved(gone, kept, unconfirmed)
     }

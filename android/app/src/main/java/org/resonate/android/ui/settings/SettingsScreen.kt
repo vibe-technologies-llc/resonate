@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.SpeakerGroup
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.FilledTonalButton
@@ -120,6 +121,7 @@ private val Setting.icon: ImageVector
             Setting.STATISTICS -> Icons.Rounded.BarChart
             Setting.SUGGESTIONS -> Icons.AutoMirrored.Rounded.QueueMusic
             Setting.WANTED -> Icons.Rounded.BookmarkBorder
+            Setting.STORAGE -> Icons.Rounded.Storage
             Setting.ONLINE -> Icons.Rounded.Public
             Setting.EXPLORE -> Icons.Rounded.Explore
             Setting.PROVIDERS -> Icons.Rounded.CloudDownload
@@ -150,6 +152,7 @@ private val Setting.destination: Screen?
             Setting.STATISTICS -> Screen.Statistics
             Setting.SUGGESTIONS -> Screen.Suggestions
             Setting.WANTED -> Screen.Wanted
+            Setting.STORAGE -> Screen.Storage
             Setting.PROVIDERS -> Screen.Providers
             Setting.SERVER -> Screen.Server
             Setting.SCROBBLING -> Screen.Scrobbling
