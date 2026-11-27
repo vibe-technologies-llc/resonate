@@ -1,14 +1,23 @@
 use std::{
-    io::{BufReader, BufWriter, Read as _, Seek as _, Write as _},
-    sync::Arc,
+    fs::{self, File},
+    io::{self, BufReader, BufWriter, Seek as _, Write as _},
+    path::PathBuf,
+    process,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use resonate_core::seconds_since_the_epoch;
+use resonate_core::{
+    seconds_since_the_epoch,
+    writer::{self, Held, Writer},
+};
 use resonate_library::{
     BroughtIn, HeardElsewhere, HeardOnce, History, HistoryFrom, HistoryPages, HistoryRead,
     KeptListens, ListeningService, LookupOp, SAME_LISTEN_WITHIN, Scrobbler, StoreOp, TokenHeld,
-    Unpinned, bring_in_history, bring_in_lines, bring_in_stream, history_lines,
+    Unpinned, bring_in_history, bring_in_stream, history_lines,
 };
 use resonate_online::{Application, LastFm, LastfmHistory, ListenBrainz, ListenBrainzHistory};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
@@ -22,6 +31,10 @@ use crate::{
     online_tools::{ScrobbleAccount, ScrobbleService, billed},
     sync::SongsHeld,
 };
+
+const SPOOL_FOLDER: &str = "history-spool";
+
+static SPOOLED: AtomicU64 = AtomicU64::new(0);
 
 const THE_HELD_AFTER: &str = "SELECT d.*, l.id AS listen_id, l.began AS listen_began,
         l.heard_ms AS listen_heard_ms, l.elsewhere AS listen_elsewhere
@@ -65,6 +78,97 @@ impl From<BroughtIn> for HistoryBroughtIn {
     }
 }
 
+pub(crate) struct Spool {
+    folder: PathBuf,
+}
+
+struct Spooled {
+    path: PathBuf,
+    held: Held,
+}
+
+impl Spool {
+    pub(crate) fn under(folder: PathBuf) -> Self {
+        Self {
+            folder: folder.join(SPOOL_FOLDER),
+        }
+    }
+
+    fn made_of(&self, source: &mut impl io::Read) -> io::Result<Spooled> {
+        fs::create_dir_all(&self.folder)?;
+        self.sweep();
+
+        let stamp = process::id();
+        let path = self.folder.join(format!(
+            "{stamp}-{}",
+            SPOOLED.fetch_add(1, Ordering::Relaxed)
+        ));
+        let spooled = Spooled {
+            held: Held::made_closed(&path)?,
+            path,
+        };
+
+        io::copy(source, &mut spooled.held.file())?;
+        Ok(spooled)
+    }
+
+    fn sweep(&self) {
+        let Ok(entries) = fs::read_dir(&self.folder) else {
+            return;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(stamped) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.split_once('-'))
+                .and_then(|(stamp, _)| stamp.parse::<u32>().ok())
+            else {
+                continue;
+            };
+
+            if writer::writer_of(&path, stamped) == Writer::Living {
+                continue;
+            }
+            if let Err(error) = fs::remove_file(&path) {
+                tracing::debug!(%error, path = %path.display(), "a spooled history file could not be swept");
+            }
+        }
+    }
+}
+
+impl Drop for Spooled {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_file(&self.path) {
+            tracing::debug!(%error, path = %self.path.display(), "a spooled history file could not be removed");
+        }
+    }
+}
+
+fn unread(source: io::Error) -> Error {
+    Error::HistoryFile {
+        op: HistoryFileOp::Read,
+        source,
+    }
+}
+
+fn imported(kept: &dyn KeptListens, spool: &Spool, mut file: File) -> Result<HistoryBroughtIn> {
+    let brought = match file.stream_position() {
+        Ok(_) => bring_in_stream(kept, BufReader::new(file), &mut |_| {}),
+        Err(_) => {
+            let spooled = spool.made_of(&mut file).map_err(unread)?;
+
+            bring_in_stream(kept, BufReader::new(spooled.held.file()), &mut |_| {})
+        }
+    };
+
+    brought.map(Into::into).map_err(|error| match error {
+        resonate_library::Error::Unread { source } => unread(source),
+        error => Error::history(error),
+    })
+}
+
 #[uniffi::export]
 impl MobilePlayer {
     pub fn export_history(&self, descriptor: i32) -> Result<u64> {
@@ -86,27 +190,9 @@ impl MobilePlayer {
     }
 
     pub fn import_history_file(&self, descriptor: i32) -> Result<HistoryBroughtIn> {
-        let unread = |source| Error::HistoryFile {
-            op: HistoryFileOp::Read,
-            source,
-        };
-        let mut file = owned(descriptor).map_err(unread)?;
-        let kept = PhoneListens(&self.catalog);
+        let file = owned(descriptor).map_err(unread)?;
 
-        let brought = match file.stream_position() {
-            Ok(_) => bring_in_stream(&kept, BufReader::new(file), &mut |_| {}),
-            Err(_) => {
-                let mut bytes = Vec::new();
-
-                file.read_to_end(&mut bytes).map_err(unread)?;
-                bring_in_lines(&kept, &bytes, &mut |_| {})
-            }
-        };
-
-        brought.map(Into::into).map_err(|error| match error {
-            resonate_library::Error::Unread { source } => unread(source),
-            error => Error::history(error),
-        })
+        imported(&PhoneListens(&self.catalog), &self.history_spool, file)
     }
 
     pub fn import_history(
@@ -673,18 +759,54 @@ pub(crate) mod tests {
         );
     }
 
-    #[test]
-    fn a_descriptor_that_cannot_be_rewound_is_read_whole_and_brings_in_the_same() {
-        let to = player();
+    struct Watching<'a> {
+        inside: PhoneListens<'a>,
+        spool: PathBuf,
+        pages: Mutex<Vec<usize>>,
+        spooled: Mutex<Vec<usize>>,
+    }
 
-        songs_held(&to);
+    impl KeptListens for Watching<'_> {
+        fn history_from(
+            &self,
+            from: HistoryFrom,
+            most: usize,
+        ) -> resonate_library::Result<HistoryRead> {
+            self.inside.history_from(from, most)
+        }
 
+        fn bring_in(
+            &self,
+            service: ListeningService,
+            heard: &[HeardElsewhere],
+        ) -> resonate_library::Result<BroughtIn> {
+            self.pages.lock().push(heard.len());
+            self.spooled.lock().push(
+                fs::read_dir(self.spool.join(SPOOL_FOLDER))
+                    .map(|entries| entries.count())
+                    .unwrap_or_default(),
+            );
+            self.inside.bring_in(service, heard)
+        }
+    }
+
+    fn pipe_holding(text: String) -> (File, thread::JoinHandle<()>) {
         let (reader, mut writer) = io::pipe().expect("a pipe");
-        let text = listens_of(3);
 
         let writing = thread::spawn(move || {
             writer.write_all(text.as_bytes()).expect("written");
         });
+
+        (File::from(std::os::fd::OwnedFd::from(reader)), writing)
+    }
+
+    #[test]
+    fn a_descriptor_that_cannot_be_rewound_is_spooled_and_brings_in_the_same() {
+        let to = player();
+
+        songs_held(&to);
+
+        let (reader, writing) = pipe_holding(listens_of(3));
 
         let brought = to
             .import_history_file(reader.into_raw_fd())
@@ -700,6 +822,90 @@ pub(crate) mod tests {
                 unmatched: 0,
             }
         );
+    }
+
+    #[test]
+    fn a_pipe_of_more_than_a_page_of_listens_is_brought_in_a_page_at_a_time_from_a_held_spool() {
+        const LISTENS: u64 = LISTENS_READ_AT_ONCE as u64 * 2 + 500;
+
+        let to = player();
+
+        songs_held(&to);
+
+        let folder = scratch("spool");
+        let spool = Spool::under(folder.clone());
+        let kept = Watching {
+            inside: PhoneListens(&to.catalog),
+            spool: folder.clone(),
+            pages: Mutex::new(Vec::new()),
+            spooled: Mutex::new(Vec::new()),
+        };
+        let (reader, writing) = pipe_holding(listens_of(LISTENS));
+
+        let brought = imported(&kept, &spool, reader).expect("imported");
+
+        writing.join().expect("the writer finished");
+
+        assert_eq!(brought.credited, LISTENS);
+        assert_eq!(
+            *kept.pages.lock(),
+            [LISTENS_READ_AT_ONCE, LISTENS_READ_AT_ONCE, 500]
+        );
+        assert_eq!(*kept.spooled.lock(), [1, 1, 1]);
+        assert_eq!(
+            fs::read_dir(folder.join(SPOOL_FOLDER))
+                .expect("the spool folder")
+                .count(),
+            0
+        );
+
+        fs::remove_dir_all(&folder).expect("cleaned");
+    }
+
+    #[test]
+    fn a_pipe_with_a_bad_line_brings_nothing_in_and_leaves_no_spool_behind() {
+        let to = player();
+
+        songs_held(&to);
+
+        let folder = scratch("refused-spool");
+        let spool = Spool::under(folder.clone());
+        let (reader, writing) = pipe_holding(format!("{}not a listen\n", listens_of(2)));
+
+        let refused = imported(&PhoneListens(&to.catalog), &spool, reader);
+
+        writing.join().expect("the writer finished");
+
+        assert!(matches!(refused, Err(Error::History { .. })));
+        assert!(listens(&to).is_empty());
+        assert_eq!(
+            fs::read_dir(folder.join(SPOOL_FOLDER))
+                .expect("the spool folder")
+                .count(),
+            0
+        );
+
+        fs::remove_dir_all(&folder).expect("cleaned");
+    }
+
+    #[test]
+    fn a_spool_left_by_a_run_that_is_gone_is_swept_and_one_held_by_a_living_writer_is_not() {
+        let folder = scratch("swept-spool");
+        let spool = Spool::under(folder.clone());
+        let left = folder.join(SPOOL_FOLDER).join(format!("{}-0", u32::MAX));
+
+        fs::create_dir_all(folder.join(SPOOL_FOLDER)).expect("a folder");
+        fs::write(&left, b"left behind").expect("a stale spool");
+
+        let living = spool.made_of(&mut io::empty()).expect("a spool");
+
+        let swept = spool.made_of(&mut io::empty()).expect("another spool");
+
+        assert!(!left.exists());
+        assert!(living.path.exists());
+
+        drop((living, swept));
+        fs::remove_dir_all(&folder).expect("cleaned");
     }
 
     #[test]

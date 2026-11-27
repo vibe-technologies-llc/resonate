@@ -352,6 +352,7 @@ pub struct MobilePlayer {
     enriching: enrichment::Enriching,
     room: room::Room,
     tagging: tagging::Tagging,
+    history_spool: history::Spool,
     served: Arc<served::Served>,
     rendering: rendering::Rendering,
     together: together::Together,

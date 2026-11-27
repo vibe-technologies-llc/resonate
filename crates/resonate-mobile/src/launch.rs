@@ -126,6 +126,7 @@ impl MobilePlayer {
             enriching: Enriching::default(),
             room: Room::under(PathBuf::from(folder)),
             tagging: Tagging::under(PathBuf::from(folder)),
+            history_spool: crate::history::Spool::under(PathBuf::from(folder)),
             served,
             together: Together::default(),
             rendering,

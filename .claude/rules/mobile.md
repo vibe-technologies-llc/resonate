@@ -1075,9 +1075,13 @@ it. **The descriptor is read a page of `LISTENS_READ_AT_ONCE` listens at a time*
 `bring_in_file` does, so it rewinds: once to check every line, once to land the pages), so the
 file's size is never held
 (`a_file_of_more_than_a_page_of_listens_is_read_from_its_descriptor_a_page_at_a_time`); a descriptor
-that cannot be rewound (a provider's pipe) is read whole and goes through `bring_in_lines`
-(`a_descriptor_that_cannot_be_rewound_is_read_whole_and_brings_in_the_same`), and a read that fails
-past the open is `HistoryFile` as the open's is; `import_history(service, user, account)` needs online, takes the user named or else the
+that cannot be rewound (a provider's pipe) is first copied to a staged file of the data folder's
+`history-spool`, held under `resonate_core::writer::Held` for its life, removed when the import
+ends and swept by the next import where its writer is gone (`Spool`), and that file is read the
+same way, since the check and the landing are two passes and the spool is what lets the second
+one rewind (`a_pipe_of_more_than_a_page_of_listens_is_brought_in_a_page_at_a_time_from_a_held_spool`,
+`a_spool_left_by_a_run_that_is_gone_is_swept_and_one_held_by_a_living_writer_is_not`); a read
+that fails past the open, or a spool that cannot be written, is `HistoryFile` as the open's is; `import_history(service, user, account)` needs online, takes the user named or else the
 account's own (`token_held`), and refuses `NoHistoryUser` or, for Last.fm without a key and
 secret, `NoLastfmApplication` (`a_service_import_asks_for_online_a_user_and_for_lastfm_an_application`).
 Each answers a `HistoryBroughtIn`.

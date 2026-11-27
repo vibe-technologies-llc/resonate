@@ -491,6 +491,7 @@ mod tests {
                 enriching: crate::enrichment::Enriching::default(),
                 room: crate::room::Room::under(std::env::temp_dir()),
                 tagging: Tagging::under(folder.0.join("data")),
+                history_spool: crate::history::Spool::under(folder.0.join("data")),
                 served: Arc::new(crate::served::Served::default()),
                 together: crate::together::Together::default(),
                 rendering: crate::rendering::Rendering::default(),

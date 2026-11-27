@@ -376,6 +376,7 @@ impl Harness {
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
+            history_spool: crate::history::Spool::under(std::env::temp_dir()),
             served: Arc::new(served),
             together: crate::together::Together::default(),
             rendering,
