@@ -226,7 +226,7 @@ final class LyricLayerView: UIView {
     private func clockMoved() {
         watching = false
         watchClock()
-        guard !ticking else { return }
+        guard !ticking, setting?.awake == true else { return }
         wake()
     }
 

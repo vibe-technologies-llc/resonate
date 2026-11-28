@@ -69,6 +69,7 @@ mod turns;
 mod updates;
 mod vanished;
 mod versions;
+mod watched;
 mod watching;
 mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));

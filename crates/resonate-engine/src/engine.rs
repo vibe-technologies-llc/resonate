@@ -19,7 +19,7 @@ use self::output::{Kept, Output, Retiring};
 use crate::{
     Backend, CommandKind, EngineConfig, Error, Event, HeardClock, Opener, OutputPlan, Published,
     ReplayGainMode, Reply, Request, Result, Seeks, Sleeping, Stepping, StreamDigest, Surveyor,
-    TransportState,
+    TransportState, Watched,
     audition::{Audition, Contested},
     lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
@@ -57,6 +57,7 @@ const SINK_TIMEOUT: Duration = Duration::from_secs(2);
 const SHORTEST_TICK: Duration = Duration::from_millis(4);
 const DOWNSTREAM_RESTARTED_AFTER_QUIET_FOR: Duration = Duration::from_millis(300);
 const PUBLISH_TICK: Duration = Duration::from_millis(16);
+const LOOSE_TICK: Duration = Duration::from_millis(200);
 const IDLE_TICK: Duration = Duration::from_millis(100);
 const AT_REST_TICK: Duration = Duration::from_secs(1);
 const EVENTS_A_PASS_HELD_INLINE: usize = 4;
@@ -969,6 +970,7 @@ impl Engine {
                 Some(output) => wait_for(
                     Frames(output.buffered() as u64).to_duration(output.plan.stream.rate),
                     self.playing || output.wants_more(),
+                    Watched::now(),
                 ),
             }
         };
@@ -1050,11 +1052,16 @@ fn tagged_or_measured(tags: ReplayGain, measured: MeasuredGain) -> ReplayGain {
     }
 }
 
-fn wait_for(held: Duration, moving: bool) -> Duration {
+fn wait_for(held: Duration, moving: bool, watched: Watched) -> Duration {
     if !moving {
         return IDLE_TICK;
     }
-    (held / 2).clamp(SHORTEST_TICK, PUBLISH_TICK)
+
+    let longest = match watched {
+        Watched::Closely => PUBLISH_TICK,
+        Watched::Loosely => LOOSE_TICK,
+    };
+    (held / 2).clamp(SHORTEST_TICK, longest)
 }
 
 fn ring_capacity(asked: Duration, spec: StreamSpec, block: usize) -> Frames {
@@ -1201,19 +1208,53 @@ mod tests {
 
     #[test]
     fn the_wait_is_half_of_what_the_ring_holds_kept_inside_the_publishing_rate() {
-        assert_eq!(wait_for(Duration::ZERO, true), SHORTEST_TICK);
-        assert_eq!(wait_for(Duration::from_millis(4), true), SHORTEST_TICK);
         assert_eq!(
-            wait_for(Duration::from_millis(20), true),
+            wait_for(Duration::ZERO, true, Watched::Closely),
+            SHORTEST_TICK
+        );
+        assert_eq!(
+            wait_for(Duration::from_millis(4), true, Watched::Closely),
+            SHORTEST_TICK
+        );
+        assert_eq!(
+            wait_for(Duration::from_millis(20), true, Watched::Closely),
             Duration::from_millis(10)
         );
-        assert_eq!(wait_for(Duration::from_millis(500), true), PUBLISH_TICK);
+        assert_eq!(
+            wait_for(Duration::from_millis(500), true, Watched::Closely),
+            PUBLISH_TICK
+        );
+    }
+
+    #[test]
+    fn a_player_watched_loosely_naps_up_to_the_loose_tick_on_a_deep_ring() {
+        assert_eq!(
+            wait_for(Duration::ZERO, true, Watched::Loosely),
+            SHORTEST_TICK
+        );
+        assert_eq!(
+            wait_for(Duration::from_millis(20), true, Watched::Loosely),
+            Duration::from_millis(10)
+        );
+        assert_eq!(
+            wait_for(Duration::from_millis(100), true, Watched::Loosely),
+            Duration::from_millis(50)
+        );
+        assert_eq!(
+            wait_for(Duration::from_millis(500), true, Watched::Loosely),
+            LOOSE_TICK
+        );
     }
 
     #[test]
     fn a_ring_nothing_is_pulling_and_nothing_can_fill_waits_the_idle_tick() {
-        assert_eq!(wait_for(Duration::ZERO, false), IDLE_TICK);
-        assert_eq!(wait_for(Duration::from_millis(500), false), IDLE_TICK);
+        for watched in [Watched::Closely, Watched::Loosely] {
+            assert_eq!(wait_for(Duration::ZERO, false, watched), IDLE_TICK);
+            assert_eq!(
+                wait_for(Duration::from_millis(500), false, watched),
+                IDLE_TICK
+            );
+        }
     }
 
     #[test]

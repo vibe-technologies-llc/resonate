@@ -18,6 +18,7 @@ struct ZonesPresentation: ViewModifier {
 
 struct ZonesSheet: View {
     @Environment(Library.self) private var library
+    @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
     @State private var renaming: PlayerZone?
     @State private var name = ""
@@ -92,7 +93,8 @@ struct ZonesSheet: View {
             .sheet(isPresented: $addressing) { RendererAddressSheet(kind: .renderer).sheetSized() }
             .sheet(isPresented: $addressingReceiver) { RendererAddressSheet(kind: .receiver).sheetSized() }
             .sheet(isPresented: $learning) { RendererFormatsSheet().sheetSized() }
-            .task(id: reaching) {
+            .task(id: [reaching, phase != .background]) {
+                guard phase != .background else { return }
                 while reaching, !Task.isCancelled {
                     library.readRenderers()
                     try? await Task.sleep(for: .seconds(2))

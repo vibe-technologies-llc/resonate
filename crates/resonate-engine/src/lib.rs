@@ -22,6 +22,7 @@ mod streaming;
 mod surveying;
 mod tap;
 mod turns;
+mod watched;
 mod zones;
 
 pub use resonate_analysis::{
@@ -84,6 +85,7 @@ pub use crate::{
         Published, Seeks, StreamDigest, TrackState, TransportState,
     },
     tap::{Caught, Tap, Tapped},
+    watched::Watched,
     zones::{
         HANDED_OVER_WITHIN, Handover, Held, Opening, Opens, Within, Zone, Zones, holds_its_device,
     },

@@ -34,7 +34,8 @@ use resonate_engine::{
     Result, Resumable, Resumption, Seat, SinkChange, SinkError, SinkFormats, SinkId, SinkInfo,
     SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SmartShuffle, Sounding, SourceId, Sources,
     Stepping, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume,
-    Surveyor, TakenUp, Tapped, Unreshapable, Until, Words, Zone, ZoneId, ZoneName, Zones, stamp_of,
+    Surveyor, TakenUp, Tapped, Unreshapable, Until, Watched, Words, Zone, ZoneId, ZoneName, Zones,
+    stamp_of,
 };
 
 const REQUIRED_BY: &str = "RESONATE_ENGINE_FFMPEG_TESTS";
@@ -13727,6 +13728,54 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
     assert!(
         loudest <= 1.0,
         "a sample of {loudest} reached the device after the peak was measured"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_player_watched_loosely_keeps_a_deep_ring_fed_at_real_time_without_running_dry() -> Result<()> {
+    const PLAYED_FOR: Duration = Duration::from_secs(3);
+
+    Watched::Loosely.set();
+
+    let tree = Tree::new();
+    let path = tree.write("long.wav", &floating_wave(0.5, 5 * RATE as usize));
+    let rate = SampleRate::HZ_44100;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::F32);
+    let wanted = frames_in(PLAYED_FOR, rate) * frame_bytes(SampleFormat::F32);
+
+    let (player, graph) = settled_over(
+        vec![sink(&[rate], &[SampleFormat::F32])],
+        Arc::new(Sources::local()),
+        EngineConfig {
+            buffer: Duration::from_millis(500),
+            ..config()
+        },
+    )?;
+
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    play_paced_until(
+        &player,
+        &graph,
+        block,
+        1,
+        |_, graph| graph.played.len() >= wanted,
+        "three seconds to play at real time",
+    );
+
+    assert_eq!(
+        underruns(&player),
+        0,
+        "a deep ring ran dry while the player was watched loosely"
+    );
+    assert!(
+        loudest_float(&graph.lock().played[block..]) > 0.4,
+        "the loosely watched player played silence"
     );
     Ok(())
 }

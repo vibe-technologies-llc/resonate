@@ -22,8 +22,14 @@ struct DrivenDevicePage: View {
     }
 }
 
+private struct Following: Hashable {
+    let device: String
+    let shown: Bool
+}
+
 struct DrivenDeviceView: View {
     @Environment(Library.self) private var library
+    @Environment(\.scenePhase) private var phase
     let device: SyncedDevice
     @State private var shown: RemoteDevice?
     @State private var places = DrivenPlaces()
@@ -62,7 +68,8 @@ struct DrivenDeviceView: View {
             }
         }
         .navigationTitle(device.name)
-        .task(id: device.id) {
+        .task(id: Following(device: device.id, shown: phase != .background)) {
+            guard phase != .background else { return }
             await follow()
         }
     }

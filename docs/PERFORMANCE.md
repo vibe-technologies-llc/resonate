@@ -6,6 +6,8 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Startup and idle
 
 ## Android
+- [S · 0.18.0] Android never tells the boundary it left the foreground (`watch_closely`), so its
+  engine thread keeps the 16 ms tick a window needs while the screen is off
 
 ## Performance and scale
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
@@ -15,6 +17,11 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 
 ## iOS
+- [M · 0.18.0] A lossy song nobody studied is decoded whole a second time for its true peak
+  (`Measuring`) every time it starts, the background included, where enrichment, which would keep a
+  study, is paused; the measured peak is dropped with the track, never kept beside the catalog's
+  studies. Skipping the measure is no answer: an unmeasured float song on a bit-perfect stream has
+  no guard, so its overs would reach RemoteIO
 
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the

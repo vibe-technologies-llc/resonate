@@ -222,9 +222,10 @@ final class Features {
     @ObservationIgnored private var connection = ConnectionMeter.unknown
     @ObservationIgnored private var artRevision: UInt64?
     var withVariants: Set<UInt64> = []
-    @ObservationIgnored var foreground = true {
+    @ObservationIgnored var foreground = UIApplication.shared.applicationState != .background {
         didSet {
             guard foreground != oldValue else { return }
+            watchClosely(closely: foreground)
             library.nudgePoll()
             wakeSyncPoll()
             enrichment.foregroundChanged(foreground)
@@ -247,6 +248,7 @@ final class Features {
         downloadOnMetered = MeteredDownloads.allowed(in: settings)
         historyKept = ListeningHistory.kept(in: settings)
         syncFolder = settings.string(forKey: "sync-folder")
+        watchClosely(closely: foreground)
     }
 
     var correctionBusy: Bool { searchingCorrections || applyingCorrection }

@@ -132,6 +132,11 @@ only needs the transport asks `transport`, which reads the engine's state and no
 
 ## The engine's events are heard on a thread of the boundary's
 
+**`watch_closely(closely)` tells the engine whether anyone is looking.** A free function, so it is
+told before the player opens: it sets `Watched` (`resonate-engine`, `audio.md`'s run loop), whose
+`Loosely` lets every zone's engine thread nap up to `LOOSE_TICK` between fills rather than
+`PUBLISH_TICK`. iOS tells it from `Features.foreground` (`ios.md`); Android does not tell it yet.
+
 `watching.rs` keeps one thread per player (`resonate-watch`, holding a `Weak` so a dropped player
 ends it, and ending when the engine's event channel closes), which owns two jobs a front end's poll
 used to do. **It counts listening**: on each engine event and otherwise every second while playing

@@ -103,6 +103,7 @@ struct SharedPlaylistSheet: View {
     @State private var presses = SecondPress<SharedAct>()
     @State private var failure: String?
     @State private var asking = false
+    @Environment(\.scenePhase) private var phase
     let id: UInt64
     let name: String
 
@@ -142,7 +143,10 @@ struct SharedPlaylistSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }
             }
-            .task(id: list == nil) { await together.watch(id) }
+            .task(id: [list == nil, phase != .background]) {
+                guard phase != .background else { return }
+                await together.watch(id)
+            }
         }
     }
 

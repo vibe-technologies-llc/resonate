@@ -752,8 +752,16 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
 - **The run loop waits on every channel that can change its mind; the ring sets the timeout.**
   Wakers: command, sink announcement, survey answer, opening landing, worker's decoded block,
   stream-open answer, stream events. Timeout: half what the ring holds, floored at `SHORTEST_TICK`,
-  capped at `PUBLISH_TICK`; `IDLE_TICK` with no stream or nothing wanting more; a transport at rest
-  parks `AT_REST_TICK`. A disconnected receiver reports ready forever: `changes` dropped and
+  capped at `PUBLISH_TICK` while the process is `Watched::Closely` (the default, a window's 60 fps)
+  and at `LOOSE_TICK` (200 ms) while `Watched::Loosely`, which a phone sets as it leaves the
+  foreground (`watch_closely`, `mobile.md`), since nobody reads the published position more often
+  then than its poll; a 500 ms ring then wakes the thread about five times a second rather than
+  sixty, and each wake fills it whole (`fill_owed`), while a boundary, fade, splice, sleep or
+  deferred answer still shortens the wait as before
+  (`a_player_watched_loosely_naps_up_to_the_loose_tick_on_a_deep_ring`,
+  `a_player_watched_loosely_keeps_a_deep_ring_fed_at_real_time_without_running_dry`). The flag is
+  one process-wide atomic, as the spoken language is; a desktop never sets it. `IDLE_TICK` with no
+  stream or nothing wanting more; a transport at rest parks `AT_REST_TICK`. A disconnected receiver reports ready forever: `changes` dropped and
   `Output::deaf` set the first time one does, and a survey worker that ended is no longer
   awaited (`Surveying::awaited`, which `Heard::is_what` compares, so the set is rebuilt without
   it: `a_survey_worker_that_ends_is_taken_out_of_the_set_the_engine_parks_on`). `run` is two loops because a `Select` borrows its

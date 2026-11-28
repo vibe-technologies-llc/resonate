@@ -251,7 +251,11 @@ sync seals its records and talks QUIC (TLS) of its own.
   Favourites filter, change the shown array where it stands inside `withMutation`
   (`Library.editShownQueue`), never through the property's `get` and `set`, which copied the whole
   array, every `Track` retained, on the main actor at each swipe. The three library searches ask again only when a catalog
-  read changed what is shown. `Features.foreground` is set only as the scene becomes active and
+  read changed what is shown. `Features.foreground` starts from `applicationState` (a launch into
+  the background by an intent or a background task is not taken for the foreground, which polled
+  at 250 ms, synced every 2 s and followed downloads at 250 ms until the scene first became active),
+  tells the boundary `watchClosely` as `Features` is made and on every change (`mobile.md`), and is
+  set only as the scene becomes active and
   as it enters `.background`, never at `.inactive`, and acts only on a change: an `.inactive` blip
   (Control Centre, a banner, the App Switcher) nudges no poll, restarts no enrichment watch, wants
   loop or linked-playlist loop (whose ten-minute cadence would start over), toggles no visualizer
@@ -417,7 +421,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   bound are `android.md`'s *Device sync*); the folder is `LandingDestination.of` (`ResonateLogic`, the chosen
   writable folder, else the first writable one), and one that is not readable holds the songs back
   with a notice rather than sending them to another folder (`LandingDestinationTests`).
-- **An online device on the sync page opens `DrivenDeviceView`** (`Destination.syncDevice(id)`, through `DrivenDevicePage`), which drives its zones: transport, volume, seek, and jump, move and remove by row. Its read every 500 ms (`sync_watch`) answers the position played on to the moment asked, so it never equals the last: `DrivenRead` sets the positions apart into `DrivenPlaces` (an observable read only by `DrivenPlaceLine` and `DrivenSeek`) and the rest is assigned only where it moved, so a playing device redraws its place line and slider, not every zone and queue row. The party page keeps its round trip and its clock's gap from the host's apart the same way (`TogetherState.partyRoundTripMs` and `partyApart`, read by `PartyRoundTrip` alone; `party` holds neither). **This iPhone is driven by another** as far as *Options*' `SyncControlPage` lets it (`sync-control`, `SyncControls`), and a sound begun from elsewhere activates the session (`SessionAsked`, `NowPlaying.update`) (`sync.md`'s *One device drives another's zones*).
+- **An online device on the sync page opens `DrivenDeviceView`** (`Destination.syncDevice(id)`, through `DrivenDevicePage`), which drives its zones: transport, volume, seek, and jump, move and remove by row. Its read every 500 ms (`sync_watch`), only while the scene is out of the background (`Following`: a locked phone left on the page neither reads nor keeps the other device mirroring to it, and coming back watches again), answers the position played on to the moment asked, so it never equals the last: `DrivenRead` sets the positions apart into `DrivenPlaces` (an observable read only by `DrivenPlaceLine` and `DrivenSeek`) and the rest is assigned only where it moved, so a playing device redraws its place line and slider, not every zone and queue row. The party page keeps its round trip and its clock's gap from the host's apart the same way (`TogetherState.partyRoundTripMs` and `partyApart`, read by `PartyRoundTrip` alone; `party` holds neither). **This iPhone is driven by another** as far as *Options*' `SyncControlPage` lets it (`sync-control`, `SyncControls`), and a sound begun from elsewhere activates the session (`SessionAsked`, `NowPlaying.update`) (`sync.md`'s *One device drives another's zones*).
 - **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
   assigns `syncConfig` on the main actor at once, then restarts on `Work.inSync`, so a second switch
   flipped straight after builds on the first. **The code is in the keychain before sync can offer
@@ -640,8 +644,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   `library-features` defaults, off by default and applied on the renderers' lane once the player is
   open, after the saved addresses: `Library.restoreRenderers` shows the saved lists at once and
   corrects them by the boundary's answer, and a failed search
-  there never fails the opening), counting those found, read every two seconds while it is on and
-  the sheet open (`readRenderers`), and an *Add a renderer by address* and *Add a receiver by address* button (`RendererAddressSheet`, an
+  there never fails the opening), counting those found, read every two seconds while it is on,
+  the sheet open and the scene out of the background (`readRenderers`), and an *Add a renderer by address* and *Add a receiver by address* button (`RendererAddressSheet`, an
   `AddressKind` apart: a text field, the list added with a swipe to remove; a Google Cast receiver
   takes an address or a host name and its list is kept as `receiver-addresses` beside
   `renderer-addresses`, `cast.md`'s *On the phones*; an iPhone signed for free browses no receiver
@@ -1886,8 +1890,9 @@ per display frame from the 250 ms poll's reading, never held between polls, and 
 `Features.tick`. The pane's body never reads `PlayClock`: `LyricSetting` carries the clock and the
 playing song (`LyricHeard`), and `LyricLayerView` watches `positionMs` itself
 (`withObservationTracking`, renewed at each change) and draws at once only while its link is
-paused (a ticking link's next frame reads the clock anyway, and drawing at every reading too
-rendered a playing word-synced sheet two or three times a poll), so a poll redraws a frame, not the
+paused and the pane is awake (a ticking link's next frame reads the clock anyway, and drawing at every reading too
+rendered a playing word-synced sheet two or three times a poll; a pane left open behind a locked
+screen drew a frame at every background poll), so a poll redraws a frame, not the
 pane's SwiftUI body; nor does it read the whole environment, the accent being resolved in
 values holding only the scheme and contrast. **The frame drawn is the frame of the tick drawing it**: `kept_lyric_frame` answers
 from the sheet Rust already holds (a lock and the arithmetic, no SQLite) on the main actor inside the
@@ -2545,7 +2550,8 @@ are handled by the same rules as an iPad turned.
 
 `Together.swift` and `TogetherViews.swift` hold shared playlists and parties and `WrappedViews.swift` the
 deck; what can be tested without a device (link routing, the sentences, the gates) is in `ResonateLogic`.
-`OpenedLink` sends `resonate://shared/`, `resonate://party/` and their page forms to `accept_invitation`
+A shared list's sheet reads it every second (`sharedWatch`) only while the scene is out of the background,
+and the party page its room only while it is active, so a sheet left open behind a locked screen reads nothing. `OpenedLink` sends `resonate://shared/`, `resonate://party/` and their page forms to `accept_invitation`
 before anything could queue them as a song. Free signing rules out associated domains, so an https link
 reaches the app through its web page's button. The QR is CoreImage's generator, since pairing draws none,
 and the typed name is `shared-name` beside the device name; its code is drawn on `Work.aside`. Wrapped's
