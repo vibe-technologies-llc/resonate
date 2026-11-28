@@ -11,7 +11,7 @@ cargo-fuzz = true
 [dependencies]
 bzip2 = "0.6.1"
 libfuzzer-sys = { version = "0.4.13", default-features = false, features = ["link_libfuzzer"] }
-mibz2 = { version = "0.5.14", default-features = false }
+mibz2 = { version = "0.5.17", default-features = false }
 resonate-analysis.path = "../crates/resonate-analysis"
 resonate-cast.path = "../crates/resonate-cast"
 resonate-core.path = "../crates/resonate-core"
